@@ -5,11 +5,13 @@ import { createContentRuntime, createEmptyStore, createRecordCompressionService,
 import { recordCompressionAccountQueueAllowance } from "../src/config/index.mjs";
 import {
   RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+  RECORD_COMPRESSION_PROMPT_VERSION,
+  buildRecordCompressionInput,
   RECORD_COMPRESSION_TASK_KIND
 } from "../src/modules/record-compressions/index.mjs";
-import { WAITING_FOR_BUDGET_STATUS } from "../src/modules/tasks/index.mjs";
+import { WAITING_FOR_BUDGET_STATUS, createTaskLifecycle } from "../src/modules/tasks/index.mjs";
 
-const asOf = "2026-10-10T08:00:00.000Z";
+const asOf = "2026-10-10T10:05:00.000Z";
 let currentStore = createEmptyStore();
 let sequence = 0;
 const hash = value => crypto.createHash("sha256").update(String(value)).digest("hex");
@@ -221,11 +223,11 @@ const boundedWaitScan = await boundedWaitRuntime.runRecordCompressionScan({
   maxQueued: 0
 });
 assert.equal(boundedWaitScan.backfillRegisteredCount, 2);
-assert.equal(boundedWaitScan.waitingBudgetCount, 3);
-assert.equal(persistedWaits().length, 3, "two daily waits plus one historical supplement obey the per-scan registration bound");
+assert.equal(boundedWaitScan.waitingBudgetCount, 4);
+assert.equal(persistedWaits().length, 4, "最新闭合主槽、两个有来源回填槽和独立历史补充都保持预算等待");
 assert.deepEqual(boundedWaitScan.waitingBudgetTaskIds.map(id => currentStore.aiTasks.find(task => task.id === id))
   .filter(task => task.payload.operation === "daily").map(task => task.payload.localDate),
-  ["2026-10-10", "2026-10-09"], "new budget waits start at the newest missing dates");
+  ["2026-10-10", "2026-10-09", "2026-10-08"], "new budget waits start at the newest closed source slots");
 assertDiagnosticsMatchStore(boundedWaitScan);
 assert.equal(providerCalls.length, 0);
 
@@ -272,7 +274,8 @@ const boundaryDailyTask = currentStore.aiTasks.find(task => task.payload?.operat
 assert.ok(boundaryDailyTask, "the daily compression task must queue after Shanghai midnight");
 assert.equal(boundaryDailyTask.payload.localDate, "2026-10-10",
   "the task record date must remain in the account's Los Angeles timezone");
-assert.equal(boundaryDailyTask.payload.timezone, laTimezone);
+assert.equal(boundaryDailyTask.payload.timezone, DEFAULT_RECORD_TIMEZONE,
+  "新普通日压缩窗口固定上海时区，不随账户设置回退全天");
 assert.equal(providerCalls.length, 0, "the synthetic boundary regression must not call a provider");
 assertDiagnosticsMatchStore(afterMidnightScan);
 
@@ -332,12 +335,19 @@ assert.equal(providerCalls.length, callsAfterRepair);
 
 // 生日起点为注入配置：25日包含、24日排除，等待登记与prepare/恢复遵循同一边界。
 currentStore = createEmptyStore();
-const unboundedRuntime = createRuntime();
-// 构造合法旧24日等待身份，经实际原service生成，而非修正失败行或伪造inputHash。
+// 用真实旧输入与任务规范构造已存在的 v1 等待；新扫描不得再创建25日前的日任务。
 currentStore = createEmptyStore();
 addSource(currentStore, "outside-floor", "2026-09-24");
-const oldFloorScan = await unboundedRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 0 });
-const oldFloorTask = currentStore.aiTasks.find(task => task.payload.operation === "daily" && oldFloorScan.waitingBudgetTaskIds.includes(task.id));
+const legacyInput = buildRecordCompressionInput(currentStore, { accountId: "account-a", localDate: "2026-09-24",
+  timezone: DEFAULT_RECORD_TIMEZONE, asOf, promptVersion: RECORD_COMPRESSION_PROMPT_VERSION, sourcePermission: () => true, hash });
+const legacyPayload = { operation: "daily", localDate: "2026-09-24", timezone: DEFAULT_RECORD_TIMEZONE,
+  promptVersion: RECORD_COMPRESSION_PROMPT_VERSION, sourceManifestHash: legacyInput.sourceManifestHash, recordId: "legacy-floor-summary" };
+const oldFloorTask = createTaskLifecycle({ createId: () => "legacy-floor-task", now: () => asOf, hash }).create(currentStore.aiTasks, {
+  kind: RECORD_COMPRESSION_TASK_KIND, targetId: legacyPayload.recordId, resourceType: RECORD_COMPRESSION_TASK_KIND,
+  clientRequestId: "legacy-floor-request", payload: legacyPayload
+}, () => ({ inputVersion: 1, inputHash: hash(JSON.stringify({ accountId: legacyInput.accountKey, localDate: legacyPayload.localDate,
+  timezone: legacyPayload.timezone, promptVersion: legacyPayload.promptVersion, sourceManifestHash: legacyPayload.sourceManifestHash })) }),
+{ waitingBudget: true }).task;
 for (const date of ["2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29"]) addSource(currentStore, `floor-${date}`, date);
 const scopedRuntime = createRuntime({ startDate: "2026-09-25" });
 const scopedScan = await scopedRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 4, maxQueued: 0 });

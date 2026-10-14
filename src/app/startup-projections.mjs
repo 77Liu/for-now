@@ -9,6 +9,7 @@ const LIST_FIELDS = new Set([
   "updatedAt",
   "occurredAt",
   "occurredOn",
+  "eventTimePrecision",
   "type",
   "content",
   "tags",
@@ -21,7 +22,7 @@ const LIST_FIELDS = new Set([
 
 const BASE_METRICS = ["mood", "energy", "stress", "sleep"];
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const CHECKIN_ID_FIELDS = ["id", "version", "syncVersion", "createdAt", "updatedAt", "occurredAt", "occurredOn"];
+const CHECKIN_ID_FIELDS = ["id", "version", "syncVersion", "createdAt", "updatedAt", "occurredAt", "occurredOn", "eventTimePrecision"];
 const WEEKLY_INSIGHT_FIELDS = [
   "checkins",
   "thoughts",
@@ -68,7 +69,8 @@ export const ROUTE_STATE_LIMITS = Object.freeze({
 });
 
 const list = value => Array.isArray(value) ? value : [];
-const timestamp = value => String(value?.occurredAt || value?.createdAt || "");
+const timestamp = value => String(value?.occurredAt || value?.occurredOn || value?.createdAt || "");
+const occurrenceAt = value => ["date", "unknown"].includes(value?.eventTimePrecision) ? "" : String(value?.occurredAt || value?.createdAt || "");
 const dateKey = value => String(value?.occurredOn || timestamp(value).slice(0, 10));
 const text = value => String(value || "").trim();
 const boundedText = (value, limit) => String(value || "").slice(0, limit);
@@ -500,7 +502,7 @@ function homeMemories(state, limit = ROUTE_STATE_LIMITS.today.homeMemories) {
         key: `thought:${root.id}`,
         id: root.id,
         type: "thought",
-        occurredAt: timestamp(root),
+        occurredAt: occurrenceAt(root),
         occurredOn: dateKey(root),
         title: child ? text(root.content).slice(0, 240) : "",
         text: text(child?.content || root.content).slice(0, 500)
@@ -514,7 +516,7 @@ function homeMemories(state, limit = ROUTE_STATE_LIMITS.today.homeMemories) {
       bookId: book.id,
       noteId: note.id,
       type: "book",
-      occurredAt: timestamp(note),
+      occurredAt: occurrenceAt(note),
       occurredOn: dateKey(note),
       sourceTitle: text(book.title).slice(0, 160),
       title: "",
@@ -526,7 +528,7 @@ function homeMemories(state, limit = ROUTE_STATE_LIMITS.today.homeMemories) {
       key: `quote:${item.id}`,
       id: item.id,
       type: "quote",
-      occurredAt: timestamp(item),
+      occurredAt: occurrenceAt(item),
       occurredOn: dateKey(item),
       sourceTitle: text(item.source).slice(0, 160),
       title: "",

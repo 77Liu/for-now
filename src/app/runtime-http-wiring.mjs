@@ -144,6 +144,7 @@ export function createRecordCompressionScanObserver({
     const phase = outcome.status === "succeeded" ? "生成完成" : outcome.status === "failed" ? "生成失败" : "生成未完成";
     await send(`${label}${phase}`, [
       `日期：${outcome.localDate || "未知"}`,
+      ...(outcome.windowKey ? [`增量窗口：${outcome.windowKey}`] : []),
       `状态：${outcome.status}`,
       ...(outcome.summaryBudgetLevel === "warn" ? [
         `内部摘要预算：WARN；合法结果已保存，估算${outcome.summaryTokens} tokens（一级${outcome.summaryWarnTokens}/二级${outcome.summaryHardTokens}）。资金预算不变。`

@@ -152,9 +152,12 @@ function recordTrendMarkup(trend, options) {
       : "无"
   } · ${
     Number(coverage.partialDays) || 0
-  } 天部分覆盖 · ${Number(coverage.truncatedDays) || 0} 天达到输入上限</span></div>${
+  } 天部分覆盖 · ${Number(coverage.truncatedDays) || 0} 天达到输入上限${trend.failureState
+    ? ` · ${Number(trend.failureState.pendingFaultCount) || 0} 项待处理故障 · ${trend.failureState.replaced?.length || 0} 项已有有效替代` : ""}</span></div>${
     trend.days.map(day => {
       const missing = day.status !== "ready";
+      const slotStatus = Array.isArray(day.slots) ? day.slots.map(slot => `${slot.slot === "morning" ? "早间" : "傍晚"}：${
+        slot.status === "ready" ? "已整理" : slot.status === "open" ? "尚未闭合" : "缺少整理"}`).join("；") : "";
       const sections = [
         ...day.daily.map(row => rowMarkup(row, "当日记录")),
         ...day.thoughts.map(row => rowMarkup(row, "思绪")),
@@ -169,7 +172,8 @@ function recordTrendMarkup(trend, options) {
       }"><summary><div><span>${options.escapeMarkup(day.localDate)}</span><strong>${
         missing ? "暂无有效整理" : day.completeness === "partial" ? "部分覆盖" : "已整理"
       }</strong></div><small>${missing ? "缺失日期" : sections ? "查看整理与来源" : "没有可展示的获准条目"}</small></summary>${
-        missing
+        slotStatus ? `<p class="personal-context-conclusion-body">${options.escapeMarkup(slotStatus)}</p>` : ""
+      }${missing
           ? `<p class="personal-context-conclusion-body">这一天没有当前有效且获准使用的日摘要。</p>`
           : sections
       }</details>`;

@@ -171,6 +171,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
             message: safeText(input.payload?.message),
             occurredAt: safeText(input.payload?.occurredAt, 100),
             occurredOn: safeText(input.payload?.occurredOn, 10),
+            ...(input.payload?.eventTimePrecision === "date" ? { eventTimePrecision: "date" } : {}),
             eventTimeHash: safeText(input.payload?.eventTimeHash, 100)
           }
       : kind === "analysis"
@@ -212,7 +213,8 @@ export function createTaskLifecycle({ createId, now, hash }) {
                 timezone: safeText(input.payload?.timezone, 100),
                 promptVersion: safeText(input.payload?.promptVersion, 100),
                 sourceManifestHash: safeText(input.payload?.sourceManifestHash, 64),
-                recordId: safeText(input.payload?.recordId, 100)
+                recordId: safeText(input.payload?.recordId, 100),
+                ...(input.payload?.windowKey ? { windowKey: safeText(input.payload.windowKey, 100) } : {})
               };
               if (historicalSupplement) {
                 const batchIndex = Number(input.payload?.batchIndex);
@@ -262,7 +264,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
     }
     if (kind === "journalAssist" && !payload.mode) return { invalidIntent: true };
     if (kind === "thoughtDraft" && !payload.question) return { invalidIntent: true };
-    if (kind === "chat" && (!payload.message || !payload.occurredAt || !payload.occurredOn)) return { invalidIntent: true };
+    if (kind === "chat" && (!payload.message || (!payload.occurredAt && payload.eventTimePrecision !== "date") || !payload.occurredOn)) return { invalidIntent: true };
     const inputRequestHash = requestHash(normalized);
     const duplicate = tasks.find(item => item.clientRequestId === clientRequestId);
     if (duplicate) return duplicate.requestHash === inputRequestHash ? { task: duplicate, duplicate: true } : { conflict: true };

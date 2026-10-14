@@ -6,6 +6,7 @@ import { estimateInternalTokens as estimateRecordCompressionTokens } from "../..
  * 边界：摘要预算不包含程序统计；实际回答上下文由消费者另行限制。
  */
 import { safeText } from "../../shared/validation/index.mjs";
+import { RECORD_SLOT_INPUT_SCHEMA_VERSION, RECORD_SLOT_OUTPUT_SCHEMA_VERSION } from "../../../.build/typescript/backend/modules/record-compressions/windows.mjs";
 import {
   RECORD_COMPRESSION_OUTPUT_BUDGETS,
   RECORD_COMPRESSION_INPUT_SCHEMA_VERSION,
@@ -262,7 +263,7 @@ function buildBudgetedContent({
 
 function validInput(input) {
   return objectValue(input)
-    && input.schemaVersion === RECORD_COMPRESSION_INPUT_SCHEMA_VERSION
+    && [RECORD_COMPRESSION_INPUT_SCHEMA_VERSION, RECORD_SLOT_INPUT_SCHEMA_VERSION].includes(input.schemaVersion)
     && input.promptVersion === RECORD_COMPRESSION_PROMPT_VERSION
     && objectValue(input.window)
     && typeof input.window.localDate === "string"
@@ -345,6 +346,7 @@ export function parseRecordCompressionOutput(value, {
   ].filter(Boolean);
 
   const schemaWindow = {
+    ...(input.window.windowKey ? { windowKey: input.window.windowKey, schemaVersion: input.window.schemaVersion, slot: input.window.slot } : {}),
     start: safeText(input.window.start, 40),
     endExclusive: safeText(input.window.endExclusive, 40),
     localDate: input.window.localDate,
@@ -396,7 +398,8 @@ export function parseRecordCompressionOutput(value, {
   const summary = {
     id: safeText(id, 100),
     status: "ready",
-    schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA,
+    schemaVersion: input.window.windowKey ? RECORD_SLOT_OUTPUT_SCHEMA_VERSION : RECORD_COMPRESSION_OUTPUT_SCHEMA,
+    ...(input.window.windowKey ? { windowKey: input.window.windowKey } : {}),
     promptVersion: input.promptVersion,
     timezone: input.window.timezone,
     revision: Math.max(1, Math.round(Number(revision) || 1)),
@@ -414,6 +417,7 @@ export function parseRecordCompressionOutput(value, {
       targetKey: safeText(source?.targetKey, 120),
       occurredAt: safeText(source?.occurredAt, 40),
       occurredOn: safeText(source?.occurredOn, 10),
+      ...(source?.timePrecision ? { timePrecision: source.timePrecision } : {}),
       updatedAt: safeText(source?.updatedAt, 40),
       sourceHash: safeText(source?.sourceHash, 64),
       permissionRevision: Math.max(0, Math.round(Number(source?.permissionRevision) || 0))

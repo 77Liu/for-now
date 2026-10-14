@@ -7,12 +7,15 @@ import { readInternalBudgets } from "../../.build/typescript/backend/shared/ai-c
  */
 import {
   buildHistoricalUserSupplementInput,
+  DEFAULT_RECORD_TIMEZONE,
   buildRecordCompressionInput,
   deriveSevenDayTrend,
   estimateRecordCompressionTokens,
   isRecordCompressionRecordEnvelope,
   RECORD_COMPRESSION_OUTPUT_BUDGETS,
   RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+  RECORD_SLOT_OUTPUT_SCHEMA_VERSION,
+  recordCompressionWindow,
   RECORD_COMPRESSION_PROMPT_VERSION,
   RECORD_COMPRESSION_TASK_KIND,
   RECORD_COMPRESSION_TREND_CONTEXT_CHARACTER_BUDGET,
@@ -143,10 +146,12 @@ function inputForDate(store, {
   asOf,
   hash,
   maxTextChars,
-  startDate = ""
+  startDate = "",
+  windowKey = ""
 }) {
   if (startDate && localDate < startDate) return null;
   return buildRecordCompressionInput(store, {
+    windowKey,
     accountId,
     localDate,
     timezone,
@@ -532,14 +537,16 @@ function historicalSupplementContextFrom(store, options) {
 }
 
 function eligibleReadySummary(store, localDate, timezone, input) {
+  if (input.window.windowKey && Date.parse(input.window.endExclusive) > Date.parse(input.window.asOf)) return null;
   return list(store.recordCompressions)
     .filter(summary => (
       summary?.status === "ready"
       && isRecordCompressionRecordEnvelope(summary, { ready: true })
-      && summary?.schemaVersion === RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION
+      && [RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION, RECORD_SLOT_OUTPUT_SCHEMA_VERSION].includes(summary?.schemaVersion)
       && summary?.promptVersion === RECORD_COMPRESSION_PROMPT_VERSION
       && summary?.localDate === localDate
       && summary?.timezone === timezone
+      && (summary.windowKey || "") === (input.window.windowKey || "")
       && summary?.sourceManifestHash === input.sourceManifestHash
       && summary?.invalidatedAt == null
     ))
@@ -547,6 +554,86 @@ function eligibleReadySummary(store, localDate, timezone, input) {
       String(right.generatedAt || "").localeCompare(String(left.generatedAt || ""))
       || Number(right.revision || 0) - Number(left.revision || 0)
     ))[0] || null;
+}
+
+function readyInputsForDate(store, options) {
+  const incremental = [];
+  if (options.timezone === DEFAULT_RECORD_TIMEZONE) {
+    for (const slot of ["morning", "evening"]) {
+      const window = recordCompressionWindow(options.localDate, slot);
+      if (Date.parse(window.endExclusive) > Date.parse(options.asOf)) continue;
+      const input = inputForDate(store, { ...options, windowKey: window.windowKey });
+      const summary = input && eligibleReadySummary(store, options.localDate, options.timezone, input);
+      if (summary) incremental.push({ input, summary });
+    }
+  }
+  if (incremental.length) return incremental;
+  const input = inputForDate(store, options);
+  const summary = input && eligibleReadySummary(store, options.localDate, options.timezone, input);
+  return summary ? [{ input, summary }] : [];
+}
+
+/** 核对任务原始输入哈希的账户绑定；不以赞助账户或当前终态猜测归属。 @since unreleased */
+function compressionTaskAccountMatches(task, { accountId, hash }) {
+  const payload = task?.payload || {};
+  const range = payload.operation === HISTORICAL_SUPPLEMENT_OPERATION ? historicalTaskRange(task, payload.timezone) : null;
+  const expected = payload.operation === HISTORICAL_SUPPLEMENT_OPERATION ? {
+    operation: HISTORICAL_SUPPLEMENT_OPERATION, accountId, timezone: payload.timezone, promptVersion: payload.promptVersion,
+    windowStart: range?.windowStart || payload.windowStart, windowEnd: range?.windowEnd || payload.windowEnd,
+    batchIndex: Number.isSafeInteger(payload.batchIndex) ? payload.batchIndex : 0, sourceManifestHash: payload.sourceManifestHash
+  } : {
+    accountId: hash(`account:${String(accountId).trim().slice(0, 100)}`).slice(0, 32), localDate: payload.localDate,
+    timezone: payload.timezone, promptVersion: payload.promptVersion,
+    ...(payload.windowKey ? { windowKey: payload.windowKey } : {}), sourceManifestHash: payload.sourceManifestHash
+  };
+  return task.requestedInputHash === hash(JSON.stringify(expected));
+}
+
+/** 活动失败为只读派生视图；只有同能力/精确窗口且当前可消费的替代才能退出活动。 @since unreleased */
+function compressionFailureView(store, options) {
+  const active = [], replaced = [];
+  for (const task of list(store.aiTasks)) {
+    if (task.kind !== RECORD_COMPRESSION_TASK_KIND || task.status !== "failed"
+      || !compressionTaskAccountMatches(task, options)) continue;
+    const payload = task.payload || {};
+    let replacementId = "";
+    try {
+      if (payload.operation === DAILY_OPERATION) {
+        const input = inputForDate(store, { ...options, localDate: payload.localDate, timezone: payload.timezone, windowKey: payload.windowKey || "" });
+        const summary = eligibleReadySummary(store, payload.localDate, payload.timezone, input);
+        const permitted = new Set(list(input.sourceManifest).filter(source => ["user_original", "quoted_external"].includes(source.origin)).map(source => source.sourceId));
+        const rows = summary ? [
+          ...list(summary.daily?.observations), ...list(summary.thoughtsIdeas?.focus), ...list(summary.thoughtsIdeas?.changes),
+          ...list(summary.thoughtsIdeas?.openQuestions), ...list(summary.other?.themes), ...list(summary.other?.collectedQuotes), ...list(summary.metrics)
+        ] : [];
+        if (rows.some(row => list(row.sourceIds).length && row.sourceIds.every(sourceId => permitted.has(sourceId)))) replacementId = summary.id;
+      } else if (payload.operation === HISTORICAL_SUPPLEMENT_OPERATION) {
+        const range = historicalTaskRange(task, payload.timezone);
+        if (range) {
+          const current = historicalSupplementInputFrom(store, { ...options, ...range, batchIndex: payload.batchIndex || 0 });
+          const sources = currentHistoricalUserSources(store, { ...options, timezone: payload.timezone }, list(store.historicalUserSupplement?.records).map(row => row.source?.localDate));
+          const actualContext = historicalSupplementContextFrom(store, { ...options, timezone: payload.timezone });
+          const consumed = validateHistoricalUserSupplement(store.historicalUserSupplement, { userSources: sources.currentUserSources }).records
+            .filter(record => actualContext.payload.records.some(row => row.sourceId === record.source.sourceId && row.exactQuote === record.exactQuote));
+          replacementId = list(store.aiTasks).find(candidate => candidate.kind === task.kind && candidate.status === "succeeded"
+            && candidate.payload?.operation === payload.operation && candidate.payload?.timezone === payload.timezone
+            && historicalTaskRange(candidate, payload.timezone)?.windowStart === range.windowStart
+            && historicalTaskRange(candidate, payload.timezone)?.windowEnd === range.windowEnd
+            && (candidate.payload?.batchIndex || 0) === (payload.batchIndex || 0)
+            && candidate.payload?.sourceManifestHash === current.sourceManifestHash
+            && compressionTaskAccountMatches(candidate, options)
+            && list(candidate.replacementReceipt?.sources).some(reference => consumed.some(record => record.source.sourceId === reference.sourceId
+              && record.source.sourceHash === reference.sourceHash && record.source.permissionRevision === reference.permissionRevision
+              && options.hash(record.exactQuote) === reference.quoteSha256)))?.id || "";
+        }
+      }
+    } catch { /* 无法证明合法、当前可消费的替代，原失败继续保持活动。 */ }
+    const row = { taskId: task.id, operation: payload.operation, localDate: payload.localDate,
+      windowKey: payload.windowKey || "", windowStart: payload.windowStart || "", windowEnd: payload.windowEnd || "",
+      state: replacementId ? "replaced" : "pendingFault", ...(replacementId ? { replacementId } : {}) };
+    (replacementId ? replaced : active).push(row);
+  }
+  return { active, replaced, pendingFaultCount: active.length };
 }
 
 function narrativeRows(summary, section, field, maximum = TREND_CONTEXT_DAY_ITEM_LIMIT) {
@@ -616,7 +703,7 @@ function contextTrendFrom(store, {
   const currentInputs = new Map();
   const summaries = [];
   for (const localDate of localDates) {
-    const input = inputForDate(store, {
+    const selected = readyInputsForDate(store, {
       accountId,
       localDate,
       timezone,
@@ -624,9 +711,11 @@ function contextTrendFrom(store, {
       hash,
       maxTextChars
     });
-    currentInputs.set(localDate, input);
-    const summary = eligibleReadySummary(store, localDate, timezone, input);
-    if (summary) summaries.push(summary);
+    currentInputs.set(localDate, {
+      sourceManifest: selected.flatMap(row => row.input.sourceManifest),
+      userSources: selected.flatMap(row => row.input.userSources)
+    });
+    summaries.push(...selected.map(row => row.summary));
   }
   const trend = deriveSevenDayTrend({
     summaries,
@@ -637,6 +726,7 @@ function contextTrendFrom(store, {
   });
   const dayRows = trend.days.filter(day => day.summary).map(day => ({
     localDate: day.localDate,
+    ...(day.slots ? { slots: day.slots, missingSlots: day.missingSlots } : {}),
     completeness: day.completeness,
     daily: narrativeRows(day.summary, "daily", "observations"),
     thoughts: [
@@ -837,7 +927,7 @@ function separateTrendContext(store, trendResult, {
   const quoteSources = [];
   const quoteCitationSources = [];
   for (const localDate of sevenLocalDatesForTimezone(timezone, asOf)) {
-    const input = inputForDate(store, {
+    const selected = readyInputsForDate(store, {
       accountId,
       localDate,
       timezone,
@@ -845,8 +935,7 @@ function separateTrendContext(store, trendResult, {
       hash,
       maxTextChars
     });
-    const summary = eligibleReadySummary(store, localDate, timezone, input);
-    if (!summary) continue;
+    for (const { input, summary } of selected) {
     const sourceManifest = new Map(list(input.sourceManifest).map(source => [source.sourceId, source]));
     const inputSources = new Map(list(input.userSources).map(source => [source.sourceId, source]));
     for (const row of list(summary.other?.collectedQuotes)) {
@@ -892,12 +981,14 @@ function separateTrendContext(store, trendResult, {
         });
       }
     }
+    }
   }
 
   payload.userFacts = facts;
   payload.userSubjective = subjective;
   payload.collectedQuotes = quoteSources;
-  payload.days = list(payload.days).map(({ localDate, completeness }) => ({ localDate, completeness }));
+  payload.days = list(payload.days).map(({ localDate, completeness, slots, missingSlots }) => ({ localDate, completeness,
+    ...(slots ? { slots, missingSlots } : {}) }));
 
   const userTrendBudget = RECORD_COMPRESSION_OUTPUT_BUDGETS.userTrendTokens
     * RECORD_COMPRESSION_WINDOW_DAYS;
@@ -961,9 +1052,10 @@ function separateTrendContext(store, trendResult, {
 function currentTrendFrom(store, options) {
   const trend = contextTrendFrom(store, options);
   const trendContext = separateTrendContext(store, trend, options);
-  const historicalSupplement = historicalSupplementContextFrom(store, options);
+  const historicalSupplement = historicalSupplementContextFrom(store, { ...options, timezone: options.historicalTimezone || options.timezone });
   return {
     ...trend,
+    failureState: compressionFailureView(store, options),
     payload: trendContext.payload,
     citationSources: trendContext.citationSources,
     historicalUserSupplement: historicalSupplement.payload,
@@ -978,6 +1070,8 @@ function currentTrendFrom(store, options) {
 
 export {
   COMPRESSION_SOURCE_COLLECTIONS,
+  compressionTaskAccountMatches,
+  compressionFailureView,
   DAILY_OPERATION,
   HISTORICAL_SUPPLEMENT_OPERATION,
   MAX_TREND_CITATIONS,

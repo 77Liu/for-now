@@ -50,14 +50,20 @@ const validManualDateTime = value => {
 export const eventTimeFields = (input = {}, existing = null, { now = () => new Date() } = {}) => {
   const hasOwn = key => Object.prototype.hasOwnProperty.call(input || {}, key);
   const timeMode = hasOwn("timeMode") ? safeText(input.timeMode, 20) : "";
+  // 精确编辑必须覆盖旧标记；无标记旧调用保持原形态，避免改变创建幂等摘要。
+  const precisionReset = existing?.eventTimePrecision || input.eventTimePrecision
+    ? { eventTimePrecision: "instant" } : {};
   if (timeMode && !["now", "manual"].includes(timeMode)) return null;
   if (timeMode === "now") {
     const date = currentDate(now);
     if (!date) return null;
     const occurredAt = date.toISOString();
-    return { occurredAt, occurredOn: localDateKey(date) };
+    return { occurredAt, occurredOn: localDateKey(date), ...precisionReset };
   }
   if (timeMode === "manual" && !hasOwn("occurredAt") && !hasOwn("occurredOn")) return null;
+  if (input.eventTimePrecision === "date" && !input.occurredAt && strictDateKey(input.occurredOn)) {
+    return { occurredAt: "", occurredOn: input.occurredOn, eventTimePrecision: "date" };
+  }
   let occurredAt = "";
   if (hasOwn("occurredAt")) {
     if (timeMode === "manual" && !validManualDateTime(input.occurredAt)) return null;
@@ -65,11 +71,13 @@ export const eventTimeFields = (input = {}, existing = null, { now = () => new D
     if (Number.isNaN(parsed.getTime())) return null;
     occurredAt = parsed.toISOString();
   } else if (hasOwn("occurredOn")) {
-    const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(input.occurredOn || "") ? input.occurredOn : "";
+    const dateKey = strictDateKey(input.occurredOn) || "";
     if (!dateKey) return null;
-    const clock = existing?.occurredAt || currentDate(now);
-    if (!clock) return null;
-    occurredAt = localDateTimeOn(dateKey, clock);
+    return { occurredAt: "", occurredOn: dateKey, eventTimePrecision: "date" };
+  } else if (existing?.eventTimePrecision === "date" && strictDateKey(existing.occurredOn)) {
+    return { occurredAt: "", occurredOn: existing.occurredOn, eventTimePrecision: "date" };
+  } else if (existing?.eventTimePrecision === "unknown") {
+    return { occurredAt: "", occurredOn: "", eventTimePrecision: "unknown" };
   } else if (existing?.occurredAt) {
     const parsed = new Date(existing.occurredAt);
     if (!Number.isNaN(parsed.getTime())) occurredAt = parsed.toISOString();
@@ -78,5 +86,5 @@ export const eventTimeFields = (input = {}, existing = null, { now = () => new D
     if (!date) return null;
     occurredAt = date.toISOString();
   }
-  return occurredAt ? { occurredAt, occurredOn: localDateKey(occurredAt) } : null;
+  return occurredAt ? { occurredAt, occurredOn: localDateKey(occurredAt), ...precisionReset } : null;
 };

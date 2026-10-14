@@ -238,9 +238,10 @@ export function createReviewChatWorkflows({
         const payload = task.payload;
         const eventTime = {
           occurredAt: payload.occurredAt,
-          occurredOn: payload.occurredOn
+          occurredOn: payload.occurredOn,
+          ...(payload.eventTimePrecision === "date" ? { eventTimePrecision: "date" } : {})
         };
-        if (!eventTime.occurredAt || !eventTime.occurredOn) return null;
+        if ((!eventTime.occurredAt && eventTime.eventTimePrecision !== "date") || !eventTime.occurredOn) return null;
         const coreModel = coreModelSnapshot(store);
         if (!coreModel) return null;
         const generatedAt = taskContextAsOf(task);
@@ -368,7 +369,8 @@ export function createReviewChatWorkflows({
           message: payload.message,
           eventTime: {
             occurredAt: payload.occurredAt,
-            occurredOn: payload.occurredOn
+            occurredOn: payload.occurredOn,
+            ...(payload.eventTimePrecision === "date" ? { eventTimePrecision: "date" } : {})
           },
           answer: result.content,
           ...(Array.isArray(result.citations) ? {
@@ -857,12 +859,13 @@ export function createReviewChatWorkflows({
       if (coreModelReadiness(store)?.ready !== false) return null;
       const parsed = chatMessage({ message });
       if (parsed.error) return { error: parsed.error };
-      if (!eventTime?.occurredAt || !eventTime?.occurredOn) return { error: "发生时间格式不正确" };
+      if ((!eventTime?.occurredAt && eventTime?.eventTimePrecision !== "date") || !eventTime?.occurredOn) return { error: "发生时间格式不正确" };
       const requestId = clientRequestId || createId();
       return queueColdTask("chat", "", {
         message: parsed.value,
         occurredAt: eventTime.occurredAt,
         occurredOn: eventTime.occurredOn,
+        ...(eventTime.eventTimePrecision === "date" ? { eventTimePrecision: "date" } : {}),
         eventTimeHash
       }, requestId);
     },

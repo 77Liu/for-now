@@ -208,7 +208,7 @@ export const reviewsChatComponents = Object.freeze({
       required: ["id", "createdAt", "occurredAt", "occurredOn", "message", "answer", "version"],
       properties: {
         ...versionFields,
-        occurredAt: { type: "string", format: "date-time" },
+        occurredAt: { $ref: "#/components/schemas/OccurrenceTimestamp" },
         occurredOn: { type: "string", format: "date" },
         message: { type: "string" },
         answer: { type: "string" },

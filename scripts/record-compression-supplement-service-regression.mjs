@@ -6,6 +6,7 @@ import "./prompt-test-setup.mjs";
 import {
   compileWorkingContextPrompt,
   createContentRuntime,
+  createRecordCompressionService,
   createEmptyStore,
   currentRecordCompressionTrend,
   createAiTaskTargets,
@@ -29,7 +30,7 @@ import { createNotificationService } from "../src/modules/notifications/index.mj
 import { createTaskLifecycle } from "../src/modules/tasks/index.mjs";
 import { createThoughtTaskTarget } from "../src/modules/thoughts/index.mjs";
 
-const asOf = "2026-10-10T08:00:00.000Z";
+const asOf = "2026-10-10T10:05:00.000Z";
 let calls = [];
 const hash = value => crypto.createHash("sha256").update(String(value)).digest("hex");
 const store = createEmptyStore();
@@ -405,7 +406,7 @@ addProgressiveSource("progressive-sep-01", "2026-09-01", oldestSeptemberAnchor);
 addProgressiveSource("progressive-2025-01-15", "2025-01-15", middleYearAnchor);
 addProgressiveSource("progressive-2020-01-15", "2020-01-15", oldestYearAnchor);
 
-let progressiveNow = "2026-10-10T08:00:00.000Z";
+let progressiveNow = "2026-10-10T10:05:00.000Z";
 const progressiveAsOf = progressiveNow;
 const progressiveScheduled = [];
 const progressiveCalls = [];
@@ -446,14 +447,28 @@ const createProgressiveRuntime = () => createContentRuntime({
   workflowContextKey: () => "account-progressive",
   dispatchBackground: callback => progressiveScheduled.push(callback),
   async runDeepSeek(prompt, options) {
-    assert.equal(options.maxTokens, HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET);
     const input = parsePromptInput(prompt);
+    const runningTask = progressiveStore.aiTasks.find(task => task.status === "running" && task.kind === RECORD_COMPRESSION_TASK_KIND);
+    const actualWork = createRecordCompressionService({ repository: progressiveRepository, getAccountId: () => "account-progressive",
+      getTimezone: () => "America/Los_Angeles", now: () => progressiveNow, hash }).target.prepare(progressiveStore, runningTask);
+    assert.ok(actualWork);
+    const sourceIdentities = new Map(actualWork.sourceAliases.sources.map(row => [row.alias, row.sourceId]));
+    assert.ok(input.userSources.every(source => /^r\d+$/.test(source.sourceId)));
+    if (input.schemaVersion === "record-compression-input.v2") {
+      assert.equal(options.maxTokens, RECORD_COMPRESSION_OUTPUT_TOKEN_BUDGET);
+      progressiveCalls.push({ createdAt: progressiveNow, operation: "daily", inputSourceIds: input.userSources.map(source => sourceIdentities.get(source.sourceId)) });
+      return { content: JSON.stringify({ schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+        daily: { observations: [], metricKeys: [], missing: [] }, thoughtsIdeas: { focus: [], changes: [], openQuestions: [] },
+        other: { themes: [], collectedQuotes: [] }, aiReference: [], stableUserCandidates: [], conflicts: [], warnings: [] }) };
+    }
+    assert.equal(options.maxTokens, HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET);
     assert.ok(estimateHistoricalUserSupplementTokens(input)
       <= HISTORICAL_USER_SUPPLEMENT_INPUT_TOKEN_BUDGET,
     "each progressive batch must stay inside the model input-token cap");
     progressiveCalls.push({
       createdAt: progressiveNow,
-      inputSourceIds: input.userSources.map(source => source.sourceId)
+      operation: "historicalSupplement",
+      inputSourceIds: input.userSources.map(source => sourceIdentities.get(source.sourceId))
     });
     const marker = [progressiveAnchor, olderSeptemberAnchor]
       .find(value => input.userSources.some(source => source.text.includes(value)));
@@ -475,7 +490,7 @@ const createProgressiveRuntime = () => createContentRuntime({
       outputTokens,
       sourceId: source?.sourceId
     }));
-    if (marker) progressiveMarkerIds.set(marker, source.sourceId);
+    if (marker) progressiveMarkerIds.set(marker, sourceIdentities.get(source.sourceId));
     return {
       content: JSON.stringify({
         schemaVersion: HISTORICAL_USER_SUPPLEMENT_OUTPUT_SCHEMA_VERSION,
@@ -559,9 +574,15 @@ for (let attempt = 0; attempt < 16; attempt += 1) {
         .map(item => [item.payload.windowStart, item.payload.windowEnd])
     })}`);
   }
-  assert.equal(scan.queuedCount, 1,
-    "each progressive scan queues at most one bounded historical task");
-  const task = progressiveStore.aiTasks.find(item => item.id === scan.taskId);
+  const historicalTasks = progressiveStore.aiTasks.filter(item => scan.taskIds.includes(item.id)
+    && item.payload.operation === "historicalSupplement");
+  assert.equal(historicalTasks.length, 1,
+    "each progressive scan queues one bounded historical task independently of the new daily slot");
+  for (const daily of progressiveStore.aiTasks.filter(item => scan.taskIds.includes(item.id) && item.payload.operation === "daily")) {
+    await progressiveRuntime.backgroundAi.run(daily.id);
+    assert.equal(daily.status, "succeeded");
+  }
+  const task = historicalTasks[0];
   assert.equal(task.payload.operation, "historicalSupplement");
   assert.ok(Number.isSafeInteger(task.payload.batchIndex), JSON.stringify({ task, scan }));
   const executionRuntime = task.payload.batchIndex > 0
@@ -571,7 +592,7 @@ for (let attempt = 0; attempt < 16; attempt += 1) {
   if (task.payload.batchIndex > 0
     && task.payload.windowStart === "2026-10-04"
     && task.payload.windowEnd === "2026-10-10") {
-    const earlierBatchSources = new Set(progressiveCalls[0].inputSourceIds);
+    const earlierBatchSources = new Set(progressiveCalls.find(call => call.operation === "historicalSupplement").inputSourceIds);
     assert.ok(progressiveCalls.at(-1).inputSourceIds.every(sourceId => (
       !earlierBatchSources.has(sourceId)
     )), "a restarted worker must prepare the persisted batchIndex rather than replay batch zero");
@@ -642,7 +663,7 @@ assert.ok(progressiveCalls.length >= 4,
 assert.deepEqual(restartedPreparedBatches, [1],
   "the second recent batch resumes after rebuilding the runtime from the persisted task");
 
-progressiveNow = "2026-10-18T08:00:00.000Z";
+progressiveNow = "2026-10-18T10:05:00.000Z";
 const expiredWindowTrend = currentRecordCompressionTrend(progressiveStore, {
   accountId: "account-progressive",
   timezone: "America/Los_Angeles",

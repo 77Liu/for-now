@@ -56,12 +56,12 @@ const zoneScript = `
   assert.equal(localDateKey(original), expected);
   const changed = eventTimeFields({ occurredOn: "2026-10-01" }, { occurredAt: original });
   assert.equal(changed.occurredOn, "2026-10-01");
-  const a = new Date(original), b = new Date(changed.occurredAt);
-  for (const method of ["getHours", "getMinutes", "getSeconds", "getMilliseconds"]) assert.equal(a[method](), b[method]());
+  assert.equal(changed.occurredAt, "");
+  assert.equal(changed.eventTimePrecision, "date");
   assert.equal(shiftDateKey("2026-12-31", 1), "2027-01-01");
   assert.equal(shiftDateKey("2024-02-28", 1), "2024-02-29");
-  // Legacy event date parsing rolls excess days; strict calendar validation above does not.
-  assert.equal(eventTimeFields({ occurredOn: "2026-02-31" }, { occurredAt: original }).occurredOn, "2026-03-03");
+  // 仅日期不能借旧时刻或滚动成另一个日期。
+  assert.equal(eventTimeFields({ occurredOn: "2026-02-31" }, { occurredAt: original }), null);
   const local = eventTimeFields({ occurredAt: "2026-09-29T00:01:00" });
   assert.equal(local.occurredOn, "2026-09-29");
   if (process.env.TZ === "America/New_York") {
