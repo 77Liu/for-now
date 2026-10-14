@@ -4,14 +4,15 @@
  * 状态：active
  * 边界：原文与凭据不写入评分记录；回答选材不等待该异步任务。
  */
-import { IMPORTANCE_SCORING_VERSION, importanceScoreFor, parseImportanceScores,
+import { createImportanceBatches } from "./importance-batches.mjs";
+import { IMPORTANCE_BATCH_SIZE, IMPORTANCE_SCORING_VERSION, importanceScoreFor, parseImportanceScores,
   type ImportanceMaterial, type ImportanceScore } from "./importance.mjs";
-export const IMPORTANCE_BATCH_SIZE = 8;
+export { IMPORTANCE_BATCH_SIZE } from "./importance.mjs";
 export interface ImportanceSourceRef {
   resourceType: string; resourceId: string; rootId: string; targetKey: string; version: number;
 }
 type Store = Record<string, unknown> & { importanceScores?: ImportanceScore[] };
-type Task = { id: string; targetId: string; payload: {
+type Task = { id: string; targetId: string; clientRequestId?: string; payload: {
   sourceRefs: ImportanceSourceRef[]; model: string; effort: string; fingerprint: string;
 } };
 interface Ports {
@@ -23,6 +24,9 @@ interface Ports {
   promptText(id: string): string;
   renderPrompt(id: string, values: Record<string, string>): string;
   now(): string;
+  accountId?(): string;
+  createBusinessId?(): string;
+  list?(store: Store): (ImportanceMaterial & { sourceRef: ImportanceSourceRef; recordedAt?: string; occurredAt?: string; occurredOn?: string })[];
 }
 
 /**
@@ -37,8 +41,14 @@ export function createImportanceService(ports: Ports) {
     sources: materials.map(item => [item.accountId, item.sourceKey, item.version, item.contentSha256, item.permissionRevision ?? 0]),
     model, effort, scoringVersion: IMPORTANCE_SCORING_VERSION
   }));
+  let batches: ReturnType<typeof createImportanceBatches> | null = null;
   const target = {
-    prepare(store: Store, task: Task) {
+    settled: async () => { await batches?.pump(); },
+    prepareResult(store: Store, task: Task) {
+      return target.prepare(store, task, true);
+    },
+    prepare(store: Store, task: Task, returnedResult = false) {
+      if (task.clientRequestId && batches && !batches.permits(store, task.clientRequestId, returnedResult)) return null;
       if (!task.payload || !Array.isArray(task.payload.sourceRefs)
         || !task.payload.sourceRefs.length || task.payload.sourceRefs.length > IMPORTANCE_BATCH_SIZE) return null;
       if (ports.currentChoice) {
@@ -64,7 +74,7 @@ export function createImportanceService(ports: Ports) {
       };
     },
     save(store: Store, work: { importanceMaterials: ImportanceMaterial[] }, task: Task, generated: { content: string }) {
-      const current = target.prepare(store, task);
+      const current = target.prepareResult(store, task);
       if (!current || fingerprint(work.importanceMaterials, task.payload.model, task.payload.effort) !== current.inputHash) {
         throw Object.assign(new Error("评分来源已变化或撤权"), { code: "IMPORTANCE_SOURCE_INVALID" });
       }
@@ -88,8 +98,11 @@ export function createImportanceService(ports: Ports) {
         .map(item => importanceScoreFor(item, store.importanceScores || [], { model: task.payload.model, effort: task.payload.effort })).filter(Boolean);
     }
   };
-  return {
+  const service = {
     target,
+    get batches() {
+      return batches;
+    },
     attach(value: NonNullable<typeof background>) {
       background = value;
     },
@@ -99,13 +112,15 @@ export function createImportanceService(ports: Ports) {
       const store = await ports.repository.read();
       const resolved = materialFor(store, sourceRefs);
       if (resolved.some(item => !item)) return { invalid: true, code: "IMPORTANCE_SOURCE_INVALID" };
-      const materials = resolved as ImportanceMaterial[];
+      let materials = resolved as ImportanceMaterial[];
       if (new Set(materials.map(item => item.sourceKey)).size !== materials.length) return { invalid: true };
       const choice = await ports.modelChoice();
       if (!choice) return { invalid: true, code: "IMPORTANCE_MODEL_UNCONFIGURED" };
       if (materials.every(item => importanceScoreFor(item, store.importanceScores || [], choice))) {
         return { cached: true, scores: materials.map(item => importanceScoreFor(item, store.importanceScores || [], choice)) };
       }
+      sourceRefs = sourceRefs.filter((_ref, index) => !importanceScoreFor(materials[index]!, store.importanceScores || [], choice));
+      materials = materialFor(store, sourceRefs) as ImportanceMaterial[];
       return background.enqueue({ kind: "importanceScoring", targetId: sourceRefs[0]!.rootId || sourceRefs[0]!.resourceId,
         resourceType: sourceRefs[0]!.resourceType, clientRequestId,
         payload: { sourceRefs, model: choice.model, effort: choice.effort,
@@ -149,4 +164,9 @@ export function createImportanceService(ports: Ports) {
       });
     }
   };
+  if (ports.accountId && ports.list && ports.createBusinessId) batches = createImportanceBatches({
+    repository: ports.repository, accountId: ports.accountId, createBusinessId: ports.createBusinessId, list: ports.list, choice: ports.modelChoice,
+    hash: ports.hash, now: ports.now, enqueue: service.enqueue
+  });
+  return service;
 }

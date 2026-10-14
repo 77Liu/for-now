@@ -20,6 +20,8 @@ const { createTaskLifecycle } = await import(fromRoot("src/modules/tasks/index.m
 const { mapStoreObjects, rebuildStoreObjects } = await import(fromRoot("src/shared/persistence/index.mjs"));
 await import(fromRoot("scripts/prompt-test-setup.mjs"));
 
+const { createBusinessId: allocateJobId, withBusinessIdTransaction } = await import(fromRoot(".build/typescript/backend/shared/persistence/business-identifiers.mjs"));
+
 const material = { accountId: "fixture-owner", sourceKey: "fixture-source", version: 1,
   permissionRevision: 0, contentSha256: "a".repeat(64), text: "合成重要性材料", favorite: true };
 const sourceRef = { resourceType: "capture", resourceId: "fixture", rootId: "fixture", targetKey: "content", version: 1 };
@@ -219,3 +221,186 @@ allowed = false;
 assert.equal(((await http.handleV1({ method: "POST" }, {}, new URL("http://fixture/api/v1/importance/read"), v1)) as { status: number }).status, 400);
 assert.equal(await http.handleV1({ method: "GET" }, {}, new URL("http://fixture/api/v1/importance/read"), v1), false);
 console.log("Importance scoring checks passed: asynchronous intent, model/version cache, revoked save, correction, invalid output, persistence and stable sampling.");
+
+// 持久范围使用真实 prepare/save 和任务账；合成供应商不触网。
+const bulkStore = createEmptyStore();
+for (let index = 0; index < 19; index += 1) bulkStore.captures.push({
+  id: `bulk-${String(index).padStart(2, "0")}`, accountId: "fixture-owner", version: 1,
+  content: `合成历史材料 ${index}`, createdAt: "2026-10-01T00:00:00.000Z",
+  occurredAt: "2026-10-01T00:00:00.000Z", contextAllowed: true
+});
+let bulkChoice = { model: "deepseek-flash", effort: "none" };
+let account = "fixture-owner";
+const bulkLifecycle = createTaskLifecycle({ createId: () => crypto.randomUUID(), now: () => "2026-10-14T00:00:00.000Z",
+  hash: (value: string) => crypto.createHash("sha256").update(value).digest("hex") });
+const makeBulk = () => {
+  const bulk = createImportanceService({
+    repository: { read: async () => bulkStore, update: async mutate => withBusinessIdTransaction(bulkStore, () => mutate(bulkStore)) },
+    accountId: () => account, createBusinessId: allocateJobId, list: value => legalImportanceSources(value, account),
+    resolve: (value, ref) => legalImportanceMaterial(value, ref, account),
+    modelChoice: async () => bulkChoice, currentChoice: () => bulkChoice,
+    hash: value => crypto.createHash("sha256").update(value).digest("hex"),
+    now: () => "2026-10-14T00:00:00.000Z", promptText: () => "合成",
+    renderPrompt: (_id, values) => values.input
+  });
+  bulk.attach({ enqueue: async input => bulkLifecycle.create(bulkStore.aiTasks, input, (task: Parameters<typeof bulk.target.prepare>[1]) => bulk.target.prepare(bulkStore, task)) });
+  return bulk;
+};
+let bulk = makeBulk();
+await bulk.correct(legalImportanceSources(bulkStore, account).at(-1).sourceRef, 85);
+const batchJob = await bulk.batches!.start({ from: "2026-10-01", to: "2026-10-01", maxCalls: 3 }, "bulk-range") as { id: string; total: number };
+assert.equal(batchJob.total, 19);
+assert.match(batchJob.id, /^[A-Za-z0-9_-]{16}$/);
+assert.equal(bulkStore.aiTasks.length, 1);
+const finishBulkTask = async (fail = false) => {
+  const task = bulkStore.aiTasks.find((item: { status: string }) => item.status === "queued");
+  assert.ok(task);
+  const work = bulk.target.prepare(bulkStore, task)!;
+  assert.ok(work, JSON.stringify({task, job: await bulk.batches!.read(batchJob.id)}));
+  if (!fail) bulk.target.save(bulkStore, work, task, { content: JSON.stringify({ scores: work.importanceMaterials.map((_: unknown, index: number) => ({ reference: `r${index + 1}`, score: 60, reason: "long_term_value" })) }) });
+  task.status = fail ? "failed" : "succeeded";
+  await bulk.target.settled();
+};
+await finishBulkTask(true);
+assert.equal(bulkStore.aiTasks.length, 2, "failure continues the persisted range");
+bulk = makeBulk(); // 进程内服务重建，持久范围和当前批次不丢失。
+await bulk.batches!.pump();
+assert.equal(bulkStore.aiTasks.length, 2, "restart reconnects an existing pending batch");
+await finishBulkTask();
+await finishBulkTask();
+const completeBulk = await bulk.batches!.read(batchJob.id) as { status: string; cursor: number };
+assert.equal(completeBulk.status, "partial");
+assert.equal(completeBulk.cursor, 19);
+assert.equal((completeBulk as unknown as { pendingSources: number }).pendingSources, 8);
+assert.equal((completeBulk as unknown as { failedSources: number }).failedSources, 8);
+assert.equal(bulkStore.importanceScores.length, 11);
+await bulk.batches!.control(batchJob.id, "resume", 1);
+assert.equal(bulkStore.aiTasks.length, 4, "explicit continuation rescores failed sources and skips valid scores");
+await bulk.batches!.control(batchJob.id, "pause");
+const paused = bulkStore.aiTasks.find((item: { status: string }) => item.status === "queued");
+assert.equal(bulk.target.prepare(bulkStore, paused), null, "paused range cannot call or save model output");
+paused.status = "stale";
+await bulk.batches!.control(batchJob.id, "resume", 1);
+await finishBulkTask();
+assert.equal(bulkStore.importanceScores.length, 19);
+assert.ok(!JSON.stringify(bulkStore.importanceJobs).includes("合成历史材料"));
+account = "other-account";
+assert.equal((await bulk.batches!.read(batchJob.id) as { missing: boolean }).missing, true);
+account = "fixture-owner";
+bulkChoice = { model: "deepseek-flash", effort: "high" };
+await bulk.batches!.control(batchJob.id, "resume", 1);
+assert.equal(bulkStore.aiTasks.find((item: { status: string }) => item.status === "queued").payload.effort, "high");
+bulkChoice = { model: "deepseek-flash", effort: "none" };
+await bulk.batches!.pump();
+assert.equal((await bulk.batches!.read(batchJob.id) as { status: string }).status, "configuration_changed");
+assert.equal(bulk.target.prepare(bulkStore, bulkStore.aiTasks.find((item: { status: string }) => item.status === "queued")), null);
+console.log("Persistent importance range checks passed: batches, failure continuation, restart, pause, cache skip, explicit rescore and account/model gates.");
+
+const { readFile } = await import("node:fs/promises");
+const { createNewReplayAdapter, validateReplayFixtureSet } = await import(fromRoot("scripts/lib/personalization-replay.mjs"));
+const replayFixtures = validateReplayFixtureSet(JSON.parse(await readFile("scripts/fixtures/personalization-replay-v1.json", "utf8")));
+for (const [fixtureIndex, fixture] of replayFixtures.fixtures.entries()) {
+  const output = createNewReplayAdapter().run(fixture, { fixtureIndex });
+  assert.ok(output.selectedSourceIds.every((id: string) => fixture.materials.some((item: { id: string }) => item.id === id)));
+}
+const unmapped = createNewReplayAdapter({ project: (value: unknown, options: unknown) => {
+  const projection = workingContextProjection(value, options);
+  for (const source of projection.receipt.sources) if (source.channel === "history") source.version += 1;
+  return projection;
+} });
+assert.throws(() => unmapped.run(replayFixtures.fixtures[0], { fixtureIndex: 0 }), /unmapped source/);
+const reconstructed = rebuildStoreObjects(mapStoreObjects("fixture-owner", bulkStore));
+assert.deepEqual(reconstructed.importanceJobs, bulkStore.importanceJobs, "Postgres object mapper preserves the entire progress ledger");
+console.log("Current replay candidate checks passed: exact source coordinates/version, unknown mapping rejection and persisted range mapper.");
+
+const { createBackgroundAi } = await import(fromRoot("src/app/background-ai.mjs"));
+const liveStore = createEmptyStore();
+liveStore.captures = structuredClone(bulkStore.captures.slice(0, 9));
+const liveRepository = { read: async () => liveStore, update: async (mutate: (value: typeof liveStore) => unknown) => withBusinessIdTransaction(liveStore, () => mutate(liveStore)) };
+const liveImportance = createImportanceService({ repository: liveRepository,
+  accountId: () => "fixture-owner", createBusinessId: allocateJobId, list: value => legalImportanceSources(value, "fixture-owner"),
+  resolve: (value, ref) => legalImportanceMaterial(value, ref, "fixture-owner"),
+  modelChoice: async () => bulkChoice, currentChoice: () => bulkChoice,
+  hash: value => crypto.createHash("sha256").update(value).digest("hex"),
+  now: () => "2026-10-14T00:00:00.000Z", promptText: () => "合成", renderPrompt: (_id, values) => values.input });
+let fakeModelCalls = 0;
+let modelBlock: Promise<void> | null = null;
+let markDispatched: (() => void) | null = null;
+const liveBackground = createBackgroundAi({ repository: liveRepository, tasks: bulkLifecycle,
+  notifications: { upsertTask: () => { throw new Error("Internal task should not notify"); } },
+  targets: liveImportance.target, dispatch: () => {}, contextKey: () => "fixture-owner",
+  onError: (_id: string, error: Error) => { throw error; },
+  generate: async (prepared: { importanceMaterials: ImportanceMaterial[] }) => {
+    fakeModelCalls += 1;
+    markDispatched?.();
+    if (modelBlock) await modelBlock;
+    return { content: JSON.stringify({ scores: prepared.importanceMaterials.map((_: unknown, index: number) => ({
+      reference: `r${index + 1}`, score: 60, reason: "long_term_value" })) }) };
+  } });
+liveImportance.attach(liveBackground);
+const liveHttp = createImportanceHttp(liveImportance, async () => ({ range: { from: "2026-10-01", to: "2026-10-01" }, maxCalls: 2 }));
+const liveResponse = await liveHttp.handleV1({ method: "POST" }, {}, new URL("http://fixture/api/v1/importance/score"), v1) as { status: number; result: { id: string } };
+assert.equal(liveResponse.status, 202);
+await liveBackground.run(liveStore.aiTasks[0].id);
+assert.equal(liveStore.aiTasks.length, 2, "actual background terminal callback continues the second batch");
+await liveBackground.run(liveStore.aiTasks[0].id);
+assert.equal(fakeModelCalls, 2);
+assert.equal((await liveImportance.batches!.read(liveResponse.result.id) as { status: string }).status, "completed");
+await liveImportance.batches!.control(liveResponse.result.id, "resume", 1, "resume-once");
+const attempts = liveStore.importanceJobs[0].attempt;
+await liveImportance.batches!.control(liveResponse.result.id, "resume", 1, "resume-once");
+assert.equal(liveStore.importanceJobs[0].attempt, attempts, "control retry does not authorize additional calls");
+assert.equal((await liveImportance.batches!.control(liveResponse.result.id, "pause", undefined, "resume-once") as { conflict: boolean }).conflict, true);
+assert.equal((await liveImportance.batches!.start({ from: "2026-10-01", to: "2026-10-01", maxCalls: 2 }, "http-task") as { id: string }).id, liveResponse.result.id);
+console.log("Real HTTP/background consumer checks passed: automatic second batch, bounded model stub calls and range/control idempotency.");
+
+liveStore.captures.push({ id: "late-date", accountId: "fixture-owner", version: 1, content: "迟到补录",
+  createdAt: "2026-10-14T00:00:00.000Z", occurredAt: "", occurredOn: "2026-09-20", eventTimePrecision: "date" });
+const occurredRange = await liveImportance.batches!.start({ from: "2026-09-20", to: "2026-09-20", dateBasis: "occurred", maxCalls: 1 }, "occurred-late") as { total: number; dateBasis: string };
+assert.equal(occurredRange.total, 1, "occurrence scope includes date-only late entries");
+assert.equal(occurredRange.dateBasis, "occurred");
+const recordedRange = await liveImportance.batches!.start({ from: "2026-09-20", to: "2026-09-20", dateBasis: "recorded", maxCalls: 1 }, "recorded-late") as { total: number };
+assert.equal(recordedRange.total, 0, "recorded and occurred ranges are distinct and explicit");
+assert.deepEqual(normalizeStore(liveStore).importanceJobs, liveStore.importanceJobs);
+assert.throws(() => normalizeStore({ importanceJobs: [{ ...liveStore.importanceJobs[0], cursor: -1 }] }), /importanceJobs/);
+console.log("Range date contract checks passed: recorded/occurred distinction, date-only late entries and normalization validation.");
+for (const pending of bulkStore.aiTasks) if (pending.status === "queued") pending.status = "stale";
+for (const capture of bulkStore.captures) capture.version += 1;
+const limitedJob = await bulk.batches!.start({ from: "2026-10-01", to: "2026-10-01", maxCalls: 1 }, "bounded-rescore") as { id: string };
+await finishBulkTask();
+const limitedProgress = await bulk.batches!.read(limitedJob.id) as { status: string; scoredSources: number; pendingSources: number; allSourcesScored: boolean };
+assert.equal(limitedProgress.status, "limit");
+assert.equal(limitedProgress.scoredSources, 8);
+assert.equal(limitedProgress.pendingSources, 11);
+assert.equal(limitedProgress.allSourcesScored, false);
+bulkStore.captures.at(-1).contextAllowed = false;
+assert.equal((await bulk.batches!.read(limitedJob.id) as { invalidSources: number }).invalidSources, 1);
+console.log("Bounded stale-version rescore checks passed: one-call limit, outstanding source count and revoked-source visibility.");
+
+for (const capture of liveStore.captures.slice(0, 9)) capture.version += 1;
+const pauseJob = await liveImportance.batches!.start({ from: "2026-10-01", to: "2026-10-01", maxCalls: 2 }, "pause-in-flight") as { id: string };
+let returnModel!: () => void;
+modelBlock = new Promise<void>(resolve => { returnModel = resolve; });
+const dispatched = new Promise<void>(resolve => { markDispatched = resolve; });
+const runningPauseTask = liveStore.aiTasks.find((item: { clientRequestId: string }) => item.clientRequestId.startsWith(`importance-range:${pauseJob.id}:`));
+const callsBeforePause = fakeModelCalls;
+const inFlight = liveBackground.run(runningPauseTask.id);
+await dispatched;
+await liveImportance.batches!.control(pauseJob.id, "pause", undefined, "pause-flight");
+returnModel();
+await inFlight;
+modelBlock = null;
+markDispatched = null;
+assert.equal(runningPauseTask.status, "succeeded", "issued valid result is saved while its range is paused");
+const pausedProgress = await liveImportance.batches!.read(pauseJob.id) as { status: string; scoredSources: number; batches: unknown[] };
+assert.equal(pausedProgress.status, "paused");
+assert.equal(pausedProgress.scoredSources, 8);
+assert.equal(pausedProgress.batches.length, 1, "pause prevents the next batch");
+assert.equal(fakeModelCalls, callsBeforePause + 1);
+await liveImportance.batches!.control(pauseJob.id, "resume", 1, "resume-flight");
+const resumedPauseTask = liveStore.aiTasks.find((item: { clientRequestId: string; status: string }) => item.clientRequestId.startsWith(`importance-range:${pauseJob.id}:`) && item.status === "queued");
+assert.equal(resumedPauseTask.payload.sourceRefs.length, 1, "resume skips eight already-paid valid results");
+await liveBackground.run(resumedPauseTask.id);
+assert.equal((await liveImportance.batches!.read(pauseJob.id) as { status: string }).status, "completed");
+assert.equal(fakeModelCalls, callsBeforePause + 2);
+console.log("Actual in-flight pause checks passed: issued result saves, next batch stops and resumed range skips paid cache.");

@@ -1,4 +1,4 @@
-import { isImportanceScore } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
+import { isImportanceScore, isImportanceJob } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import {
   normalizeOnboarding,
   normalizeOnboardingV2
@@ -346,6 +346,10 @@ export function createStoreNormalizer({
     if (source.importanceScores !== undefined && (!Array.isArray(source.importanceScores)
       || !source.importanceScores.every(isImportanceScore))) {
       throw storageInvalid("Store importanceScores contains invalid score bindings");
+    }
+    if (source.importanceJobs !== undefined && (!Array.isArray(source.importanceJobs)
+      || !source.importanceJobs.every(isImportanceJob))) {
+      throw storageInvalid("Store importanceJobs contains invalid range progress");
     }
     try {
       store.historicalUserSupplement = normalizeHistoricalUserSupplement(store.historicalUserSupplement);

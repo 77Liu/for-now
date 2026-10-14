@@ -15,3 +15,5 @@ export type { ImportanceSourceRef } from "./importance-runtime.mjs";
 export { createImportanceHttp } from "./importance-http.mjs";
 export { createImportanceSelectionPlan, applyImportanceSelectionPlan, RELATED_REFERENCE_SHARE_MAX } from "./importance-selection.mjs";
 export type { ImportanceSelectionPlan, SelectionMaterial } from "./importance-selection.mjs";
+
+export { isImportanceJob } from "./importance-batches.mjs";

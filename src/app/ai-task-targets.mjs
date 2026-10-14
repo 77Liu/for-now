@@ -542,6 +542,11 @@ export function createAiTaskTargets({
         citationsEnabled: true
       };
     },
+    prepareResult(store, task) {
+      return task.kind === "importanceScoring"
+        ? importanceTarget?.prepareResult(store, task) || null
+        : this.prepare(store, task);
+    },
     save(store, work, task, result) {
       if (task.kind === "importanceScoring") return importanceTarget?.save(store, work, task, result) || null;
       if (task.kind === RECORD_COMPRESSION_TASK_KIND) {
@@ -616,6 +621,9 @@ export function createAiTaskTargets({
       if (task.kind === "thoughtAnswer") return thoughts.saveAnswer(store.thoughts, work, task, result);
       if (task.kind === "followUpAnswer") return thoughts.saveFollowUp(work, task, result);
       return annotations.saveTaskReply(work.annotation, task, result);
+    },
+    async settled(task) {
+      if (task.kind === "importanceScoring") await importanceTarget?.settled?.(task);
     },
     started(store, task) {
       if (task.kind === RECORD_COMPRESSION_TASK_KIND) {

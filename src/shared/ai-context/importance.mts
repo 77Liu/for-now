@@ -5,6 +5,7 @@
  * 边界：调用方先执行账户、来源许可与当前版本门；评分不是用户事实。
  */
 import crypto from "node:crypto";
+export const IMPORTANCE_BATCH_SIZE = 8;
 export const IMPORTANCE_SCORING_VERSION = "importance-score.v1";
 const MODEL_REASON_CODES = new Set(["long_term_value", "explicit_attention", "user_feedback",
   "correction", "counterevidence", "baseline", "insufficient_context"]);
