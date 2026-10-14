@@ -78,6 +78,7 @@ function pendingProjectionSnapshot(projection){
   if(!projection)return null;
   if(["capture.create","record.create"].includes(projection.kind))return{kind:projection.kind,domain:projection.domain||"captures",temporaryId:projection.temporaryId};
   if(projection.kind==="thought.chain.create")return{kind:projection.kind,domain:"thoughts",temporaryId:projection.temporaryId};
+  if(projection.kind==="book.note.create")return{kind:projection.kind,domain:"books",bookId:projection.bookId,temporaryId:projection.temporaryId};
   if(["record.update","record.delete"].includes(projection.kind)&&Array.isArray(state[projection.domain])){
     const index=state[projection.domain].findIndex(item=>item.id===projection.id);
     return index<0?null:{kind:projection.kind,domain:projection.domain,index,value:structuredClone(state[projection.domain][index])}
@@ -106,6 +107,13 @@ function restorePendingProjection(snapshot,operationId){
     state.thoughts=(state.thoughts||[]).filter(item=>(item.id!==snapshot.temporaryId&&!String(item.id).startsWith(prefix))||item._sync?.operationId!==operationId);
     if(state.thoughts.length===previousLength)return false;
     publishDomains(new Set(["thoughts"]));return true
+  }
+  if(snapshot.kind==="book.note.create"){
+    const book=(state.books||[]).find(item=>item.id===snapshot.bookId);if(!book)return false;
+    const previousLength=(book.notes||[]).length;
+    book.notes=(book.notes||[]).filter(item=>item.id!==snapshot.temporaryId||item._sync?.operationId!==operationId);
+    if(book.notes.length===previousLength)return false;
+    publishDomains(new Set(["books"]));return true
   }
   if(snapshot.kind==="record.update"){
     const collection=state[snapshot.domain],index=collection?.findIndex(item=>item.id===snapshot.value.id)??-1;
