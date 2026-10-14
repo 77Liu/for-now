@@ -122,6 +122,7 @@ export function createJournalRecords({
     const reflection = {
       id: createId(),
       createdAt: now(),
+      generatedAt: now(),
       sourceUpdatedAt: input.sourceUpdatedAt,
       content: input.content,
       ...(Array.isArray(input.citations) ? { citations: structuredClone(input.citations) } : {}),

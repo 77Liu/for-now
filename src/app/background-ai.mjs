@@ -343,7 +343,7 @@ export function createBackgroundAi({
     return created;
   }
 
-  async function promoteInternalBudgetWaiting(limit = 0, { operation = "", localDate = "" } = {}) {
+  async function promoteInternalBudgetWaiting(limit = 0, { operation = "", localDate = "", windowKey = "" } = {}) {
     const promotionLimit = Number(limit) === Number.POSITIVE_INFINITY
       ? Number.POSITIVE_INFINITY
       : Number.isFinite(Number(limit))
@@ -356,7 +356,8 @@ export function createBackgroundAi({
         .filter(task => task.kind === RECORD_COMPRESSION_TASK_KIND
           && task.status === WAITING_FOR_BUDGET_STATUS
           && (!operation || task.payload?.operation === operation)
-          && (!localDate || task.payload?.localDate === localDate))
+          && (!localDate || task.payload?.localDate === localDate)
+          && (!windowKey || task.payload?.windowKey === windowKey))
         .sort((left, right) => (
           String(right.payload?.localDate || right.payload?.windowEnd || "")
             .localeCompare(String(left.payload?.localDate || left.payload?.windowEnd || ""))

@@ -33,6 +33,7 @@ export function createThoughtOperations({
 } = {}) {
   const { document } = platform;
   const snapshot = () => data.getSnapshot();
+  let editorTime = null;
 
   function setAnswerStatus(id, message, kind = "working") {
     document.querySelectorAll(`[data-answer-chain="${platform.escapeSelector(id)}"]`)
@@ -148,8 +149,11 @@ export function createThoughtOperations({
     const chain = thoughtView.findChain(id);
     if (!chain) return false;
     document.querySelector("#edit-chain-id").value = id;
-    document.querySelector("#edit-chain-datetime").value =
-      toLocalDateTimeInput(chain.question.occurredAt || chain.question.createdAt);
+    const datetime = document.querySelector("#edit-chain-datetime");
+    datetime.value = chain.question.occurredAt ? toLocalDateTimeInput(chain.question.occurredAt) : "";
+    editorTime = { id, value: datetime.value };
+    datetime.required = Boolean(chain.question.occurredAt);
+    datetime.placeholder = chain.question.occurredAt ? "" : `仅日期：${chain.question.occurredOn || "未知"}`;
     document.querySelector("#edit-chain-question").value = chain.question.content;
     document.querySelector("#edit-chain-tags").value = (chain.question.tags || []).join(" ");
     document.querySelector("#edit-chain-status").textContent =
@@ -402,8 +406,11 @@ export function createThoughtOperations({
     const id = document.querySelector("#edit-chain-id").value;
     const root = (snapshot().thoughts || [])
       .find(item => item.id === id && item.type === "question");
+    const datetime = document.querySelector("#edit-chain-datetime").value;
+    const initialTime = editorTime?.id === id ? editorTime.value
+      : root?.occurredAt ? toLocalDateTimeInput(root.occurredAt) : "";
     const payload = {
-      occurredAt: document.querySelector("#edit-chain-datetime").value,
+      ...(datetime && datetime !== initialTime ? { occurredAt: datetime } : {}),
       question: document.querySelector("#edit-chain-question").value,
       tags: String(document.querySelector("#edit-chain-tags").value || "")
         .split(/[,，#\s]+/).map(value => value.trim()).filter(Boolean)

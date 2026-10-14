@@ -1,7 +1,9 @@
 import {
   RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+  isRecordCompressionRecordEnvelope,
   RECORD_COMPRESSION_WINDOW_DAYS
 } from "./contract.mjs";
+import { RECORD_SLOT_OUTPUT_SCHEMA_VERSION, RECORD_SLOT_DAY_VIEW_SCHEMA_VERSION, recordCompressionWindow } from "../../../.build/typescript/backend/modules/record-compressions/windows.mjs";
 
 const SUMMARY_SCHEMA_VERSION = RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION;
 const AI_REFERENCE_ORIGINS = Object.freeze(["ai_generated", "ai_prediction"]);
@@ -81,7 +83,8 @@ function isEligibleSummary(summary, timezone, promptVersion, dateSet) {
   const date = summaryDate(summary);
   return objectValue(summary)
     && summary.status === "ready"
-    && summary.schemaVersion === SUMMARY_SCHEMA_VERSION
+    && [SUMMARY_SCHEMA_VERSION, RECORD_SLOT_OUTPUT_SCHEMA_VERSION].includes(summary.schemaVersion)
+    && (summary.schemaVersion !== RECORD_SLOT_OUTPUT_SCHEMA_VERSION || isRecordCompressionRecordEnvelope(summary, { ready: true }))
     && summaryTimezone(summary) === timezone
     && summary.promptVersion === promptVersion
     && validDateKey(date)
@@ -94,6 +97,55 @@ function warningRows(days) {
     localDate: day.localDate,
     warning: clone(warning)
   })));
+}
+
+function mergeDailySlots(summaries) {
+  const first = summaries[0];
+  const merged = clone(first);
+  merged.schemaVersion = RECORD_SLOT_DAY_VIEW_SCHEMA_VERSION;
+  delete merged.id;
+  delete merged.windowKey;
+  delete merged.sourceManifestHash;
+  const rows = (section, field) => summaries.flatMap(summary => (
+    Array.isArray(summary?.[section]?.[field]) ? clone(summary[section][field]) : []
+  ));
+  merged.summaryIds = summaries.map(summary => summary.id);
+  merged.sourceManifestHashes = summaries.map(summary => summary.sourceManifestHash);
+  merged.incrementalSlots = summaries.map(summary => ({ windowKey: summary.windowKey, summaryId: summary.id,
+    sourceManifestHash: summary.sourceManifestHash, start: summary.window.start, endExclusive: summary.window.endExclusive }));
+  merged.window = { schemaVersion: RECORD_SLOT_DAY_VIEW_SCHEMA_VERSION, localDate: first.localDate, timezone: first.timezone,
+    start: new Date(Math.min(...summaries.map(summary => Date.parse(summary.window.start)))).toISOString(),
+    endExclusive: new Date(Math.max(...summaries.map(summary => Date.parse(summary.window.endExclusive)))).toISOString() };
+  merged.sourceManifest = summaries.flatMap(summary => clone(summary.sourceManifest || []));
+  merged.sourceRefs = summaries.flatMap(summary => clone(summary.sourceRefs || []));
+  merged.metrics = summaries.flatMap(summary => clone(summary.metrics || []));
+  merged.aiReference = summaries.flatMap(summary => clone(summary.aiReference || []));
+  merged.stableUserCandidates = summaries.flatMap(summary => clone(summary.stableUserCandidates || []));
+  merged.warnings = summaries.flatMap(summary => clone(summary.warnings || []));
+  merged.daily = {
+    ...merged.daily,
+    observations: rows("daily", "observations"),
+    metricKeys: [...new Set(summaries.flatMap(summary => summary.daily?.metricKeys || []))]
+  };
+  merged.thoughtsIdeas = {
+    ...merged.thoughtsIdeas,
+    focus: rows("thoughtsIdeas", "focus"),
+    changes: rows("thoughtsIdeas", "changes"),
+    openQuestions: rows("thoughtsIdeas", "openQuestions")
+  };
+  merged.other = {
+    ...merged.other,
+    themes: rows("other", "themes"),
+    collectedQuotes: rows("other", "collectedQuotes")
+  };
+  merged.window.completeness = summaries.length === 2 && summaries.every(summary => summary.window.completeness === "complete") ? "complete" : "partial";
+  merged.coverage = {
+    total: summaries.reduce((total, summary) => total + Number(summary.coverage?.total || 0), 0),
+    included: summaries.reduce((total, summary) => total + Number(summary.coverage?.included || 0), 0),
+    excluded: summaries.reduce((total, summary) => total + Number(summary.coverage?.excluded || 0), 0),
+    truncated: summaries.some(summary => summary.coverage?.truncated)
+  };
+  return merged;
 }
 
 function sourceManifest(summary) {
@@ -328,8 +380,14 @@ export function deriveSevenDayTrend({
     .filter(validDateKey))].sort();
   const dateSet = new Set(dates);
   const latestByDate = new Map();
+  const latestByWindow = new Map();
   for (const summary of Array.isArray(summaries) ? summaries : []) {
     if (!isEligibleSummary(summary, timezone, promptVersion, dateSet)) continue;
+    if (summary.windowKey) {
+      const previous = latestByWindow.get(summary.windowKey);
+      if (!previous || compareSummaryRecency(summary, previous) > 0) latestByWindow.set(summary.windowKey, summary);
+      continue;
+    }
     const date = summaryDate(summary);
     const previous = latestByDate.get(date);
     if (!previous || compareSummaryRecency(summary, previous) > 0) {
@@ -338,6 +396,15 @@ export function deriveSevenDayTrend({
   }
 
   const days = dates.map(localDate => {
+    const slots = timezone === "Asia/Shanghai" ? ["morning", "evening"].map(slot => {
+      const window = recordCompressionWindow(localDate, slot);
+      const summary = latestByWindow.get(window.windowKey);
+      return { windowKey: window.windowKey, slot, status: summary ? "ready"
+        : Date.parse(window.endExclusive) <= Date.parse(asOf) ? "missing" : "open", summary };
+    }) : [];
+    const incremental = slots.map(slot => slot.summary).filter(Boolean);
+    // 一旦有可消费新槽，本日旧全天不再参与统计；未生成的槽仍显式缺失。
+    if (incremental.length) latestByDate.set(localDate, mergeDailySlots(incremental));
     const summary = latestByDate.get(localDate);
     if (!summary) {
       return {
@@ -346,7 +413,8 @@ export function deriveSevenDayTrend({
         completeness: "unknown",
         summary: null,
         coverage: null,
-        warnings: []
+        warnings: [],
+        ...(slots.length ? { slots: slots.map(({ summary, ...slot }) => slot), missingSlots: slots.filter(slot => slot.status === "missing").map(slot => slot.windowKey) } : {})
       };
     }
     return {
@@ -355,7 +423,8 @@ export function deriveSevenDayTrend({
       completeness: summary.window?.completeness || summary.completeness || "unknown",
       summary: summaryForTrend(summary),
       coverage: clone(summary.coverage ?? null),
-      warnings: Array.isArray(summary.warnings) ? clone(summary.warnings) : []
+      warnings: Array.isArray(summary.warnings) ? clone(summary.warnings) : [],
+      ...(incremental.length ? { slots: slots.map(({ summary, ...slot }) => slot), missingSlots: slots.filter(slot => slot.status === "missing").map(slot => slot.windowKey) } : {})
     };
   });
   const readyDays = days.filter(day => day.status === "ready");

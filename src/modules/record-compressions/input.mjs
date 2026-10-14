@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { RECORD_SLOT_INPUT_SCHEMA_VERSION, recordCompressionWindowFromKey, recordOccurrenceWindow } from "../../../.build/typescript/backend/modules/record-compressions/windows.mjs";
 import {
   DEFAULT_RECORD_TIMEZONE,
   RECORD_COMPRESSION_INPUT_JSON_BUDGET_BYTES,
@@ -195,6 +196,9 @@ function sourceInstant(item, occurredAtOverride) {
 }
 
 function sourceTimes(item, timezone, occurredAtOverride) {
+  if (item?.eventTimePrecision === "date" && parseDateKey(item.occurredOn)) {
+    return { occurredAt: "", occurredOn: item.occurredOn, updatedAt: parseInstant(item.updatedAt)?.toISOString() || "", timePrecision: "date" };
+  }
   const occurredAt = parseInstant(occurredAtOverride || item?.occurredAt)
     || parseInstant(item?.createdAt)
     || parseInstant(item?.updatedAt);
@@ -269,8 +273,20 @@ function makeCandidate({
 }) {
   const recordId = safeId(record?.id);
   if (!recordId || !isValidRecord(record)) return;
-  if (sourceDate(record, timezone, occurredAt) !== localDate) return;
-  const eventInstant = sourceInstant(record, occurredAt);
+  const occurrence = state.window ? recordOccurrenceWindow({ ...record,
+    ...(occurredAt ? { occurredAt } : {}) }) : null;
+  if (state.window) {
+    if (!occurrence) {
+      state.coverage.total += 1;
+      state.coverage.excluded += 1;
+      state.warnings.add("发生时间或日期精度未知，未参与增量窗口");
+      return;
+    }
+    if (occurrence.window.windowKey !== state.window.windowKey) return;
+    const created = parseInstant(record.createdAt), updated = parseInstant(record.updatedAt);
+    if ((created && created > asOf) || (updated && updated > asOf)) return;
+  } else if (sourceDate(record, timezone, occurredAt) !== localDate) return;
+  const eventInstant = state.window ? parseInstant(occurrence.occurredAt) : sourceInstant(record, occurredAt);
   if (eventInstant && eventInstant.getTime() > asOf.getTime()) return;
   const fullText = safeText(text);
   const filteredMeasurements = measurements.filter(item => (
@@ -295,11 +311,14 @@ function makeCandidate({
     return;
   }
   const sourceId = sourceIdentity(module, recordId, targetKey, resourceType);
-  const times = sourceTimes(record, timezone, occurredAt);
+  const times = state.window ? { occurredAt: occurrence.occurredAt, occurredOn: occurrence.occurredOn,
+    updatedAt: parseInstant(record.updatedAt)?.toISOString() || "", timePrecision: occurrence.precision }
+    : sourceTimes(record, timezone, occurredAt);
   const sourceHash = state.hash(JSON.stringify({
     text: fullText,
     occurredAt: times.occurredAt,
     occurredOn: times.occurredOn,
+    ...(state.window ? { timePrecision: times.timePrecision } : {}),
     updatedAt: times.updatedAt,
     measurements: filteredMeasurements.map(item => ({
       metric: item.metric,
@@ -323,6 +342,7 @@ function makeCandidate({
     origin: cleanOrigin(origin),
     occurredAt: times.occurredAt,
     occurredOn: times.occurredOn,
+    ...(state.window ? { timePrecision: times.timePrecision } : {}),
     updatedAt: times.updatedAt,
     permissionRevision: permission.permissionRevision,
     sourceHash
@@ -501,7 +521,7 @@ function collectThoughts(store, options, state) {
     ).allowed) continue;
     for (const remark of list(item.remarks)) {
       makeCandidate({
-        state, ...options, record: { ...remark, occurredAt: remark.occurredAt || remark.createdAt || item.occurredAt },
+        state, ...options, record: { ...remark, occurredAt: remark.occurredAt || (state.window ? "" : remark.createdAt || item.occurredAt) },
         resourceType: "thought", module: "thought", subtype: "remark",
         targetKey: "remark:" + safeId(remark.id), rootId,
         origin: thoughtOrigin(remark), text: remark.text
@@ -511,7 +531,7 @@ function collectThoughts(store, options, state) {
       if (safeText(followUp.question)) {
         makeCandidate({
           state, ...options,
-          record: { ...followUp, occurredAt: followUp.questionOccurredAt || followUp.createdAt || item.occurredAt },
+          record: { ...followUp, occurredAt: followUp.questionOccurredAt || (state.window ? followUp.occurredAt || "" : followUp.createdAt || item.occurredAt) },
           resourceType: "thought", module: "thought", subtype: "follow_up_question",
           targetKey: "followup-question:" + safeId(followUp.id), rootId,
           origin: "user_original", text: followUp.question
@@ -523,7 +543,7 @@ function collectThoughts(store, options, state) {
           record: {
             ...followUp,
             relatedTo: rootId,
-            occurredAt: followUp.answeredAt || followUp.updatedAt || followUp.createdAt || item.occurredAt
+            occurredAt: followUp.answerOccurredAt || followUp.answeredAt || (state.window ? "" : followUp.updatedAt || followUp.createdAt || item.occurredAt)
           },
           resourceType: "thought", module: "thought", subtype: "follow_up_answer",
           targetKey: "followup-answer:" + safeId(followUp.id), rootId,
@@ -558,7 +578,7 @@ function collectJournals(store, options, state) {
         ...options,
         record: {
           ...reflection,
-          occurredAt: reflection.occurredAt || reflection.createdAt || journal.occurredAt
+          occurredAt: reflection.occurredAt || reflection.generatedAt || (state.window ? "" : reflection.createdAt || journal.occurredAt)
         },
         resourceType: "journal",
         module: "journal",
@@ -804,6 +824,7 @@ function publicSource(candidate) {
     origin: candidate.origin,
     occurredAt: candidate.occurredAt,
     occurredOn: candidate.occurredOn,
+    ...(candidate.timePrecision ? { timePrecision: candidate.timePrecision } : {}),
     updatedAt: candidate.updatedAt,
     text: candidate.text,
     ...(candidate.truncated ? { truncated: true } : {})
@@ -829,7 +850,8 @@ export function buildRecordCompressionInput(store, {
   promptVersion,
   sourcePermission,
   hash,
-  maxTextChars = RECORD_COMPRESSION_INPUT_TEXT_BUDGET
+  maxTextChars = RECORD_COMPRESSION_INPUT_TEXT_BUDGET,
+  windowKey = ""
 } = {}) {
   if (!objectValue(store)) throw new TypeError("A store object is required");
   if (!safeId(accountId)) throw new TypeError("accountId is required");
@@ -841,13 +863,18 @@ export function buildRecordCompressionInput(store, {
   // Validate timezone even when all sources have occurredOn but no timestamp.
   dateFormatter(normalizedTimezone).format(asOfInstant);
 
-  const start = localDateStart(localDate, normalizedTimezone);
-  const end = localDateStart(nextDateKey(localDate), normalizedTimezone);
+  const window = windowKey ? recordCompressionWindowFromKey(windowKey) : null;
+  if (windowKey && (!window || window.localDate !== localDate || window.timezone !== normalizedTimezone)) {
+    throw new TypeError("压缩增量窗口与日期/时区不一致");
+  }
+  const start = window ? new Date(window.start) : localDateStart(localDate, normalizedTimezone);
+  const end = window ? new Date(window.endExclusive) : localDateStart(nextDateKey(localDate), normalizedTimezone);
   const maxChars = Math.min(
     RECORD_COMPRESSION_INPUT_TEXT_BUDGET,
     Math.max(0, Math.floor(Number(maxTextChars) || 0))
   );
   const state = {
+    window,
     store,
     hash: makeHash(hash),
     coverage: { total: 0, included: 0, excluded: 0, truncated: false },
@@ -954,6 +981,7 @@ export function buildRecordCompressionInput(store, {
   )));
   const completeness = asOfInstant.getTime() < end.getTime() ? "partial" : "complete";
   const sourceManifestHash = state.hash(JSON.stringify({
+    ...(window ? { windowKey: window.windowKey } : {}),
     sources: manifest.map(item => ({
       sourceId: item.sourceId,
       recordId: item.recordId,
@@ -980,10 +1008,11 @@ export function buildRecordCompressionInput(store, {
   }));
 
   const result = {
-    schemaVersion: RECORD_COMPRESSION_INPUT_SCHEMA_VERSION,
+    schemaVersion: window ? RECORD_SLOT_INPUT_SCHEMA_VERSION : RECORD_COMPRESSION_INPUT_SCHEMA_VERSION,
     accountKey: state.hash("account:" + safeId(accountId)).slice(0, 32),
     promptVersion: safeText(promptVersion),
     window: {
+      ...(window || {}),
       start: start.toISOString(),
       endExclusive: end.toISOString(),
       asOf: asOfInstant.toISOString(),

@@ -434,7 +434,9 @@
         "data": [
           "bounded, permission-filtered daily record snapshots with versioned source manifests and measured values",
           "validated daily summary output, deterministic token budgets and stable-candidate provenance",
-          "timezone-aware seven-day trend windows with source-current eligibility and compatible-unit aggregation"
+          "timezone-aware seven-day trend windows with source-current eligibility and compatible-unit aggregation",
+          "固定上海半开增量槽、日期精度、旧v1读取与两槽派生日视图",
+          "处理请求短来源别名及精确窗口/批次的可消费失败替代只读视图"
         ],
         "routes": []
       },
@@ -442,7 +444,8 @@
         "scripts/record-compression-input-regression.mjs",
         "scripts/record-compression-output-regression.mjs",
         "scripts/record-compression-trend-regression.mjs",
-        "scripts/record-compression-service-regression.mjs"
+        "scripts/record-compression-service-regression.mjs",
+        "scripts/record-windows-regression.mts"
       ],
       "status": "active"
     },

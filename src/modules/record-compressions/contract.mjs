@@ -6,6 +6,7 @@
  */
 import { readInternalBudgets } from "../../../.build/typescript/backend/shared/ai-context/index.mjs";
 import { DEFAULT_RECORD_TIMEZONE } from "../../shared/time/index.mjs";
+import { RECORD_SLOT_OUTPUT_SCHEMA_VERSION, recordCompressionWindowFromKey } from "../../../.build/typescript/backend/modules/record-compressions/windows.mjs";
 
 export const RECORD_COMPRESSION_INPUT_SCHEMA_VERSION = "record-compression-input.v1";
 export const RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION = "record-compression-output.v1";
@@ -43,7 +44,7 @@ export const RECORD_COMPRESSION_OUTPUT_BUDGETS = Object.freeze({
 export function isRecordCompressionRecordEnvelope(value, { ready = false } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   if (typeof value.id !== "string" || !value.id.trim()) return false;
-  if (value.schemaVersion !== RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION
+  if (![RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION, RECORD_SLOT_OUTPUT_SCHEMA_VERSION].includes(value.schemaVersion)
     || value.promptVersion !== RECORD_COMPRESSION_PROMPT_VERSION) return false;
   if (typeof value.sourceManifestHash !== "string"
     || !/^[a-f0-9]{64}$/.test(value.sourceManifestHash)) return false;
@@ -57,6 +58,12 @@ export function isRecordCompressionRecordEnvelope(value, { ready = false } = {})
   }
   if (!value.window || typeof value.window !== "object" || Array.isArray(value.window)) return false;
   if (value.window.localDate !== value.localDate || value.window.timezone !== value.timezone) return false;
+  if (value.schemaVersion === RECORD_SLOT_OUTPUT_SCHEMA_VERSION) {
+    const slot = recordCompressionWindowFromKey(value.windowKey);
+    if (!slot || value.window.windowKey !== slot.windowKey || value.window.schemaVersion !== slot.schemaVersion
+      || value.localDate !== slot.localDate || value.timezone !== slot.timezone
+      || value.window.start !== slot.start || value.window.endExclusive !== slot.endExclusive) return false;
+  } else if (value.windowKey || value.window.windowKey) return false;
   const windowStart = Date.parse(value.window.start || "");
   const windowEnd = Date.parse(value.window.endExclusive || "");
   if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || windowStart >= windowEnd) return false;

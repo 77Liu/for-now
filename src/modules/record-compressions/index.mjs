@@ -17,6 +17,11 @@ export {
   isRecordCompressionRecordEnvelope
 } from "./contract.mjs";
 export { buildRecordCompressionInput } from "./input.mjs";
+export {
+  RECORD_SLOT_SCHEMA_VERSION, RECORD_SLOT_INPUT_SCHEMA_VERSION, RECORD_SLOT_OUTPUT_SCHEMA_VERSION,
+  RECORD_SLOT_START_DATE,
+  recordCompressionWindow, recordCompressionWindowFromKey, recordOccurrenceWindow, closedRecordCompressionWindows
+} from "../../../.build/typescript/backend/modules/record-compressions/windows.mjs";
 export { parseRecordCompressionOutput, estimateRecordCompressionTokens } from "./output.mjs";
 export {
   buildHistoricalUserSupplementInput,
@@ -37,3 +42,5 @@ export {
   validateHistoricalUserSupplement
 } from "./supplement.mjs";
 export { deriveSevenDayTrend, sevenLocalDatesForTimezone } from "./trend.mjs";
+export { prepareCompressionSourceAliases, decodeCompressionSourceAliases }
+  from "../../../.build/typescript/backend/modules/record-compressions/source-aliases.mjs";

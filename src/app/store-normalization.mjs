@@ -18,7 +18,7 @@ import {
   isRecordCompressionRecordEnvelope,
   normalizeHistoricalUserSupplement
 } from "../modules/record-compressions/index.mjs";
-import { localDateKey, localDateTimeOn, strictDateKey } from "../shared/time/index.mjs";
+import { localDateKey, strictDateKey } from "../shared/time/index.mjs";
 import {
   nullableNumber,
   numberOrFallback as commercialNumber,
@@ -327,11 +327,15 @@ export function createStoreNormalizer({
 
   const normalizedEventTime = (item, previousVersion) => {
     const legacyDate = normalizedOccurredOn(item, previousVersion);
+    if ((item.eventTimePrecision === "date" || !safeIso(item.occurredAt)) && strictDateKey(item.occurredOn)) {
+      return { occurredAt: "", occurredOn: item.eventTimePrecision === "date" ? item.occurredOn : legacyDate, eventTimePrecision: "date" };
+    }
     const parsed = new Date(item.occurredAt || "");
-    const occurredAt = Number.isNaN(parsed.getTime())
-      ? localDateTimeOn(legacyDate, item.createdAt || new Date(currentTime()))
-      : parsed.toISOString();
-    return { occurredAt: occurredAt || now(), occurredOn: localDateKey(occurredAt) || legacyDate };
+    if (Number.isNaN(parsed.getTime()) || item.eventTimePrecision === "unknown") {
+      return { occurredAt: "", occurredOn: "", eventTimePrecision: "unknown" };
+    }
+    const occurredAt = parsed.toISOString();
+    return { occurredAt, occurredOn: localDateKey(occurredAt) || legacyDate };
   };
 
   return function normalizeStore(value = {}) {

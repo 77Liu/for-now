@@ -595,7 +595,8 @@ export function legalImportanceSources(store, accountId, purpose = "context") {
       targetKey: item === root && !["thought", "chat"].includes(resourceType) ? "" : targetKey, version: recordVersion(item.version) };
     const material = legalImportanceMaterial(store, sourceRef, accountId, purpose);
     if (!material?.text.trim()) return;
-    result.push({ ...material, sourceRef, occurredAt: item.occurredAt || root.occurredAt || item.createdAt || "",
+    result.push({ ...material, sourceRef, occurredAt: ["date", "unknown"].includes(item.eventTimePrecision || root.eventTimePrecision)
+      ? "" : item.occurredAt || root.occurredAt || item.createdAt || "",
       recordedAt: item.createdAt || root.createdAt || "",
       permissionRevision: taskContextSourcePermission(store, sourceRef, accountId).permissionRevision });
   };
@@ -1454,7 +1455,8 @@ export function thoughtTaskCurrentMaterial(store, root, {
       legacyDependencies,
       authorization,
       settledVersion: recordVersion(item.version) + settledVersionDelta,
-      occurredAt: safeText(item.occurredAt || item.createdAt || root.occurredAt || root.createdAt, 100),
+      occurredAt: ["date", "unknown"].includes(item.eventTimePrecision || root.eventTimePrecision) ? ""
+        : safeText(item.occurredAt || item.createdAt || root.occurredAt || root.createdAt, 100),
       chainId: root.id,
       chainOrder: materials.length,
       sourceRef: {
