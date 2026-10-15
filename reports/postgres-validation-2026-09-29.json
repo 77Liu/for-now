@@ -2,7 +2,7 @@
   "recordedAt": "2026-09-29T03:03:16.615953+00:00",
   "execution": "Codex exec_command, require_escalated (local loopback permission)",
   "exitCode": 0,
-  "command": "/Users/bytedance/.local/share/node-v24.19.0/bin/node scripts/postgres-integration.mjs",
+  "command": "node scripts/postgres-integration.mjs",
   "sha256": {
     "scripts/postgres-integration.mjs": "c49f33fda585bb9162555e9c2eab8c2669153bc30d35e624294382749485907e",
     "scripts/postgres-runtime-checks.mjs": "56e411e278e9284755eb191e55cb1862d3fd73d080bc6f67a3a4a05627c580c4",

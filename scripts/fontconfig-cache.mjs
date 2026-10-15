@@ -16,10 +16,10 @@ async function ensurePrivateDirectory(directory) {
 }
 
 export async function prepareFontconfigCache({
-  dataDir = process.env.DATA_DIR || path.join(PROJECT_ROOT, "data"),
+  dataDir = process.env.DATA_DIR || "data",
   env = process.env
 } = {}) {
-  const cacheHome = path.join(path.resolve(dataDir), "cache");
+  const cacheHome = path.join(path.resolve(PROJECT_ROOT, dataDir), "cache");
   const fontconfigDir = path.join(cacheHome, "fontconfig");
   await ensurePrivateDirectory(cacheHome);
   await ensurePrivateDirectory(fontconfigDir);

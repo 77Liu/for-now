@@ -65,7 +65,10 @@ export function loadAppConfig({ rootDir, env = process.env }) {
   const localTestMode = env.LOCAL_TEST_MODE === "1";
   if (localTestMode && env.NODE_ENV === "production") throw new Error("LOCAL_TEST_MODE cannot run with NODE_ENV=production");
   if (localTestMode && authRequired) throw new Error("LOCAL_TEST_MODE uses upstream authentication and cannot enable local AUTH_REQUIRED");
-  const attachments = loadAttachmentConfig(env);
+  const attachments = loadAttachmentConfig({
+    ...env,
+    OSS_MOCK_DIR: env.OSS_MOCK_DIR ? path.resolve(rootDir, env.OSS_MOCK_DIR) : ""
+  });
   if (localTestMode && attachments.mode === "oss") throw new Error("LOCAL_TEST_MODE cannot use OSS attachment storage");
   if (localTestMode && attachments.delivery.mode !== "proxy") throw new Error("LOCAL_TEST_MODE cannot sign cloud media URLs");
   if (attachments.delivery.mode !== "proxy" && attachments.mode !== "oss" && env.NODE_ENV !== "test") {
@@ -114,7 +117,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
   }
   return Object.freeze({
     internalBudgets: readInternalBudgets(env),
-    dataDir: env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.join(rootDir, "data"),
+    dataDir: path.resolve(rootDir, env.DATA_DIR || "data"),
     port: Number(env.PORT || 4173),
     version: env.APP_VERSION || "development",
     promptCatalogVersion: String(env.PROMPT_CATALOG_VERSION || "").trim(),
@@ -160,7 +163,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     }),
     platform: Object.freeze({
       serviceTokenHash: platformServiceTokenHash,
-      backupStatusFile: String(env.BACKUP_STATUS_FILE || "/var/lib/for-now-monitor/last-backup-success")
+      backupStatusFile: path.resolve(rootDir, env.BACKUP_STATUS_FILE || "/var/lib/for-now-monitor/last-backup-success")
     }),
     audit: Object.freeze({
       retentionDays: Math.max(1, Math.min(3650, Number(env.AI_AUDIT_RETENTION_DAYS) || 30)),

@@ -5,7 +5,7 @@ import { promises as fs } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   createServerLifecycle,
   createServerRuntime
@@ -15,6 +15,7 @@ import {
   SERVER_ROUTE_IDS
 } from "../src/http/index.mjs";
 
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const expectedRouteIds = [
   "health-readiness",
   "local-test-proxy",
@@ -248,7 +249,7 @@ assert.deepEqual(
 );
 
 const lazyRuntime = createServerRuntime({
-  rootUrl: pathToFileURL(path.join(process.cwd(), "server.mjs")).href,
+  rootUrl: pathToFileURL(path.join(ROOT, "server.mjs")).href,
   processRef
 });
 assert.deepEqual(

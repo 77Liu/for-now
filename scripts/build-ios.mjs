@@ -44,6 +44,12 @@ function run(command, args) {
   });
 }
 
+// SwiftPM and module caches embed the checkout location, so every build starts relocatable.
+await Promise.all([
+  rm(xcodeCache, { recursive: true, force: true }),
+  rm(packages, { recursive: true, force: true }),
+  rm(derivedData, { recursive: true, force: true })
+]);
 await Promise.all([
   mkdir(xcodeHome, { recursive: true }),
   mkdir(xcodeCache, { recursive: true }),
@@ -52,7 +58,6 @@ await Promise.all([
 ]);
 
 await run(process.execPath, ["scripts/sync-release-metadata.mjs", "--check"]);
-await rm(derivedData, { recursive: true, force: true });
 await run("npx", ["cap", "sync", "ios"]);
 const nativeIndex = path.join(root, "ios", "App", "App", "public", "index.html");
 const html = await readFile(nativeIndex, "utf8");

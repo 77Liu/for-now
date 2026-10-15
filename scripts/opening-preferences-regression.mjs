@@ -3,10 +3,11 @@ import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServerRuntime } from "../src/app/index.mjs";
 import { OPENING_DEFAULTS, openingPreferences } from "../public/frontend/shared/opening/index.mjs";
 
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "growth-opening-"));
 const previousEnv = { ...process.env };
 let runtime;
@@ -18,7 +19,7 @@ try {
     MEDIA_DELIVERY_BUCKET: "", DEBUG_SERVER_URL: "", LOCAL_TEST_MODE: "0", UPSTREAM_ORIGIN: "",
     PERSISTENCE_BACKEND: "json", SPEECH_CACHE_SWEEP_ENABLED: "0", PERIODIC_ANALYSIS_ENABLED: "0"
   });
-  runtime = createServerRuntime({ rootUrl: pathToFileURL(path.resolve("server.mjs")).href });
+  runtime = createServerRuntime({ rootUrl: pathToFileURL(path.join(ROOT, "server.mjs")).href });
   const { port } = await runtime.start(); await runtime.ready();
   const base = `http://127.0.0.1:${port}/now`;
   const json = async (url, { cookie = "", method = "GET", body, etag } = {}) => {
@@ -68,7 +69,7 @@ try {
     assert.equal((ordinary.data || ordinary).openingPreferences, undefined);
   }
   // Successful CAS persists across a complete server restart.
-  await runtime.stop({ signal: "test" }); runtime = createServerRuntime({ rootUrl: pathToFileURL(path.resolve("server.mjs")).href });
+  await runtime.stop({ signal: "test" }); runtime = createServerRuntime({ rootUrl: pathToFileURL(path.join(ROOT, "server.mjs")).href });
   const restarted = await runtime.start(); await runtime.ready();
   const response = await fetch(`http://127.0.0.1:${restarted.port}/now/api/opening-preferences`, { headers: { cookie: owner } });
   assert.deepEqual(await response.json(), saved);

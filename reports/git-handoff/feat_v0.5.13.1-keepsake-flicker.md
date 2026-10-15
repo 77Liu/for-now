@@ -1,7 +1,7 @@
 # 工作树交接：feat/v0.5.13.1-keepsake-flicker
 
 - 记录时间：2026-10-11（Asia/Shanghai）
-- 路径：`/Users/bytedance/.codex/worktrees/v0.5.13.1-keepsake-flicker`
+- 路径：`external-worktrees/v0.5.13.1-keepsake-flicker`
 - 分支：`feat/v0.5.13.1-keepsake-flicker`
 - HEAD：`ebbde6fcf100432de8a599c771cbd8e774e043ad`
 - 起始/对照基线：以归档 `meta.txt` 为准；生产基线提交为 `4359648b41608429832e2ce4897bd12163a5d812`。

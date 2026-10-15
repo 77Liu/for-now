@@ -13,6 +13,7 @@ const TASK_BRANCH = /^(?:feat|feature|fix|test|docs)\//;
 const ALLOWED_COMMIT_TYPES = new Set(["feat", "fix", "test", "docs"]);
 const SECRET_ENV_KEY = /^(?:DATABASE_URL|AUTH_DATABASE_URL|AI_BUDGET_DATABASE_URL|PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL|APP_URL|UPSTREAM_ORIGIN)$/;
 const SECRET_ENV_PREFIX = /^(?:OSS_|MEDIA_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/;
+const PROJECT_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const moduleScopes = new Map([
   ["actions", "actions"],
@@ -466,7 +467,7 @@ async function main() {
   const options = parseArguments(process.argv.slice(2));
   const subject = validateMessage(options.message);
 
-  const root = git(["rev-parse", "--show-toplevel"], { cwd: process.cwd() }).stdout.trim();
+  const root = git(["rev-parse", "--show-toplevel"], { cwd: PROJECT_ROOT }).stdout.trim();
   validateTrustedGate(root);
   const branch = git(["branch", "--show-current"], { cwd: root }).stdout.trim();
   if (!branch) fail("detached HEAD is not eligible for automatic commits");

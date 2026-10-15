@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 import crypto from "node:crypto";
+import { projectRoot } from "./project-root.mjs";
 import {
   recordCompressionWindow, recordCompressionWindowFromKey, recordOccurrenceWindow,
   closedRecordCompressionWindows, RECORD_SLOT_INPUT_SCHEMA_VERSION
@@ -35,7 +36,8 @@ assert.equal(recordCompressionWindowFromKey("record-compression-window.v2:2026-0
 assert.deepEqual(closedRecordCompressionWindows("2026-10-14T18:05:00+08:00", "2026-10-14"), [evening, morning]);
 assert.deepEqual(closedRecordCompressionWindows("2026-10-14T05:59:59+08:00", "2026-10-14"), []);
 
-const moduleUrl = pathToFileURL(path.join(process.cwd(), "src/modules/record-compressions/index.mjs")).href;
+const root = projectRoot(import.meta.url);
+const moduleUrl = pathToFileURL(path.join(root, "src/modules/record-compressions/index.mjs")).href;
 const { buildRecordCompressionInput, RECORD_COMPRESSION_PROMPT_VERSION } = await import(moduleUrl);
 const store = { captures: [
   { id: "late", content: "晚到的原始记录", authorType: "user", occurredAt: "2026-10-13T20:00:00+08:00", createdAt: "2026-10-15T08:00:00+08:00", version: 1 },
@@ -85,7 +87,7 @@ assert.equal(partial.days[0].completeness, "partial");
 assert.deepEqual(partial.days[0].missingSlots, [evening.windowKey]);
 assert.equal(partial.days[0].summary.daily.observations.length, 1);
 
-const contextUrl = pathToFileURL(path.join(process.cwd(), "src/app/record-compression-context.mjs")).href;
+const contextUrl = pathToFileURL(path.join(root, "src/app/record-compression-context.mjs")).href;
 const { compressionFailureView } = await import(contextUrl);
 const hash = (value: unknown) => crypto.createHash("sha256").update(String(value)).digest("hex");
 const failed = { id: "old-failed", kind: "recordCompression", status: "failed", error: "保留历史错误", errorCode: "SYNTHETIC_FAILURE",
@@ -160,11 +162,11 @@ assert.notEqual(decoded.sourceIds[2], edited.sourceManifest[0].sourceId);
 assert.equal(decoded.text, "用户原文不应被替换");
 console.log("HUS旧隐式窗口/批次/真实消费重核、不跨能力替代及处理请求短别名编解码通过。");
 
-const timeUrl = pathToFileURL(path.join(process.cwd(), "src/shared/time/index.mjs")).href;
+const timeUrl = pathToFileURL(path.join(root, "src/shared/time/index.mjs")).href;
 const { eventTimeFields } = await import(timeUrl);
 assert.deepEqual(eventTimeFields({ occurredOn: "2026-10-14" }, null, { now: () => new Date(options.asOf) }),
   { occurredAt: "", occurredOn: "2026-10-14", eventTimePrecision: "date" });
-const thoughtsUrl = pathToFileURL(path.join(process.cwd(), "src/modules/thoughts/index.mjs")).href;
+const thoughtsUrl = pathToFileURL(path.join(root, "src/modules/thoughts/index.mjs")).href;
 const { createThoughtService } = await import(thoughtsUrl);
 let childClock = "2026-10-13T12:00:00Z";
 let childSequence = 0;
@@ -184,13 +186,13 @@ await thoughts.updateFollowUp({ id: "root", followUpId: followUp.id, hasAnswer: 
 assert.equal(remark.occurredAt, "2026-10-13T12:00:00Z");
 assert.equal(followUp.answerOccurredAt, answerAt);
 assert.equal(recordOccurrenceWindow({ occurredAt: followUp.answerOccurredAt })?.window.windowKey, morning.windowKey);
-const frontendTimeUrl = pathToFileURL(path.join(process.cwd(), "public/frontend/time/index.mjs")).href;
+const frontendTimeUrl = pathToFileURL(path.join(root, "public/frontend/time/index.mjs")).href;
 const { eventTimestamp, formatDate } = await import(frontendTimeUrl);
 assert.equal(eventTimestamp({ occurredAt: "", occurredOn: "2026-10-14", createdAt: options.asOf }), "2026-10-14");
 assert.equal(formatDate("2026-10-14"), "2026年10月14日");
 console.log("真实子项生产者独立发生时间、编辑不搬槽及日期精度显示通过。");
 
-const appUrl = pathToFileURL(path.join(process.cwd(), "src/app/index.mjs")).href;
+const appUrl = pathToFileURL(path.join(root, "src/app/index.mjs")).href;
 const { createEmptyStore, createStoreNormalizer } = await import(appUrl);
 const precisionStore = createEmptyStore();
 const dateFields = eventTimeFields({ occurredOn: "2026-10-14" });
@@ -215,7 +217,7 @@ assert.equal(nowRecord.occurredAt, new Date(childClock).toISOString());
 assert.equal(recordOccurrenceWindow(nowRecord)?.window.windowKey, recordOccurrenceWindow({ occurredAt: childClock })?.window.windowKey);
 console.log("日期/未知记录补填时刻或now后精度更新、真实编辑/normalize/归槽链路通过。");
 
-const operationsUrl = pathToFileURL(path.join(process.cwd(), "public/frontend/features/thoughts/operations.mjs")).href;
+const operationsUrl = pathToFileURL(path.join(root, "public/frontend/features/thoughts/operations.mjs")).href;
 const { createThoughtOperations } = await import(operationsUrl);
 const fields: Record<string, { value: string; hidden: boolean; required: boolean; placeholder: string; textContent: string; focus: () => void }> = {};
 for (const selector of ["id", "datetime", "question", "tags", "status", "modal"]) {

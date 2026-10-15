@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { loadAppConfig } from "../src/config/index.mjs";
 import {
@@ -17,6 +18,7 @@ import {
   VOLCENGINE_TTS_VOICES
 } from "../src/infrastructure/ai-providers/index.mjs";
 
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const jsonResponse = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), {
   status,
   headers: { "content-type": "application/json", ...headers }
@@ -467,9 +469,9 @@ assert.equal(fileResult.rawText, completeText);
 assert.equal(fileResult.durationMs, 450);
 assert.equal(fileResult.providerRequestId, "flash-log");
 assert.deepEqual(fileResult.utterances, fileResponse.result.utterances);
-const appSpeechConfig = loadAppConfig({ rootDir: path.resolve("."), env: { NODE_ENV: "test" } }).speech;
+const appSpeechConfig = loadAppConfig({ rootDir: ROOT, env: { NODE_ENV: "test" } }).speech;
 assert.equal(appSpeechConfig.asrMode, "file");
-assert.equal(loadAppConfig({ rootDir: path.resolve("."), env: { NODE_ENV: "test", VOLCENGINE_ASR_MODE: "streaming" } }).speech.asrMode, "streaming");
+assert.equal(loadAppConfig({ rootDir: ROOT, env: { NODE_ENV: "test", VOLCENGINE_ASR_MODE: "streaming" } }).speech.asrMode, "streaming");
 assert.throws(() => createVolcengineSpeechTransport({ asrMode: "nostream" }), { code: "INVALID_ASR_MODE" });
 for (const [makeResponse, expectedCode] of [
   [() => jsonResponse({ audio_info: { duration: 450 }, result: { text: "", utterances: [] } }, 200, successHeaders), "ASR_FILE_EMPTY_TEXT"],

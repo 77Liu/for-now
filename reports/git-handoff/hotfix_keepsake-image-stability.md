@@ -1,7 +1,7 @@
 # 工作树交接：hotfix/keepsake-image-stability
 
 - 记录时间：2026-10-11（Asia/Shanghai）
-- 路径：`/Users/bytedance/.codex/worktrees/keepsake-image-stability/个人成长追踪`
+- 路径：`external-worktrees/keepsake-image-stability/个人成长追踪`
 - 分支：`hotfix/keepsake-image-stability`
 - HEAD：`4359648b41608429832e2ce4897bd12163a5d812`
 - 起始/对照基线：以归档 `meta.txt` 为准；生产基线提交为 `4359648b41608429832e2ce4897bd12163a5d812`。

@@ -1,7 +1,7 @@
 # 工作树交接：release/v0.5.12
 
 - 记录时间：2026-10-11（Asia/Shanghai）
-- 路径：`/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/v0.5.9-integration`
+- 路径：`./.worktrees/v0.5.9-integration`
 - 分支：`release/v0.5.12`
 - HEAD：`5c790083047b59defdbbc37c9b994cd8e85ec4f8`
 - 起始/对照基线：以归档 `meta.txt` 为准；生产基线提交为 `4359648b41608429832e2ce4897bd12163a5d812`。

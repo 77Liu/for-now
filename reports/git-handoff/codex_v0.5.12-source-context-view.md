@@ -1,7 +1,7 @@
 # 工作树交接：codex/v0.5.12-source-context-view
 
 - 记录时间：2026-10-11（Asia/Shanghai）
-- 路径：`/Users/bytedance/.codex/worktrees/source-context-view/个人成长追踪`
+- 路径：`external-worktrees/source-context-view/个人成长追踪`
 - 分支：`codex/v0.5.12-source-context-view`
 - HEAD：`de2d46d94cffbf73b9a2acd432f916b422cee8f3`
 - 起始/对照基线：以归档 `meta.txt` 为准；生产基线提交为 `4359648b41608429832e2ce4897bd12163a5d812`。

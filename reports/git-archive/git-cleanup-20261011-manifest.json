@@ -18,7 +18,7 @@
   "worktrees": [
     {
       "slug": "main",
-      "path": "/Users/bytedance/Documents/Codex/个人成长追踪",
+      "path": ".",
       "branch": "main",
       "head": "b64068c93e112040cdfd3a0f4dc00e69be20bf0f",
       "status": "dirty",
@@ -29,7 +29,7 @@
     },
     {
       "slug": "hotfix_keepsake-image-stability",
-      "path": "/Users/bytedance/.codex/worktrees/keepsake-image-stability/个人成长追踪",
+      "path": "external-worktrees/keepsake-image-stability/个人成长追踪",
       "branch": "hotfix/keepsake-image-stability",
       "head": "4359648b41608429832e2ce4897bd12163a5d812",
       "status": "dirty",
@@ -40,7 +40,7 @@
     },
     {
       "slug": "hotfix_account-refresh-stop",
-      "path": "/Users/bytedance/.codex/worktrees/refresh-stop/个人成长追踪",
+      "path": "external-worktrees/refresh-stop/个人成长追踪",
       "branch": "hotfix/account-refresh-stop",
       "head": "4359648b41608429832e2ce4897bd12163a5d812",
       "status": "clean",
@@ -51,7 +51,7 @@
     },
     {
       "slug": "codex_v0.5.12-source-context-view",
-      "path": "/Users/bytedance/.codex/worktrees/source-context-view/个人成长追踪",
+      "path": "external-worktrees/source-context-view/个人成长追踪",
       "branch": "codex/v0.5.12-source-context-view",
       "head": "de2d46d94cffbf73b9a2acd432f916b422cee8f3",
       "status": "clean",
@@ -62,7 +62,7 @@
     },
     {
       "slug": "feat_v0.5.13.1-keepsake-flicker",
-      "path": "/Users/bytedance/.codex/worktrees/v0.5.13.1-keepsake-flicker",
+      "path": "external-worktrees/v0.5.13.1-keepsake-flicker",
       "branch": "feat/v0.5.13.1-keepsake-flicker",
       "head": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
       "status": "dirty",
@@ -73,7 +73,7 @@
     },
     {
       "slug": "release_v0.5.12",
-      "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/v0.5.9-integration",
+      "path": "./.worktrees/v0.5.9-integration",
       "branch": "release/v0.5.12",
       "head": "5c790083047b59defdbbc37c9b994cd8e85ec4f8",
       "status": "dirty",
@@ -92,11 +92,11 @@
     "根目录在首次收敛后重新出现的未跟踪证据已单独保存为 residual stash，未删除。"
   ],
   "removed_worktrees_after_archive": [
-    "/Users/bytedance/.codex/worktrees/keepsake-image-stability/个人成长追踪",
-    "/Users/bytedance/.codex/worktrees/refresh-stop/个人成长追踪",
-    "/Users/bytedance/.codex/worktrees/source-context-view/个人成长追踪",
-    "/Users/bytedance/.codex/worktrees/v0.5.13.1-keepsake-flicker",
-    "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/v0.5.9-integration"
+    "external-worktrees/keepsake-image-stability/个人成长追踪",
+    "external-worktrees/refresh-stop/个人成长追踪",
+    "external-worktrees/source-context-view/个人成长追踪",
+    "external-worktrees/v0.5.13.1-keepsake-flicker",
+    "./.worktrees/v0.5.9-integration"
   ],
   "root_main_dirty_stash": "24d163645e4d3aa4f76539025fd10b699392c30a",
   "root_main_dirty_stash_archive_ref": "refs/archive/git-cleanup-20261011/root-main-dirty-stash",

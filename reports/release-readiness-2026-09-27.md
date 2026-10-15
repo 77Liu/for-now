@@ -66,7 +66,7 @@ flowchart LR
 测试通过均使用：
 
 ```text
-/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node
+node
 ```
 
 环境 PATH 中没有 `node`/`npm`，因此按项目规则展开执行等价 Node 命令。

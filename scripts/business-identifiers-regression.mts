@@ -10,6 +10,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { BUSINESS_ID_BYTES, encodeBusinessId, isBusinessId } from "../src/shared/business-identifiers/index.mjs";
 import { createBusinessId, withBusinessIdTransaction } from "../src/shared/persistence/business-identifiers.mjs";
+import { projectRoot } from "./project-root.mjs";
 
 const bytes = (value: number) => new Uint8Array(BUSINESS_ID_BYTES).fill(value);
 assert.equal(encodeBusinessId(bytes(255)), "________________");
@@ -41,7 +42,8 @@ const concurrent = await Promise.all([7, 8].map(value => withBusinessIdTransacti
 assert.deepEqual(concurrent, [7, 8].map(value => encodeBusinessId(bytes(value))));
 console.log("业务身份格式、子项/回收站占用、8次耗尽及异步账户隔离通过。");
 
-const runtimeImport = (name: string) => import(pathToFileURL(path.join(process.cwd(), name)).href);
+const root = projectRoot(import.meta.url);
+const runtimeImport = (name: string) => import(pathToFileURL(path.join(root, name)).href);
 const { createJsonStoreRepository } = await runtimeImport("src/shared/persistence/json-repository.mjs");
 const { createBusinessId: createRuntimeBusinessId, withBusinessIdTransaction: withRuntimeBusinessIdTransaction } = await runtimeImport(".build/typescript/backend/shared/persistence/business-identifiers.mjs");
 let savedDocument: Record<string, unknown> = { thoughts: [], captures: [], trash: [] };

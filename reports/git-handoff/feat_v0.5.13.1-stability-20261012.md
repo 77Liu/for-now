@@ -1,7 +1,7 @@
 # v0.5.13.1 稳定性工作树归档交接
 
 - 归档日期：2026-10-12（Asia/Shanghai）
-- 原工作树：`/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop`
+- 原工作树：`./.worktrees/develop`
 - 原分支：`feat/v0.5.13.1-stability`
 - 归档前 HEAD：`32505655cc00dd016309a14bc6093559bbdaef1e`
 - 归档恢复引用：`refs/archive/worktrees/feat-v0.5.13.1-stability`

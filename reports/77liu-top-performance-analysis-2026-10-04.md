@@ -52,9 +52,9 @@
 
 | 样本 | 文件 | 起点 | 缓存与会话 | 可证明 | 不能证明 |
 | --- | --- | --- | --- | --- | --- |
-| HAR A | `/Users/bytedance/Downloads/77liu.top.har` | `/now/thoughts` document | 已登录、36 个磁盘缓存命中 | 暖缓存完整导航 | 冷缓存静态资源成本 |
-| HAR B | `/Users/bytedance/Downloads/77liu.top.har.261004-1941.har` | `POST /api/auth/login` | 禁用缓存、无 page/document | 登录后的数据与媒体启动片段 | DOMContentLoaded、load、完整导航 |
-| HAR C | `/Users/bytedance/Downloads/77liu.top.har.261004-2205.har` | `/now/today` document | 已登录、冷缓存、无缓存和 Service Worker 命中 | 冷缓存完整页面导航 | 全新浏览器的 DNS/TCP/TLS 冷连接 |
+| HAR A | `77liu.top.har` | `/now/thoughts` document | 已登录、36 个磁盘缓存命中 | 暖缓存完整导航 | 冷缓存静态资源成本 |
+| HAR B | `77liu.top.har.261004-1941.har` | `POST /api/auth/login` | 禁用缓存、无 page/document | 登录后的数据与媒体启动片段 | DOMContentLoaded、load、完整导航 |
+| HAR C | `77liu.top.har.261004-2205.har` | `/now/today` document | 已登录、冷缓存、无缓存和 Service Worker 命中 | 冷缓存完整页面导航 | 全新浏览器的 DNS/TCP/TLS 冷连接 |
 
 HAR C 是本轮最完整的“已登录冷缓存导航”证据，但不是严格的“全新连接冷启动”：document 的 `dns`、`connect`、`ssl` 为 `-1`，表示浏览器复用了既有连接。
 

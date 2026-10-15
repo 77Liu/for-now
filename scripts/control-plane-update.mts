@@ -10,6 +10,7 @@ import os from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { CONTROL_EVENT_FORMAT, stateChanges, replayChanges, materializeEvent, shortRecordHashes } from "./control-plane-replay.mjs";
+import { projectRoot } from "./project-root.mjs";
 
 type ObjectValue = Record<string, unknown>;
 const CURRENT = "reports/requirement-coordination-current.json";
@@ -58,7 +59,7 @@ function versionName(value: unknown): string {
 }
 const directory = (root: string, version: string) => path.join(root, "reports/iterations", version);
 
-function validateState(state: ObjectValue, root: string): void {
+function validateState(state: ObjectValue, root: string, allowRelocated = false): void {
   for (const key of Object.keys(state)) if (!KEYS.has(key)) throw new Error(`当前状态不允许字段：${key}`);
   const visit = (value: unknown) => {
     if (Array.isArray(value)) value.forEach(visit);
@@ -71,7 +72,12 @@ function validateState(state: ObjectValue, root: string): void {
   };
   visit(state);
   if (state.schema_version !== 3) throw new Error("当前控制面须使用schema 3");
-  if (state.canonical_path !== path.join(root, CURRENT)) throw new Error("控制面位置不一致");
+  const location = String(state.canonical_path);
+  const relocatedLegacy = allowRelocated && path.isAbsolute(location)
+    && path.normalize(location) === location && location.endsWith(`/${CURRENT}`);
+  if (location !== CURRENT && !relocatedLegacy) {
+    throw new Error("控制面位置不一致");
+  }
   text(object(state.coordinator, "协调者").thread_id, "协调者身份");
   for (const key of ["active_tasks", "blockers", "evidence"]) {
     if (!Array.isArray(state[key])) throw new Error(`${key}须为数组`);
@@ -387,7 +393,10 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     const currentFile = path.join(root, CURRENT);
     const current = await readJson(currentFile);
     if (!Number.isInteger(current.revision) || Number(current.revision) < 0) throw new Error("当前revision无效");
-    if (current.schema_version === 3) validateState(current, root);
+    const migrationEvent = request.event === undefined ? null : object(request.event, "迁移事件");
+    const relocating = migrationEvent?.type === "control_path_migrated"
+      && migrationEvent.phase === "decision";
+    if (current.schema_version === 3) validateState(current, root, relocating);
     else if (![1, 2].includes(Number(current.schema_version))
       || object(request.event, "迁移事件").type !== "control_migrated") throw new Error("旧状态只能经明确迁移事件升级");
     const currentIteration = current.iteration === null ? null : object(current.iteration, "当前迭代");
@@ -405,6 +414,7 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     }
     const desired = shortRecordHashes({ ...object(request.state, "新当前状态") });
     delete desired.display_summary;
+    desired.canonical_path = CURRENT;
     validateState(desired, root);
     if (!close && object(desired.iteration, "目标迭代").id !== requestedVersion) throw new Error("更新版本不一致");
     if (mode !== "handoff" && canonical(desired.held_iterations ?? []) !== canonical(shortRecordHashes(current.held_iterations ?? []))) {
@@ -652,7 +662,7 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
     let next: ObjectValue = {
       ...heldState,
       schema_version: current.schema_version,
-      canonical_path: current.canonical_path,
+      canonical_path: CURRENT,
       coordinator: current.coordinator,
       ...(Object.hasOwn(current, "rule_baseline") ? { rule_baseline: current.rule_baseline } : {}),
       ...(Object.hasOwn(current, "work_mode") ? { work_mode: current.work_mode } : {}),
@@ -752,7 +762,7 @@ async function selfTest(): Promise<void> {
   try {
     await fs.mkdir(path.join(root, "reports/iterations"), { recursive: true });
     const state: ObjectValue = {
-      schema_version: 3, revision: 1, canonical_path: path.join(root, CURRENT), coordinator: { thread_id: "coordinator" },
+      schema_version: 3, revision: 1, canonical_path: CURRENT, coordinator: { thread_id: "coordinator" },
       iteration: { id: "fixture" }, scope: {}, active_tasks: [], candidate: null, blockers: [], evidence: [],
       records: { events: "reports/iterations/fixture/events.jsonl", terminal: "reports/iterations/fixture/terminal.json" }
     };
@@ -795,6 +805,22 @@ async function selfTest(): Promise<void> {
     assert.equal((await testEvents(eventsFile)).length, 2);
     assert.equal((await fs.stat(path.join(directory(root, "fixture"), "terminal.json"))).mode & 0o222, 0);
 
+    const relocatedRoot = path.join(root, "relocated");
+    await fs.mkdir(directory(relocatedRoot, "fixture"), { recursive: true });
+    const relocatedState = { ...state, canonical_path: path.join("/previous-project-root", CURRENT) };
+    await atomicJson(path.join(relocatedRoot, CURRENT), relocatedState);
+    const relocationRequest = {
+      actor: "coordinator", expected_revision: 1, iteration_id: "fixture",
+      state: { ...relocatedState, canonical_path: CURRENT },
+      event: {
+        id: "fixture-control-path-migrated", type: "control_path_migrated", phase: "decision",
+        reason: "项目根目录迁移后改用根目录相对位置", evidence: ["fixture"]
+      }
+    };
+    assert.equal((await update(relocatedRoot, relocationRequest)).status, "updated");
+    assert.equal((await readJson(path.join(relocatedRoot, CURRENT))).canonical_path, CURRENT);
+    assert.equal((await audit(relocatedRoot)).status, "PASS");
+
     const beforeValue = { a: null, list: [{ old: "value" }, 2], missing: { inner: true } };
     const afterValue = { a: { new: [1, null] }, list: [{ next: "value" }], absentBefore: null };
     const diff = stateChanges(beforeValue, afterValue);
@@ -826,7 +852,7 @@ async function selfTest(): Promise<void> {
     // 原位置差量格式仍可读；迁移保留旧字节，恢复不重复事件。
     const v2Root = path.join(root, "format-2");
     await fs.mkdir(directory(v2Root, "fixture"), { recursive: true });
-    const v2Before = { ...state, canonical_path: path.join(v2Root, CURRENT), candidate: { sha: "a".repeat(40) } };
+    const v2Before = { ...state, canonical_path: CURRENT, candidate: { sha: "a".repeat(40) } };
     const v2After = { ...v2Before, revision: 2, scope: { previous: true } };
     const v2File = path.join(directory(v2Root, "fixture"), "events.jsonl");
     const v2Checkpoint = { event_format: 2, id: "fixture-checkpoint-old", iteration_id: "fixture", type: "control_checkpoint", phase: "result",
@@ -850,7 +876,7 @@ async function selfTest(): Promise<void> {
 
     const legacyRoot = path.join(root, "legacy");
     await fs.mkdir(directory(legacyRoot, "fixture"), { recursive: true });
-    const legacyBefore = { ...state, canonical_path: path.join(legacyRoot, CURRENT), display_summary: "旧手工摘要" };
+    const legacyBefore = { ...state, canonical_path: CURRENT, display_summary: "旧手工摘要" };
     const legacyAfter = { ...legacyBefore, revision: 2, updated_at: "2026-10-13T00:00:00Z", scope: { legacy: true } };
     const legacyFile = path.join(directory(legacyRoot, "fixture"), "events.jsonl");
     const legacy = { id: "fixture-legacy", iteration_id: "fixture", type: "scope_changed", phase: "decision",
@@ -893,7 +919,7 @@ async function selfTest(): Promise<void> {
     const directCloseRoot = path.join(root, "direct-close");
     const directVersion = "direct-close";
     const directState: ObjectValue = {
-      schema_version: 3, revision: 1, canonical_path: path.join(directCloseRoot, CURRENT),
+      schema_version: 3, revision: 1, canonical_path: CURRENT,
       coordinator: { thread_id: "coordinator" }, iteration: { id: directVersion, status: "ACTIVE" },
       scope: { description: "直接收口夹具" }, active_tasks: [], candidate: null, blockers: [], evidence: [],
       records: { events: `reports/iterations/${directVersion}/events.jsonl`, terminal: `reports/iterations/${directVersion}/terminal.json` }
@@ -921,7 +947,7 @@ async function selfTest(): Promise<void> {
       gates.isolated_online = "PARTIAL";
       if (options.gate) gates[options.gate] = "NOT_RUN";
       const baseState: ObjectValue = {
-        schema_version: 3, revision: 1, canonical_path: path.join(fixtureRoot, CURRENT),
+        schema_version: 3, revision: 1, canonical_path: CURRENT,
         coordinator: { thread_id: "coordinator" }, iteration: { id: sourceVersion, status: "ACTIVE" },
         scope: { description: "旧版本范围" }, active_tasks: [], candidate: null, blockers: [], evidence: [],
         authorization: { version: sourceVersion, execution_enabled: false }, held_iterations: [],
@@ -963,7 +989,7 @@ async function selfTest(): Promise<void> {
     };
     const checkpointRoot = path.join(root, "checkpoint-window");
     await fs.mkdir(directory(checkpointRoot, "fixture"), { recursive: true });
-    const checkpointState = { ...state, canonical_path: path.join(checkpointRoot, CURRENT) };
+    const checkpointState = { ...state, canonical_path: CURRENT };
     await atomicJson(path.join(checkpointRoot, CURRENT), checkpointState);
     const checkpointRequest = { ...request, state: { ...checkpointState, scope: { changed: true } } };
     const checkpointFile = path.join(directory(checkpointRoot, "fixture"), "events.jsonl");
@@ -1153,12 +1179,12 @@ async function selfTest(): Promise<void> {
 const [command, flag, file] = process.argv.slice(2);
 if (command === "self-test") await selfTest();
 else {
-  const root = process.cwd();
+  const root = projectRoot(import.meta.url);
   if (command === "audit") console.log(JSON.stringify(await audit(root)));
   else if (command === "restore-held" && flag === "--input" && file) {
-    console.log(JSON.stringify(await restoreHeld(root, await readJson(path.resolve(file)))));
+    console.log(JSON.stringify(await restoreHeld(root, await readJson(path.resolve(root, file)))));
   }
   else if (["apply", "close", "handoff"].includes(command) && flag === "--input" && file) {
-    console.log(JSON.stringify(await update(root, await readJson(path.resolve(file)), command as "apply" | "close" | "handoff")));
+    console.log(JSON.stringify(await update(root, await readJson(path.resolve(root, file)), command as "apply" | "close" | "handoff")));
   } else throw new Error("使用apply/close/handoff/restore-held --input JSON文件、audit或self-test");
 }

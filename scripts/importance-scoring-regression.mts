@@ -9,7 +9,9 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ImportanceScore, ImportanceMaterial } from "../src/shared/ai-context/index.mjs";
-const fromRoot = (file: string) => pathToFileURL(path.join(process.cwd(), file)).href;
+import { projectRoot } from "./project-root.mjs";
+const root = projectRoot(import.meta.url);
+const fromRoot = (file: string) => pathToFileURL(path.join(root, file)).href;
 const { createImportanceService, importanceScoreFor, importanceWeight, parseImportanceScores,
   weightedImportanceOrder, createImportanceHttp, createImportanceSelectionPlan, applyImportanceSelectionPlan, estimateInternalTokens }
   = await import(fromRoot(".build/typescript/backend/shared/ai-context/index.mjs")) as typeof import("../src/shared/ai-context/index.mjs");
@@ -316,7 +318,7 @@ console.log("Persistent importance range checks passed: batches, failure continu
 
 const { readFile } = await import("node:fs/promises");
 const { createNewReplayAdapter, validateReplayFixtureSet } = await import(fromRoot("scripts/lib/personalization-replay.mjs"));
-const replayFixtures = validateReplayFixtureSet(JSON.parse(await readFile("scripts/fixtures/personalization-replay-v1.json", "utf8")));
+const replayFixtures = validateReplayFixtureSet(JSON.parse(await readFile(path.join(root, "scripts/fixtures/personalization-replay-v1.json"), "utf8")));
 for (const [fixtureIndex, fixture] of replayFixtures.fixtures.entries()) {
   const output = createNewReplayAdapter().run(fixture, { fixtureIndex });
   assert.ok(output.selectedSourceIds.every((id: string) => fixture.materials.some((item: { id: string }) => item.id === id)));

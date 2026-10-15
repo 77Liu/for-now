@@ -10,7 +10,7 @@
       "has_more": false,
       "record_scope": "all_records",
       "sha256": "2569a81d96d083aa147bfd17d99931837a4c839aa98b403b8756dc8e9d3b0c65",
-      "local_evidence": "/Users/bytedance/Documents/Codex/个人成长追踪/.git/git-startup-archive-20261011/requirement-readonly/demand-20261011.ndjson",
+      "local_evidence": "./.git/git-startup-archive-20261011/requirement-readonly/demand-20261011.ndjson",
       "row_hashes": {
         "reczz28HafaPuGMh": "00531f2437a2d0b83c7b54c5da2c10cf918be005050ae67b9247d56206100921",
         "reczz28HafaPuH0R": "a1e09021fd293264aecaeb87d79ef805e32211ecbbc142473118c1efa24b43ba",
@@ -325,7 +325,7 @@
       "has_more": false,
       "record_scope": "all_records",
       "sha256": "7f6b37df41630a701262b3b9f7c7af08b7b79417c907c378629a950751a202c2",
-      "local_evidence": "/Users/bytedance/Documents/Codex/个人成长追踪/.git/git-startup-archive-20261011/requirement-readonly/version-20261011.ndjson",
+      "local_evidence": "./.git/git-startup-archive-20261011/requirement-readonly/version-20261011.ndjson",
       "row_hashes": {
         "reczz28JaEtRLSXU": "c52ead7a98f97ac5624e5dc0b64cdc9307b7ace4a6329d15aa769d9b80cb663c",
         "reczz28JaEtRMjgO": "29a2f721b223f3839a77d1a9837fb8e4ff4fd41afce9a6450efd8f25e52a7671",
@@ -371,7 +371,7 @@
       "has_more": false,
       "record_scope": "all_records",
       "sha256": "69886c2a7379dc66b97a1a7705cb1c7e4435f543f41442c9251b4540c04bf40b",
-      "local_evidence": "/Users/bytedance/Documents/Codex/个人成长追踪/.git/git-startup-archive-20261011/requirement-readonly/delivery-20261011.ndjson",
+      "local_evidence": "./.git/git-startup-archive-20261011/requirement-readonly/delivery-20261011.ndjson",
       "row_hashes": {
         "recvwH56SCuPkS": "68e5d3c428ad0dbd14d5b38f2b6d2ccb1d34d6329c7645d26173a7517130e6d5",
         "recvwH56SCl32E": "0c9ef15fe4fc4550fb60aadce4795b89d89e88dde6a4f4849567cb2b2028e3e4",

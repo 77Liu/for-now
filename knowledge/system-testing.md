@@ -314,7 +314,7 @@ PostgreSQL 脱敏快照和小物派生路径；机器证据见
 使用受支持的标准 PostgreSQL 构建，本地兼容构建不构成生产配置或切换证据。
 
 2026-10-06 V0.5.8 G4 复验：目标工作树默认发现路径未命中，但显式设置
-`PG_TEST_BIN=/Users/bytedance/Documents/Codex/个人成长追踪/data/pg-integration-tools/postgresql-16.14/bin`
+`PG_TEST_BIN=./data/pg-integration-tools/postgresql-16.14/bin`
 后预检通过，版本为 PostgreSQL 16.14。随后 `test:postgres:stable` 在真实
 数据库业务阶段以退出码 1 停止：AI budget 的 3 项检查通过，
 `postgres-integration.mjs` 因当前 Node 进程与 `sharp` 原生模块 Team ID
@@ -336,11 +336,11 @@ manifest；F4.2 同期只修改浏览器模块和测试，不改变数据库候�
 复现命令（macOS Terminal 中运行，或在 Codex 中批准本机端口访问后执行）：
 
 ```bash
-cd '/Users/bytedance/Documents/Codex/个人成长追踪'
-/Users/bytedance/.local/share/node-v24.19.0/bin/node scripts/postgres-integration.mjs
+cd "$(git rev-parse --show-toplevel)"
+node scripts/postgres-integration.mjs
 ```
 
-使用 Node 绝对路径避免执行环境 PATH 未包含 Node；已有正常 PATH 时仍可 `npm run test:postgres`。测试自建临时数据库、随机密码和随机端口，结束后自动关闭并清理，不使用生产连接。除上述 macOS 26 本地兼容构建外，不得修改数据库保护检查或接入现有数据库。
+Node.js 20+ 和 npm 必须在 `PATH` 中；也可直接运行 `npm run test:postgres`。测试自建临时数据库、随机密码和随机端口，结束后自动关闭并清理，不使用生产连接。除上述 macOS 26 本地兼容构建外，不得修改数据库保护检查或接入现有数据库。
 
 历史诊断边界：此前 Trae 执行环境中的多线程退出已由 `data/s3-postgres-clean-process-retry.log` 等日志确认；固定 locale、显式 arm64、清理残留项目进程均未解决。此次 Codex 默认沙箱先报 `listen EPERM 127.0.0.1`，获准执行后原测试成功。两种错误不能混为一谈；现有证据证明有可用执行路径，但尚未定位 Trae 内创建线程的具体库/机制，不能声称已修复 Trae 本身。后续若 Trae 仍失败，直接使用上述获准路径完成专项验证，不再重复改 locale/PID。不得扫描现存 postmaster 自动跳过启动；任何未来外部数据库模式必须显式验证测试用途、版本、权限与隔离并清理本次资源。
 

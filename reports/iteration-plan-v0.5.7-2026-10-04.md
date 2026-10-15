@@ -31,7 +31,7 @@ V0.5.7 的主要结果是：已登录用户只为当前页面付出启动、数�
 | 主线 | `main@9c2450e1868dea78bd7e9db9560115c49d38913a` |
 | 分支 / 工作树 | `feat/v0.5.7-performance` / `.worktrees/v0.5.7-performance` |
 | 数据写源 | PostgreSQL 16.15 |
-| 性能证据 | `/Users/bytedance/Documents/Codex/个人成长追踪/reports/77liu-top-performance-analysis-2026-10-04.md` |
+| 性能证据 | `./reports/77liu-top-performance-analysis-2026-10-04.md` |
 | 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，V0.5.7 冻结时 224 条；后续新增 V0.5.8 P00 |
 | 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，rev 91，59 条 |
 

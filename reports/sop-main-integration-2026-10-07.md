@@ -3,7 +3,7 @@
 - 日期：2026-10-07
 - 目标基线：`main@1bab107bd69eaa97c6c0aabcb550f86baf870107`
 - 来源工作树：
-  `/Users/bytedance/Documents/Codex/个人成长追踪`
+  `.`
 - 来源分支：
   `wip/root-dirty-before-v0.4.0-owner-integration@4eb5de747224`
 - 集成工作树：

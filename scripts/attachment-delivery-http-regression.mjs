@@ -3,12 +3,13 @@ import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import OSS from "ali-oss";
 import Credential from "@alicloud/credentials";
 import { createServerRuntime } from "../src/app/index.mjs";
 import { speechTextForCapture } from "../src/shared/speech/index.mjs";
 
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "growth-delivery-http-"));
 const previousEnv = { ...process.env };
 const originals = {
@@ -46,7 +47,7 @@ try {
     if (!objects.has(key)) throw Object.assign(new Error("synthetic missing"), { code: "NoSuchKey" });
     return { res: { headers: { "content-length": objects.get(key).length } } };
   };
-  runtime = createServerRuntime({ rootUrl: pathToFileURL(path.resolve("server.mjs")).href });
+  runtime = createServerRuntime({ rootUrl: pathToFileURL(path.join(ROOT, "server.mjs")).href });
   const { port } = await runtime.start();
   await runtime.ready();
   const base = `http://127.0.0.1:${port}/now`;

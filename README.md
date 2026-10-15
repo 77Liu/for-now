@@ -20,6 +20,6 @@ Node.js 20+；首次 `npm ci`，随后运行 `./启动.command`，默认本地�
 | [knowledge/](knowledge/) | 领域知识和设计，按问题检索，不逐篇列入启动地图 |
 | [reports/](reports/) | 计划、交接、发布及核验记录；历史有时间与范围边界 |
 | [scripts/](scripts/) | 执行与检查工具；命令入口以 package.json 为准 |
-| [recyclebin/](/Users/bytedance/Documents/Codex/个人成长追踪/recyclebin/) | 被替换资料的追溯存档，不作为现行规则 |
+| [归档清单](reports/git-archive/git-cleanup-20261011-manifest.json) | 被替换资料的追溯索引，不作为现行规则 |
 
 代码主要位于 `src/`（服务端）、`public/frontend/`（前端）、`ios/`（原生壳）。数据与密钥保存在受保护目录，不进入 Git。
