@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 341,
-  "updated_at": "2026-10-15T18:54:57.503Z",
+  "revision": 345,
+  "updated_at": "2026-10-15T19:05:45.442Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "IN_PROGRESS",
-    "phase": "方案已批准；设计整合与实施启动"
+    "phase": "F1本地功能切片审查通过；准备集成与F2"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "55c4df",
-      "source": "包含正式main回流、发布SOP规则与八项需求规划；仅文档和控制记录整合，业务代码未变化。"
+      "commit": "58ba88",
+      "source": "已批准九项方案与统一集成设计已正常合入develop；本轮实施从此创建feat/v0.5.16-reliability。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -85,7 +85,7 @@
     }
   },
   "blockers": [],
-  "next_action": "提交已批准设计并正常整合develop，再从最新develop建立实施feat；登记主开发首个F1写集后开始实现。",
+  "next_action": "提交并正常合入F1到develop，在集成候选执行局部验证；然后从最新develop启动F2账户恢复隔离。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -442,6 +442,27 @@
           "deliveries": 106
         }
       }
+    },
+    {
+      "id": "v0516-F1-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-reliability",
+        "base_commit": "58ba88",
+        "receipt": "artifacts/local/v0516-f1-acceptance-current.json"
+      },
+      "conclusion": "主控独立核对实际12文件差分及JSON/PG读写、HTTP、会话退出消费者；凭据复验、计算许可、错误429/503与全会话撤销正确，批准本地功能切片接入。回执12文件摘要均与当前源码匹配，14项执行记录exit0。",
+      "limitations": [
+        "仅本地功能接入；真实浏览器、负载分位和生产观测未验。",
+        "生产看板/写锁指标与F2/F5组合必须在版本发布门前补齐或明确处置，不声称整版可发布。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F1-认证跨账户阻塞治理-技术方案.md",
+        "artifacts/local/v0516-auth-baseline-current.json",
+        "artifacts/local/v0516-auth-after-current.json",
+        "artifacts/local/v0516-sync-baseline-current.json",
+        "artifacts/local/v0516-f1-acceptance-current.json"
+      ]
     }
   ],
   "records": {

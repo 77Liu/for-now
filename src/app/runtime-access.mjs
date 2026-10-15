@@ -269,6 +269,7 @@ export async function createRuntimeAccess({
   readAuth = () => authRepository.read();
   const authService = createAuthService({
     repository: authRepository,
+    authAdmission: appConfig.authAdmission,
     authRequired,
     inviteCodeHash,
     initializeUserStorage

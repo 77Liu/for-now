@@ -2691,7 +2691,8 @@
       "root": "src/modules/auth",
       "publicEntry": "src/modules/auth/index.mjs",
       "allowedDependencies": [
-        "shared.time"
+        "shared.time",
+        "config"
       ],
       "owns": {
         "data": [

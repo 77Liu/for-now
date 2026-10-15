@@ -46,6 +46,27 @@ export function loadAttachmentConfig(env = process.env) {
   });
 }
 
+/**
+ * 解析认证准入参数并返回不可变启动配置；默认值与环境覆盖仅由此处维护。
+ * 非正整数配置直接拒绝启动，避免以无效参数绕过限流。
+ * @since unreleased
+ */
+export function loadAuthAdmissionConfig(env = process.env) {
+  const defaults = {
+    globalRatePerSecond: 8, globalBurst: 16, ipRatePerMinute: 30, ipBurst: 10,
+    accountFailures: 8, failureWindowMs: 900000, kdfConcurrency: 2, kdfMaxPending: 32,
+    kdfQueueTimeoutMs: 1000, requestTimeoutMs: 5000, failureDelayMs: 250,
+    maxCounterKeys: 10000, counterTtlMs: 900000
+  };
+  return Object.freeze(Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => {
+    const name = `AUTH_${key.replace(/[A-Z]/g, letter => `_${letter}`).toUpperCase()}`;
+    const raw = env[name];
+    const value = raw === undefined || raw === "" ? fallback : Number(raw);
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+    return [key, value];
+  })));
+}
+
 export function loadAppConfig({ rootDir, env = process.env }) {
   const persistenceBackend = env.PERSISTENCE_BACKEND || "json";
   const upstreamOrigin = String(env.UPSTREAM_ORIGIN || "").replace(/\/+$/, "");
@@ -117,6 +138,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
   }
   return Object.freeze({
     internalBudgets: readInternalBudgets(env),
+    authAdmission: loadAuthAdmissionConfig(env),
     dataDir: path.resolve(rootDir, env.DATA_DIR || "data"),
     port: Number(env.PORT || 4173),
     version: env.APP_VERSION || "development",

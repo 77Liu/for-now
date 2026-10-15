@@ -15,6 +15,7 @@
   },
   "files": [
     "src/shared/observability/feishu.mts",
+    "src/modules/auth/admission.mts",
     "src/infrastructure/ai-providers/volcengine-file-asr.mts",
     "src/shared/ai-context/index.mts",
     "src/shared/persistence/business-identifiers.mts",
