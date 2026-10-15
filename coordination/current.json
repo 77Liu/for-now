@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 356,
-  "updated_at": "2026-10-15T20:23:31.277Z",
+  "revision": 358,
+  "updated_at": "2026-10-15T20:46:12.106Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "IN_PROGRESS",
-    "phase": "F2认证缺失返修审查通过，准备接入"
+    "phase": "F3-A独立审查通过，准备接入"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "d3a30d",
-      "source": "F5实现77a039正常合入，集成tree一致，develop预算runtime专项通过；原F2分支正常接收该基线为853610。"
+      "commit": "1ad74f",
+      "source": "F2认证缺失返修1b307a正常合入；集成tree一致，develop持久化专项通过，包含F1/F2/F5。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -55,42 +55,40 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-F2-auth-missing",
+      "id": "v0516-F3A",
       "owner": "主开发Agent",
       "mode": "integration",
-      "branch": "feat/v0.5.16-account-recovery",
-      "baseline": "853610",
-      "integration_baseline": {
-        "branch": "develop",
-        "commit": "d3a30d"
-      },
+      "branch": "feat/v0.5.16-postgres-narrow-reads",
+      "baseline": "1ad74f",
       "status": "REVIEWED",
       "allowed_write_set": [
-        "src/shared/persistence/auth-repository.mjs",
-        "src/app/runtime-access.mjs",
-        "src/app/runtime-foundation.mjs (仅已有认证缺失的读取、启动与全局故障衔接)",
-        "src/modules/auth/** (仅认证缺失/合法初始化与旧格式兼容必需消费者)",
-        "scripts/** (仅复用受影响的认证、实际JSON启动/恢复专项)",
-        "必要新源码mts及tsconfig.backend.json/module-boundaries.json的真实接线"
+        "src/shared/persistence/** (仅A阶段同步/操作回执窄读取、JSON兼容、必要读取重建与隔离消费者；不改既有写事务/模式/schema)",
+        "src/http/sync.mjs (仅K3返回/窄读消费者，等待唤醒仍属F9)",
+        "src/app/** (仅同步读取端口装配与现有publicState依赖闭包必需接线，不混其他业务)",
+        "knowledge/module-boundaries.json / tsconfig.backend.json (仅真实新增TS公开端口接线)",
+        "scripts/** (仅复用受影响同步/持久化专项及必要真实PG验收)",
+        "必要配置入口及env.example (如现有批准方案要求；唯一串行实现者)"
       ],
       "forbidden_write_set": [
         "coordination/**",
         ".trae/**",
-        "其他F3/F4/F6-F9实现",
-        "预算/队列行为变更",
+        "业务前端",
+        "F3-B差量写/F3-C资源命令及数据库schema改造",
+        "F9提交唤醒/等待机制/客户端调度",
         "提交、切分支、合入或删除引用",
         "生产/远程/付费动作"
       ],
-      "shared_file_owner": "主开发独占上述实现及验证；主控仅控制面与接入审查，单一工作目录无额外工作树。",
-      "integration_order": "F5已接入；本返修在原F2分支完成自查/必要验证及独立审查后回develop；然后F3-A。",
-      "acceptance_ref": "artifacts/local/v0516-f2-auth-missing-current.json",
+      "shared_file_owner": "主开发独占本切片实现与验证；主控独占控制面，其他源码写者为零。",
+      "integration_order": "F1/F2/F5及F2认证缺失返修已接入；F3-A独审验证后接入，再F9服务端。",
+      "acceptance_ref": "docs/technical-proposals/F3-PostgreSQL增量读写演进-技术方案.md",
       "contracts": [
-        "已有认证持久化缺失不得回退成新实例或创建替代Owner；运行中和重启均覆盖。",
-        "真正空实例初始化、合法旧auth迁移与原根目录旧数据首次导入仍保持。",
-        "沿原实际存储消费者/故障排空链；保留账户数据，不用删除坏数据或放宽断言制造通过。",
-        "JSON已复现与PG未知边界明确区分；不扩大为全面认证迁移。"
+        "K1保持F2同一账户资格与RLS；K3同步元数据/域快照必须同一repeatable-read事务，不拼不同版本。",
+        "无变化/游标错误/operation receipt路径不得扫描业务对象；保留原409/410/变更多上限及旧完整读取。",
+        "沿实际publicState消费者确认依赖闭包；notifications/aiTasks、speech、trash、clusters/insights等派生语义与旧结果等价，不能用假空文档掩盖遗漏。",
+        "_persistence字段的sync.operations与独立idempotency ledger区分；缺失/损坏应进入原故障机制，不缺省成空元数据。",
+        "不改写策略、不解除单实例锁，不以返回行数少声称数据库物理扫描有界。"
       ],
-      "handoff": "完成完整读取/初始化/注册/会话/预检/故障消费者自查，再受影响验证；固定最终文件摘要与既有回执，暂停供独立审查。"
+      "handoff": "先核对真实消费者及已批准A范围，完整实现自查后必要验证；新源码mts/中文文件头JSDoc；真实PG基线/等价/快照/RLS验证绑定最终候选，完成固定写集回执并暂停。"
     }
   ],
   "candidate": null,
@@ -124,7 +122,7 @@
     }
   },
   "blockers": [],
-  "next_action": "主控提交并正常合入F2返修，确认集成对象及受影响验证后，从届时最新develop创建F3-A分支。",
+  "next_action": "主控提交并正常合入F3-A，补develop受影响投影验证；随后从最新develop启动F9服务端提交唤醒，不提前冻结后续功能基线。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -418,69 +416,21 @@
       ]
     },
     {
-      "id": "control-path-migration-v0516",
-      "object": {
-        "kind": "repository_path_migration",
-        "source_commit": "54fd2d",
-        "old_current": "reports/requirement-coordination-current.json",
-        "new_current": "coordination/current.json"
-      },
-      "conclusion": "正式控制面、版本事件和终态已迁出reports，所有当前消费者及未收口引用使用新根目录相对路径；reports不再有Git跟踪文件。",
-      "limitations": [
-        "首次迁移事件写入前，git mv后的机械引用替换已先更新当前JSON路径，因此该事件差量主要记录v0.5.16启动而未单列canonical_path变化；本条如实补充执行顺序，不改写已追加事件。",
-        "v0.5.13-v0.5.15不可变事件和终态保留当时路径事实，由兼容读取和本机忽略软链接支持追溯。"
-      ],
-      "refs": [
-        "git:54fd2d:reports/requirement-coordination-current.json",
-        "coordination/current.json",
-        "scripts/control-plane-update.mts",
-        ".gitignore"
-      ]
-    },
-    {
-      "id": "v0516-baseline-and-intake",
-      "status": "PASS",
-      "object": {
-        "branch": "develop",
-        "commit": "55c4df",
-        "main_commit": "f12fd1",
-        "rule_commit": "58db42"
-      },
-      "conclusion": "正式main已回流，发布顺序规则与初始范围规划已合入develop；当前九项设计及最新需求采集见v0516-technical-plans。",
-      "limits": "仅规划与资产同步；没有本版实现、运行验收或发布；账号历史根因、设备性能与普通空答现场未关闭。",
-      "references": [
-        "docs/versions/v0.5.16/README.md",
-        "SOP/release-and-observation.md",
-        "artifacts/local/requirements-current.json"
-      ]
-    },
-    {
       "id": "v0516-technical-plans",
       "object": {
         "kind": "technical_design",
         "path": "docs/technical-proposals/评审索引.md",
         "review_base": "55c4df"
       },
-      "conclusion": "F6-F9四份独立方案补齐；F1-F5共享边界微调；K1-K6责任、共享文件互斥及九项接入波次写入现有总体设计。9份结构检查和130个本地引用检查通过。线上同步需求复用recvxyrQv7utyV并关联v0.5.16及既有同步交付。",
+      "conclusion": "Owner已批准九项设计，依赖契约与串行接入顺序由版本级设计承载；当前实施任务与基线只见scope/active_tasks。",
       "limitations": [
-        "F9同步/按钮P75与移动真机/生产耗时基线尚待相应切片实施；F1具体已验边界见v0516-F1-local-review。",
-        "F3仅阶段A，B/C不纳入；没有新增工作树、业务代码、付费调用或发布动作。"
+        "F3仅A，B/C不纳入；设备与性能结论按各切片回执保留边界。"
       ],
       "refs": [
         "docs/technical-proposals/版本级集成设计与协同执行说明.md",
         "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md",
         "artifacts/local/requirements-current.json"
-      ],
-      "snapshot": {
-        "requirements_revision": 564,
-        "versions_revision": 44,
-        "deliveries_revision": 143,
-        "counts": {
-          "requirements": 321,
-          "versions": 39,
-          "deliveries": 106
-        }
-      }
+      ]
     },
     {
       "id": "v0516-F1-local-review",
@@ -518,10 +468,12 @@
         "integration_commit": "cdcba5",
         "followup": {
           "base_commit": "853610",
-          "receipt": "artifacts/local/v0516-f2-auth-missing-current.json"
+          "receipt": "artifacts/local/v0516-f2-auth-missing-current.json",
+          "commit": "1b307a",
+          "integration_commit": "1ad74f"
         }
       },
-      "conclusion": "账户隔离/恢复与已有调用收尾已本地接入；认证文件缺失额外缺口经原分支返修、独立代码审查和实际子进程验证关闭，允许本地接入。历史失败保留原复现，不改写为通过。",
+      "conclusion": "F2隔离/恢复及已有调用收尾保持；JSON认证缺失返修1b307a经独立审查与实际子进程退出验证后正常合入develop 1ad74f，tree一致，develop持久化专项通过。当前已无该认证缺失阻碍；原失败证据保持原结论。",
       "limitations": [
         "默认ACCOUNT_RECOVERY_ENABLED=0，验收显式开启；没有生产开启或发布授权。",
         "本版本有状态快照门、设备/负载/生产观测尚未完成；F1生产负载与指标限制仍保留。",
@@ -553,6 +505,24 @@
         "docs/technical-proposals/F5-AI排队取消与超时-技术方案.md",
         "artifacts/local/v0516-f5-acceptance-current.json",
         "artifacts/local/v0516-f5-baseline-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F3A-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-postgres-narrow-reads",
+        "base_commit": "1ad74f",
+        "receipt": "artifacts/local/v0516-f3a-acceptance-current.json"
+      },
+      "conclusion": "主控独立完整链路审查通过；12文件摘要及最终PG/JSON/投影/工程验证一致，批准本地接入。",
+      "limitations": [
+        "默认legacy/空白名单；生产未启用。未知域及旧格式仍可全读；JSON仍全文件。",
+        "查询返回量有改善，不代表物理扫描/WAL/全站P75；F9与整版有状态发布门未完成。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F3-PostgreSQL增量读写演进-技术方案.md",
+        "artifacts/local/v0516-f3a-acceptance-current.json"
       ]
     }
   ],

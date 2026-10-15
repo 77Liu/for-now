@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import pg from "pg";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -12,10 +13,11 @@ import {
   canonicalJson, discoverJsonBundle, applyPostgresBundle,
   exportPostgresDirectory, readPostgresBundle, storeContentSha256
 } from "../src/shared/persistence/index.mjs";
-import { createAttachmentCleanup, createSpeechCacheSweep, userModelCoreReadiness } from "../src/app/index.mjs";
+import { createEmptyStore, createStoreNormalizer, createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep, userModelCoreReadiness } from "../src/app/index.mjs";
 import { evidenceSourceKey } from "../src/modules/user-model/index.mjs";
 import { onboardingV2Schema } from "../src/modules/onboarding/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
+import { createSyncHttp } from "../src/http/index.mjs";
 import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
 import "./prompt-test-setup.mjs";
@@ -140,6 +142,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       cwd: path.resolve(import.meta.dirname, ".."),
       env: {
         ...process.env, NODE_ENV: "test", PERSISTENCE_BACKEND: backend, DATA_DIR: directory,
+        PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*",
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
         AUTH_REQUIRED: "1", INVITE_CODE_HASH: crypto.createHash("sha256").update("runtime-invite").digest("hex"),
@@ -276,6 +279,155 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       assert.equal((await runtime.documents.read("usage")).entries.length, 8);
     });
     assert.equal((await account("repo-other", () => repo.read())).captures.length, 0);
+
+    // F3-A：同一隔离数据集对照旧全读/新元数据读，检查真实SQL而非返回数组大小。
+    const syncNow = () => "2026-10-16T08:00:00.000Z";
+    const normalizeSync = createStoreNormalizer({ now: syncNow, today: () => "2026-10-16", currentTime: () => Date.parse(syncNow()) });
+    const syncOptions = { normalize: normalizeSync, emptyDocument: createEmptyStore(), now: syncNow };
+    const syncLegacy = runtime.createStoreRepository(syncOptions);
+    const syncNarrow = runtime.createStoreRepository({ ...syncOptions, pgIo: { syncReadMode: "metadata", accountAllowlist: ["*"] } });
+    const syncPeer = peer.createStoreRepository(syncOptions);
+    const syncUnlisted = runtime.createStoreRepository({ ...syncOptions, pgIo: { syncReadMode: "metadata", accountAllowlist: [] } });
+    const project = createPublicStateProjection({ getUser: () => ({ id: "sync-a", role: "owner" }), isOwner: user => user.role === "owner",
+      speechProvider: {}, visionProvider: {}, hash: value => crypto.createHash("sha256").update(String(value)).digest("hex"), now: syncNow, today: () => "2026-10-16" });
+    for (const id of ["sync-a", "sync-b"]) await account(id, () => syncLegacy.initialize({ allowCreate: true }));
+    await account("sync-a", () => syncLegacy.update(store => {
+      const event = { createdAt: syncNow(), occurredAt: syncNow(), occurredOn: "2026-10-16", version: 1 };
+      store.captures.push(...Array.from({ length: 120 }, (_, index) => ({ ...event, id: `sync-capture-${index}`, content: "足量原文".repeat(250) })));
+      store.customMetrics.push(...Array.from({ length: 400 }, (_, index) => ({ id: `sync-metric-${index}`, label: `指标${index}` })));
+      store.thoughts.push({ ...event, id: "sync-question", type: "question", content: "工作项目", tags: [] }, { ...event, id: "sync-answer", type: "answer", relatedTo: "sync-question", content: "回答" });
+      store.journals.push({ ...event, id: "sync-journal", content: "日记" });
+      store.journalDraft = { journalId: "sync-journal", title: "草稿", content: "内容", updatedAt: syncNow() };
+      store.books.push({ ...event, id: "sync-book", title: "书", notes: [{ ...event, id: "sync-note", content: "笔记" }] });
+      store.checkins.push({ ...event, id: "sync-checkin", mood: 4, energy: 3, stress: 2, factors: [] });
+      store.analyses.push({ ...event, id: "sync-analysis", reason: "manual", content: "复盘" });
+      store.aiTasks.push({ ...event, id: "sync-task", kind: "thoughtAnswer", targetId: "sync-question", inputVersion: 1, status: "queued" });
+      store.notifications.push({ ...event, id: "sync-notice", taskId: "sync-task", status: "succeeded", readAt: "" });
+    }));
+    const syncAudio = Buffer.from("ID3-sync-local-asset");
+    const syncInventory = { path: "/attachments/sync-real.tts.mp3", storage: "local", objectKey: "sync-real.tts.mp3", bytes: syncAudio.length, sha256: crypto.createHash("sha256").update(syncAudio).digest("hex") };
+    await account("sync-a", async () => { await runtime.attachments.record(syncInventory); await runtime.attachments.confirm(syncInventory); });
+    const originalQuery = pg.Client.prototype.query;
+    let queryTrace = null, afterMetadata = null;
+    pg.Client.prototype.query = function (...args) {
+      const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+      const result = originalQuery.apply(this, args);
+      if (!result?.then || !queryTrace || !/^SELECT/i.test(sql?.trim() || "")) return result;
+      const capture = queryTrace;
+      return result.then(async value => {
+        capture.push({ sql, rows: value.rows.length, bytes: Buffer.byteLength(JSON.stringify(value.rows)) });
+        if (afterMetadata && sql.includes("field = '_persistence'")) { const callback = afterMetadata; afterMetadata = null; await callback(); }
+        return value;
+      });
+    };
+    const measure = async action => { queryTrace = []; try { const result = await action(); return { result, trace: queryTrace }; } finally { queryTrace = null; } };
+    const executeSync = async (repository, cursor) => {
+      const http = createSyncHttp({ repository, publicState: project }); let output;
+      const v1 = { success: (_res, status, data) => { output = { status, data }; return true; }, error: (_res, status, message, code, details) => { output = { status, code, details }; return true; } };
+      await http.handleV1({ method: "GET" }, {}, new URL(`http://local/api/v1/sync?cursor=${cursor}`), v1);
+      return output;
+    };
+    const metrics = {};
+    try {
+      await account("sync-a", async () => {
+        const initial = await syncLegacy.readSyncSnapshot(), cursor = initial.metadata.sync.cursor;
+        for (const [name, after] of [["unchanged", cursor], ["ahead", cursor + 1], ["tooMany", 0]]) {
+          const legacy = await measure(() => executeSync(syncLegacy, after));
+          const narrow = await measure(() => executeSync(syncNarrow, after));
+          assert.deepEqual(narrow.result, legacy.result);
+          assert.ok(narrow.trace.every(row => !/for_now\.(?:store_objects|store_relations|store_attachment_refs|resource_lifecycle|idempotency_ledger)\b/.test(row.sql)), name);
+          metrics[name] = { legacy: legacy.trace, metadata: narrow.trace };
+        }
+        assert.equal(metrics.tooMany.metadata.some(row => row.sql.includes("store_objects")), false);
+        const receiptLegacy = await measure(() => syncLegacy.readOperationReceipt("unknown-operation"));
+        const receiptNarrow = await measure(() => syncNarrow.readOperationReceipt("unknown-operation"));
+        assert.deepEqual(receiptNarrow.result, receiptLegacy.result);
+        assert.equal(receiptNarrow.trace.length, 2); // RLS binding + _persistence only.
+        assert.ok(receiptNarrow.trace.every(row => !row.sql.includes("store_objects")));
+        metrics.receipt = { legacy: receiptLegacy.trace, metadata: receiptNarrow.trace };
+        const unlisted = await measure(() => executeSync(syncUnlisted, cursor));
+        assert.ok(unlisted.trace.some(row => row.sql.includes("store_objects")), "empty allowlist retains legacy path");
+        // 每次只改一个域，再比较真实按域投影与旧全读输出（含依赖派生字段）。
+        for (const domain of ["notifications", "aiTasks", "journalDraft", "captures", "keepsakes", "trash", "speechCache", "onboardingV2"]) {
+          const before = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+          await syncLegacy.update(store => {
+            if (domain === "notifications") store.notifications[0].readAt = syncNow();
+            else if (domain === "aiTasks") store.aiTasks[0].status = "succeeded";
+            else if (domain === "journalDraft") store.journalDraft.content += "补充";
+            else if (domain === "captures") store.captures[0].content += "修改";
+            else if (domain === "keepsakes") store.keepsakes.push({ id: "sync-keepsake", title: "留念", createdAt: syncNow() });
+            else if (domain === "trash") store.trash.push({ id: "sync-trash", type: "capture", payload: { id: "deleted-capture", content: "回收" }, location: { collection: "captures", index: 0 }, deletedAt: syncNow() });
+            else if (domain === "speechCache") store.speechCache.push({ id: "sync-audio", sourceType: "capture", sourceId: "sync-capture-0", sourceVersion: store.captures[0].version,
+              ownerHash: crypto.createHash("sha256").update("sync-a").digest("hex"), textHash: crypto.createHash("sha256").update(store.captures[0].content).digest("hex"),
+              attachmentPath: syncInventory.path, bytes: syncAudio.length, voice: "sync-voice", createdAt: syncNow(), expiresAt: "2026-10-17T08:00:00.000Z" });
+            else store.onboardingV2.session.revision += 1;
+          });
+          const legacy = await measure(() => executeSync(syncLegacy, before));
+          const narrow = await measure(() => executeSync(syncNarrow, before));
+          assert.deepEqual(narrow.result, legacy.result, domain);
+          if (domain === "speechCache") assert.equal(narrow.result.data.snapshot.speech.assets.length, 1, "real current source must produce a nonempty asset");
+          metrics[domain] = { legacy: legacy.trace, metadata: narrow.trace };
+        }
+        // metadata之后发生另一个连接的提交，仍只能读到原repeatable-read快照。
+        const before = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+        await syncLegacy.update(store => { store.notifications[0].status = "failed"; });
+        const expected = await executeSync(syncLegacy, before);
+        afterMetadata = () => syncPeer.update(store => { store.notifications[0].status = "succeeded"; });
+        const consistent = await measure(() => executeSync(syncNarrow, before));
+        assert.deepEqual(consistent.result, expected, "metadata/domain must share one snapshot across concurrent commit");
+        assert.notDeepEqual(await executeSync(syncLegacy, before), expected);
+        // 未知域明确同事务全读回退，保留扩展数据；不把所有变化路径宣称窄读。
+        const old = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+        await syncLegacy.update(store => { store.futureSyncDomain = { value: "extension" }; });
+        const unknown = await measure(() => executeSync(syncNarrow, old));
+        assert.deepEqual(unknown.result, await executeSync(syncLegacy, old));
+        assert.ok(unknown.trace.some(row => row.sql.includes("store_relations")));
+        metrics.unknownFallback = unknown.trace;
+      });
+      await account("sync-b", async () => {
+        assert.equal((await syncNarrow.readSyncChanges({ cursor: 0, fieldsForDomains: project.syncProjectionFields })).metadata.sync.cursor, 0);
+        assert.equal(await syncNarrow.readOperationReceipt("unknown-operation"), undefined);
+      });
+      // 显式破坏/丢失同步metadata必须报告账户故障，不能变空元数据。
+      const originalMetadata = (await database.query("SELECT payload FROM for_now.store_fields WHERE account_id='sync-a' AND field='_persistence'")).rows[0].payload;
+      const missingSync = structuredClone(originalMetadata); delete missingSync.sync;
+      const missingOperations = structuredClone(originalMetadata); delete missingOperations.sync.operations;
+      const missingChanges = structuredClone(originalMetadata); delete missingChanges.sync.changes;
+      const missingCursor = structuredClone(originalMetadata); delete missingCursor.sync.cursor;
+      for (const payload of [missingSync, missingOperations, missingChanges, missingCursor, { ...originalMetadata, version: 999 }, { ...originalMetadata, sync: { cursor: "invalid", changes: [], operations: [] } }]) {
+        await database.query("UPDATE for_now.store_fields SET payload=$1 WHERE account_id='sync-a' AND field='_persistence'", [payload]);
+        await assert.rejects(account("sync-a", () => syncNarrow.readSyncChanges({ cursor: 0 })), error => error.code === "ACCOUNT_DATA_INVALID" && error.recoveryScope === "account");
+        await assert.rejects(account("sync-a", () => syncNarrow.readOperationReceipt("unknown-operation")), error => error.code === "ACCOUNT_DATA_INVALID");
+      }
+      // 明确旧schema缺operations沿原完整迁移消费者兼容；不能记作窄读。
+      await database.query("UPDATE for_now.store_fields SET payload='17'::jsonb WHERE account_id='sync-a' AND field='version'");
+      for (const sync of [null, "broken", [], { cursor: "broken", changes: [] }]) {
+        await database.query("UPDATE for_now.store_fields SET payload=$1 WHERE account_id='sync-a' AND field='_persistence'", [{ ...originalMetadata, sync }]);
+        await assert.rejects(account("sync-a", () => syncNarrow.readSyncChanges({ cursor: 0 })), error => error.code === "ACCOUNT_DATA_INVALID" && error.recoveryScope === "account");
+      }
+      await database.query("UPDATE for_now.store_fields SET payload=$1 WHERE account_id='sync-a' AND field='_persistence'", [missingOperations]);
+      await account("sync-a", async () => {
+        const cursor = originalMetadata.sync.cursor;
+        const oldFormat = await measure(() => executeSync(syncNarrow, cursor));
+        assert.deepEqual(oldFormat.result, await executeSync(syncLegacy, cursor));
+        assert.ok(oldFormat.trace.some(row => row.sql.includes("store_objects")));
+        metrics.legacyFormatFallback = oldFormat.trace;
+      });
+      await database.query("UPDATE for_now.store_fields SET payload='18'::jsonb WHERE account_id='sync-a' AND field='version'");
+      const expired = { ...originalMetadata, sync: { ...originalMetadata.sync, changes: originalMetadata.sync.changes.slice(-1) } };
+      await database.query("UPDATE for_now.store_fields SET payload=$1 WHERE account_id='sync-a' AND field='_persistence'", [expired]);
+      await account("sync-a", async () => {
+        const oldCursor = await measure(() => executeSync(syncNarrow, 0));
+        assert.equal(oldCursor.result.status, 410);
+        assert.deepEqual(oldCursor.result, await executeSync(syncLegacy, 0));
+        assert.ok(oldCursor.trace.every(row => !row.sql.includes("store_objects")));
+        metrics.expired = oldCursor.trace;
+      });
+      await database.query("DELETE FROM for_now.store_fields WHERE account_id='sync-a' AND field='_persistence'");
+      await assert.rejects(account("sync-a", () => syncNarrow.readSyncChanges({ cursor: 0 })), error => error.code === "ACCOUNT_DATA_INVALID");
+      await database.query("INSERT INTO for_now.store_fields(account_id,field,shape,payload) VALUES('sync-a','_persistence','value',$1)", [originalMetadata]);
+      console.log("F3A_QUERY_METRICS " + JSON.stringify(metrics));
+    } finally { pg.Client.prototype.query = originalQuery; }
 
     const sweepPath = "/attachments/postgres-sweep.tts.mp3";
     const sweepAudio = Buffer.from("ID3-postgres-sweep");

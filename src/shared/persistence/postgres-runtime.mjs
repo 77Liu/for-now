@@ -286,6 +286,7 @@ export async function createPostgresRuntime({
   };
   const createStoreRepository = ({
     normalize,
+    pgIo = null,
     emptyDocument,
     onCommit = async () => {},
     now = () => new Date().toISOString(),
@@ -302,6 +303,67 @@ export async function createPostgresRuntime({
         onAccountFailure(error); throw error;
       }
     };
+    const metadataMode = id => pgIo?.syncReadMode === "metadata"
+      && (pgIo.accountAllowlist.includes("*") || pgIo.accountAllowlist.includes(id));
+    const mappingError = (id, cause) => Object.assign(new Error("账户同步存储损坏，原数据已保留"), {
+      statusCode: 503, code: "ACCOUNT_DATA_INVALID", recoveryScope: "account", accountId: id,
+      reasonCode: "ACCOUNT_SYNC_MAPPING_INVALID", cause
+    });
+    // 此payload本来就剥离生命周期和幂等ledger；只验证并消费同步元数据，不伪造完整仓库。
+    const readSyncMetadata = async (client, id) => {
+      const rows = (await client.query("SELECT field, shape, payload FROM for_now.store_fields WHERE account_id = $1 AND (field = '_persistence' OR field = 'version')", [id])).rows;
+      try {
+        const row = rows.find(item => item.field === "_persistence");
+        const versionRow = rows.find(item => item.field === "version");
+        if (rows.length !== 2 || row?.shape !== "value" || !row.payload || typeof row.payload !== "object"
+          || Array.isArray(row.payload) || row.payload.version !== 1
+          || versionRow?.shape !== "value" || !Number.isSafeInteger(versionRow.payload) || versionRow.payload < 1) throw new Error("Missing or unsupported sync metadata");
+        const hasSync = Object.hasOwn(row.payload, "sync");
+        const sync = row.payload.sync;
+        if (hasSync && (!sync || typeof sync !== "object" || Array.isArray(sync))) throw new Error("Invalid sync shape");
+        // 先校验所有已存在字段：旧格式缺省不允许掩盖同时存在的坏cursor/记录。
+        if (hasSync) persistenceMetadata({ _persistence: { ...row.payload,
+          sync: { cursor: 0, changes: [], operations: [], ...sync }, lifecycles: [], idempotency: [] } });
+        const missing = !hasSync || !["cursor", "changes", "operations"].every(key => Object.hasOwn(sync, key));
+        // 旧store曾合法缺少同步回执字段；必须走同一快照完整迁移消费者，不能在窄读补空。
+        if (missing && versionRow.payload < emptyDocument.version) return null;
+        if (missing) throw new Error("Current store is missing sync state");
+        return { sync: structuredClone(sync) };
+      } catch (cause) { throw mappingError(id, cause); }
+    };
+    const fullSyncSnapshot = async (client, id) => {
+      const document = preparePersistenceDocument(normalizePersistedDocument(await readRaw(client, id), normalize), now);
+      return { document: publicPersistenceDocument(document), metadata: persistenceMetadata(document) };
+    };
+    /**
+     * 在同一账户只读可重复读快照内判断游标，并读取按域投影的真实字段闭包。
+     * 未变化/错误游标不读取业务对象；历史schema和未知域保留完整读取。
+     * @since unreleased
+     */
+    const readSyncChanges = ({ cursor: after, hasCursor = true, limit = 500, fieldsForDomains } = {}) => readAccount(async (client, id) => {
+      if (!metadataMode(id)) return fullSyncSnapshot(client, id);
+      const metadata = await readSyncMetadata(client, id);
+      if (metadata === null) return fullSyncSnapshot(client, id);
+      const { cursor, changes } = metadata.sync;
+      const oldest = changes[0]?.cursor || cursor + 1;
+      const pending = hasCursor ? changes.filter(change => change.cursor > after) : [];
+      if (!pending.length || after > cursor || (hasCursor && after < oldest - 1) || pending.length > limit) return { document: null, metadata };
+      const fields = fieldsForDomains?.([...new Set(pending.map(change => change.domain))]);
+      if (!fields) return fullSyncSnapshot(client, id);
+      const mapping = await readPostgresStoreObjects(client, id, { fields });
+      try {
+        const raw = rebuildStoreObjects(mapping);
+        if (!Object.hasOwn(raw, "version")) throw new Error("Missing store version");
+        if (raw.version !== emptyDocument.version) return fullSyncSnapshot(client, id);
+        for (const field of fields) {
+          if (!Object.hasOwn(raw, field)) throw new Error(`Missing projection field: ${field}`);
+          if (Array.isArray(emptyDocument[field]) && !Array.isArray(raw[field])) throw new Error(`Invalid projection array: ${field}`);
+        }
+        // 规范化可添加未读取域的默认值，但它们不构成投影证据，必须在返回前剥离。
+        const normalized = normalizePersistedDocument(raw, normalize);
+        return { document: Object.fromEntries(fields.map(field => [field, normalized[field]])), metadata };
+      } catch (cause) { throw mappingError(id, cause); }
+    });
     const transact = operation => withAccountLock(async (client, id) => {
       const initial = await transaction(client, async () => {
         await bind(client, id);
@@ -397,15 +459,13 @@ export async function createPostgresRuntime({
         normalizePersistedDocument(await readRaw(client, id), normalize),
         now
       ))),
-      readSyncSnapshot: () => readAccount(async (client, id) => {
-        const document = preparePersistenceDocument(
-          normalizePersistedDocument(await readRaw(client, id), normalize),
-          now
-        );
-        return {
-          document: publicPersistenceDocument(document),
-          metadata: persistenceMetadata(document)
-        };
+      readSyncSnapshot: () => readAccount(fullSyncSnapshot),
+      readSyncChanges,
+      /** 只查询同步operations回执，不读取独立幂等ledger；仍受账户资格/RLS约束。 @since unreleased */
+      readOperationReceipt: operationId => readAccount(async (client, id) => {
+        const metadata = metadataMode(id) ? await readSyncMetadata(client, id) : null;
+        const snapshot = metadata ? { metadata } : await fullSyncSnapshot(client, id);
+        return structuredClone(snapshot.metadata.sync.operations.find(item => item.operationId === operationId));
       }),
       initialize: ({ allowCreate = false } = {}) => accountTransaction(async (client, id) => {
         const exists = (await client.query("SELECT 1 FROM for_now.accounts WHERE account_id = $1", [id])).rowCount;

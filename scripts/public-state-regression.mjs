@@ -121,6 +121,22 @@ const store = {
 };
 const snapshot = structuredClone(store);
 
+// 按域投影只消费声明的真实字段，派生与完整投影一致；不以未读取字段的空默认值充数。
+for (const user of [{ id: "owner", role: "owner" }, { id: "member", role: "user" }]) {
+  const complete = projectPublicState(store, user);
+  for (const domains of [["notifications"], ["aiTasks"], ["speechCache"], ["captures"], ["keepsakes"], ["trash"], ["journalDraft"], ["onboardingV2"], ["captures", "notifications", "speechCache"]]) {
+    const fields = projectPublicState.syncProjectionFields(domains);
+    const subset = Object.fromEntries(fields.map(field => [field, structuredClone(store[field])]));
+    const projected = projectPublicState(subset, user, domains);
+    const expected = new Set(domains.filter(domain => !["trash", "speechCache"].includes(domain)));
+    if (domains.some(domain => ["notifications", "aiTasks"].includes(domain))) for (const key of ["notifications", "aiTasks", "notificationUnread"]) expected.add(key);
+    if (domains.includes("captures")) for (const key of ["clusters", "insights"]) expected.add(key);
+    if (domains.includes("speechCache")) expected.add("speech");
+    if (domains.includes("trash")) expected.add("trashCount");
+    for (const field of expected) assert.deepEqual(projected[field], complete[field], `${user.role}: ${domains}: ${field}`);
+  }
+}
+assert.equal(projectPublicState.syncProjectionFields(["future-domain"]), null);
 const ownerState = projectPublicState(store, { id: "owner", role: "owner" });
 assert.equal(Object.hasOwn(ownerState, "commercialization"), false);
 assert.equal(Object.hasOwn(ownerState, "trash"), false);
