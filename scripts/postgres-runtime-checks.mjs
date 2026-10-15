@@ -142,7 +142,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       cwd: path.resolve(import.meta.dirname, ".."),
       env: {
         ...process.env, NODE_ENV: "test", PERSISTENCE_BACKEND: backend, DATA_DIR: directory,
-        PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*",
+        PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*", ACCOUNT_RECOVERY_ENABLED: "0",
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
         AUTH_REQUIRED: "1", INVITE_CODE_HASH: crypto.createHash("sha256").update("runtime-invite").digest("hex"),
@@ -218,10 +218,13 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     `);
     await assert.rejects(runtime.auth.update(auth => {
       auth.users.push({ id: "atomic-user", username: "atomic", passwordHash: "synthetic-hash" });
-      runtime.auth.provision("atomic-user", empty(), {});
+      const initialStore = empty(), originalStore = structuredClone(initialStore);
+      runtime.auth.provision("atomic-user", initialStore, {});
+      assert.deepEqual(initialStore, originalStore, "provision must not mutate the caller store, including legacy stores without trash");
     }), /injected provisioning failure/);
     assert.equal((await runtime.auth.read()).users.length, 0);
     assert.equal((await database.query("SELECT count(*)::int AS n FROM for_now.accounts")).rows[0].n, 0);
+    assert.equal((await database.query("SELECT count(*)::int AS n FROM for_now.store_fields WHERE account_id = 'atomic-user'")).rows[0].n, 0);
     await database.query("DROP TRIGGER reject_provision ON for_now.store_fields");
 
     await account("repo-test", () => repo.initialize({ allowCreate: true }));
@@ -519,6 +522,33 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.ok(registration && second, JSON.stringify(registrations));
     assert.equal((await register("runtime-owner")).status, 409);
     const cookie = registration.cookie, otherCookie = second.cookie, id = registration.body.user.id;
+    // 首次读取必须依赖注册事务本身，不能由恢复扫描或首次业务写入补齐元数据。
+    const initialSync = async () => {
+      const results = [];
+      for (const result of [registration, second]) {
+        const initial = await request(app.base, "/api/v1/sync?cursor=0&waitMs=0", { cookie: result.cookie });
+        assert.equal(initial.status, 200, JSON.stringify(initial.body));
+        assert.equal(initial.body.data.cursor, 0);
+        assert.deepEqual(initial.body.data.changes, []);
+        assert.deepEqual(initial.body.data.snapshot, {});
+        const metadata = (await database.query(
+          "SELECT payload FROM for_now.store_fields WHERE account_id=$1 AND field='_persistence'",
+          [result.body.user.id]
+        )).rows[0]?.payload;
+        assert.deepEqual(metadata.sync, { cursor: 0, changes: [], operations: [] });
+        const rebuilt = await account(result.body.user.id, () => repo.readSyncSnapshot());
+        assert.equal(rebuilt.metadata.sync.cursor, 0);
+        assert.deepEqual(rebuilt.metadata.lifecycles, []);
+        assert.deepEqual(rebuilt.metadata.idempotency, []);
+        results.push({ role: result.body.user.role, status: initial.status, cursor: initial.body.data.cursor });
+      }
+      return results;
+    };
+    const beforeRestart = await initialSync();
+    await stop(app.child);
+    app = await startApp();
+    const afterRestart = await initialSync();
+    console.log("F3A_PROVISION_INITIAL_SYNC " + JSON.stringify({ recoveryEnabled: false, beforeRestart, afterRestart }));
     const unknownCoreAnswers = Object.fromEntries(onboardingV2Schema.questions
       .filter(question => question.questionId !== "collaboration")
       .map(question => [question.questionId, {
