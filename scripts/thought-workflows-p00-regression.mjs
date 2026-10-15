@@ -200,6 +200,14 @@ function gate() {
 const store = readyStore();
 const model = coreUserModelProjection(store);
 const prompts = [];
+const workingContext = prompt => {
+  const envelope = /<working_context_data format="application\/json">([\s\S]*?)<\/working_context_data>/.exec(prompt);
+  assert.ok(envelope, "answer prompt must include the structured working context");
+  return {
+    index: envelope.index,
+    value: JSON.parse(envelope[1])
+  };
+};
 const coldStore = readyStore();
 coldStore.aiTasks = [{ ...coldStore.aiTasks[0], status: "running" }];
 assert.equal(userModelCoreReadiness(coldStore).ready, false);
@@ -274,10 +282,15 @@ assert.equal(emptyModelDraft.draft, "使用未知而非旧模型补齐");
 const answerDeltas = [];
 const answerWorkflow = workflowFor(store, async (prompt, options) => {
   prompts.push({ prompt, options });
+  const promptCore = workingContext(prompt).value.coreUserModel;
+  const currentContextAlias = promptCore.answers.find(answer => (
+    answer.text === "正在适应新的工作节奏"
+  ))?.citationId;
+  assert.match(currentContextAlias || "", /^r[1-9][0-9]*$/);
   const content = JSON.stringify({
     answer: "先把当前目标拆成一个可完成的小闭环。",
     citations: [
-      { citationId: "core:onboarding:currentContext", exactQuote: "正在适应新的工作节奏" },
+      { citationId: currentContextAlias, exactQuote: "正在适应新的工作节奏" },
       { citationId: "core:onboarding:forged", exactQuote: "伪造的用户原话" }
     ]
   });
@@ -294,23 +307,15 @@ const answer = await answerWorkflow.answerRoot({
   clientRequestId: "answer-forged-citation",
   onDelta: event => answerDeltas.push(event)
 });
-assert.match(prompts.at(-1).prompt, new RegExp(model.fingerprint));
-const serializedAnswerCore = `"coreUserModel":${JSON.stringify({
-  fingerprint: model.fingerprint,
-  claims: model.claims,
-  answers: model.answers.map(answer => ({
-    sourceId: answer.sourceId,
-    citationId: answer.citationId,
-    title: answer.title,
-    informationType: answer.informationType,
-    text: answer.text,
-    sourceVersion: answer.sourceVersion
-  })),
-  unknowns: model.unknowns
-})}`;
-const answerCoreIndex = prompts.at(-1).prompt.indexOf(serializedAnswerCore);
-assert.ok(answerCoreIndex >= 0,
-  "answer prompt must preserve the exact serialized core model as the first working-context field");
+const answerContext = workingContext(prompts.at(-1).prompt);
+const answerCore = answerContext.value.coreUserModel;
+assert.equal(Object.hasOwn(answerCore, "fingerprint"), false,
+  "answer prompt must not expose the internal core model fingerprint");
+assert.ok(answerCore.answers.every(item => /^r[1-9][0-9]*$/.test(item.sourceId)
+  && item.citationId === item.sourceId), "answer prompt must use request-scoped core model aliases");
+assert.deepEqual(answerCore.answers.map(item => item.text), model.answers.map(item => item.text),
+  "answer prompt aliases must preserve all permitted core model text");
+const answerCoreIndex = prompts.at(-1).prompt.indexOf('"coreUserModel"', answerContext.index);
 assert.ok(prompts.at(-1).prompt.indexOf("\"currentTask\"") > answerCoreIndex,
   "answer prompt must place the current task after the stable core model");
 assert.equal(prompts.at(-1).prompt.includes("historical_user_supplement"), false);
@@ -348,7 +353,12 @@ const pendingAnswer = answerRaceWorkflow.answerRoot({
   onDelta: event => staleAnswerDeltas.push(event)
 });
 await answerGate.started;
-assert.match(answerStartedPrompt, new RegExp(coreUserModelProjection(answerRaceStore).fingerprint));
+const startedCore = workingContext(answerStartedPrompt).value.coreUserModel;
+assert.equal(Object.hasOwn(startedCore, "fingerprint"), false);
+assert.deepEqual(
+  startedCore.answers.map(item => item.text),
+  coreUserModelProjection(answerRaceStore).answers.map(item => item.text)
+);
 revokeCoreAnswer(answerRaceStore);
 answerGate.release();
 await assert.rejects(pendingAnswer, error => ["STALE_PERSONAL_CONTEXT", "CORE_MODEL_NOT_READY"].includes(error.code));
