@@ -1,3 +1,4 @@
+import { createThoughtReadingState } from "../../../generated/thought-page-window.mjs";
 import { createCaptureAudioLifecycle } from "../../../generated/capture-audio-lifecycle.mjs";
 import { normalizeTtsPlaybackRate } from "../../media/index.mjs";
 import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
@@ -121,6 +122,15 @@ export function createThoughtsFeatureController({
     sessionId: data.getSessionSerial(),
     pageToken: activation
   } : null;
+  const readingState = createThoughtReadingState(() => JSON.stringify([
+    String(data.getAccountId() || ""), data.getSessionSerial(),
+    activation?.generation ?? null,
+    (() => {
+      const route = navigation.currentRoute();
+      return [route?.view, route?.kind, route?.resourceType, route?.resourceId,
+        route?.query?.q, route?.query?.tag, route?.query?.sort];
+    })()
+  ]));
   const presentation = createThoughtPresentation({
     getSnapshot: data.getSnapshot,
     getGenerationRate: () => data.getSpeechGenerationRate?.(),
@@ -143,7 +153,10 @@ export function createThoughtsFeatureController({
     document,
     presentation,
     audioLifecycle,
-    audioScope
+    audioScope,
+    readingState,
+    captureReadingPosition: root => operations.captureReadingPosition(root),
+    restoreReadingPosition: (root, position, token) => operations.restoreReadingPosition(root, position, token)
   });
 
   let activation = null;
@@ -187,6 +200,7 @@ export function createThoughtsFeatureController({
     viewPort,
     platform,
     thoughtView,
+    readingState,
     createTicket,
     isCurrent,
     isActive: () => Boolean(activation)
@@ -365,6 +379,7 @@ export function createThoughtsFeatureController({
     const current = activation;
     if (!current) return false;
     operations.resetPaging();
+    readingState.invalidate();
     activation = null;
     current.unlink();
     platform.clearTimer(searchTimer);
@@ -415,7 +430,11 @@ export function createThoughtsFeatureController({
       listen(context.root, "change", handleChange);
       listen(context.root, "toggle", event => {
         if (event.target?.matches?.(".chain-record[open]")) {
-          platform.requestFrame(() => thoughtView.syncOverflow(event.target));
+          const ticket = createTicket();
+          const readingToken = readingState.capture();
+          platform.requestFrame(() => {
+            if (isCurrent(ticket) && readingState.isCurrent(readingToken) && event.target.isConnected) thoughtView.syncOverflow(event.target);
+          });
         }
       }, true);
       const editModal = document.querySelector("#edit-chain-modal");
@@ -431,9 +450,20 @@ export function createThoughtsFeatureController({
       listen(blockModal, "change", handleChange);
       listen(blockModal, "input", persistBlockDraft);
       listen(blockModal, "change", persistBlockDraft);
-      for (const event of ["wheel", "touchstart", "pointerdown", "keydown"]) listen(window, event, () => operations.cancelPositionRestore(), { passive: true });
+      for (const event of ["wheel", "touchstart", "pointerdown", "keydown", "input"]) {
+        listen(window, event, () => {
+          readingState.interact();
+          operations.cancelPositionRestore({ user: true });
+        }, { passive: true });
+      }
       listen(window, "scroll", () => operations.capturePosition(), { passive: true });
-      listen(window, "resize", () => platform.requestFrame(() => thoughtView.syncOverflow()));
+      listen(window, "resize", () => {
+        const ticket = createTicket();
+        const readingToken = readingState.capture();
+        platform.requestFrame(() => {
+          if (isCurrent(ticket) && readingState.isCurrent(readingToken)) thoughtView.syncOverflow();
+        });
+      });
       const abort = () => {
         if (activation === current) void unmount();
       };
@@ -445,7 +475,7 @@ export function createThoughtsFeatureController({
         context.signal?.removeEventListener("abort", abort);
       };
       delegate.render({ snapshot: data.getSnapshot(), route: context.route });
-      operations.synchronizePaging();
+      operations.synchronizePaging({ restore: false });
       thoughtView.render();
       operations.synchronizePaging();
       return () => activation === current ? unmount() : false;
@@ -458,10 +488,11 @@ export function createThoughtsFeatureController({
         : new Set(typeof context.changedDomains === "string"
           ? [context.changedDomains]
           : context.changedDomains);
-      operations.synchronizePaging();
+      operations.synchronizePaging({ restore: false });
       const rendered = changed === null || changed.has("thoughts") || changed.has("speech") || changed.has("aiTasks")
         ? thoughtView.render(context)
         : false;
+      operations.synchronizePaging();
       return rendered || delegated || false;
     },
     unmount,

@@ -81,7 +81,7 @@ P1 表示应优先修复的高影响问题，P2 表示应排入近期修复的�
 
 `createRateGate()` 的等待队列只保存 resolve 回调，没有取消信号、截止时间或队列上限。AI 生成器在获取容量前预留调用额度，虽然自身设置了超时 AbortController，但 `gate.acquire()` 和场景级 acquire 都没有收到该 signal。因此请求必须排到容量，才能进入后续处理并结束。
 
-证据链：[容量队列](../../src/shared/concurrency/index.mjs#L1-L32)、[超时与额度预留、容量等待](../../src/modules/ai/generation.mjs#L112-L148)、[后续供应商调用与释放](../../src/modules/ai/generation.mjs#L232-L257)。
+证据链：[容量队列](../../src/shared/concurrency/index.mjs#L1-L2)、[超时与额度预留、容量等待](../../src/modules/ai/generation.mjs#L112-L148)、[后续供应商调用与释放](../../src/modules/ai/generation.mjs#L232-L257)。
 
 隔离复现使用真实容量队列和生成器，供应商调用替换为本地函数。先占住唯一并发槽，再发起第二个请求：取消后观察 80ms，请求仍未结束，已预留额度也未释放；另一用例设置 20ms 超时，在开始后约 90ms 观察时仍未结束。两个用例都在主动释放前一个容量槽后才返回取消或超时错误。
 

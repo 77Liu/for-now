@@ -32,7 +32,8 @@ export function installInsightsDescriptors(descriptors, ports) {
         getAccountId:()=>runtime.currentUser?.id||"",
         getSessionSerial:()=>sessionSerial,
         getThoughtPaging:()=>runtime.featureFlags?.thoughtPaging,
-        isRouteDataReady:()=>runtime.routeDataReady,
+        isRouteDataReady:()=>runtime.routeDataReady && (runtime.fullRouteStateLoaded
+          || runtime.loadedRouteKey===routeDataKey(pageRouter.currentRoute())),
         isFullRouteStateLoaded:()=>runtime.fullRouteStateLoaded,
         request,
         requestV1:(url,options,coordination)=>featureRequestV1(view,url,options,coordination),

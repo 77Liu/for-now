@@ -29,6 +29,7 @@ export function createThoughtOperations({
   viewPort,
   platform,
   thoughtView,
+  readingState,
   createTicket,
   isCurrent,
   isActive
@@ -113,17 +114,61 @@ export function createThoughtOperations({
     const visible = cards.find(card => card.getBoundingClientRect?.().bottom > 0) || cards[0];
     return visible ? { anchorId: visible.dataset.chainId, offset: visible.getBoundingClientRect().top } : null;
   }
-  function restorePosition(position) {
+  function restorePosition(position, onRestored = () => {}) {
     if (!position) return;
     const ticket = createTicket(), expectedRoute = positionKey(), page = snapshot().thoughtPage, serial = ++restoreSerial;
     const expectedGeneration = page?.window?.generation;
+    const readingToken = readingState.capture();
     const restore = () => {
-      if (serial !== restoreSerial || !isCurrent(ticket) || positionKey() !== expectedRoute || snapshot().thoughtPage !== page || page?.window?.generation !== expectedGeneration) return;
+      if (!readingState.isCurrent(readingToken) || serial !== restoreSerial || !isCurrent(ticket) || positionKey() !== expectedRoute || snapshot().thoughtPage !== page || page?.window?.generation !== expectedGeneration) return;
       const exact = document.querySelector(`#all-thoughts [data-chain-id="${platform.escapeSelector(position.anchorId)}"]`);
       const card = exact || document.querySelector("#all-thoughts [data-chain-id]");
-      if (card?.getBoundingClientRect) platform.window.scrollBy?.({ top: card.getBoundingClientRect().top - (exact ? position.offset : 0), behavior: "instant" });
+      if (card?.getBoundingClientRect) {
+        platform.window.scrollBy?.({ top: card.getBoundingClientRect().top - (exact ? position.offset : 0), behavior: "instant" });
+        onRestored();
+      }
     };
     platform.requestFrame(() => { restore(); platform.requestFrame(restore); });
+  }
+  function captureReadingPosition(root) {
+    const candidates = [...root.querySelectorAll("[data-followup-id],[data-thought-block-id],[data-chain-id]")];
+    const visible = candidates.filter(item => {
+      const rect = item.getBoundingClientRect?.();
+      return rect && rect.bottom > 0 && rect.top < (platform.window.innerHeight || Infinity);
+    });
+    const item = visible.find(item => item.getBoundingClientRect().top >= 0) || visible.at(-1);
+    if (!item) return null;
+    const rootId = item.closest("[data-chain-id]")?.dataset.chainId || item.dataset.chainId;
+    const roots = [...root.querySelectorAll("[data-chain-id]")].map(card => card.dataset.chainId);
+    const index = roots.indexOf(rootId);
+    return {
+      rootId,
+      nextRootId: roots[index + 1] || "",
+      previousRootId: roots[index - 1] || "",
+      followUpId: item.dataset.followupId || "",
+      blockId: item.dataset.thoughtBlockId || "",
+      offset: item.getBoundingClientRect().top
+    };
+  }
+  function restoreReadingPosition(surface, position, token) {
+    if (!position || (restoreNeeded && pagingEnabled() && navigation.currentRoute().kind !== "detail")) return;
+    const ticket = createTicket(), expectedRoute = positionKey();
+    const restore = () => {
+      if (!isCurrent(ticket) || positionKey() !== expectedRoute || !readingState.isCurrent(token)) return;
+      if (surface?.isConnected === false) return;
+      const findRoot = id => id ? surface.querySelector(`[data-chain-id="${platform.escapeSelector(id)}"]`) : null;
+      const root = findRoot(position.rootId);
+      const child = position.followUpId
+        ? root?.querySelector(`[data-followup-id="${platform.escapeSelector(position.followUpId)}"]`)
+        : position.blockId
+          ? root?.querySelector(`[data-thought-block-id="${platform.escapeSelector(position.blockId)}"]`)
+          : root;
+      const target = child || root || findRoot(position.nextRootId) || findRoot(position.previousRootId);
+      if (target?.getBoundingClientRect) {
+        platform.window.scrollBy?.({ top: target.getBoundingClientRect().top - (child ? position.offset : 0), behavior: "instant" });
+      }
+    };
+    platform.requestFrame(restore);
   }
   function ensurePaging() {
     if (!pagingEnabled() || navigation.currentRoute().kind === "detail" || snapshot().thoughtPage?.kind !== "list") return null;
@@ -139,7 +184,7 @@ export function createThoughtOperations({
   }
   function capturePosition() {
     const window = ensurePaging(), position = visiblePosition();
-    if (pendingPages.size) return;
+    if (pendingPages.size || restoreNeeded) return;
     if (!window || !position) return;
     const page = window.pages.find(item => item.items.some(item => item.id === position.anchorId));
     if (!page) return;
@@ -150,7 +195,7 @@ export function createThoughtOperations({
   }
   let fallbackRoute = "", restoreNeeded = true;
   function beginPagingRoute() { restoreNeeded = true; cancelPositionRestore(); }
-  function synchronizePaging() {
+  function synchronizePaging({ restore = true } = {}) {
     const window = ensurePaging();
     if (!pagingEnabled()) {
       const status = document.querySelector("#thought-pagination-status"); if (status && pagingConfig()?.enabled === false) status.textContent = "历史分页尚未启用";
@@ -163,15 +208,20 @@ export function createThoughtOperations({
     const status = document.querySelector("#thought-pagination-status");
     if (window && status?.textContent === "历史分页尚未启用") status.textContent = "";
     if (window?.stale && pendingPages.size) resetPaging();
-    if (window && restoreNeeded && data.isRouteDataReady()) {
-      restoreNeeded = false;
+    if (restore && window && restoreNeeded && data.isRouteDataReady()) {
       const checkpoint = readThoughtCheckpoint(positionStorage(), checkpointOwner, positionKey());
-      if (checkpoint) { navigation.cancelScrollRestoration?.(); restorePosition(checkpoint); }
+      if (checkpoint) {
+        navigation.cancelScrollRestoration?.();
+        restorePosition(checkpoint, () => { restoreNeeded = false; });
+      } else restoreNeeded = false;
     }
     return window;
   }
 
-  function cancelPositionRestore() { restoreSerial += 1; }
+  function cancelPositionRestore({ user = false } = {}) {
+    restoreSerial += 1;
+    if (user) restoreNeeded = false;
+  }
   function resetPaging({ logout = false } = {}) {
     cancelPositionRestore();
     pagingRequest += 1;
@@ -292,10 +342,12 @@ export function createThoughtOperations({
   }
 
   async function submitFollowUp(form) {
+    const ticket = createTicket();
     const createId = form.dataset.followUpRoot;
     const manualId = form.dataset.followupManualAnswer;
     const editId = form.dataset.followupEdit;
     const rootId = createId || form.dataset.rootId;
+    const rootVersion = snapshot().thoughts?.find(item => item.id === rootId)?.version;
     const followUpId = manualId || editId || "";
     const button = form.querySelector('button[type="submit"]');
     const status = createId
@@ -329,27 +381,32 @@ export function createThoughtOperations({
         ...(createId ? { headers: { "idempotency-key": requestId } } : {}),
         body: JSON.stringify(body)
       });
-      thoughtView.applySavedFollowUp(rootId, saved, { kind, followUpId });
+      if (!isCurrent(ticket)) return false;
+      thoughtView.applySavedFollowUp(rootId, saved, { kind, followUpId, submitted: body, rootVersion });
       void data.refresh(createId ? ["thoughts", "review"] : "thoughts", {
         chainId: rootId,
         patchOnly: true
-      }).catch(error => viewPort.showToast(
-        `${manualId ? "追问回答" : "追问"}已保存，但状态刷新失败：${error.message}`,
-        "error"
-      ));
+      }).catch(error => {
+        if (isCurrent(ticket)) viewPort.showToast(
+          `${manualId ? "追问回答" : "追问"}已保存，但状态刷新失败：${error.message}`,
+          "error"
+        );
+      });
       viewPort.showToast(createId
         ? (body.answer.trim() ? "追问与回答已保存" : "追问已保存")
         : manualId ? "追问回答已保存" : "追问已更新");
       return true;
     } catch (error) {
-      if (status) status.textContent = error.message;
+      if (!isCurrent(ticket)) return false;
+      if (status?.isConnected) status.textContent = error.message;
       else viewPort.showToast(error.message, "error");
-      button.disabled = false;
+      if (button.isConnected) button.disabled = false;
       return false;
     }
   }
 
   async function removeFollowUp(button) {
+    const ticket = createTicket();
     if (!platform.confirm("将这条追问及其回答移入回收站？")) return false;
     button.disabled = true;
     try {
@@ -357,12 +414,16 @@ export function createThoughtOperations({
         `/api/thoughts/${button.dataset.rootId}/follow-ups/${button.dataset.followupDelete}`,
         { method: "DELETE" }
       );
+      if (!isCurrent(ticket)) return false;
       await data.refresh("thoughts", { chainId: button.dataset.rootId });
+      if (!isCurrent(ticket)) return false;
       viewPort.showToast("追问已移入回收站");
       return true;
     } catch (error) {
-      viewPort.showToast(error.message, "error");
-      button.disabled = false;
+      if (isCurrent(ticket)) {
+        viewPort.showToast(error.message, "error");
+        if (button.isConnected) button.disabled = false;
+      }
       return false;
     }
   }
@@ -394,7 +455,8 @@ export function createThoughtOperations({
       if (!snapshot().aiTasks.some(item => item.id === task.id)) snapshot().aiTasks.unshift(task);
       if (status) status.textContent = pendingAiTaskMessage(task, "回答已进入后台队列，可继续使用其他功能。");
       await data.refresh("notifications");
-      if (isCurrent(ticket)) crossDomain.scheduleNotificationPoll();
+      if (!isCurrent(ticket)) return false;
+      crossDomain.scheduleNotificationPoll();
       viewPort.showToast(isWaitingForUserModelTask(task)
         ? "追问回答等待核心用户模型就绪"
         : "追问回答已在后台排队");
@@ -589,6 +651,8 @@ export function createThoughtOperations({
     loadPrevious,
     synchronizePaging,
     beginPagingRoute,
+    captureReadingPosition,
+    restoreReadingPosition,
     capturePosition,
     resetPaging,
     cancelPositionRestore,
