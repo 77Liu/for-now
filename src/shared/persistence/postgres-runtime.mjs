@@ -558,8 +558,10 @@ export async function createPostgresRuntime({
     provision: (id, store, values) => {
       const current = authContext.getStore();
       if (!current) throw invalid("Provisioning requires a registration transaction");
+      // 注册必须一次写入完整同步元数据；兼容无 trash 的合法旧格式，且不修改调用方。
+      const document = preparePersistenceDocument(structuredClone(store), undefined, { force: true });
       current.provisions.push({
-        id, business: storeSqlMapping(mapStoreObjects(id, store)),
+        id, business: storeSqlMapping(mapStoreObjects(id, document)),
         documents: Object.entries(values).map(([name, value]) => documentSqlMapping(mapAccountDocument(id, name, value)))
       });
     }
