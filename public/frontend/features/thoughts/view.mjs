@@ -243,7 +243,22 @@ export function createThoughtView({
     if (searchControl) searchControl.hidden = detailMode;
     root.dataset.routeMode = detailMode ? "detail" : "list";
     if (pagination) {
-      pagination.hidden = detailMode || !snapshot.thoughtPage?.nextCursor;
+      const status = pagination.querySelector("#thought-pagination-status");
+      status?.setAttribute("role", "status"); status?.setAttribute("aria-live", "polite");
+      const page = snapshot.thoughtPage;
+      pagination.hidden = detailMode || (!page?.nextCursor && !page?.stale);
+      let top = surface.querySelector("#thought-pagination-top");
+      if (!top) { top = document.createElement("div"); top.id = "thought-pagination-top"; top.className = "thought-pagination"; root.before(top); }
+      top.hidden = detailMode || !page?.window || !page?.prevCursor;
+      let previous = top.querySelector("#thought-load-previous");
+      if (!previous) { previous = document.createElement("button"); previous.id = "thought-load-previous"; previous.type = "button"; previous.className = "quiet-button"; previous.textContent = "加载较新内容"; top.append(previous); }
+      previous.hidden = !page?.window || !page?.prevCursor;
+      let refresh = pagination.querySelector("#thought-refresh-window");
+      if (!refresh) { refresh = document.createElement("button"); refresh.id = "thought-refresh-window"; refresh.type = "button"; refresh.className = "quiet-button"; refresh.textContent = "内容已变化，刷新列表"; pagination.append(refresh); }
+      refresh.hidden = !page?.stale;
+      const next = pagination.querySelector("#thought-load-more");
+      if (next) { next.hidden = !page?.nextCursor; next.disabled = Boolean(page?.stale); }
+      previous.disabled = Boolean(page?.stale);
     }
     if (detailMode) {
       root.innerHTML = presentation.cardsMarkup([selected], sortMode, { detail: true });

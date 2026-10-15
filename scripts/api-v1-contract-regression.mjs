@@ -698,6 +698,12 @@ try {
     truncated: false
   });
   assert.equal(pageTwo.body.meta.nextCursor, null);
+  const previousThought = await request(`/api/v1/thought-chains?limit=1&direction=prev&cursor=${encodeURIComponent(pageTwo.body.meta.prevCursor)}`, { cookie: owner });
+  assert.equal(previousThought.response.status, 200);
+  assert.equal(previousThought.body.data[0].id, secondId);
+  assert.equal((await request("/api/v1/thought-chains?direction=prev", { cookie: owner })).response.status, 400);
+  assert.equal((await request("/api/v1/route-state?view=thoughts&page=6", { cookie: owner })).body.error.code, "LEGACY_PAGE_UNSUPPORTED");
+  assert.equal((await request(`/api/v1/route-state?view=thoughts&page=1&cursor=${encodeURIComponent(pageOne.body.meta.nextCursor)}`, { cookie: owner })).body.error.code, "INVALID_QUERY");
   const taggedPage = await request(`/api/v1/thought-chains?tag=${encodeURIComponent("契约")}`, { cookie: owner });
   assert.deepEqual(taggedPage.body.data.map(item => item.id), [firstId]);
   const oversizedPage = await request("/api/v1/thought-chains?limit=21", { cookie: owner });

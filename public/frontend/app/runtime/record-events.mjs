@@ -1,3 +1,5 @@
+import { THOUGHT_PAGING } from "../../../generated/thought-pagination-config.mjs";
+import { reconcileThoughtWindowMutation } from "../../features/thoughts/index.mjs";
 import { installChatSubmission } from "../../../generated/app/runtime/chat-submission.mjs";
 import { state } from "../../state/index.mjs";
 
@@ -394,6 +396,7 @@ export function installRecordSubmissionEvents({
           (item) => !String(item.id).startsWith(`${temporaryId}:`),
         ),
       ];
+      reconcileThoughtWindowMutation(state, runtime.pageRouter?.currentRoute(), runtime.featureFlags?.thoughtPaging?.enabled, THOUGHT_PAGING);
       publishDomains(new Set(["thoughts"]));
       const cleared = await clearSubmittedDraft();
       if (!isCurrentSession()) return;

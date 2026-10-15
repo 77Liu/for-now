@@ -365,3 +365,109 @@ console.log(
   "Frontend thoughts feature checks passed: hierarchy, search, route presentation, "
   + "source-versioned speech and legacy runtime removal."
 );
+
+// F4窗口只保留相邻100摘要；真实游标由正式领域生成，不在客户端解码。
+{
+  const { thoughtChainListPage } = await import("../src/modules/thoughts/index.mjs");
+  const { THOUGHT_PAGING } = await import("../public/generated/thought-pagination-config.mjs");
+  const { seedThoughtWindow, extendThoughtWindow, thoughtWindowProjection, saveThoughtCheckpoint } = await import("../public/generated/thought-page-window.mjs");
+  const rows = Array.from({ length: 1001 }, (_, i) => ({ id: `window-${String(i).padStart(4, "0")}`, type: "question", content: "summary", occurredAt: "2026-10-01" }));
+  const fetchPage = (afterId = "", direction = "next") => {
+    const p = thoughtChainListPage(rows, { afterId, direction });
+    return { requestCursor: afterId, direction, items: p.items, nextCursor: p.nextId, prevCursor: p.prevId };
+  };
+  const first = fetchPage(); let w = seedThoughtWindow(first.items, first, "owner", "route", THOUGHT_PAGING), seen = new Set(first.items.map(i => i.id));
+  while (thoughtWindowProjection(w).nextCursor) {
+    const page = fetchPage(thoughtWindowProjection(w).nextCursor);
+    page.items.forEach(i => seen.add(i.id)); w = extendThoughtWindow(w, page, "next", THOUGHT_PAGING);
+    assert.ok(w.pages.length <= 5); assert.ok(thoughtWindowProjection(w).items.length <= 100);
+  }
+  assert.equal(seen.size, 1001);
+  while (thoughtWindowProjection(w).prevCursor) {
+    const page = fetchPage(thoughtWindowProjection(w).prevCursor, "prev"); w = extendThoughtWindow(w, page, "prev", THOUGHT_PAGING);
+    assert.ok(w.pages.length <= 5);
+  }
+  assert.equal(thoughtWindowProjection(w).items[0].id, first.items[0].id);
+  assert.throws(() => extendThoughtWindow({ ...w, stale: true }, first, "next", THOUGHT_PAGING), /变化/);
+  const memory = new Map(), storage = { getItem: k => memory.get(k), setItem: (k, v) => memory.set(k, v) };
+  for (let i = 0; i < 20; i++) saveThoughtCheckpoint(storage, "owner", String(i), { cursor: String(i), direction: "next", anchorId: String(i), offset: 0 }, 10);
+  assert.equal(JSON.parse([...memory.values()][0]).length, 10);
+}
+
+// F4实际operations：迟到请求及旧finally不接管新ticket，存储禁用不改判成功。
+{
+  const { THOUGHT_PAGING } = await import("../public/generated/thought-pagination-config.mjs");
+  let route = { view: "thoughts", kind: "page", query: {} }, life = {}, owner = "a";
+  let state = { thoughts: [{ id: "first" }], thoughtPage: { kind: "list", nextCursor: "edge-a", prevCursor: null } };
+  const deferred = [];
+  const status = { isConnected: true, textContent: "" };
+  const fakeDocument = { querySelectorAll: () => [], querySelector: selector => selector === "#thought-pagination-status" ? status : null, activeElement: null };
+  const fakeWindow = Object.defineProperty({}, "sessionStorage", { get() { throw new Error("storage unavailable"); } });
+  const listeners = new Map(), root = { ...thoughtRoot, replaceChildren() {}, addEventListener: (type, fn) => listeners.set(type, fn), removeEventListener: type => listeners.delete(type) };
+  fakeDocument.querySelector = selector => selector === "#all-thoughts" ? root : selector === "#thought-pagination-status" ? status : null;
+  const controller = createThoughtsFeatureController({
+    data: { getSnapshot: () => state, getThoughtPaging: () => ({ ...THOUGHT_PAGING, enabled: true }), getAccountId: () => owner, getSessionSerial: () => 1,
+      isRouteDataReady: () => true, isFullRouteStateLoaded: () => false, request() {}, requestBlob() {}, requestHeadStatus() {}, refresh() {}, applyPendingProjection() {},
+      requestV1: async (_url, options) => new Promise(resolve => deferred.push({ resolve, signal: options.signal })) },
+    navigation: { currentRoute: () => route, replaceQuery: query => { route = { ...route, query }; }, openDetail() {}, backToList() {}, showUnavailable() {}, clearResult() {} },
+    media: { resetEditor() {}, persistDraft() {}, submitDraft() {}, completeDraft() {}, rollbackDraft() {}, uncertainSubmission() {}, contentImagesMarkup: () => "", hasDraftItems: () => false },
+    annotations: { tagTargets() {}, applyAnchors() {}, scheduleLayout() {}, openPanel() {}, rootKey: () => "" },
+    crossDomain: { getActiveDate: () => "2026-10-01", openComposer() {}, scheduleNotificationPoll() {} },
+    view: { appUrl: value => value, contextReceiptMarkup: () => "", contentState: () => "", renderLatex() {}, showToast() {}, resetOccurrenceInput() {}, occurrenceFields: () => ({}), presentError() {} },
+    platform: { document: fakeDocument, window: fakeWindow, requestFrame() {}, escapeSelector: value => value, createRequestId: () => "test", confirm: () => true, prompt: () => "", setTimer: () => 1, clearTimer() {}, getComputedStyle: () => ({ getPropertyValue: () => "420" }), matchesMedia: () => false, audio: { claim() {}, stopAll() {} } }
+  });
+  const mount = () => controller.mount({ root, route, signal: new AbortController().signal });
+  const click = () => listeners.get("click")({ target: { closest: selector => selector === "button" ? { id: "thought-load-more", dataset: {}, matches: () => false } : null } });
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  await mount();
+  click();
+  await controller.unmount();
+  assert.equal(deferred[0].signal.aborted, true);
+  route = { view: "thoughts", kind: "page", query: { q: "new" } };
+  state = { thoughts: [{ id: "new-first" }], thoughtPage: { kind: "list", query: "new", nextCursor: "edge-b", prevCursor: null } };
+  await mount();
+  click();
+  deferred[0].resolve({ data: [{ id: "obsolete" }], meta: { nextCursor: null, prevCursor: "a" } });
+  await tick();
+  click();
+  await tick();
+  assert.equal(deferred.length, 2);
+  deferred[1].resolve({ data: [{ id: "new-second" }], meta: { nextCursor: "edge-c", prevCursor: "b" } });
+  await tick();
+  assert.deepEqual(state.thoughts.map(item => item.id), ["new-first", "new-second"]);
+  click(); owner = "other"; life = {};
+  deferred[2].resolve({ data: [{ id: "wrong-owner" }], meta: { nextCursor: null, prevCursor: "c" } });
+  await tick();
+  assert.equal(state.thoughts.some(item => item.id === "wrong-owner"), false);
+  await assert.doesNotReject(() => controller.resetSession());
+}
+
+{
+  const { summarizeThoughtWindowItems } = await import("../public/generated/thought-page-window.mjs");
+  const { THOUGHT_PAGING } = await import("../public/generated/thought-pagination-config.mjs");
+  const raw = [{ id: "pending", type: "question", content: "x".repeat(10000), _sync: { status: "pending", operationId: "queued" } }, { id: "idea", type: "idea", relatedTo: "pending", content: "y".repeat(1000) }];
+  const summary = summarizeThoughtWindowItems(raw, THOUGHT_PAGING, thoughtListPreview);
+  assert.equal(summary.length, 1); assert.equal(summary[0].content.length, THOUGHT_PAGING.questionPreviewLimit);
+  assert.equal(summary[0].preview.content.length, THOUGHT_PAGING.userPreviewLimit);
+  assert.equal(summary[0]._sync.operationId, "queued"); assert.equal(raw[0].content.length, 10000);
+}
+
+{
+  const { reconcileThoughtWindowMutation } = await import("../public/frontend/features/thoughts/index.mjs");
+  const { THOUGHT_PAGING } = await import("../public/generated/thought-pagination-config.mjs");
+  const root = { id: "semantic", type: "question", content: "q", tags: ["root"], blockCount: 3, answerCount: 2, preview: { kind: "idea", content: "old", truncated: true }, _sync: { status: "pending" } };
+  const state = { thoughtPage: { window: { pages: [], stale: false, generation: 0 } }, thoughts: [root] };
+  const route = { view: "thoughts", kind: "page" };
+  reconcileThoughtWindowMutation(state, route, true, THOUGHT_PAGING);
+  assert.equal(state.thoughts[0].preview.truncated, true); assert.equal(state.thoughts[0].blockCount, 3);
+  assert.equal(state.thoughts[0]._sync.status, "pending");
+  state.thoughts.push(
+    { id: "ai", relatedTo: root.id, type: "answer", content: "AI cannot be mine", authorType: "ai", occurredAt: "2026-10-16", tags: ["child"] },
+    { id: "discarded", relatedTo: root.id, type: "answer", content: "discarded", disposition: "discarded", authorType: "user", occurredAt: "2026-10-16" },
+    { id: "user", relatedTo: root.id, type: "answer", content: "核心判断：我的回答", authorType: "user", occurredAt: "2026-10-15" }
+  );
+  reconcileThoughtWindowMutation(state, route, true, THOUGHT_PAGING);
+  assert.equal(state.thoughts[0].preview.content, "我的回答");
+  assert.deepEqual(state.thoughts[0].tags, ["root", "child"]);
+  assert.equal(state.thoughtPage.window.generation, 1, "restoring the same already stale window is not a new generation");
+}

@@ -1,3 +1,4 @@
+import { summarizeThoughtWindowItems } from "../../../generated/thought-page-window.mjs";
 import { plainPreview } from "../../content/index.mjs";
 import { eventDate, eventTimestamp } from "../../time/index.mjs";
 import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
@@ -172,4 +173,19 @@ export function pendingThoughtTask(tasks, kind, targetId, subtargetId = "") {
     && (!subtargetId || task.subtargetId === subtargetId)
     && isPendingAiTaskStatus(task.status)
   ));
+}
+
+/**
+ * 将本地思绪变更接入当前列表摘要，保留既有_sync及用户结论语义。
+ * 连续分页失效后释放旧页引用；完整原文仍属于持久队列、草稿或单条详情。
+ * @since unreleased
+ */
+export function reconcileThoughtWindowMutation(snapshot, route, enabled, limits) {
+  if (!enabled || route?.view !== "thoughts" || route.kind === "detail" || !snapshot.thoughtPage?.window) return false;
+  const page = snapshot.thoughtPage, window = page.window;
+  if (!window.stale) { window.stale = true; window.generation += 1; }
+  page.stale = true;
+  window.pages = [];
+  snapshot.thoughts = summarizeThoughtWindowItems(snapshot.thoughts || [], limits, (blocks, previous) => thoughtListPreview(blocks, blocks.length ? null : previous));
+  return true;
 }

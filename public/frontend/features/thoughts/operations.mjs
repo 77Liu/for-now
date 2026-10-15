@@ -1,3 +1,5 @@
+import { THOUGHT_PAGING } from "../../../generated/thought-pagination-config.mjs";
+import { seedThoughtWindow, extendThoughtWindow, thoughtWindowProjection, saveThoughtCheckpoint, readThoughtCheckpoint, clearThoughtCheckpoints } from "../../../generated/thought-page-window.mjs";
 import { imageRecordPayload } from "../../media/index.mjs";
 import { toLocalDateTimeInput } from "../../time/index.mjs";
 import { isWaitingForUserModelTask, pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
@@ -98,52 +100,135 @@ export function createThoughtOperations({
     return true;
   }
 
-  async function loadMore() {
-    const button = document.querySelector("#thought-load-more");
-    const route = navigation.currentRoute();
-    const cursor = snapshot().thoughtPage?.nextCursor;
-    if (!button || !cursor || route.view !== "thoughts" || route.kind === "detail"
-      || (snapshot().thoughts || []).length >= 100) return false;
-    const ticket = createTicket(), expectedRoute = routeIdentity(route);
-    const query = new URLSearchParams({ limit: "20", cursor });
-    if (route.query?.q) query.set("q", route.query.q);
-    if (route.query?.tag) query.set("tag", route.query.tag);
-    if (route.query?.sort) query.set("sort", route.query.sort);
-    button.disabled = true;
-    document.querySelector("#thought-pagination-status").textContent = "正在加载…";
-    try {
-      const result = await data.requestV1(`/api/v1/thought-chains?${query}`);
-      if (!isCurrent(ticket) || routeIdentity(navigation.currentRoute()) !== expectedRoute) {
-        return false;
+  let pagingRequest = 0, restoreSerial = 0;
+  let checkpointOwner = "";
+  const pendingPages = new Map();
+  const pagingConfig = () => data.getThoughtPaging?.();
+  const pagingEnabled = () => pagingConfig()?.enabled === true;
+  const ownerKey = () => `${data.getAccountId()}|${data.getSessionSerial()}`;
+  const positionKey = () => routeIdentity(navigation.currentRoute());
+  const positionStorage = () => { try { return platform.window.sessionStorage; } catch { return undefined; } };
+  function visiblePosition() {
+    const cards = [...document.querySelectorAll("#all-thoughts [data-chain-id]")];
+    const visible = cards.find(card => card.getBoundingClientRect?.().bottom > 0) || cards[0];
+    return visible ? { anchorId: visible.dataset.chainId, offset: visible.getBoundingClientRect().top } : null;
+  }
+  function restorePosition(position) {
+    if (!position) return;
+    const ticket = createTicket(), expectedRoute = positionKey(), page = snapshot().thoughtPage, serial = ++restoreSerial;
+    const expectedGeneration = page?.window?.generation;
+    const restore = () => {
+      if (serial !== restoreSerial || !isCurrent(ticket) || positionKey() !== expectedRoute || snapshot().thoughtPage !== page || page?.window?.generation !== expectedGeneration) return;
+      const exact = document.querySelector(`#all-thoughts [data-chain-id="${platform.escapeSelector(position.anchorId)}"]`);
+      const card = exact || document.querySelector("#all-thoughts [data-chain-id]");
+      if (card?.getBoundingClientRect) platform.window.scrollBy?.({ top: card.getBoundingClientRect().top - (exact ? position.offset : 0), behavior: "instant" });
+    };
+    platform.requestFrame(() => { restore(); platform.requestFrame(restore); });
+  }
+  function ensurePaging() {
+    if (!pagingEnabled() || navigation.currentRoute().kind === "detail" || snapshot().thoughtPage?.kind !== "list") return null;
+    const meta = snapshot().thoughtPage;
+    const query = navigation.currentRoute().query || {};
+    if ((!meta.window || meta.window.routeKey !== positionKey()) && (String(meta.query || "") !== String(query.q || "") || String(meta.tag || "") !== String(query.tag || "") || (meta.sort || "occurred") !== (query.sort || "occurred") || String(meta.requestCursor || "") !== String(query.cursor || "") || (meta.direction || "next") !== (query.direction || "next") || (meta.page || 1) !== Number(query.page || 1))) return null;
+    checkpointOwner = String(data.getAccountId() || "");
+    if (!meta.window || meta.window.ownerKey !== ownerKey() || meta.window.routeKey !== positionKey()) {
+      meta.window = seedThoughtWindow(snapshot().thoughts || [], meta, ownerKey(), positionKey(), pagingConfig());
+      meta.window.stale = Boolean(meta.stale);
+    }
+    return meta.window;
+  }
+  function capturePosition() {
+    const window = ensurePaging(), position = visiblePosition();
+    if (pendingPages.size) return;
+    if (!window || !position) return;
+    const page = window.pages.find(item => item.items.some(item => item.id === position.anchorId));
+    if (!page) return;
+    const written = navigation.replaceQuery({ page: null, cursor: page.requestCursor || null, direction: page.requestCursor ? page.direction : null }, { apply: false, onlyCommitted: true });
+    if (written === false) return;
+    window.routeKey = positionKey();
+    saveThoughtCheckpoint(positionStorage(), checkpointOwner, positionKey(), { ...position, cursor: page.requestCursor, direction: page.direction }, pagingConfig().maxCheckpoints);
+  }
+  let fallbackRoute = "", restoreNeeded = true;
+  function beginPagingRoute() { restoreNeeded = true; cancelPositionRestore(); }
+  function synchronizePaging() {
+    const window = ensurePaging();
+    if (!pagingEnabled()) {
+      const status = document.querySelector("#thought-pagination-status"); if (status && pagingConfig()?.enabled === false) status.textContent = "历史分页尚未启用";
+      const route = navigation.currentRoute(), key = positionKey();
+      if (pagingConfig()?.enabled === false && (route.query?.cursor || route.query?.direction) && fallbackRoute !== key) {
+        fallbackRoute = key; resetPaging(); const ticket = createTicket();
+        platform.setTimer(() => { if (pagingConfig()?.enabled === false && isCurrent(ticket) && positionKey() === key) navigation.replaceQuery({ cursor: null, direction: null, page: null }); }, 0);
       }
-      const known = new Set((snapshot().thoughts || []).map(item => item.id));
-      snapshot().thoughts = [
-        ...(snapshot().thoughts || []),
-        ...result.data.filter(item => !known.has(item.id))
-      ].slice(0, 100);
-      const page = Math.min(5, (Number(route.query?.page) || 1) + 1);
-      snapshot().thoughtPage = {
-        kind: "list",
-        query: route.query?.q || "",
-        tag: route.query?.tag || "",
-        sort: route.query?.sort === "created" ? "created" : "occurred",
-        page,
-        nextCursor: snapshot().thoughts.length < 100 ? result.meta.nextCursor || null : null,
-        tags: snapshot().thoughtPage?.tags || result.meta.tags || []
-      };
-      navigation.replaceQuery({ page }, { apply: false });
+    }
+    const status = document.querySelector("#thought-pagination-status");
+    if (window && status?.textContent === "历史分页尚未启用") status.textContent = "";
+    if (window?.stale && pendingPages.size) resetPaging();
+    if (window && restoreNeeded && data.isRouteDataReady()) {
+      restoreNeeded = false;
+      const checkpoint = readThoughtCheckpoint(positionStorage(), checkpointOwner, positionKey());
+      if (checkpoint) { navigation.cancelScrollRestoration?.(); restorePosition(checkpoint); }
+    }
+    return window;
+  }
+
+  function cancelPositionRestore() { restoreSerial += 1; }
+  function resetPaging({ logout = false } = {}) {
+    cancelPositionRestore();
+    pagingRequest += 1;
+    for (const pending of pendingPages.values()) pending.controller.abort();
+    pendingPages.clear();
+    if (logout) clearThoughtCheckpoints(positionStorage(), checkpointOwner);
+  }
+  async function loadAdjacent(direction = "next") {
+    const route = navigation.currentRoute(), page = snapshot().thoughtPage;
+    if (route.view !== "thoughts" || route.kind === "detail") return false;
+    const window = ensurePaging();
+    if (pagingEnabled() && !window) return false;
+    if (window?.stale || page?.stale) { viewPort.showToast("内容已变化，请刷新后继续", "error"); return false; }
+    const cursor = direction === "prev" ? page?.prevCursor : page?.nextCursor;
+    if (!cursor || pendingPages.has(direction)) return false;
+    if (!window && (direction === "prev" || (snapshot().thoughts || []).length >= THOUGHT_PAGING.pageSize * THOUGHT_PAGING.maxPages)) return false;
+    if (window && !Object.hasOwn(page, "prevCursor")) { viewPort.showToast("服务端尚不支持双向分页，请刷新后重试", "error"); return false; }
+    const ticket = createTicket(), expectedRoute = routeIdentity(route), expectedGeneration = window?.generation;
+    const controller = new AbortController(), pending = { id: ++pagingRequest, controller };
+    pendingPages.set(direction, pending);
+    const query = new URLSearchParams({ limit: String(THOUGHT_PAGING.pageSize), cursor, direction });
+    for (const key of ["q", "tag", "sort"]) if (route.query?.[key]) query.set(key, route.query[key]);
+    const status = document.querySelector("#thought-pagination-status");
+    if (status) status.textContent = "正在加载…";
+    try {
+      const result = await data.requestV1(`/api/v1/thought-chains?${query}`, { signal: controller.signal });
+      if (controller.signal.aborted || pendingPages.get(direction) !== pending || !isCurrent(ticket) || routeIdentity(navigation.currentRoute()) !== expectedRoute || snapshot().thoughtPage !== page || window?.generation !== expectedGeneration || window?.stale || page.stale) return false;
+      let anchor = visiblePosition();
+      const focusChain = document.activeElement?.closest?.("[data-chain-id]")?.dataset.chainId;
+      if (window?.pages.length === pagingConfig()?.maxPages) {
+        const removed = direction === "prev" ? window.pages.at(-1) : window.pages[0];
+        if (focusChain && removed.items.some(item => item.id === focusChain)) throw new Error("请先将焦点移到保留区域，再继续加载");
+        if (anchor && removed.items.some(item => item.id === anchor.anchorId)) throw new Error("请先滚动到保留区域，再继续加载");
+      }
+      if (window) {
+        if (!Object.hasOwn(result.meta, "prevCursor")) throw new Error("服务端尚不支持双向分页，请刷新后重试");
+        const next = extendThoughtWindow(window, { requestCursor: cursor, direction, items: result.data, nextCursor: result.meta.nextCursor || "", prevCursor: result.meta.prevCursor || "" }, direction, pagingConfig());
+        const projection = thoughtWindowProjection(next);
+        snapshot().thoughts = projection.items;
+        snapshot().thoughtPage = { ...page, window: next, nextCursor: projection.nextCursor, prevCursor: projection.prevCursor };
+      } else {
+        const known = new Set((snapshot().thoughts || []).map(item => item.id));
+        snapshot().thoughts = [...snapshot().thoughts, ...result.data.filter(item => !known.has(item.id))].slice(0, THOUGHT_PAGING.pageSize * THOUGHT_PAGING.maxPages);
+        snapshot().thoughtPage = { ...page, page: Math.min(THOUGHT_PAGING.maxPages, (page.page || 1) + 1), nextCursor: snapshot().thoughts.length < THOUGHT_PAGING.pageSize * THOUGHT_PAGING.maxPages ? result.meta.nextCursor : null };
+        navigation.replaceQuery({ page: snapshot().thoughtPage.page }, { apply: false });
+      }
       thoughtView.render();
+      if (focusChain) document.querySelector(`#all-thoughts [data-chain-id="${platform.escapeSelector(focusChain)}"] summary`)?.focus?.({ preventScroll: true });
+      pendingPages.delete(direction); capturePosition(); restorePosition(anchor);
       return true;
     } catch (error) {
-      if (isCurrent(ticket)) {
-        document.querySelector("#thought-pagination-status").textContent =
-          `继续加载失败：${error.message}`;
-      }
+      if (isCurrent(ticket) && pendingPages.get(direction) === pending && !controller.signal.aborted) { if (status?.isConnected) status.textContent = `继续加载失败：${error.message}`; viewPort.showToast(`继续加载失败：${error.message}`, "error"); }
       return false;
-    } finally {
-      if (button.isConnected) button.disabled = false;
-    }
+    } finally { if (pendingPages.get(direction) === pending) pendingPages.delete(direction); }
   }
+  const loadMore = () => loadAdjacent("next");
+  const loadPrevious = () => loadAdjacent("prev");
 
   function openChainEditor(id) {
     const chain = thoughtView.findChain(id);
@@ -501,6 +586,12 @@ export function createThoughtOperations({
     changeRemark,
     deleteChain,
     loadMore,
+    loadPrevious,
+    synchronizePaging,
+    beginPagingRoute,
+    capturePosition,
+    resetPaging,
+    cancelPositionRestore,
     openBlockEditor,
     openChainEditor,
     reconcileRoute,

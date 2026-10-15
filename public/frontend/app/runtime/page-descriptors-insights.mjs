@@ -31,6 +31,7 @@ export function installInsightsDescriptors(descriptors, ports) {
         getSnapshot:()=>state,
         getAccountId:()=>runtime.currentUser?.id||"",
         getSessionSerial:()=>sessionSerial,
+        getThoughtPaging:()=>runtime.featureFlags?.thoughtPaging,
         isRouteDataReady:()=>runtime.routeDataReady,
         isFullRouteStateLoaded:()=>runtime.fullRouteStateLoaded,
         request,
@@ -46,6 +47,7 @@ export function installInsightsDescriptors(descriptors, ports) {
         openDetail:id=>pageRouter.openDetail("thought-chain",id),
         backToList:(nextView,options)=>pageRouter.backToList(nextView,options),
         replaceQuery:(query,options)=>pageRouter.replaceQuery(query,options),
+        cancelScrollRestoration:()=>pageRouter.cancelScrollRestoration(),
         showUnavailable:(target,options)=>pageRouter.showUnavailable(createUnavailableRouteResult(target),options),
         clearResult:()=>pageRouter.clearResult()
       },
