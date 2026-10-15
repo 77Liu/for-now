@@ -71,7 +71,8 @@ export function createAnnotationsFeatureController({
   const model = createAnnotationModel({
     getSnapshot: data.getSnapshot,
     getAccountId: data.getAccountId,
-    storage: platform.storage
+    storage: platform.storage,
+    isRootComplete: data.isRootComplete
   });
   let activation = null;
   let session = {};
@@ -135,6 +136,7 @@ export function createAnnotationsFeatureController({
     const candidate = activation;
     if (!candidate) return;
     const selectionAction = closest(event, "[data-selection-action]");
+    const refresh = closest(event, "[data-annotation-refresh]");
     const panelClose = closest(event, "#comment-panel-close");
     const panelReopen = closest(event, "#comment-panel-reopen");
     const anchor = closest(event, ".comment-anchor");
@@ -144,7 +146,9 @@ export function createAnnotationsFeatureController({
     const remove = closest(event, "[data-comment-delete]");
     const driftRemove = closest(event, "[data-drift-delete]");
     const openComments = closest(event, "[data-open-comments]");
-    if (selectionAction) {
+    if (refresh) {
+      void operations.retryRefresh(candidate);
+    } else if (selectionAction) {
       void operations.selectionAction(candidate, selectionAction);
     } else if (panelClose) {
       annotationView.closePanel();

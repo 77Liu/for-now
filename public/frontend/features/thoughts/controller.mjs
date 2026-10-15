@@ -131,8 +131,16 @@ export function createThoughtsFeatureController({
         route?.query?.q, route?.query?.tag, route?.query?.sort];
     })()
   ]));
+  /** 当前账户实际详情已读取时才可声称根批注完整；摘要不是空集合。 @since unreleased */
+  function isAnnotationRootLoaded(id) {
+    const route = navigation.currentRoute();
+    return Boolean(activation && data.isRouteDataReady()
+      && (data.isFullRouteStateLoaded() || (route.kind === "detail"
+        && route.resourceType === "thought-chain" && route.resourceId === id)));
+  }
   const presentation = createThoughtPresentation({
     getSnapshot: data.getSnapshot,
+    isAnnotationRootLoaded,
     getGenerationRate: () => data.getSpeechGenerationRate?.(),
     appUrl: viewPort.appUrl,
     contextReceiptMarkup: viewPort.contextReceiptMarkup,
@@ -508,6 +516,7 @@ export function createThoughtsFeatureController({
         throw new AggregateError(failures, "Thoughts feature session reset failed");
       }
     },
+    isAnnotationRootLoaded,
     patchTarget: target => activation ? thoughtView.patchTarget(target) : false,
     reconcileRoute: operations.reconcileRoute
   });
