@@ -1,3 +1,6 @@
+import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
+import { createImportanceService } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
+import { legalImportanceMaterial, legalImportanceSources } from "./task-context.mjs";
 import crypto from "node:crypto";
 import { createContentAttachmentService } from "../modules/content-attachments/index.mjs";
 import { keepsakePayload } from "../modules/keepsakes/index.mjs";
@@ -32,6 +35,8 @@ export function createContentRuntime({
   dispatchBackground,
   runDeepSeek,
   readAiUsage = async () => ({ entries: [] }),
+  getImportanceModelChoice = async () => null,
+  getImportanceModelSnapshot = () => null,
   recordCompressionDailyBudgetCny = 0,
   recordCompressionPerCallBudgetCny = 0,
   recordCompressionMaxBackfillDatesPerScan = 1,
@@ -40,6 +45,7 @@ export function createContentRuntime({
   today,
   currentTime = () => Date.now(),
   createId = () => crypto.randomUUID(),
+  createBusinessId = createId,
   hash = value => crypto.createHash("sha256").update(String(value)).digest("hex"),
   logEvent,
   debugServerUrl = "",
@@ -60,6 +66,7 @@ export function createContentRuntime({
     [runDeepSeek, "runDeepSeek"],
     [today, "today"],
     [createId, "createId"],
+    [createBusinessId, "createBusinessId"],
     [hash, "hash"],
     [logEvent, "logEvent"],
     [debugFetch, "debugFetch"],
@@ -86,7 +93,7 @@ export function createContentRuntime({
   let mediaRuntime;
   const perceptionRuntime = createPerceptionRuntime({
     getAccountId,
-    createId,
+    createId: createBusinessId,
     now,
     hash
   });
@@ -95,7 +102,7 @@ export function createContentRuntime({
     getAccountId,
     getTimezone,
     now,
-    createId,
+    createId: createBusinessId,
     hash,
     readAiUsage,
     dailyBudgetCny: recordCompressionDailyBudgetCny,
@@ -123,7 +130,7 @@ export function createContentRuntime({
     getAccountId,
     cancelTask: taskId => backgroundAi?.cancel(taskId) || false,
     now,
-    createId,
+    createId: createBusinessId,
     hash
   });
   const contentAttachmentService = createContentAttachmentService({
@@ -139,7 +146,7 @@ export function createContentRuntime({
       enqueueContentImageUnderstanding(backgroundAi, work)
     ),
     now,
-    createId
+    createId: createBusinessId
   });
   const records = createContentRecords({
     repository,
@@ -148,7 +155,7 @@ export function createContentRuntime({
     contentAttachments: contentAttachmentService,
     getCursorScope,
     now,
-    createId
+    createId: createBusinessId
   });
   mediaRuntime = mediaFactory({
     ...mediaOptions,
@@ -181,12 +188,27 @@ export function createContentRuntime({
       }
     });
   }
+  const prepareImportanceContext = async () => {
+    try {
+      return await getImportanceModelChoice();
+    } catch {
+      return null;
+    }
+  };
+  const importanceService = createImportanceService({ repository: contentRepository,
+    accountId: getAccountId, createBusinessId, list: store => legalImportanceSources(store, getAccountId()),
+    resolve: (store, sourceRef) => legalImportanceMaterial(store, sourceRef, getAccountId()),
+    modelChoice: getImportanceModelChoice, currentChoice: getImportanceModelSnapshot, hash, now, promptText, renderPrompt });
   const background = createContentBackground({
+    createBusinessId,
     repository: contentRepository,
     annotationService: foundation.annotationService,
     contentAttachments: contentAttachmentService,
     perception: perceptionRuntime,
     recordCompressionTarget: recordCompressionService.target,
+    importanceTarget: importanceService.target,
+    getImportanceModelSnapshot,
+    prepareImportanceContext,
     getRecentTrend,
     mediaRuntime,
     getAccountId,
@@ -202,6 +224,12 @@ export function createContentRuntime({
     debugFetch: observedDebugFetch
   });
   backgroundAi = background.backgroundAi;
+  importanceService.attach(backgroundAi);
+  const resumeBackground = backgroundAi.resume.bind(backgroundAi);
+  backgroundAi.resume = async () => {
+    await resumeBackground();
+    await importanceService.batches?.pump();
+  };
   const recordCompressionJobs = recordCompressionService.attach(backgroundAi);
   const perception = createPerceptionService({
     repository: contentRepository,
@@ -219,6 +247,7 @@ export function createContentRuntime({
     materializeAttachmentFiles: mediaRuntime.materializeAttachmentFiles,
     workflowContextKey,
     getRecentTrend,
+    getImportanceModelSnapshot,
     now,
     today,
     currentTime,
@@ -246,6 +275,9 @@ export function createContentRuntime({
      */
     observeRecordCompressionTasks: observer => recordCompressionService.observeSettlements(observer),
     contentAttachmentService,
+    importanceService,
+    getImportanceModelSnapshot,
+    prepareImportanceContext,
     perception,
     updateSourceStore: operation => contentRepository.update(operation),
     trashCommands

@@ -15,6 +15,12 @@ import {
   RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN,
   RECORD_COMPRESSION_MAX_BUDGET_WAITING_TASKS_PER_ACCOUNT,
   RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+  RECORD_SLOT_OUTPUT_SCHEMA_VERSION,
+  RECORD_SLOT_START_DATE,
+  recordCompressionWindowFromKey,
+  closedRecordCompressionWindows,
+  prepareCompressionSourceAliases,
+  decodeCompressionSourceAliases,
   RECORD_COMPRESSION_OUTPUT_TOKEN_BUDGET,
   RECORD_COMPRESSION_PROMPT_VERSION,
   RECORD_COMPRESSION_TASK_KIND,
@@ -24,6 +30,8 @@ import {
 import { taskInputMatches, WAITING_FOR_BUDGET_STATUS } from "../modules/tasks/index.mjs";
 import {
   COMPRESSION_SOURCE_COLLECTIONS,
+  compressionTaskAccountMatches,
+  compressionFailureView,
   DAILY_OPERATION,
   HISTORICAL_SUPPLEMENT_OPERATION,
   RECORD_COMPRESSION_DAY_MS,
@@ -39,7 +47,6 @@ import {
   list,
   objectValue,
   permittedHistoricalTextDates,
-  sourceLocalDates,
   validLocalDate,
   validTimezone
 } from "./record-compression-context.mjs";
@@ -99,18 +106,25 @@ export function createRecordCompressionService({
     throw new TypeError("账户记录时区无效");
   }
   if (startDate && !validLocalDate(startDate)) throw new TypeError("日压缩起点日期无效");
+  const dailyStartDate = !startDate || startDate < RECORD_SLOT_START_DATE ? RECORD_SLOT_START_DATE : startDate;
   let settlementObserver = async () => {};
   const inRange = localDate => validLocalDate(localDate) && (!startDate || localDate >= startDate);
+  const inDailyRange = localDate => validLocalDate(localDate) && localDate >= dailyStartDate;
   const boundedStart = localDate => startDate && localDate < startDate ? startDate : localDate;
   const accountId = () => String(getAccountId() || "local");
-  const timezone = () => {
-    const value = getTimezone();
-    return validTimezone(value) ? value : DEFAULT_RECORD_TIMEZONE;
-  };
-  const buildInput = (store, localDate, requestedTimezone = timezone(), asOf = now()) => {
+  // 新调度固定采用上海槽；旧 v1 读取仍由摘要自身 timezone 驱动。
+  const timezone = () => DEFAULT_RECORD_TIMEZONE;
+  const historicalTimezone = () => validTimezone(getTimezone()) ? getTimezone() : DEFAULT_RECORD_TIMEZONE;
+  const buildInput = (store, localDate, requestedTimezone = timezone(), asOf = now(), windowKey = "") => {
     if (!validTimezone(requestedTimezone) || !inRange(localDate)
       || localDate > dateKeyInTimezone(asOf, requestedTimezone)) return null;
+    if (windowKey) {
+      const window = recordCompressionWindowFromKey(windowKey);
+      if (!window || !inDailyRange(localDate) || window.localDate !== localDate || window.timezone !== requestedTimezone
+        || Date.parse(window.endExclusive) > Date.parse(asOf)) return null;
+    }
     return inputForDate(store, {
+      windowKey,
       accountId: accountId(),
       localDate,
       timezone: requestedTimezone,
@@ -133,35 +147,15 @@ export function createRecordCompressionService({
       }))
       .sort((left, right) => left.sourceKey.localeCompare(right.sourceKey))
   }));
-  const taskBelongsToCurrentAccount = (store, task) => {
-    const payload = task?.payload || {};
-    let expectedInputHash;
-    if (payload.operation === HISTORICAL_SUPPLEMENT_OPERATION) {
-      expectedInputHash = hash(JSON.stringify({
-        operation: HISTORICAL_SUPPLEMENT_OPERATION,
-        accountId: accountId(),
-        timezone: payload.timezone,
-        promptVersion: payload.promptVersion,
-        windowStart: payload.windowStart,
-        windowEnd: payload.windowEnd,
-        batchIndex: Number.isSafeInteger(payload.batchIndex) ? payload.batchIndex : 0,
-        sourceManifestHash: payload.sourceManifestHash
-      }));
-    } else {
-      const input = buildInput(store, payload.localDate, payload.timezone, now());
-      if (!input) return false;
-      expectedInputHash = hash(JSON.stringify({
-        accountId: input.accountKey,
-        localDate: payload.localDate,
-        timezone: payload.timezone,
-        promptVersion: payload.promptVersion,
-        sourceManifestHash: payload.sourceManifestHash
-      }));
-    }
-    return task.requestedInputHash === expectedInputHash;
-  };
+  const taskBelongsToCurrentAccount = (_store, task) => compressionTaskAccountMatches(task, {
+    accountId: accountId(), hash
+  });
 
   const target = {
+    // 生命周期只在新任务账户事务内调用；请求哈希仍使用稳定窗口身份。
+    allocateIdentity() {
+      return createId();
+    },
     async settled(task) {
       const budgetDay = dateKeyInTimezone(now(), DEFAULT_RECORD_TIMEZONE);
       let entries;
@@ -175,7 +169,21 @@ export function createRecordCompressionService({
         return;
       }
       const known = entries.filter(entry => entry.costKnown === true && Number.isFinite(entry.costCny));
+      let summaryBudget = {};
+      if (task.payload?.operation !== HISTORICAL_SUPPLEMENT_OPERATION && task.status === "succeeded") {
+        try {
+          const summary = list((await repository.read()).recordCompressions).find(item => item.id === task.resultId);
+          if (summary?.tokenUsage?.scope === "model_summary") summaryBudget = {
+            summaryBudgetLevel: summary.tokenUsage.budgetLevel || "ok",
+            summaryTokens: summary.tokenUsage.outputTokens,
+            summaryWarnTokens: summary.tokenUsage.warnTokens,
+            summaryHardTokens: summary.tokenUsage.hardTokens
+          };
+        } catch { summaryBudget = { summaryBudgetReadFailed: true }; }
+      }
       await settlementObserver({
+        ...summaryBudget,
+        ...(task.payload?.windowKey ? { windowKey: task.payload.windowKey } : {}),
         status: task.status, operation: task.payload?.operation || DAILY_OPERATION,
         localDate: task.payload?.localDate, taskId: task.id, errorCode: task.errorCode || "",
         knownSpentCny: known.reduce((sum, entry) => sum + entry.costCny, 0),
@@ -190,7 +198,7 @@ export function createRecordCompressionService({
         const localDate = task?.payload?.localDate;
         if (!inRange(localDate)
           || !validTimezone(taskTimezone)
-          || taskTimezone !== timezone()
+          || taskTimezone !== historicalTimezone()
           || promptVersion !== HISTORICAL_USER_SUPPLEMENT_PROMPT_VERSION) return null;
         const windowEnd = validLocalDate(task?.payload?.windowEnd)
           ? task.payload.windowEnd
@@ -221,6 +229,7 @@ export function createRecordCompressionService({
           || estimateHistoricalUserSupplementTokens(snapshot.input.input)
             > HISTORICAL_USER_SUPPLEMENT_INPUT_TOKEN_BUDGET
           || snapshot.sourceManifestHash !== task.payload.sourceManifestHash) return null;
+        const sourceAliases = prepareCompressionSourceAliases(snapshot.input.input);
         return {
           kind: RECORD_COMPRESSION_TASK_KIND,
           targetId: task.targetId,
@@ -236,7 +245,7 @@ export function createRecordCompressionService({
             sourceManifestHash: snapshot.sourceManifestHash
           })),
           prompt: renderPrompt(HISTORICAL_SUPPLEMENT_TASK_PROMPT_ID, {
-            input: JSON.stringify(snapshot.input.input)
+            input: JSON.stringify(sourceAliases.modelInput)
           }),
           systemPrompt: promptText(HISTORICAL_SUPPLEMENT_SYSTEM_PROMPT_ID),
           scene: RECORD_COMPRESSION_TASK_KIND,
@@ -244,18 +253,21 @@ export function createRecordCompressionService({
           captureReasoning: false,
           maxTokens: HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET,
           historicalSupplementInput: snapshot.input,
+          sourceAliases,
           sourceManifestHash: snapshot.sourceManifestHash
         };
       }
       if (operation !== DAILY_OPERATION) return null;
+      // 旧全天摘要只读兼容；恢复队列不再发送新的全天模型请求。
+      if (!task.payload?.windowKey) return null;
       const localDate = task?.payload?.localDate;
       const taskTimezone = task?.payload?.timezone;
       const promptVersion = task?.payload?.promptVersion;
-      if (!inRange(localDate)
+      if (!inDailyRange(localDate)
         || !validTimezone(taskTimezone)
         || taskTimezone !== timezone()
         || promptVersion !== RECORD_COMPRESSION_PROMPT_VERSION) return null;
-      const input = buildInput(store, localDate, taskTimezone, now());
+      const input = buildInput(store, localDate, taskTimezone, now(), task.payload?.windowKey || "");
       if (!input || !input.sourceManifest.some(source => ["user_original", "quoted_external"].includes(source.origin))) return null;
       if (eligibleReadySummary(store, localDate, taskTimezone, input)) return null;
       if (task.payload.sourceManifestHash !== input.sourceManifestHash) return null;
@@ -264,15 +276,17 @@ export function createRecordCompressionService({
         localDate,
         timezone: taskTimezone,
         promptVersion,
+        ...(task.payload?.windowKey ? { windowKey: task.payload.windowKey } : {}),
         sourceManifestHash: input.sourceManifestHash
       }));
+      const sourceAliases = prepareCompressionSourceAliases(input);
       return {
         kind: RECORD_COMPRESSION_TASK_KIND,
         targetId: task.targetId,
         inputVersion: 1,
         inputHash,
         prompt: renderPrompt(RECORD_COMPRESSION_TASK_PROMPT_ID, {
-          input: JSON.stringify(input)
+          input: JSON.stringify(sourceAliases.modelInput)
         }),
         systemPrompt: promptText(RECORD_COMPRESSION_SYSTEM_PROMPT_ID),
         scene: RECORD_COMPRESSION_TASK_KIND,
@@ -280,6 +294,7 @@ export function createRecordCompressionService({
         captureReasoning: false,
         maxTokens: RECORD_COMPRESSION_OUTPUT_TOKEN_BUDGET,
         compressionInput: input,
+        sourceAliases,
         compressionId: task.payload.recordId,
         sourceManifestHash: input.sourceManifestHash,
         markQueued() {
@@ -290,7 +305,8 @@ export function createRecordCompressionService({
             promptVersion,
             sourceManifestHash: input.sourceManifestHash,
             status: "queued",
-            schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+            schemaVersion: input.window.windowKey ? RECORD_SLOT_OUTPUT_SCHEMA_VERSION : RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+            ...(input.window.windowKey ? { windowKey: input.window.windowKey } : {}),
             generatedAt: "",
             revision: 1,
             window: input.window,
@@ -311,7 +327,7 @@ export function createRecordCompressionService({
     },
     save(store, work, task, generated) {
       if (task?.payload?.operation === HISTORICAL_SUPPLEMENT_OPERATION) {
-        const parsed = parseHistoricalUserSupplementOutput(generated?.content, {
+        const parsed = parseHistoricalUserSupplementOutput(decodeCompressionSourceAliases(generated?.content, work.sourceAliases), {
           input: work.historicalSupplementInput,
           generatedAt: now()
         });
@@ -354,11 +370,16 @@ export function createRecordCompressionService({
             tokens: estimateHistoricalUserSupplementOutputTokens(records)
           }
         };
+        task.replacementReceipt = {
+          sources: parsed.records.filter(record => records.some(saved => saved.source.sourceId === record.source.sourceId
+            && saved.exactQuote === record.exactQuote)).map(record => ({ sourceId: record.source.sourceId,
+            sourceHash: record.source.sourceHash, permissionRevision: record.source.permissionRevision, quoteSha256: hash(record.exactQuote) }))
+        };
         return HISTORICAL_SUPPLEMENT_OPERATION;
       }
       const previous = list(store.recordCompressions).find(item => item.id === task.payload.recordId);
       const revision = Math.max(1, Number(previous?.revision) || 1);
-      const summary = parseRecordCompressionOutput(generated?.content, {
+      const summary = parseRecordCompressionOutput(decodeCompressionSourceAliases(generated?.content, work.sourceAliases), {
         input: work.compressionInput,
         id: task.payload.recordId,
         revision,
@@ -390,7 +411,7 @@ export function createRecordCompressionService({
       if (summary?.status === "failed") return;
       if (summary?.status === "ready") {
         if (!inRange(summary.localDate)) return;
-        const input = buildInput(store, summary.localDate, summary.timezone, now());
+        const input = buildInput(store, summary.localDate, summary.timezone, now(), summary.windowKey || "");
         if (input && eligibleReadySummary(store, summary.localDate, summary.timezone, input)?.id === summary.id) return;
       }
       updateCompressionStatus(store, task, "invalidated", now);
@@ -455,15 +476,21 @@ export function createRecordCompressionService({
         (dailyBudgetMicros - spentMicros - reservedMicros) / perCallBudgetMicros
       ));
     };
-    async function enqueueDate(localDate, taskTimezone = timezone(), { waitForBudget = false } = {}) {
-      if (!inRange(localDate) || !validTimezone(taskTimezone)) return { skipped: "invalid-window" };
+    async function enqueueDate(localDate, taskTimezone = timezone(), { waitForBudget = false, windowKey = "" } = {}) {
+      if (!inDailyRange(localDate) || !validTimezone(taskTimezone)) return { skipped: "invalid-window" };
+      taskTimezone = DEFAULT_RECORD_TIMEZONE;
+      if (!windowKey) {
+        windowKey = closedRecordCompressionWindows(now(), dailyStartDate).find(window => window.localDate === localDate)?.windowKey || "";
+        if (!windowKey) return { skipped: "window-not-closed" };
+      }
       const store = await repository.read();
-      const input = buildInput(store, localDate, taskTimezone, now());
+      const input = buildInput(store, localDate, taskTimezone, now(), windowKey);
       if (!input || !input.sourceManifest.some(source => ["user_original", "quoted_external"].includes(source.origin))) return { skipped: "empty" };
       const staleSummaryIds = list(store.recordCompressions)
         .filter(summary => summary?.status === "ready"
           && summary.localDate === localDate
           && summary.timezone === taskTimezone
+          && (summary.windowKey || "") === windowKey
           && summary.sourceManifestHash !== input.sourceManifestHash)
         .map(summary => summary.id);
       if (staleSummaryIds.length) {
@@ -481,6 +508,7 @@ export function createRecordCompressionService({
         && task.payload?.operation === DAILY_OPERATION
         && task.payload?.localDate === localDate
         && task.payload?.timezone === taskTimezone
+        && (task.payload?.windowKey || "") === windowKey
         && task.payload?.sourceManifestHash === input.sourceManifestHash
       ));
       const active = matchingTasks.find(task => ["queued", "running"].includes(task.status));
@@ -492,6 +520,7 @@ export function createRecordCompressionService({
         localDate,
         timezone: taskTimezone,
         promptVersion: RECORD_COMPRESSION_PROMPT_VERSION,
+        ...(windowKey ? { windowKey } : {}),
         sourceManifestHash: input.sourceManifestHash
       }));
       const repairKey = `record-compression-repair-v1:${requestHash}`;
@@ -508,6 +537,7 @@ export function createRecordCompressionService({
         clientRequestId: terminal ? repairKey : `record-compression:${requestHash}`,
         payload: {
           operation: DAILY_OPERATION,
+          ...(windowKey ? { windowKey } : {}),
           localDate,
           timezone: taskTimezone,
           promptVersion: RECORD_COMPRESSION_PROMPT_VERSION,
@@ -551,10 +581,10 @@ export function createRecordCompressionService({
       return { skipped: "not-enqueued" };
     }
 
-    async function enqueueHistoricalSupplement(taskTimezone = timezone(), scanAsOf = now(), {
+    async function enqueueHistoricalSupplement(taskTimezone = historicalTimezone(), scanAsOf = now(), {
       waitForBudget = false
     } = {}) {
-      if (!validTimezone(taskTimezone) || taskTimezone !== timezone()) {
+      if (!validTimezone(taskTimezone) || taskTimezone !== historicalTimezone()) {
         return { skipped: "invalid-window" };
       }
       const store = await repository.read();
@@ -744,7 +774,7 @@ export function createRecordCompressionService({
     } = {}) {
       const taskTimezone = timezone();
       const today = dateKeyInTimezone(asOf, taskTimezone);
-      if (!inRange(today)) return { queued: false, queuedCount: 0, waitingBudgetCount: 0, skipped: "before-start-date" };
+      if (!inDailyRange(today)) return { queued: false, queuedCount: 0, waitingBudgetCount: 0, skipped: "before-start-date" };
       const backfillCount = Math.max(0, Math.min(
         RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN,
         Math.floor(Number(backfillDates) || 0)
@@ -755,22 +785,8 @@ export function createRecordCompressionService({
         : requestedQueueLimit === Number.POSITIVE_INFINITY
           ? Number.POSITIVE_INFINITY
           : 0;
-      const dateAtOffset = offset => {
-        return dateKeyOffset(today, offset);
-      };
-      const existingTodaySummary = slot === "morning"
-        && list((await repository.read()).recordCompressions).some(summary => (
-          summary?.localDate === today && summary?.timezone === taskTimezone
-        ));
-      const primaryCandidates = (slot === "morning"
-        ? [
-          { localDate: dateAtOffset(-1) },
-          ...(existingTodaySummary ? [{ localDate: today }] : [])
-        ]
-        : slot === "evening"
-          ? [{ localDate: today }]
-          : []).filter(candidate => inRange(candidate.localDate));
-      const primaryDates = new Set(primaryCandidates.map(candidate => candidate.localDate));
+      const closedWindows = closedRecordCompressionWindows(asOf, dailyStartDate);
+      const primaryCandidates = closedWindows.slice(0, 1);
       const queuedTaskIds = [];
       const waitingBudgetTaskIds = new Set();
       let promotedBudgetWaitCount = 0;
@@ -804,7 +820,7 @@ export function createRecordCompressionService({
             Math.max(0, queueLimit - queuedTaskIds.length),
             await remainingBudgetQueueCapacity()
           ),
-          { operation: DAILY_OPERATION, localDate: candidate.localDate }
+          { operation: DAILY_OPERATION, localDate: candidate.localDate, windowKey: candidate.windowKey || "" }
         );
         const candidateTaskIds = list(candidatePromotions.taskIds);
         queuedTaskIds.push(...candidateTaskIds);
@@ -817,7 +833,7 @@ export function createRecordCompressionService({
           skippedBudgetWaitCount += 1;
           continue;
         }
-        const result = await enqueueDate(candidate.localDate, taskTimezone, { waitForBudget });
+        const result = await enqueueDate(candidate.localDate, taskTimezone, { waitForBudget, windowKey: candidate.windowKey || "" });
         if (result.queued || result.retried) {
           queuedTaskIds.push(result.taskId);
           primaryQueuedCount += 1;
@@ -825,21 +841,14 @@ export function createRecordCompressionService({
         await observeBudgetWait(result);
       }
 
-      const candidateStore = await repository.read();
-      const recentDates = Array.from({ length: RECORD_COMPRESSION_WINDOW_DAYS }, (_, offset) => dateAtOffset(-offset));
-      const waitingDates = list(candidateStore.aiTasks)
-        .filter(task => task.kind === RECORD_COMPRESSION_TASK_KIND && task.status === WAITING_FOR_BUDGET_STATUS
-          && task.payload?.operation === DAILY_OPERATION).map(task => task.payload.localDate);
-      const backfillCandidates = [...new Set([
-        ...recentDates, ...sourceLocalDates(candidateStore, taskTimezone, asOf), ...waitingDates
-      ])].filter(localDate => inRange(localDate) && localDate <= today && !primaryDates.has(localDate))
-        .sort((left, right) => right.localeCompare(left));
-      for (const localDate of backfillCandidates) {
+      const primaryWindowKeys = new Set(primaryCandidates.map(candidate => candidate.windowKey));
+      const backfillCandidates = closedWindows.filter(window => !primaryWindowKeys.has(window.windowKey));
+      for (const { localDate, windowKey } of backfillCandidates) {
         if (backfillRegisteredCount >= backfillCount) break;
         const promotions = await backgroundAi.promoteInternalBudgetWaiting(
           Math.min(Math.max(0, queueLimit - queuedTaskIds.length), await remainingBudgetQueueCapacity(),
             backfillCount - backfillRegisteredCount),
-          { operation: DAILY_OPERATION, localDate }
+          { operation: DAILY_OPERATION, localDate, windowKey }
         );
         const promotedIds = list(promotions.taskIds);
         queuedTaskIds.push(...promotedIds);
@@ -854,7 +863,7 @@ export function createRecordCompressionService({
           skippedBudgetWaitCount += 1;
           break;
         }
-        const result = await enqueueDate(localDate, taskTimezone, { waitForBudget });
+        const result = await enqueueDate(localDate, taskTimezone, { waitForBudget, windowKey });
         if (result.queued || result.retried) {
           queuedTaskIds.push(result.taskId);
           backfillQueuedCount += 1;
@@ -877,7 +886,7 @@ export function createRecordCompressionService({
 
       if (queuedTaskIds.length < queueLimit
         || await waitingBudgetCount() < RECORD_COMPRESSION_MAX_BUDGET_WAITING_TASKS_PER_ACCOUNT) {
-        const result = await enqueueHistoricalSupplement(taskTimezone, asOf, {
+        const result = await enqueueHistoricalSupplement(historicalTimezone(), asOf, {
           waitForBudget: queuedTaskIds.length >= queueLimit
         });
         if (result.queued || result.retried) {
@@ -891,6 +900,9 @@ export function createRecordCompressionService({
 
       const queuedCount = queuedTaskIds.length;
       const pendingBudgetCount = await waitingBudgetCount();
+      const failures = compressionFailureView(await repository.read(), {
+        accountId: accountId(), timezone: taskTimezone, asOf, hash, maxTextChars, startDate
+      });
       return {
         queued: queuedCount > 0,
         queuedCount,
@@ -905,6 +917,8 @@ export function createRecordCompressionService({
         backfillQueuedCount,
         backfillRegisteredCount,
         historicalSupplementQueuedCount,
+        pendingFaultCount: failures.pendingFaultCount,
+        replacedFaultCount: failures.replaced.length,
         ...(queuedCount ? {} : { skipped: "no-work" })
       };
     }
@@ -940,10 +954,9 @@ export function createRecordCompressionService({
         })
         .map(task => task.id);
       const timestamp = now();
-      const currentTimezone = timezone();
       const currentSupplementSources = currentHistoricalUserSources(store, {
         accountId: accountId(),
-        timezone: currentTimezone,
+        timezone: historicalTimezone(),
         asOf: timestamp,
         hash,
         maxTextChars
@@ -971,12 +984,12 @@ export function createRecordCompressionService({
       for (const summary of list(store?.recordCompressions)) {
         if (!summary || ["invalidated", "failed"].includes(summary.status) || !validLocalDate(summary.localDate)) continue;
         if (!inRange(summary.localDate)) continue;
-        if (summary.timezone !== currentTimezone) {
+        if (summary.windowKey && summary.timezone !== DEFAULT_RECORD_TIMEZONE) {
           invalidateCompressionSummary(summary, timestamp);
           continue;
         }
-        const previousInput = buildInput(beforeStore, summary.localDate, summary.timezone, timestamp);
-        const currentInput = buildInput(store, summary.localDate, summary.timezone, timestamp);
+        const previousInput = buildInput(beforeStore, summary.localDate, summary.timezone, timestamp, summary.windowKey || "");
+        const currentInput = buildInput(store, summary.localDate, summary.timezone, timestamp, summary.windowKey || "");
         if (!currentInput
           || currentInput.sourceManifestHash !== summary.sourceManifestHash
           || (previousInput?.sourceManifestHash === summary.sourceManifestHash
@@ -992,6 +1005,7 @@ export function createRecordCompressionService({
       const result = currentTrendFrom(store, {
         accountId: currentAccountId,
         timezone: currentTimezone,
+        historicalTimezone: historicalTimezone(),
         asOf,
         hash,
         maxTextChars,
@@ -1012,7 +1026,7 @@ function upsertCompression(store, value) {
 function invalidateCompressionSummary(summary, timestamp = new Date().toISOString()) {
   if (!summary || typeof summary !== "object") return;
   const retainedKeys = [
-    "id", "version", "schemaVersion", "promptVersion", "localDate", "timezone",
+    "id", "version", "schemaVersion", "promptVersion", "localDate", "timezone", "windowKey",
     "revision", "generatedAt", "sourceManifestHash", "window", "periodStart", "periodEnd"
   ];
   const metadata = Object.fromEntries(retainedKeys

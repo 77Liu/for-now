@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { isBusinessCreationPath, isBusinessId } from "../../.build/typescript/backend/shared/business-identifiers/index.mjs";
 
 export const API_V1_PREFIX = "/api/v1";
 
@@ -42,7 +43,7 @@ export function decodeCursor(value, { maxLength = 100 } = {}) {
   }
 }
 
-export function createApiV1Http({ sendJson, getContext, openApi }) {
+export function createApiV1Http({ sendJson, getContext, openApi, beforeHandle = async () => {} }) {
   const handlers = new Map();
   const metadata = extra => ({ traceId: getContext()?.traceId || "", ...extra });
   const envelope = (data, meta = {}) => ({ data, error: null, meta: metadata(meta) });
@@ -70,7 +71,8 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
       const context = getContext();
       const operationId = context?.clientOperationId || "";
       const operation = operationId && !["GET", "HEAD"].includes(context?.method)
-        ? { operation: { id: operationId, status: "committed" } }
+        ? { operation: { id: operationId, status: context.operationCommitted ? "committed" : "accepted",
+          ...(context.operationCommitted && context.businessIdMapping ? { businessIdMapping: context.businessIdMapping } : {}) } }
         : {};
       if (etag) res.setHeader("etag", etag);
       if (operationId && operation.operation) res.setHeader("x-client-operation-id", operationId);
@@ -138,6 +140,11 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
       const operationFingerprint = String(req.headers["x-client-operation-fingerprint"] || "").trim();
       const context = getContext();
       if (context) {
+        const provisionalId = String(req.headers["x-client-provisional-id"] || "").trim();
+        if (provisionalId && (!isBusinessCreationPath(req.method, url.pathname) || !isBusinessId(provisionalId) || !operationId || !operationFingerprint)) {
+          throw problem("临时业务身份必须绑定创建操作和指纹", "INVALID_PROVISIONAL_ID", 400);
+        }
+        context.clientProvisionalId = provisionalId;
         context.clientContractVersion = String(req.headers["x-client-contract-version"] || "").trim();
       }
       if (operationId) {
@@ -154,6 +161,7 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
       } else if (operationFingerprint) {
         throw fingerprintProblem("操作指纹缺少 X-Client-Operation-Id", "missing-id");
       }
+      await beforeHandle(req, url);
       for (const handler of handlers.values()) {
         if (await handler(req, res, url, api) || res.headersSent || res.writableEnded) return true;
       }

@@ -24,6 +24,7 @@ export function withoutOwnerMetadata(value, field = "") {
       unknowns: []
     };
   }
+  if (Array.isArray(value.providedReferences)) value = withoutReferenceOwnerMetadata(value);
   return Object.fromEntries(
     Object.entries(value)
       .filter(([key]) => !["tokenBudget", "userClaims", "modelUnknowns"].includes(key))
@@ -69,6 +70,8 @@ export function createPublicStateProjection({
       trash,
       attachmentCleanup: _attachmentCleanup,
       speechCache: _speechCache,
+      importanceScores: _importanceScores,
+      importanceJobs: _importanceJobs,
       evidenceSources: _evidenceSources,
       evidencePermissions: _evidencePermissions,
       perceptionEvents: _perceptionEvents,
@@ -99,4 +102,27 @@ export function createPublicStateProjection({
     };
     return isOwner(user) ? state : withoutOwnerMetadata(state);
   };
+}
+
+/**
+ * 对真实 HTTP/事件流结果裁剪新增参考目录的模型来源细节，保留发送总数。
+ * 只治理本次新增参考字段，不改变既有业务 DTO 或鉴权结果。
+ * @since unreleased
+ */
+export function withoutReferenceOwnerMetadata(value) {
+  if (Array.isArray(value)) return value.map(withoutReferenceOwnerMetadata);
+  if (!value || typeof value !== "object") return value;
+  const prototype = Object.getPrototypeOf(value);
+  if ((prototype !== Object.prototype && prototype !== null) || typeof value.toJSON === "function") return value;
+  const result = Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key, withoutReferenceOwnerMetadata(item)
+  ]));
+  if (Array.isArray(value.providedReferences)) {
+    result.providedReferenceCount = value.contextReceipt?.referenceRequest?.providedCount
+      ?? value.providedReferenceCount ?? value.providedReferences.length;
+    result.providedReferences = value.providedReferences.filter(item => (
+      !["onboardingV2", "userClaim", "modelUnknown"].includes(item?.resourceType)
+    )).map(withoutReferenceOwnerMetadata);
+  }
+  return result;
 }

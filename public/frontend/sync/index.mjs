@@ -1,3 +1,6 @@
+import { BUSINESS_ID_BYTES, encodeBusinessId, isBusinessCreationPath, isBusinessId } from "../../generated/business-identifiers.mjs";
+import { remapBusinessReferences, remapBusinessUrl } from "../../generated/business-id-remap.mjs";
+
 const RETRYABLE_STATUSES = new Set([408, 425, 429]);
 const CONFLICT_STATUSES = new Set([409, 412]);
 export const SYNC_RETRY_MAX_ATTEMPTS = 8;
@@ -8,6 +11,8 @@ const SYNC_RETRY_AFTER_MAX_MS = 5 * 60_000;
 
 const clone = value => value == null ? value : structuredClone(value);
 const recordKey = record => `${record.owner}:${record.queueId || record.id}`;
+const mappingKey = owner => `${owner}:$business-id-mappings`;
+const sameSnapshot = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 const sha256Hex = async value => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))]
   .map(byte => byte.toString(16).padStart(2, "0")).join("");
 const lowerCaseHeaders = headers => {
@@ -23,6 +28,33 @@ const equalHeaders = (left, right) => {
 const defaultResourceKey = url => {
   const parsed = new URL(url, "https://local.invalid");
   return `${parsed.pathname}${parsed.search}`;
+};
+const businessCreation = (method, url) => method === "POST"
+  && isBusinessCreationPath(method, new URL(url, "https://local.invalid").pathname);
+const remapQueuedRecord = async (record, mappings) => {
+  const dependencies = record.dependsOn || [];
+  let url = record.url, resourceKey = record.resourceKey, projection = record.projection;
+  let body = record.body;
+  for (const dependency of dependencies) {
+    const mapping = mappings.find(item => item.operationId === dependency.operationId);
+    if (!mapping) continue;
+    url = remapBusinessUrl(url, mapping, dependency.urlSegments);
+    resourceKey = remapBusinessUrl(resourceKey, mapping, dependency.urlSegments);
+    if (typeof body === "string" && dependency.bodyPointers?.length) {
+      body = JSON.stringify(remapBusinessReferences(JSON.parse(body), mapping, dependency.bodyPointers));
+    }
+    if (projection && dependency.projectionPointers?.length) {
+      projection = remapBusinessReferences(projection, mapping, dependency.projectionPointers);
+    }
+  }
+  const requestChanged = url !== record.url || body !== record.body;
+  if (!requestChanged && resourceKey === record.resourceKey && sameSnapshot(projection, record.projection)) return record;
+  if (requestChanged && Number(record.attempts || 0)) throw Object.assign(new Error("已发送的依赖请求需要先恢复回执"), { code: "DEPENDENCY_ALREADY_SENT" });
+  const fingerprint = requestChanged ? await syncOperationFingerprint({ ...record, url, body }) : record.fingerprint;
+  return { ...record, url, ...(Object.hasOwn(record, "body") ? { body } : {}), fingerprint,
+    resourceKey,
+    headers: { ...record.headers, "x-client-operation-fingerprint": fingerprint },
+    ...(projection ? { projection } : {}) };
 };
 const replayOptions = record => ({
   method: record.method,
@@ -56,8 +88,18 @@ export async function syncOperationFingerprint({ method = "POST", url, headers =
 
 export function createMemorySyncStore(initial = []) {
   const records = new Map(initial.map(record => [recordKey(record), clone(record)]));
+  const mappings = new Map();
   return {
     durable: false,
+    async readMappings(owner) { return clone(mappings.get(owner) || []); },
+    async atomicWrite(owner, expectedRows, expectedMappings, nextRows, nextMappings) {
+      const rows = [...records.values()].filter(row => row.owner === owner)
+        .sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")) || left.id.localeCompare(right.id)).map(clone);
+      if (!sameSnapshot(rows, expectedRows) || !sameSnapshot(mappings.get(owner) || [], expectedMappings)) return false;
+      for (const row of nextRows) records.set(recordKey(row), clone(row));
+      mappings.set(owner, clone(nextMappings));
+      return true;
+    },
     async put(record) {
       records.set(recordKey(record), clone(record));
       return clone(record);
@@ -77,6 +119,7 @@ export function createMemorySyncStore(initial = []) {
     },
     async clear(owner) {
       for (const [key, record] of records) if (record.owner === owner) records.delete(key);
+      mappings.delete(owner);
     }
   };
 }
@@ -143,6 +186,25 @@ export function createIndexedDbSyncStore({
     get durable() {
       return !unavailable;
     },
+    async readMappings(owner) {
+      if (unavailable) throw new Error("业务映射持久化不可用");
+      return (await withStore("readonly", store => requestResult(store.get(mappingKey(owner)))))?.mappings || [];
+    },
+    async atomicWrite(owner, expectedRows, expectedMappings, nextRows, nextMappings) {
+      // 指纹计算已在事务外完成；这里仅执行读校验与同步入队的 IDB 请求。
+      return withStore("readwrite", async store => {
+        const all = await requestResult(store.getAll());
+        const rows = all.filter(row => row.owner === owner && !row.mappingRegistry).map(row => {
+          const value = { ...row }; delete value.key; return value;
+        }).sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")) || left.id.localeCompare(right.id));
+        const saved = all.find(row => row.key === mappingKey(owner))?.mappings || [];
+        if (!sameSnapshot(rows, expectedRows) || !sameSnapshot(saved, expectedMappings)) return false;
+        const writes = nextRows.map(row => requestResult(store.put({ ...clone(row), key: recordKey(row) })));
+        writes.push(requestResult(store.put({ key: mappingKey(owner), owner, mappingRegistry: true, mappings: clone(nextMappings) })));
+        await Promise.all(writes);
+        return true;
+      });
+    },
     async put(record) {
       const value = { ...clone(record), key: recordKey(record) };
       try {
@@ -188,7 +250,7 @@ export function createIndexedDbSyncStore({
         return fallback.list(owner, statuses);
       }
       return values
-        .filter(record => record.owner === owner && (!accepted.size || accepted.has(record.status)))
+        .filter(record => !record.mappingRegistry && record.owner === owner && (!accepted.size || accepted.has(record.status)))
         .map(record => {
           delete record.key;
           return record;
@@ -313,7 +375,30 @@ export function createRequestCoordinator({
       ...(ack ? { ack: clone(ack) } : {})
     };
     if (generation(current.owner) === expectedGeneration) {
-      await store.put(committed);
+      const mapping = ack?.businessIdMapping;
+      if (current.headers?.["x-client-provisional-id"] && (!mapping || ack.status !== "committed")) {
+        throw Object.assign(new Error("创建回执缺少持久业务映射"), { code: "BUSINESS_MAPPING_ACK_REQUIRED" });
+      }
+      if (mapping) {
+        if (mapping.accountId !== current.owner || !isBusinessId(mapping.provisionalId)
+          || mapping.operationId !== current.operationId || !isBusinessId(mapping.canonicalId)
+          || mapping.provisionalId !== current.headers?.["x-client-provisional-id"]) {
+          throw Object.assign(new Error("业务映射与账户或操作不匹配"), { code: "INVALID_BUSINESS_MAPPING" });
+        }
+        let saved = false;
+        for (let attempt = 0; attempt < SYNC_RETRY_MAX_ATTEMPTS && !saved; attempt += 1) {
+          const rows = await store.list(current.owner);
+          const mappings = await store.readMappings(current.owner);
+          const previous = mappings.find(item => item.operationId === mapping.operationId);
+          if (previous && previous.canonicalId !== mapping.canonicalId) throw new Error("业务映射不能更换正式身份");
+          const nextMappings = previous ? mappings : [...mappings, mapping];
+          const nextRows = await Promise.all(rows.map(row => row.id === current.id ? committed
+            : ["pending", "sending"].includes(row.status) ? remapQueuedRecord(row, nextMappings) : row));
+          if (generation(current.owner) !== expectedGeneration) throw Object.assign(new Error("账户同步队列已清理"), { name: "AbortError" });
+          saved = await store.atomicWrite(current.owner, rows, mappings, nextRows, nextMappings);
+        }
+        if (!saved) throw new Error("业务映射原子保存冲突，请重试");
+      } else await store.put(committed);
       notify(committed);
       await pruneRecords(current.owner);
     }
@@ -343,6 +428,21 @@ export function createRequestCoordinator({
     }
   };
   const deliver = async (record, expectedGeneration) => {
+    const pending = await store.list(record.owner, ["pending", "sending"]);
+    const mappings = store.readMappings ? await store.readMappings(record.owner) : [];
+    for (const dependency of record.dependsOn || []) {
+      if (mappings.some(mapping => mapping.operationId === dependency.operationId)) continue;
+      const parent = pending.find(row => row.operationId === dependency.operationId && row.id !== record.id);
+      if (!parent?.headers?.["x-client-provisional-id"]) {
+        throw Object.assign(new Error("依赖创建尚未提交"), { code: "BUSINESS_DEPENDENCY_PENDING", syncStatus: "pending" });
+      }
+      const delivery = deliveries.get(`${parent.owner}:${parent.id}`);
+      if (!delivery) throw Object.assign(new Error("依赖创建尚未提交"), { code: "BUSINESS_DEPENDENCY_PENDING", syncStatus: "pending" });
+      try { await delivery; } catch {
+        throw Object.assign(new Error("依赖创建尚未提交"), { code: "BUSINESS_DEPENDENCY_PENDING", syncStatus: "pending" });
+      }
+    }
+    record = await store.get(record.owner, record.queueId || record.id) || record;
     const startedAt = now();
     let current = await update(record, {
       status: "sending",
@@ -353,7 +453,7 @@ export function createRequestCoordinator({
     if (!current) throw Object.assign(new Error("账户同步队列已清理"), { name: "AbortError" });
     try {
       const result = await send(current.url, replayOptions(current));
-      return commit(current, result, startedAt, expectedGeneration);
+      return await commit(current, result, startedAt, expectedGeneration);
     } catch (error) {
       if (error?.code === "INVALID_OPERATION_FINGERPRINT"
         && Number(current.fingerprintRetryCount || 0) < 1) {
@@ -363,7 +463,7 @@ export function createRequestCoordinator({
         if (!current) throw Object.assign(new Error("账户同步队列已清理"), { name: "AbortError" });
         try {
           const result = await send(current.url, replayOptions(current));
-          return commit(current, result, startedAt, expectedGeneration);
+          return await commit(current, result, startedAt, expectedGeneration);
         } catch (retryError) {
           error = retryError;
         }
@@ -373,7 +473,7 @@ export function createRequestCoordinator({
       if (mayHaveCommitted) {
         try {
           const recovered = await recoverCommitted(current);
-          if (recovered) return commit(current, recovered, startedAt, expectedGeneration, true);
+          if (recovered) return await commit(current, recovered, startedAt, expectedGeneration, true);
         } catch (recoveryError) {
           terminalError = recoveryError;
         }
@@ -423,6 +523,9 @@ export function createRequestCoordinator({
       domains = [],
       projection = null,
       recoverCommitted = false,
+      allocateBusinessId = false,
+      provisionalId = "",
+      dependsOn = [],
       onQueued = () => {}
     }) {
       if (!owner) throw new Error("写请求缺少账户标识");
@@ -434,14 +537,23 @@ export function createRequestCoordinator({
       headers["x-client-operation-id"] = operationId;
       headers["idempotency-key"] ||= operationId;
       headers["x-client-contract-version"] ||= SYNC_CLIENT_CONTRACT_VERSION;
+      if (allocateBusinessId && businessCreation(method, url)) {
+        if (provisionalId && !isBusinessId(provisionalId)) throw new Error("临时业务身份格式无效");
+        headers["x-client-provisional-id"] ||= provisionalId || encodeBusinessId(crypto.getRandomValues(new Uint8Array(BUSINESS_ID_BYTES)));
+      }
       const operationResource = resource || resourceKey(url, options);
       const fingerprint = await syncOperationFingerprint({ method, url, headers, body: options.body });
       headers["x-client-operation-fingerprint"] = fingerprint;
       const timestamp = now();
-      const record = {
+      let record = {
         id: `${method}:${operationResource}:${operationId}`,
         owner,
         operationId,
+        dependsOn: dependsOn.map(dependency => {
+          if (!dependency || typeof dependency.operationId !== "string") throw new Error("业务依赖需要创建操作和引用位置");
+          return { operationId: dependency.operationId, urlSegments: [...(dependency.urlSegments || [])],
+            bodyPointers: [...(dependency.bodyPointers || [])], projectionPointers: [...(dependency.projectionPointers || [])] };
+        }),
         fingerprint,
         resourceKey: operationResource,
         recoverCommitted: Boolean(recoverCommitted),
@@ -457,7 +569,16 @@ export function createRequestCoordinator({
         createdAt: timestamp,
         updatedAt: timestamp
       };
-      await store.put(record);
+      if (store.readMappings && store.atomicWrite) {
+        let saved = false;
+        for (let attempt = 0; attempt < SYNC_RETRY_MAX_ATTEMPTS && !saved; attempt += 1) {
+          const rows = await store.list(owner);
+          const mappings = await store.readMappings(owner);
+          record = await remapQueuedRecord(record, mappings);
+          saved = await store.atomicWrite(owner, rows, mappings, [...rows.filter(row => row.id !== record.id), record], mappings);
+        }
+        if (!saved) throw new Error("离线请求入队冲突，请重试");
+      } else await store.put(record);
       notify(record);
       try {
         await onQueued(clone(record));

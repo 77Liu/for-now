@@ -69,6 +69,7 @@ export function projectRecordCompressionTrendForUser(trend) {
 
   return {
     timezone: String(trend.timezone || ""),
+    failureState: trend.failureState,
     localDates: list(trend.localDates).slice(),
     coverage: {
       windowDays: Math.max(0, Number(trend.coverage?.windowDays) || 0),
@@ -84,6 +85,7 @@ export function projectRecordCompressionTrendForUser(trend) {
       const localDate = String(day?.localDate || "");
       if (!summary) return {
         localDate,
+        ...(day.slots ? { slots: day.slots, missingSlots: day.missingSlots } : {}),
         status: "missing",
         completeness: "unknown",
         daily: [],
@@ -104,6 +106,9 @@ export function projectRecordCompressionTrendForUser(trend) {
       });
       return {
         localDate,
+        ...(summary.incrementalSlots ? { window: summary.window, incrementalSlots: summary.incrementalSlots,
+          summaryIds: summary.summaryIds, sourceManifestHashes: summary.sourceManifestHashes } : {}),
+        ...(day.slots ? { slots: day.slots, missingSlots: day.missingSlots } : {}),
         status: "ready",
         completeness: String(day.completeness || "unknown"),
         daily: projectRows(summary.daily?.observations, localDate),
@@ -129,6 +134,7 @@ export function createContentWorkflows({
   materializeAttachmentFiles,
   workflowContextKey,
   getRecentTrend = () => null,
+  getImportanceModelSnapshot = () => null,
   now,
   today,
   currentTime,
@@ -152,6 +158,7 @@ export function createContentWorkflows({
     coreModelReadiness: userModelCoreReadiness,
     getAccountId,
     getRecentTrend,
+    getImportanceModelSnapshot,
     materializeAttachmentFiles,
     contextKey: workflowContextKey,
     now
@@ -165,6 +172,8 @@ export function createContentWorkflows({
     createId,
     coreModelReadiness: userModelCoreReadiness,
     getRecentTrend,
+    getImportanceModelSnapshot,
+    getAccountId,
     currentTime,
     contextKey: workflowContextKey,
     today
@@ -180,6 +189,7 @@ export function createContentWorkflows({
     contextKey: workflowContextKey,
     getAccountId,
     getRecentTrend,
+    getImportanceModelSnapshot,
     currentTime,
     createId
   });

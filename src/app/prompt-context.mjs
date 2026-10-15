@@ -1,3 +1,4 @@
+import { boundedReferenceEvidence } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import {
   optionalPromptText,
   promptCatalogMetadata,
@@ -85,6 +86,7 @@ function materialPayload(item, temporalScope = "", includeCitationId = false) {
     recordType: String(item?.recordType || item?.informationType || ""),
     origin: String(item?.origin || "user"),
     informationType: String(item?.informationType || "user_viewpoint"),
+    ...(item?.selectionReason ? { selectionReason: item.selectionReason } : {}),
     occurredAt: String(item?.occurredAt || ""),
     ...(temporalScope ? { temporalScope } : {}),
     text: String(item?.text || ""),
@@ -132,6 +134,7 @@ export function compileWorkingContextPrompt({
   coreUserModel = null,
   historicalUserSupplement = null,
   recentTrend = null,
+  referenceEvidence = [],
   serializationOrder = WORKING_CONTEXT_SERIALIZATION_ORDER.POLICY_V1,
   generatedAt = "",
   notice = "",
@@ -201,6 +204,10 @@ export function compileWorkingContextPrompt({
     ...(recentTrend && typeof recentTrend === "object" && !Array.isArray(recentTrend) ? {
       sevenDayTrend: structuredClone(recentTrend)
     } : {}),
+    ...(referenceEvidence.length ? { referenceEvidence: boundedReferenceEvidence(list(referenceEvidence).map(source => ({
+      citationId: source.citationId, text: source.text,
+      origin: source.source?.origin || "user", informationType: source.source?.informationType || "user_original"
+    }))) } : {}),
     relevantEpisodes: history.filter(item => (
       !["userClaim", "modelUnknown"].includes(item.resourceType)
     )),

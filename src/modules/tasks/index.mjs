@@ -15,7 +15,8 @@ const TASK_KINDS = new Set([
   "captureTranscription",
   "onboardingClaimExtraction",
   "perceptionExtraction",
-  "recordCompression"
+  "recordCompression",
+  "importanceScoring"
 ]);
 export { WAITING_FOR_USER_MODEL_STATUS };
 export const PERSONALIZED_TASK_INTENT_BYTE_BUDGET = 32_000;
@@ -136,7 +137,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
         ? "journal"
       : kind === "chat" ? "chat"
       : kind === "analysis" ? "analysis"
-      : ["annotationShenji", "contentImageUnderstanding", "perceptionExtraction", "recordCompression"].includes(kind)
+      : ["annotationShenji", "contentImageUnderstanding", "perceptionExtraction", "recordCompression", "importanceScoring"].includes(kind)
         ? safeText(input.resourceType, 40)
         : "thought";
     const binding = {
@@ -170,6 +171,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
             message: safeText(input.payload?.message),
             occurredAt: safeText(input.payload?.occurredAt, 100),
             occurredOn: safeText(input.payload?.occurredOn, 10),
+            ...(input.payload?.eventTimePrecision === "date" ? { eventTimePrecision: "date" } : {}),
             eventTimeHash: safeText(input.payload?.eventTimeHash, 100)
           }
       : kind === "analysis"
@@ -211,7 +213,8 @@ export function createTaskLifecycle({ createId, now, hash }) {
                 timezone: safeText(input.payload?.timezone, 100),
                 promptVersion: safeText(input.payload?.promptVersion, 100),
                 sourceManifestHash: safeText(input.payload?.sourceManifestHash, 64),
-                recordId: safeText(input.payload?.recordId, 100)
+                recordId: safeText(input.payload?.recordId, 100),
+                ...(input.payload?.windowKey ? { windowKey: safeText(input.payload.windowKey, 100) } : {})
               };
               if (historicalSupplement) {
                 const batchIndex = Number(input.payload?.batchIndex);
@@ -227,7 +230,18 @@ export function createTaskLifecycle({ createId, now, hash }) {
               }
               return payload;
             })()
-        : {};
+        : kind === "importanceScoring"
+          ? {
+              sourceRefs: Array.isArray(input.payload?.sourceRefs) ? input.payload.sourceRefs.slice(0, 9).map(ref => ({
+                resourceType: safeText(ref?.resourceType, 40), resourceId: safeText(ref?.resourceId, 100),
+                rootId: safeText(ref?.rootId, 100), targetKey: safeText(ref?.targetKey, 200),
+                version: Number(ref?.version)
+              })) : [],
+              model: safeText(input.payload?.model, 100),
+              effort: safeText(input.payload?.effort, 20),
+              fingerprint: safeText(input.payload?.fingerprint, 64)
+            }
+          : {};
     const requestedInputVersion = Number(input.inputVersion) > 0 ? Math.round(Number(input.inputVersion)) : 0;
     const requestedSubtargetVersion = Number(input.subtargetVersion) > 0 ? Math.round(Number(input.subtargetVersion)) : 0;
     return { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion };
@@ -236,10 +250,11 @@ export function createTaskLifecycle({ createId, now, hash }) {
   function create(tasks, input, inspectTarget, {
     deferTargetInspection = false,
     requestedIntent = null,
-    waitingBudget = false
+    waitingBudget = false,
+    allocateIdentity = null
   } = {}) {
     const normalized = normalizeRequest(input);
-    const { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
+    let { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
     if (!TASK_KINDS.has(kind)) return { unsupported: true };
     if (waitingBudget && kind !== "recordCompression") return { unsupported: true };
     if (!clientRequestId) return { invalid: true };
@@ -249,10 +264,15 @@ export function createTaskLifecycle({ createId, now, hash }) {
     }
     if (kind === "journalAssist" && !payload.mode) return { invalidIntent: true };
     if (kind === "thoughtDraft" && !payload.question) return { invalidIntent: true };
-    if (kind === "chat" && (!payload.message || !payload.occurredAt || !payload.occurredOn)) return { invalidIntent: true };
+    if (kind === "chat" && (!payload.message || (!payload.occurredAt && payload.eventTimePrecision !== "date") || !payload.occurredOn)) return { invalidIntent: true };
     const inputRequestHash = requestHash(normalized);
     const duplicate = tasks.find(item => item.clientRequestId === clientRequestId);
     if (duplicate) return duplicate.requestHash === inputRequestHash ? { task: duplicate, duplicate: true } : { conflict: true };
+    const allocatedIdentity = allocateIdentity?.(normalized);
+    if (allocatedIdentity) {
+      targetId = normalized.targetId = allocatedIdentity;
+      payload.recordId = allocatedIdentity;
+    }
     if (deferTargetInspection && (
       (["thoughtAnswer", "followUpAnswer", "annotationShenji", "journalReflection"].includes(kind) && !targetId)
       || (kind === "followUpAnswer" && !subtargetId)
@@ -296,11 +316,11 @@ export function createTaskLifecycle({ createId, now, hash }) {
       const reusable = taskForInput(
         tasks,
         { kind, targetId, inputHash: work.inputHash },
-        REUSABLE_EXTRACTION_STATUSES
+        kind === "importanceScoring" ? ACTIVE_TASK_STATUSES : REUSABLE_EXTRACTION_STATUSES
       );
       if (reusable) return { task: reusable, duplicate: true };
     }
-    if (!deferTargetInspection && kind === "perceptionExtraction") {
+    if (!deferTargetInspection && ["perceptionExtraction", "importanceScoring"].includes(kind)) {
       const existing = taskForInput(
         tasks,
         { kind, targetId, inputHash: work.inputHash },
@@ -330,11 +350,13 @@ export function createTaskLifecycle({ createId, now, hash }) {
         requestedIntentInputHash: String(requestedIntent.inputHash ?? "")
       } : {}),
       payload, clientRequestId, requestHash: inputRequestHash,
+      ...((work?.contextReceipt?.importanceSelectionPlan || work?.contextReceipt?.importanceReferences?.plan)
+        ? { importanceSelectionPlan: structuredClone(work.contextReceipt.importanceSelectionPlan || work.contextReceipt.importanceReferences?.plan) } : {}),
       status: deferTargetInspection
         ? WAITING_FOR_USER_MODEL_STATUS
         : waitingBudget ? WAITING_FOR_BUDGET_STATUS : "queued",
       createdAt, updatedAt: createdAt, attempt: 0,
-      ...(["perceptionExtraction", "recordCompression"].includes(kind) ? { internal: true } : {})
+      ...(["perceptionExtraction", "recordCompression", "importanceScoring"].includes(kind) ? { internal: true } : {})
     };
     tasks.unshift(task);
     if (!waitingBudget) work?.markQueued?.(task);
@@ -378,6 +400,9 @@ export function createTaskLifecycle({ createId, now, hash }) {
     task.errorCode = "";
     if (!Object.hasOwn(task, "requestedInputHash")) {
       task.requestedInputHash = work.inputHash || "";
+    }
+    if ((work.contextReceipt?.importanceSelectionPlan || work.contextReceipt?.importanceReferences?.plan) && !task.importanceSelectionPlan) {
+      task.importanceSelectionPlan = structuredClone(work.contextReceipt.importanceSelectionPlan || work.contextReceipt.importanceReferences?.plan);
     }
     work.markQueued?.(task);
     return { task, queued: true };
@@ -460,8 +485,15 @@ export function createTaskLifecycle({ createId, now, hash }) {
       const created = create(tasks, {
         kind: previous.kind, resourceType: previous.resourceType, targetId: previous.targetId, subtargetId: previous.subtargetId,
         payload: previous.payload, clientRequestId: `retry:${previous.id}`
-      }, inspectTarget, options);
-      if (created.task) created.task.retryOf = previous.id;
+      }, candidate => inspectTarget({ ...candidate,
+        ...(previous.importanceSelectionPlan ? { importanceSelectionPlan: structuredClone(previous.importanceSelectionPlan) } : {})
+      }), options);
+      if (created.task) {
+        created.task.retryOf = previous.id;
+        if (previous.importanceSelectionPlan && !created.task.importanceSelectionPlan) {
+          created.task.importanceSelectionPlan = structuredClone(previous.importanceSelectionPlan);
+        }
+      }
       return created;
     },
     claim(tasks, id) {

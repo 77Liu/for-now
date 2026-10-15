@@ -173,7 +173,7 @@ const registered = [];
 const handlers = Object.fromEntries([
   "startup", "sync", "personalContext", "aiBudget", "onboardingV2", "userModel",
   "thoughts", "checkins", "health", "discovery", "exports", "actions", "feedback",
-  "capturesJournals", "library", "reviewsChat", "contentAttachments"
+  "capturesJournals", "library", "reviewsChat", "contentAttachments", "importance"
 ].map(key => [key, async () => false]));
 const apiV1 = {
   register(id, handler) {

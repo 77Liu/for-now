@@ -166,7 +166,8 @@ function analysisHistoryMarkup(root, snapshot, {
       )}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="analysis-entry-body">${view.contextReceiptMarkup(
         item.contextReceipt,
         item.citations,
-        item.citationStatus
+        item.citationStatus,
+        item.providedReferences
       )}<div class="analysis-content markdown-content">${view.renderMarkdown(
         item.content
       )}</div>${item.contentTruncated

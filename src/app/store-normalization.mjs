@@ -1,3 +1,4 @@
+import { isImportanceScore, isImportanceJob } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import {
   normalizeOnboarding,
   normalizeOnboardingV2
@@ -17,7 +18,7 @@ import {
   isRecordCompressionRecordEnvelope,
   normalizeHistoricalUserSupplement
 } from "../modules/record-compressions/index.mjs";
-import { localDateKey, localDateTimeOn, strictDateKey } from "../shared/time/index.mjs";
+import { localDateKey, strictDateKey } from "../shared/time/index.mjs";
 import {
   nullableNumber,
   numberOrFallback as commercialNumber,
@@ -326,11 +327,15 @@ export function createStoreNormalizer({
 
   const normalizedEventTime = (item, previousVersion) => {
     const legacyDate = normalizedOccurredOn(item, previousVersion);
+    if ((item.eventTimePrecision === "date" || !safeIso(item.occurredAt)) && strictDateKey(item.occurredOn)) {
+      return { occurredAt: "", occurredOn: item.eventTimePrecision === "date" ? item.occurredOn : legacyDate, eventTimePrecision: "date" };
+    }
     const parsed = new Date(item.occurredAt || "");
-    const occurredAt = Number.isNaN(parsed.getTime())
-      ? localDateTimeOn(legacyDate, item.createdAt || new Date(currentTime()))
-      : parsed.toISOString();
-    return { occurredAt: occurredAt || now(), occurredOn: localDateKey(occurredAt) || legacyDate };
+    if (Number.isNaN(parsed.getTime()) || item.eventTimePrecision === "unknown") {
+      return { occurredAt: "", occurredOn: "", eventTimePrecision: "unknown" };
+    }
+    const occurredAt = parsed.toISOString();
+    return { occurredAt, occurredOn: localDateKey(occurredAt) || legacyDate };
   };
 
   return function normalizeStore(value = {}) {
@@ -338,6 +343,14 @@ export function createStoreNormalizer({
     const previousVersion = Number(source.version || 1);
     const hasOnboardingV2 = Object.hasOwn(source || {}, "onboardingV2");
     const store = { ...clone(emptyStore), ...source, version: STORE_VERSION };
+    if (source.importanceScores !== undefined && (!Array.isArray(source.importanceScores)
+      || !source.importanceScores.every(isImportanceScore))) {
+      throw storageInvalid("Store importanceScores contains invalid score bindings");
+    }
+    if (source.importanceJobs !== undefined && (!Array.isArray(source.importanceJobs)
+      || !source.importanceJobs.every(isImportanceJob))) {
+      throw storageInvalid("Store importanceJobs contains invalid range progress");
+    }
     try {
       store.historicalUserSupplement = normalizeHistoricalUserSupplement(store.historicalUserSupplement);
     } catch (error) {

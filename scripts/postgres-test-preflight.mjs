@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { constants as fsConstants, promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { prepareTestNodeBinary } from "./test-node-binary.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const requiredBinaries = ["postgres", "initdb", "pg_ctl"];
@@ -126,13 +128,32 @@ if (options.json) {
 
 if (options.runTests) {
   const npmCli = process.env.npm_execpath;
-  const executable = npmCli ? process.execPath : "npm";
-  const args = npmCli ? [npmCli, "run", "test:postgres"] : ["run", "test:postgres"];
-  const result = spawnSync(executable, args, {
-    cwd: root,
-    env: { ...process.env, PG_TEST_BIN: selected.binDirectory },
-    stdio: "inherit"
-  });
-  if (result.error) fail(result.error.message);
-  process.exit(result.status ?? 1);
+  let testNodeWorkspace;
+  try {
+    testNodeWorkspace = npmCli
+      ? await fs.mkdtemp(path.join(os.tmpdir(), "for-now-postgres-test-node-"))
+      : null;
+    const executable = npmCli
+      ? await prepareTestNodeBinary(testNodeWorkspace)
+      : "npm";
+    if (testNodeWorkspace) {
+      await fs.symlink(path.basename(executable), path.join(testNodeWorkspace, "node"));
+    }
+    const args = npmCli ? [npmCli, "run", "test:postgres"] : ["run", "test:postgres"];
+    const result = spawnSync(executable, args, {
+      cwd: root,
+      env: {
+        ...process.env,
+        PG_TEST_BIN: selected.binDirectory,
+        ...(testNodeWorkspace
+          ? { PATH: `${testNodeWorkspace}${path.delimiter}${process.env.PATH || ""}` }
+          : {})
+      },
+      stdio: "inherit"
+    });
+    if (result.error) fail(result.error.message);
+    process.exitCode = result.status ?? 1;
+  } finally {
+    if (testNodeWorkspace) await fs.rm(testNodeWorkspace, { recursive: true, force: true });
+  }
 }

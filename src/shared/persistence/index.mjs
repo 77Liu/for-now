@@ -44,3 +44,4 @@ export {
   validateRecordCompressionQuota, discoverJsonBundle, applyPostgresBundle, readPostgresBundle
 } from "./postgres-bundle.mjs";
 export { exportPostgresDirectory } from "./postgres-export.mjs";
+export { createBusinessId } from "../../../.build/typescript/backend/shared/persistence/business-identifiers.mjs";

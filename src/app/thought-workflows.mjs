@@ -16,7 +16,7 @@ import {
 } from "./personal-context.mjs";
 import { compileWorkingContextPrompt } from "./prompt-context.mjs";
 import { assertCoreModelReady } from "../shared/core-model-gate.mjs";
-import { answerCitationSources, parseVerifiedAnswer } from "./answer-citations.mjs";
+import { answerCitationSources, prepareReferenceRequest, verifyReferenceAnswer } from "./answer-citations.mjs";
 import {
   coreUserModelProjection,
   userModelRequiresCoreReady
@@ -42,6 +42,7 @@ export function createThoughtWorkflows({
   getAccountId = () => "local",
   coreModelReadiness = () => ({ ready: true }),
   getRecentTrend = () => null,
+  getImportanceModelSnapshot = () => null,
   materializeAttachmentFiles = async () => [],
   contextKey,
   now = () => new Date().toISOString()
@@ -115,6 +116,7 @@ export function createThoughtWorkflows({
     return {
       accountId: getAccountId(),
       scene: "thoughtAnswer",
+      importanceChoice: getImportanceModelSnapshot(),
       generatedAt,
       coreUserModel,
       recentTrend,
@@ -132,7 +134,8 @@ export function createThoughtWorkflows({
         scene: "thoughtAnswer",
         coreUserModel,
         historicalUserSupplement: recentTrend?.historicalUserSupplement || null,
-        recentTrend: recentTrend?.payload || null
+        recentTrend: recentTrend?.payload || null,
+          referenceEvidence: recentTrend?.citationSources || []
       })
     };
   };
@@ -162,11 +165,14 @@ export function createThoughtWorkflows({
       sourceTaskId,
       content: stripThoughtAnswerLead(result.content),
       reasoningContent: result.reasoningContent,
-      contextReceipt: compactPersonalContextReceipt(contextReceipt)
+      contextReceipt: { ...compactPersonalContextReceipt(contextReceipt),
+        ...(result.referenceReceipt ? { referenceRequest: structuredClone(result.referenceReceipt) } : {}) }
     });
     if (!saved.value || saved.duplicate) return saved;
     saved.value.citations = structuredClone(result.citations || []);
     saved.value.citationStatus = result.citationStatus || "none";
+    saved.value.providedReferences = structuredClone(result.providedReferences || []);
+    saved.value.rejectedReferences = structuredClone(result.rejectedReferences || []);
     const completedAt = now();
     store.aiTasks.unshift({
       id: sourceTaskId,
@@ -494,7 +500,7 @@ export function createThoughtWorkflows({
             const contextOptions = answerContextOptions(store, question);
             const workingContext = workingContextProjection(
               store,
-              contextOptions
+              { ...contextOptions, selectionSeed: hash(JSON.stringify([clientRequestId, contextOptions.coreUserModel])) }
             );
             const imagePaths = workingContext.attachmentPaths.length
               ? await materializeAttachmentFiles(workingContext.attachmentPaths)
@@ -519,22 +525,21 @@ export function createThoughtWorkflows({
             const bufferedDeltas = [];
             try {
               await assertWorkingContextCurrent();
-              const generated = await generate(workingContext.prompt, {
-                scene: "thoughtAnswer",
-                json: true,
-                captureReasoning: true,
-                contextReceipt: workingContext.receipt,
-                imagePaths,
-                onDelta: event => bufferedDeltas.push(event)
-              });
-              result = parseVerifiedAnswer(
-                generated.content,
+              const referenceRequest = prepareReferenceRequest(workingContext.prompt,
                 answerCitationSources(contextOptions.coreUserModel, [
                   ...(workingContext.citationSources || []),
                   ...(contextOptions.recentTrend?.historicalUserSupplementCitationSources || []),
                   ...(contextOptions.recentTrend?.citationSources || [])
-                ])
-              );
+                ]), JSON.stringify([getAccountId(), workingContext.receipt]), workingContext.receipt);
+              const generated = await generate(referenceRequest.prompt, {
+                scene: "thoughtAnswer",
+                json: true,
+                captureReasoning: true,
+                contextReceipt: { ...workingContext.receipt, referenceRequest: referenceRequest.receipt },
+                imagePaths,
+                onDelta: event => bufferedDeltas.push(event)
+              });
+              result = verifyReferenceAnswer(generated.content, referenceRequest);
               result.reasoningContent = generated.reasoningContent || "";
             } finally {
               await cleanupTemporaryFiles(imagePaths);

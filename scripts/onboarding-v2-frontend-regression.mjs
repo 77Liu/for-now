@@ -9,6 +9,7 @@ import {
   createOnboardingV2Controller,
   mergeOnboardingV2Conflict,
   onboardingV2ConflictRows,
+  onboardingV2DiscardPatch,
   onboardingV2DraftFromState,
   onboardingV2PendingResolution,
   onboardingV2PatchFromDraft
@@ -89,6 +90,11 @@ assert.deepEqual(currentPatch, {
 });
 assert.equal(Object.hasOwn(currentPatch.answers.currentContext, "version"), false);
 assert.equal(Object.hasOwn(currentPatch.answers.currentContext, "updatedAt"), false);
+assert.deepEqual(onboardingV2DiscardPatch(), {
+  selectedFlow: "v2",
+  status: "skipped",
+  step: "firstAction"
+});
 
 delete draft.answers.desiredChanges;
 draft.answers.recentObstacles = {
@@ -347,6 +353,121 @@ assert.match(onboardingModule, /data-onboarding-action="skip">暂不回答/);
 assert.match(onboardingModule, /restoreVisibleQuestionBaseline\(\)/);
 assert.match(onboardingModule, /task\?\.status === "ready"/);
 assert.match(onboardingModule, /没有获准用于后续回答的内容，因此核心模型按未知状态就绪/);
+assert.match(onboardingModule, /data-onboarding-action="discard">放弃本次且不保存/);
+
+const discardContent = {
+  innerHTML: "",
+  listeners: {},
+  addEventListener(name, callback) { this.listeners[name] = callback; },
+  querySelector(selector) {
+    return selector === "h1" ? { focus() {} } : null;
+  },
+  querySelectorAll() { return []; }
+};
+const discardRoot = {
+  hidden: true,
+  classList: { toggle() {} },
+  querySelectorAll() { return []; },
+  scrollIntoView() {}
+};
+const discardElements = new Map();
+for (const [selector, element] of Object.entries({
+  "#onboarding-workspace": discardRoot,
+  "#onboarding-v2-content": discardContent,
+  "#onboarding-v2-steps": {
+    innerHTML: "",
+    addEventListener() {}
+  },
+  "#onboarding-v2-shell": { hidden: false },
+  "#onboarding-form": { hidden: false },
+  "#onboarding-v2-back": { hidden: false, addEventListener() {} },
+  "#onboarding-v2-exit": { hidden: false, addEventListener() {} },
+  "#onboarding-v2-save-status": { textContent: "" }
+})) discardElements.set(selector, element);
+const discardInitialState = structuredClone(serverState);
+const concurrentSession = structuredClone(discardInitialState.session);
+concurrentSession.revision += 1;
+concurrentSession.answers.currentContext.rawText = "另一设备刚刚保存的已有回答";
+concurrentSession.answers.currentContext.version += 1;
+let discardPersistedDraft = onboardingV2DraftFromState(discardInitialState, { owner: "account-a" });
+discardPersistedDraft.answers.currentContext.rawText = "本设备不应保存的当前草稿";
+discardPersistedDraft.localDirty = true;
+discardPersistedDraft.step = "q3";
+let discardDeleteCount = 0;
+const discardRequests = [];
+const discardedServerState = structuredClone(discardInitialState);
+discardedServerState.session = {
+  ...concurrentSession,
+  status: "skipped",
+  step: "firstAction",
+  revision: concurrentSession.revision + 1
+};
+const discardController = createOnboardingV2Controller({
+  query: selector => discardElements.get(selector) || null,
+  requestV1: async (path, options = {}) => {
+    assert.equal(path, "/api/v1/onboarding-v2/session");
+    const body = JSON.parse(options.body);
+    discardRequests.push({
+      body,
+      ifMatch: options.headers["if-match"]
+    });
+    if (discardRequests.length === 1) {
+      throw Object.assign(new Error("concurrent update"), {
+        code: "ONBOARDING_SESSION_CONFLICT",
+        details: { currentSession: structuredClone(concurrentSession) }
+      });
+    }
+    return { data: structuredClone(discardedServerState) };
+  },
+  draftStore: {
+    durable: true,
+    async get() { return structuredClone(discardPersistedDraft); },
+    async put(value) { discardPersistedDraft = structuredClone(value); },
+    async delete() {
+      discardDeleteCount += 1;
+      discardPersistedDraft = null;
+    }
+  },
+  owner: () => "account-a"
+});
+await discardController.hydrate({
+  schema: { questions: Array.from({ length: 5 }, (_, index) => ({ prompt: `问题 ${index + 1}` })) },
+  state: discardInitialState
+});
+assert.equal(discardRoot.hidden, false);
+discardContent.listeners.click({
+  target: {
+    closest(selector) {
+      return selector === "[data-onboarding-action]"
+        ? { dataset: { onboardingAction: "discard" } }
+        : null;
+    }
+  }
+});
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.deepEqual(discardRequests.map(request => request.body), [
+  onboardingV2DiscardPatch(),
+  onboardingV2DiscardPatch()
+]);
+assert.deepEqual(discardRequests.map(request => request.ifMatch), ['"5"', '"6"']);
+assert.ok(discardRequests.every(request => (
+  !Object.hasOwn(request.body, "answers")
+  && !Object.hasOwn(request.body, "collaboration")
+)));
+assert.equal(discardController.getState().serverState.session.status, "skipped");
+assert.equal(
+  discardController.getState().serverState.session.answers.currentContext.rawText,
+  "另一设备刚刚保存的已有回答"
+);
+assert.equal(discardRoot.hidden, true);
+assert.equal(discardDeleteCount, 1);
+assert.equal(discardPersistedDraft, null);
+
+await discardController.hydrate({
+  schema: { questions: Array.from({ length: 5 }, (_, index) => ({ prompt: `问题 ${index + 1}` })) },
+  state: discardedServerState
+});
+assert.equal(discardRoot.hidden, true, "刷新后终态不能再次自动弹出");
 
 const readyUiState = structuredClone(dispositionState);
 readyUiState.session.status = "draft";

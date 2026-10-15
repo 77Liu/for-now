@@ -152,11 +152,23 @@ function createHarness({
       JSON.parse(result.content);
       return result;
     } catch {
+      const envelope = /<reference_context_data format="application\/json">([\s\S]*?)<\/reference_context_data>/.exec(prompt);
+      const promptAnswers = envelope
+        ? JSON.parse(envelope[1])?.coreUserModel?.answers || []
+        : [];
+      const promptCitation = promptAnswers.find(answer => (
+        String(answer.text || "").includes("core-source-current-context")
+      )) || promptAnswers[0];
       return {
         ...result,
         content: JSON.stringify({
           answer: result.content,
-          citations: coreCitation ? [{
+          citations: promptCitation ? [{
+            citationId: promptCitation.citationId,
+            exactQuote: promptCitation.text.includes("core-source-current-context")
+              ? "core-source-current-context"
+              : promptCitation.text.slice(0, 80)
+          }] : coreCitation ? [{
             citationId: coreCitation.citationId,
             exactQuote: coreCitation.text.includes("core-source-current-context")
               ? "core-source-current-context"
@@ -255,24 +267,36 @@ function createHarness({
   return { store, repository, capture, review, journals, chats, reviews };
 }
 
-function expectedCorePrefix(store) {
-  const model = coreUserModelProjection(store);
-  return JSON.stringify({
-    coreUserModel: {
-      fingerprint: model.fingerprint,
-      claims: model.claims,
-      answers: model.answers,
-      unknowns: model.unknowns
-    }
-  });
-}
-
 function assertPromptOrder(prompt, store, dynamicMarker, label) {
-  const prefix = expectedCorePrefix(store);
-  const coreIndex = prompt.indexOf(prefix);
-  assert.notEqual(coreIndex, -1, `${label}: exact serialized core model must be the stable prompt prefix`);
-  assert.ok(prompt.indexOf(`"fingerprint":"${coreUserModelProjection(store).fingerprint}"`) >= coreIndex,
-    `${label}: current core model fingerprint must be present`);
+  const envelope = /<reference_context_data format="application\/json">([\s\S]*?)<\/reference_context_data>/.exec(prompt);
+  assert.ok(envelope, `${label}: stable reference context must be present`);
+  const coreIndex = envelope.index;
+  const core = JSON.parse(envelope[1]).coreUserModel;
+  const expected = coreUserModelProjection(store);
+  assert.ok(core, `${label}: core model must remain in the stable reference context`);
+  const aliased = core.answers.every(answer => /^r[1-9][0-9]*$/.test(answer.sourceId));
+  if (aliased) {
+    assert.equal(Object.hasOwn(core, "fingerprint"), false,
+      `${label}: reference-bearing prompts must not expose the internal model fingerprint`);
+    assert.ok(core.answers.every(answer => answer.citationId === answer.sourceId),
+      `${label}: reference-bearing core answers must use request-scoped aliases`);
+  } else {
+    assert.equal(core.fingerprint, expected.fingerprint,
+      `${label}: non-reference assistance must retain its stable internal model identity`);
+    assert.deepEqual(core.answers.map(answer => answer.sourceId), expected.answers.map(answer => answer.sourceId),
+      `${label}: non-reference assistance must retain canonical core answer identities`);
+  }
+  assert.deepEqual(core.answers.map(answer => ({
+    title: answer.title,
+    informationType: answer.informationType,
+    text: answer.text,
+    sourceVersion: answer.sourceVersion
+  })), expected.answers.map(answer => ({
+    title: answer.title,
+    informationType: answer.informationType,
+    text: answer.text,
+    sourceVersion: answer.sourceVersion
+  })), `${label}: aliased core answers must preserve the exact permitted content`);
   const dynamicIndex = prompt.indexOf(dynamicMarker);
   assert.notEqual(dynamicIndex, -1, `${label}: user-authored dynamic evidence must remain in the prompt`);
   assert.ok(coreIndex < dynamicIndex, `${label}: stable model context must precede dynamic context`);

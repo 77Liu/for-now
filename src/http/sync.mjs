@@ -146,6 +146,7 @@ export function createSyncHttp({ repository, publicState }) {
           firstCursor: receipt.firstCursor,
           lastCursor: receipt.lastCursor,
           committedAt: receipt.committedAt,
+          ...(receipt.businessIdMapping ? { businessIdMapping: receipt.businessIdMapping } : {}),
           responseAvailable: false
         } : {})
       });

@@ -278,6 +278,47 @@ const source = {
   version: 1,
   contentSha256: digest(original)
 };
+const repairedQuote = "适应新的工作节奏";
+const repaired = parseClaimExtractionOutput(JSON.stringify({
+  claims: [{
+    domain: "context",
+    statement: "最近正在适应新的工作节奏",
+    epistemic: "known",
+    evidenceStrength: "self_report",
+    evidence: [{
+      sourceId: source.id,
+      exactQuote: repairedQuote,
+      span: [0, 999]
+    }]
+  }],
+  unknowns: []
+}), { sources: [source], sourceTaskId: "repair-unique-quote" });
+assert.deepEqual(repaired.claims[0].evidence[0].span, [
+  original.indexOf(repairedQuote),
+  original.indexOf(repairedQuote) + repairedQuote.length
+]);
+assert.throws(() => parseClaimExtractionOutput(JSON.stringify({
+  claims: [{
+    domain: "context",
+    statement: "重复内容",
+    epistemic: "known",
+    evidenceStrength: "self_report",
+    evidence: [{
+      sourceId: "repeated",
+      exactQuote: "重复",
+      span: [0, 999]
+    }]
+  }],
+  unknowns: []
+}), {
+  sources: [{
+    id: "repeated",
+    text: "重复重复",
+    version: 1,
+    contentSha256: digest("重复重复")
+  }],
+  sourceTaskId: "reject-ambiguous-quote"
+}), error => error.code === "CLAIM_EXTRACTION_INVALID");
 assert.throws(() => parseClaimExtractionOutput(JSON.stringify({
   claims: Array.from({ length: CLAIM_EXTRACTION_MAX_CANDIDATES + 1 }, () => ({
     domain: "context",
@@ -324,4 +365,4 @@ assert.deepEqual(scheduled.length, 1);
 await backgroundAi.run(recoverable.task.id);
 assert.equal(store.aiTasks.find(item => item.id === recoverable.task.id).status, "succeeded");
 
-console.log("User model extraction checks passed: durable queueing, idempotency, strict JSON/span validation, candidate persistence, stale-source rejection, failure isolation, result lookup and restart recovery.");
+console.log("User model extraction checks passed: durable queueing, idempotency, strict JSON/span validation, unique exact-quote span recovery, candidate persistence, stale-source rejection, failure isolation, result lookup and restart recovery.");

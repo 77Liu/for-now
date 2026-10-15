@@ -1,3 +1,4 @@
+import { llmSettingsForScene } from "../modules/ai/index.mjs";
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -12,6 +13,7 @@ import { DEFAULT_RECORD_TIMEZONE } from "../modules/record-compressions/index.mj
 import { installPromptCatalog } from "../shared/prompts/index.mjs";
 import {
   createJsonStoreRepository,
+  createBusinessId,
   createPostgresRuntime,
   checkPersistenceMarker,
   hasJsonData,
@@ -264,15 +266,28 @@ export async function createRuntimeFoundation({
     repository: storeRepository,
     now,
     today,
-    createId
+    createId: createBusinessId
   });
   const feedbackService = createFeedbackService({
     repository: storeRepository,
     now,
-    createId,
+    createId: createBusinessId,
     hash
   });
+  const importanceSnapshots = new WeakMap();
+  const localImportanceScope = {};
+  const importanceScope = () => requestStorage.getStore() || localImportanceScope;
+  const refreshImportanceModelChoice = async () => {
+    const scope = importanceScope();
+    importanceSnapshots.delete(scope);
+    const settings = llmSettingsForScene(await aiRuntime.readModelRuntimeSettings(), "importanceScoring");
+    const snapshot = { model: settings.model, effort: settings.effort,
+      source: "effective-model-runtime-reader", accountId: requestStorage.getStore()?.user?.id || "local" };
+    importanceSnapshots.set(scope, snapshot);
+    return snapshot;
+  };
   const contentRuntime = createContentRuntime({
+    createBusinessId,
     repository: storeRepository,
     trashRetentionDays: TRASH_RETENTION_DAYS,
     getAccountId: () => requestStorage.getStore()?.user?.id || "local",
@@ -286,6 +301,11 @@ export async function createRuntimeFoundation({
       setImmediate(() => requestStorage.run(context, callback));
     },
     runDeepSeek: aiRuntime.runDeepSeek,
+    getImportanceModelChoice: refreshImportanceModelChoice,
+    getImportanceModelSnapshot: () => {
+      const snapshot = importanceSnapshots.get(importanceScope());
+      return snapshot?.accountId === (requestStorage.getStore()?.user?.id || "local") ? snapshot : null;
+    },
     readAiUsage: aiRuntime.readAiUsage,
     recordCompressionDailyBudgetCny: appConfig.recordCompressionDailyBudgetCny,
     recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,
@@ -399,7 +419,7 @@ export async function createRuntimeFoundation({
       uploadImageBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES
     }),
     clock: { now, today },
-    identifiers: { createId, hash, requestBinding },
+    identifiers: { createId, createBusinessId, hash, requestBinding },
     observability: { requestStorage, logEvent, auditChanges, runtimeMemorySampler },
     persistence: {
       postgresRuntime,

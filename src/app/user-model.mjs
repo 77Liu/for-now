@@ -32,7 +32,7 @@ const extractionSchema = JSON.stringify({
     scope: "string (optional)",
     epistemic: "known|hypothesis",
     evidenceStrength: "self_report|single_observation|multiple_observations|insufficient",
-    evidence: [{ sourceId: "question id", span: [0, 1] }]
+    evidence: [{ sourceId: "question id", exactQuote: "verbatim source text", span: [0, 1] }]
   }],
   unknowns: [{
     question: "string",

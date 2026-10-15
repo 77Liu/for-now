@@ -629,6 +629,7 @@ try {
   await fs.writeFile(path.join(secondDir, "store.json"), JSON.stringify({ ...oldStore, version: 11, thoughts: [queuedQuestion, queuedFollowUpQuestion, queuedAnnotationQuestion, ...(oldStore.thoughts || [])], aiTasks: [...queuedTasks, ...(oldStore.aiTasks || [])], notifications: [] }));
   await fs.writeFile(path.join(secondDir, "llm-settings.json"), JSON.stringify({ ...oldSettings, version: 3 }));
   await fs.writeFile(path.join(secondDir, "ai-usage.json"), JSON.stringify({ ...oldUsage, version: 1 }));
+  const providerCallsBeforeLegacyResume = providerCalls;
   child.kill("SIGTERM");
   if (child.exitCode == null) await new Promise(resolve => child.once("exit", resolve));
   child = startApp();
@@ -651,16 +652,17 @@ try {
     }
     assert.equal(
       resumedTask.status,
-      queuedTask.inputVersion ? "succeeded" : "stale",
+      "stale",
       JSON.stringify(resumedTask)
     );
     resumedTasks.set(queuedTask.id, resumedTask);
   }
   const resumedState = (await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body;
-  assert.equal(resumedState.thoughts.filter(item => item.sourceTaskId === queuedTasks[0].id).length, 1);
-  assert.equal(resumedState.thoughts.find(item => item.id === queuedFollowUpQuestion.id).followUps[0].sourceTaskId, queuedTasks[1].id);
-  assert.equal(resumedState.thoughts.find(item => item.id === queuedAnnotationQuestion.id).annotations[0].shenji[0].sourceTaskId, queuedTasks[2].id);
-  assert.equal(resumedState.notifications.filter(item => queuedTasks.some(task => task.id === item.taskId) && item.status === "succeeded").length, 3);
+  assert.equal(resumedState.thoughts.filter(item => item.sourceTaskId === queuedTasks[0].id).length, 0);
+  assert.equal(resumedState.thoughts.find(item => item.id === queuedFollowUpQuestion.id).followUps[0].sourceTaskId || "", "");
+  assert.equal(resumedState.thoughts.find(item => item.id === queuedAnnotationQuestion.id).annotations[0].shenji.length, 0);
+  assert.equal(resumedState.notifications.filter(item => queuedTasks.some(task => task.id === item.taskId) && item.status === "succeeded").length, 0);
+  assert.equal(providerCalls, providerCallsBeforeLegacyResume);
   const callsAfterResume = providerCalls;
   child.kill("SIGTERM");
   if (child.exitCode == null) await new Promise(resolve => child.once("exit", resolve));
@@ -669,9 +671,9 @@ try {
   await sleep(150);
   assert.equal(providerCalls, callsAfterResume);
   const stateAfterSecondRestart = (await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body;
-  assert.equal(stateAfterSecondRestart.thoughts.filter(item => item.sourceTaskId === queuedTasks[0].id).length, 1);
-  assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedFollowUpQuestion.id).followUps.filter(item => item.sourceTaskId === queuedTasks[1].id).length, 1);
-  assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedAnnotationQuestion.id).annotations[0].shenji.filter(item => item.sourceTaskId === queuedTasks[2].id).length, 1);
+  assert.equal(stateAfterSecondRestart.thoughts.filter(item => item.sourceTaskId === queuedTasks[0].id).length, 0);
+  assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedFollowUpQuestion.id).followUps.filter(item => item.sourceTaskId === queuedTasks[1].id).length, 0);
+  assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedAnnotationQuestion.id).annotations[0].shenji.filter(item => item.sourceTaskId === queuedTasks[2].id).length, 0);
 
   await fs.writeFile(path.join(dataDir, "auth.json"), "{PRIVATE_CORRUPT_AUTH");
   const damaged = await jsonRequest(`${base}/now/api/auth/me`, { headers: { cookie: secondCookie } });

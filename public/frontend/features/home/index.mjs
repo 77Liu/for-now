@@ -1,5 +1,5 @@
 const text = value => typeof value === "string" ? value.trim() : "";
-const timestamp = item => text(item?.occurredAt || item?.createdAt);
+const timestamp = item => text(item?.occurredAt || item?.occurredOn || item?.createdAt);
 const typeOrder = ["thought", "book", "quote"];
 
 export { createHomeFeatureController } from "./controller.mjs";

@@ -5,20 +5,23 @@ export const localDateKey = (value = new Date()) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };
 
-export const formatDate = iso => new Intl.DateTimeFormat("zh-CN", {
-  month: "short",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23"
-}).format(new Date(iso));
+export const formatDate = iso => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return formatDateKey(iso);
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).format(date);
+};
 
-export const formatTime = iso => new Intl.DateTimeFormat("zh-CN", {
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hourCycle: "h23"
-}).format(new Date(iso));
+export const formatTime = iso => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return "时刻未注明";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
+  }).format(date);
+};
 
 export const formatDateKey = value => {
   const [year, month, day] = String(value || "").split("-").map(Number);
@@ -35,9 +38,10 @@ export const localDateTimeForDate = (dateKey, value = new Date()) => {
   return `${dateKey}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 };
 
-export const eventTimestamp = item => item?.occurredAt || item?.createdAt;
+export const eventTimestamp = item => item?.occurredAt || item?.occurredOn || item?.createdAt;
 
 export const persistedDateTimeInput = item => {
+  if (["date", "unknown"].includes(item?.eventTimePrecision) || (!item?.occurredAt && item?.occurredOn)) return "";
   const value = item?.occurredAt || item?.createdAt;
   if (!value || Number.isNaN(new Date(value).getTime())) return "";
   return toLocalDateTimeInput(value);

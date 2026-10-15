@@ -25,6 +25,7 @@ export function createBackgroundAi({
   now = () => new Date().toISOString(),
   onError,
   shouldWaitForModel = () => false,
+  beforePrepare = async () => {},
   inspectIntent = targets?.inspectIntent
 }) {
   const internalKinds = new Set(["perceptionExtraction", RECORD_COMPRESSION_TASK_KIND]);
@@ -120,7 +121,8 @@ export function createBackgroundAi({
       store.aiTasks,
       input,
       task => prepareTarget(store, task),
-      { deferTargetInspection: waiting, requestedIntent, waitingBudget }
+      { deferTargetInspection: waiting, requestedIntent, waitingBudget,
+        allocateIdentity: task => targetFor(task).allocateIdentity?.(store, task) }
     ));
   };
   const schedule = taskId => dispatch(() => void run(taskId).catch(error => onError(taskId, error)));
@@ -145,7 +147,8 @@ export function createBackgroundAi({
     });
     notify(store, task, "cancelled", task.error);
   };
-  const currentWork = async (taskId, expectedWork) => {
+  const currentWork = async (taskId, expectedWork, kind) => {
+    await beforePrepare({ kind });
     const store = await repository.read();
     const task = store.aiTasks.find(item => item.id === taskId);
     if (!task || task.status !== "running") return null;
@@ -164,6 +167,8 @@ export function createBackgroundAi({
     controllers.set(key, controller);
     let executed = false;
     try {
+      const initial = await repository.read();
+      await beforePrepare(initial.aiTasks.find(item => item.id === taskId));
       const claimed = await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task || task.status !== "queued") return false;
@@ -203,11 +208,13 @@ export function createBackgroundAi({
       }
       const generated = await generate(work, {
         signal: controller.signal,
-        isCurrent: async () => Boolean(await currentWork(taskId, work))
+        isCurrent: async () => Boolean(await currentWork(taskId, work, task.kind))
       });
       const result = work.contextReceipt && generated && typeof generated === "object" && !Array.isArray(generated)
-        ? { ...generated, contextReceipt: compactPersonalContextReceipt(work.contextReceipt) }
+        ? { ...generated, contextReceipt: { ...compactPersonalContextReceipt(work.contextReceipt),
+          ...(generated.referenceReceipt ? { referenceRequest: structuredClone(generated.referenceReceipt) } : {}) } }
         : generated;
+      if (task.kind === "importanceScoring") await beforePrepare({ kind: task.kind });
       await repository.update(value => {
         const currentTask = value.aiTasks.find(item => item.id === taskId);
         if (!currentTask) return false;
@@ -215,7 +222,9 @@ export function createBackgroundAi({
           cancelled(value, currentTask);
           return false;
         }
-        const currentWork = prepareTarget(value, currentTask);
+        const resultTarget = targetFor(currentTask);
+        const currentWork = resultTarget.prepareResult
+          ? resultTarget.prepareResult(value, currentTask) : prepareTarget(value, currentTask);
         const contextChanged = work.contextFingerprint
           && work.contextFingerprint !== currentWork?.contextFingerprint;
         if (!taskInputMatches(task, currentWork) || contextChanged) {
@@ -259,7 +268,7 @@ export function createBackgroundAi({
       try {
         const store = await repository.read();
         const task = store.aiTasks.find(item => item.id === taskId);
-        if (executed && task && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
+        if ((executed || task?.kind === "importanceScoring") && task && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
           await targetFor(task).settled?.(task);
         }
         if (task?.kind === "onboardingClaimExtraction"
@@ -304,6 +313,7 @@ export function createBackgroundAi({
   }
 
   async function enqueueTask(input, { internal = false, waitingBudget = false } = {}) {
+    await beforePrepare(input);
     const kind = String(input?.kind ?? "").trim();
     if (internal ? kind !== RECORD_COMPRESSION_TASK_KIND : internalKinds.has(kind)) {
       return { unsupported: true };
@@ -336,7 +346,7 @@ export function createBackgroundAi({
     return created;
   }
 
-  async function promoteInternalBudgetWaiting(limit = 0, { operation = "", localDate = "" } = {}) {
+  async function promoteInternalBudgetWaiting(limit = 0, { operation = "", localDate = "", windowKey = "" } = {}) {
     const promotionLimit = Number(limit) === Number.POSITIVE_INFINITY
       ? Number.POSITIVE_INFINITY
       : Number.isFinite(Number(limit))
@@ -349,7 +359,8 @@ export function createBackgroundAi({
         .filter(task => task.kind === RECORD_COMPRESSION_TASK_KIND
           && task.status === WAITING_FOR_BUDGET_STATUS
           && (!operation || task.payload?.operation === operation)
-          && (!localDate || task.payload?.localDate === localDate))
+          && (!localDate || task.payload?.localDate === localDate)
+          && (!windowKey || task.payload?.windowKey === windowKey))
         .sort((left, right) => (
           String(right.payload?.localDate || right.payload?.windowEnd || "")
             .localeCompare(String(left.payload?.localDate || left.payload?.windowEnd || ""))
@@ -484,15 +495,16 @@ export function createBackgroundAi({
     retry: id => retryTask(id),
     retryInternal: id => retryTask(id, { includeInternal: true }),
     async resume() {
+      await beforePrepare({ kind: "importanceScoring" });
       const ids = await repository.update(store => {
         const { interrupted } = tasks.recover(store.aiTasks);
-        const recovered = [];
         for (const task of interrupted) {
           targetFor(task).fail?.(store, task, { code: "TASK_INTERRUPTED" });
           notify(store, task, "failed", task.error);
           const recoveryAttempt = Math.max(0, Math.round(Number(task.recoveryAttempt) || 0));
           if (isInternalTask(task)
             && task.kind !== RECORD_COMPRESSION_TASK_KIND
+            && !(task.kind === "importanceScoring" && task.clientRequestId?.startsWith("importance-range:"))
             && taskHasRequiredTarget(store, task)
             && recoveryAttempt < INTERNAL_RECOVERY_LIMIT) {
             const retry = notifyCreated(
@@ -505,20 +517,23 @@ export function createBackgroundAi({
             );
             if (!retry.duplicate && retry.task?.status === "queued") {
               retry.task.recoveryAttempt = recoveryAttempt + 1;
-              recovered.push(retry.task.id);
             }
           }
         }
         const queued = [];
         for (const task of store.aiTasks) {
           if (task.status !== "queued") continue;
+          if (!task.inputHash && task.kind !== RECORD_COMPRESSION_TASK_KIND) {
+            stale(store, task, "旧排队任务缺少可验证输入绑定，未调用模型");
+            continue;
+          }
           if (!taskHasRequiredTarget(store, task)) {
             stale(store, task, "排队任务的目标当前不可用，任务已终止");
             continue;
           }
           queued.push(task.id);
         }
-        return [...queued, ...recovered];
+        return queued;
       });
       for (const id of ids) schedule(id);
       await releaseWaiting();

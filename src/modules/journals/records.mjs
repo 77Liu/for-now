@@ -122,9 +122,12 @@ export function createJournalRecords({
     const reflection = {
       id: createId(),
       createdAt: now(),
+      generatedAt: now(),
       sourceUpdatedAt: input.sourceUpdatedAt,
       content: input.content,
       ...(Array.isArray(input.citations) ? { citations: structuredClone(input.citations) } : {}),
+      ...(Array.isArray(input.providedReferences) ? { providedReferences: structuredClone(input.providedReferences) } : {}),
+      ...(Array.isArray(input.rejectedReferences) ? { rejectedReferences: structuredClone(input.rejectedReferences) } : {}),
       ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
       ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
       ...(input.contextReceipt ? { contextReceipt: structuredClone(input.contextReceipt) } : {}),

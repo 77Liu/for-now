@@ -13,7 +13,8 @@ import {
 } from "../src/app/index.mjs";
 import {
   RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
-  RECORD_COMPRESSION_TASK_KIND
+  RECORD_COMPRESSION_TASK_KIND,
+  RECORD_COMPRESSION_OUTPUT_BUDGETS
 } from "../src/modules/record-compressions/index.mjs";
 
 const rotationAccounts = [{ id: "account-a" }, { id: "account-b" }, { id: "account-c" }];
@@ -44,7 +45,7 @@ assert.deepEqual(recordCompressionAccountOrder([], {
   reservedCalls: 1
 }), { startingOffset: 0, orderedUsers: [] }, "an empty account set must produce an empty schedule");
 
-let currentNow = "2026-10-10T08:00:00.000Z";
+let currentNow = "2026-10-10T10:05:00.000Z";
 let currentTimezone = DEFAULT_RECORD_TIMEZONE;
 const now = () => currentNow;
 const hash = value => crypto.createHash("sha256").update(String(value)).digest("hex");
@@ -193,7 +194,7 @@ await runtime.backgroundAi.run(firstTask.id);
 assert.equal(calls.length, 1);
 assert.equal(calls[0].scene, RECORD_COMPRESSION_TASK_KIND);
 assert.equal(calls[0].json, true);
-assert.equal(calls[0].maxTokens, 900);
+assert.equal(calls[0].maxTokens, RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens);
 assert.equal(calls[0].captureReasoning, false);
 assert.equal(typeof calls[0].isCurrent, "function",
   "content background must pass the exact task-current callback through to the provider wrapper");
@@ -351,7 +352,7 @@ store.thoughts.push(
   }
 );
 const inFlightBatch = await runtime.runRecordCompressionScan({
-  asOf: now(), slot: "morning", backfillDates: 0, maxQueued: 2
+  asOf: now(), slot: "morning", backfillDates: 1, maxQueued: 2
 });
 assert.equal(inFlightBatch.queuedCount, 2);
 const inFlightTasks = inFlightBatch.taskIds.map(taskId => store.aiTasks.find(task => task.id === taskId));
@@ -376,6 +377,7 @@ const foreignTask = {
     localDate: foreignPayload.localDate,
     timezone: foreignPayload.timezone,
     promptVersion: foreignPayload.promptVersion,
+    ...(foreignPayload.windowKey ? { windowKey: foreignPayload.windowKey } : {}),
     sourceManifestHash: foreignPayload.sourceManifestHash
   }))
 };
@@ -451,7 +453,8 @@ const summaryForTask = taskId => {
 };
 
 addThought("yesterday-source", "2026-10-09", "昨天需要优先完成的合成记录。");
-addThought("today-source", "2026-10-10", "今天已有摘要后新增的合成记录。", "2026-10-09T21:00:00.000Z");
+addThought("morning-source", "2026-10-10", "早间闭合槽的合成记录。", "2026-10-09T21:00:00.000Z");
+addThought("today-source", "2026-10-10", "今天已有摘要后新增的合成记录。");
 const morningAsOf = "2026-10-09T22:00:00.000Z";
 currentNow = morningAsOf;
 store.recordCompressions = store.recordCompressions.filter(summary => (
@@ -464,8 +467,8 @@ const morning = await runtime.runRecordCompressionScan({
   maxQueued: 1
 });
 assert.equal(morning.primaryQueuedCount, 1,
-  "06:00 first run must queue yesterday without spending a call on a new current-day summary");
-assert.deepEqual(datesForPrimaryTasks(morning.taskIds), ["2026-10-09"]);
+  "06:00 first run queues the closed morning slot named by its ending date");
+assert.deepEqual(datesForPrimaryTasks(morning.taskIds), ["2026-10-10"]);
 const morningDailyTask = morning.taskIds.find(taskId => (
   store.aiTasks.find(task => task.id === taskId)?.payload?.operation === "daily"
 ));
@@ -485,11 +488,12 @@ assert.deepEqual(datesForPrimaryTasks(evening.taskIds), ["2026-10-10"]);
 const eveningDailyTask = evening.taskIds.find(taskId => (
   store.aiTasks.find(task => task.id === taskId)?.payload?.operation === "daily"
 ));
-assert.equal(summaryForTask(eveningDailyTask)?.window.completeness, "partial",
-  "the 18:05 main task must summarize today's partial window");
+assert.equal(summaryForTask(eveningDailyTask)?.window.completeness, "complete",
+  "18:05主任务窗口已经闭合，不再是全天部分窗口");
 await runTasks(evening.taskIds);
 
 const storeBeforeCrossTimezone = structuredClone(store);
+const ledgerBeforeCrossTimezone = structuredClone(ledger);
 currentTimezone = "America/Los_Angeles";
 const priorEvening = await runtime.runRecordCompressionScan({
   asOf: currentNow,
@@ -497,8 +501,8 @@ const priorEvening = await runtime.runRecordCompressionScan({
   backfillDates: 0,
   maxQueued: 1
 });
-assert.deepEqual(datesForPrimaryTasks(priorEvening.taskIds), ["2026-10-10"],
-  "the prior Shanghai evening must create the Los Angeles current-day summary");
+assert.deepEqual(datesForPrimaryTasks(priorEvening.taskIds), [],
+  "账户时区改变不会重建已合法消费的上海增量槽");
 await runTasks(priorEvening.taskIds);
 const crossTimezoneThoughts = structuredClone(store.thoughts);
 store.thoughts = store.thoughts.filter(source => source.occurredOn !== "2026-10-10");
@@ -514,7 +518,7 @@ const oldDateWaitingTask = store.aiTasks.find(task => (
   && task.status === "waitingBudget"
   && task.payload?.operation === "daily"
   && task.payload?.localDate === "2026-10-09"
-  && task.payload?.timezone === currentTimezone
+  && task.payload?.timezone === DEFAULT_RECORD_TIMEZONE
 ));
 assert.ok(oldDateWaitingTask,
   "the synthetic fixture must contain an older date waiting for budget");
@@ -543,20 +547,21 @@ await runtime.updateSourceStore(current => {
   source.version += 1;
 });
 currentNow = "2026-10-10T22:00:00.000Z";
+addThought("next-morning-source", "2026-10-10", "当晚新发生、归次日早间槽的记录。", "2026-10-10T12:00:00.000Z");
 const morningRefresh = await runtime.runRecordCompressionScan({
   asOf: now(),
   slot: "morning",
-  backfillDates: 0,
+  backfillDates: 1,
   maxQueued: 1
 });
 assert.equal(morningRefresh.primaryQueuedCount, 1,
   "06:00 must complete the previous day while reserving the remaining invocation for 18:05");
-assert.deepEqual(datesForPrimaryTasks(morningRefresh.taskIds), ["2026-10-09"]);
+assert.deepEqual(datesForPrimaryTasks(morningRefresh.taskIds), ["2026-10-11"]);
 const morningTodayWaiter = store.aiTasks.find(task => (
   morningRefresh.waitingBudgetTaskIds.includes(task.id)
   && task.payload?.operation === "daily"
   && task.payload?.localDate === "2026-10-10"
-  && task.payload?.timezone === currentTimezone
+  && task.payload?.timezone === DEFAULT_RECORD_TIMEZONE
 ));
 assert.ok(morningTodayWaiter,
   "an existing current-day summary that changed after yesterday used the morning slot must persist for revalidation");
@@ -570,6 +575,8 @@ await runTasks(morningRefresh.taskIds);
 
 for (const key of Object.keys(store)) delete store[key];
 Object.assign(store, storeBeforeCrossTimezone);
+ledger.clear();
+for (const [key, value] of ledgerBeforeCrossTimezone) ledger.set(key, value);
 currentTimezone = DEFAULT_RECORD_TIMEZONE;
 currentNow = "2026-10-10T10:05:00.000Z";
 
@@ -581,18 +588,18 @@ const firstHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
 assert.equal(firstHistoryBatch.queuedCount, 1);
-assert.deepEqual(datesForTasks(firstHistoryBatch.taskIds), ["2026-10-08"],
+assert.deepEqual(datesForTasks(firstHistoryBatch.taskIds), ["2026-10-09"],
   "first-run history must begin with the newest missing date in the seven-day window");
 const secondHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
 assert.equal(secondHistoryBatch.queuedCount, 1);
-assert.deepEqual(datesForTasks(secondHistoryBatch.taskIds), ["2026-10-07"]);
+assert.deepEqual(datesForTasks(secondHistoryBatch.taskIds), ["2026-10-08"]);
 const thirdHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 2
 });
 assert.equal(thirdHistoryBatch.queuedCount, 2);
-assert.deepEqual(datesForTasks(thirdHistoryBatch.taskIds), ["2026-10-06", "2026-10-05"]);
+assert.deepEqual(datesForTasks(thirdHistoryBatch.taskIds), ["2026-10-07", "2026-10-06"]);
 const accountBudgetCap = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
@@ -610,8 +617,11 @@ const finalHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
 assert.equal(finalHistoryBatch.queuedCount, 1);
-assert.deepEqual(datesForTasks(finalHistoryBatch.taskIds), ["2026-10-04"]);
+assert.deepEqual(datesForTasks(finalHistoryBatch.taskIds), ["2026-10-05"]);
 await runTasks(finalHistoryBatch.taskIds);
+const remainingHistoryBatch = await runtime.runRecordCompressionScan({ asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1 });
+assert.deepEqual(datesForTasks(remainingHistoryBatch.taskIds), ["2026-10-04"]);
+await runTasks(remainingHistoryBatch.taskIds);
 
 const sevenDayDates = Array.from({ length: 7 }, (_, index) => `2026-10-${String(index + 4).padStart(2, "0")}`);
 const readyDates = new Set(store.recordCompressions
@@ -697,9 +707,8 @@ await runTasks(olderDailyFirst.taskIds);
 const olderDailySecond = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 1, maxQueued: 1
 });
-assert.equal(olderDailySecond.queuedCount, 1);
-assert.deepEqual(datesForTasks(olderDailySecond.taskIds), ["2026-09-01"],
-  "later bounded scans continue to another older source date without repeating completed dates");
+assert.equal(olderDailySecond.taskIds.filter(id => store.aiTasks.find(task => task.id === id)?.payload.operation === "daily").length, 0);
+assert.ok(store.thoughts.some(source => source.id === "deep-history-sep-01"), "9/25前旧来源保留，但不会新建增量日压缩任务");
 await runTasks(olderDailySecond.taskIds);
 
 await runtime.updateSourceStore(current => {

@@ -104,6 +104,8 @@ export const emptyStore = {
   validationLedger: [],
   userClaims: [],
   modelUnknowns: [],
+  importanceScores: [],
+  importanceJobs: [],
   evidenceSources: [],
   evidencePermissions: [],
   perceptionEvents: [],

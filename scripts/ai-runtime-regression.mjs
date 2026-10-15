@@ -463,6 +463,7 @@ const deepSeekGeneratorDouble = (options, { events }) => async () => (
     apiKey: "owner-key",
     marker: "owner"
   }));
+  assert.equal((await runtime.readModelRuntimeSettings()).marker, "owner", "importance choice sees the same effective reader as generation");
   assert.equal((await runtime.runDeepSeek()).marker, "owner");
   await assert.rejects(
     async () => runtime.installModelRuntimeSettingsReader(null),

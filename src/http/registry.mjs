@@ -2,6 +2,7 @@ const V1_REGISTRATIONS = [
   ["startup", "startup"],
   ["sync", "sync"],
   ["personal-context", "personalContext"],
+  ["importance", "importance"],
   ["owner-ai-budget", "aiBudget"],
   ["onboarding-v2", "onboardingV2"],
   ["user-model", "userModel"],

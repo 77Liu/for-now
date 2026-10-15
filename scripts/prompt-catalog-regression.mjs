@@ -11,7 +11,6 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const current = installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
 const manifest = JSON.parse(await fs.readFile(path.join(root, "prompts", "manifest.json"), "utf8"));
 assert.equal(current.version, manifest.activeVersion);
-assert.equal(current.version, "2026.10.14.1");
 assert.equal(current.sha256, manifest.versions.find(item => item.version === manifest.activeVersion)?.sha256);
 assert.equal(current.capabilities.structuredWorkingContext, "2026.10.07.0");
 const citationCapabilityIndex = manifest.versions.findIndex(item => (
@@ -20,10 +19,11 @@ const citationCapabilityIndex = manifest.versions.findIndex(item => (
 assert.ok(citationCapabilityIndex >= 0);
 assert.ok(citationCapabilityIndex <= manifest.versions.findIndex(item => item.version === current.version));
 assert.equal(current.capabilities.sevenDayTrendContext, "2026.10.10.4");
-const previousCatalog = await loadPromptCatalog({ rootDir: root, requestedVersion: "2026.10.10.4" });
+const previousCatalog = await loadPromptCatalog({ rootDir: root, requestedVersion: "2026.10.14.3" });
 assert.deepEqual(Object.keys(current.prompts), Object.keys(previousCatalog.prompts));
 const changedPromptIds = Object.keys(current.prompts).filter(id => current.prompts[id] !== previousCatalog.prompts[id]);
-assert.deepEqual(changedPromptIds, ["recordCompression.task.daily"], "only the bounded daily-generation instruction changes");
+assert.deepEqual(changedPromptIds, ["onboarding.claims.extract"], "只更新候选来源定位契约，其他业务提示词保持原文");
+assert.match(current.prompts["recordCompression.task.daily"], /endExclusive（不含）/);
 assert.match(current.prompts["recordCompression.task.daily"], /limits\.outputTokens/);
 assert.match(current.prompts["recordCompression.task.daily"], /合计最多 3 条/);
 assert.match(current.prompts["recordCompression.task.daily"], /sourceIds 仅保留 1 个/);
@@ -32,6 +32,7 @@ assert.equal(Object.keys(current.rolePromptIds).length, 6);
 assert.match(promptText("ai.system.core"), /结论先行/);
 assert.match(renderPrompt("keepsake.image.candidates", { existingTags: "[\"展览\"]" }), /最多 3 个/);
 assert.match(promptText("onboarding.claims.extract"), /最多 20 条候选/);
+assert.match(promptText("onboarding.claims.extract"), /exactQuote/);
 for (const id of [
   "orchestration.role.perception",
   "orchestration.role.modelUpdate",

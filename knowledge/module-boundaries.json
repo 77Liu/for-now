@@ -427,13 +427,16 @@
       "publicEntry": "src/modules/record-compressions/index.mjs",
       "allowedDependencies": [
         "shared.time",
-        "shared.validation"
+        "shared.validation",
+        "shared.ai-context"
       ],
       "owns": {
         "data": [
           "bounded, permission-filtered daily record snapshots with versioned source manifests and measured values",
           "validated daily summary output, deterministic token budgets and stable-candidate provenance",
-          "timezone-aware seven-day trend windows with source-current eligibility and compatible-unit aggregation"
+          "timezone-aware seven-day trend windows with source-current eligibility and compatible-unit aggregation",
+          "固定上海半开增量槽、日期精度、旧v1读取与两槽派生日视图",
+          "处理请求短来源别名及精确窗口/批次的可消费失败替代只读视图"
         ],
         "routes": []
       },
@@ -441,7 +444,8 @@
         "scripts/record-compression-input-regression.mjs",
         "scripts/record-compression-output-regression.mjs",
         "scripts/record-compression-trend-regression.mjs",
-        "scripts/record-compression-service-regression.mjs"
+        "scripts/record-compression-service-regression.mjs",
+        "scripts/record-windows-regression.mts"
       ],
       "status": "active"
     },
@@ -714,7 +718,8 @@
       "root": "src/config",
       "publicEntry": "src/config/index.mjs",
       "allowedDependencies": [
-        "domain.record-compressions"
+        "domain.record-compressions",
+        "shared.ai-context"
       ],
       "owns": {
         "data": [
@@ -795,7 +800,8 @@
         "shared.concurrency",
         "shared.persistence",
         "shared.observability",
-        "frontend.pages"
+        "frontend.pages",
+        "shared.ai-context"
       ],
       "owns": {
         "data": [
@@ -1152,16 +1158,21 @@
       "type": "shared",
       "root": "public/frontend/sync",
       "publicEntry": "public/frontend/sync/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "shared.business-identifiers",
+        "frontend.business-id-remap"
+      ],
       "owns": {
         "data": [
           "account-scoped durable mutation log, resource request coordination, retry classification and committed operation audit",
-          "cross-tab invalidation, incremental cursor polling, pending projection recovery and client sync metrics"
+          "cross-tab invalidation, incremental cursor polling, pending projection recovery and client sync metrics",
+          "显式创建操作依赖的业务映射、ACK 与待同步队列原子更新"
         ],
         "routes": []
       },
       "tests": [
-        "scripts/sync-coordinator-regression.mjs"
+        "scripts/sync-coordinator-regression.mjs",
+        "scripts/business-identifiers-regression.mts"
       ],
       "status": "active"
     },
@@ -2725,7 +2736,8 @@
         "shared.core-model-gate",
         "shared.validation",
         "shared.observability",
-        "shared.speech"
+        "shared.speech",
+        "shared.ai-context"
       ],
       "owns": {
         "data": [
@@ -2786,7 +2798,9 @@
       "type": "shared",
       "root": "src/shared/persistence",
       "publicEntry": "src/shared/persistence/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "shared.business-identifiers"
+      ],
       "owns": {
         "data": [
           "JSON/PostgreSQL repository contract, runtime transactions and account isolation",
@@ -2794,7 +2808,8 @@
           "PostgreSQL identity/config/usage mapping, atomic registration, attachment inventory and recovery",
           "evidence/event/permission object identity, relation mapping and round-trip preservation",
           "Atomic migration, runtime overwrite protection, offline relational export",
-          "account-scoped monotonic change cursor and bounded incremental sync ledger"
+          "account-scoped monotonic change cursor and bounded incremental sync ledger",
+          "账户事务内业务短 ID 分配、跨领域占用检查及持久幂等映射回执"
         ],
         "routes": []
       },
@@ -2805,7 +2820,9 @@
         "scripts/onboarding-v2-regression.mjs",
         "scripts/document-migration-regression.mjs",
         "scripts/postgres-integration.mjs",
-        "scripts/postgres-runtime-checks.mjs"
+        "scripts/postgres-runtime-checks.mjs",
+        "scripts/business-identifiers-regression.mts",
+        "scripts/persistence-ledger-postgres-regression.mjs"
       ],
       "status": "active"
     },
@@ -2933,6 +2950,64 @@
         "scripts/api-v1-contract-regression.mjs",
         "scripts/auth-regression.mjs",
         "scripts/postgres-runtime-checks.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "shared.ai-context",
+      "type": "shared",
+      "root": "src/shared/ai-context",
+      "publicEntry": "src/shared/ai-context/index.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "请求内真实来源映射、连续片段引用核验与内部预算配置/估算",
+          "来源版本与模型绑定的重要性缓存、无原文冻结选材计划与按需小批次评分适配"
+        ],
+        "routes": [
+          "POST /api/v1/importance/read",
+          "POST /api/v1/importance/score",
+          "POST /api/v1/importance/correct"
+        ]
+      },
+      "tests": [
+        "scripts/answer-citations-regression.mjs",
+        "scripts/task-context-selection-regression.mjs",
+        "scripts/importance-scoring-regression.mts"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "shared.business-identifiers",
+      "type": "shared",
+      "root": "src/shared/business-identifiers",
+      "publicEntry": "src/shared/business-identifiers/index.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "新业务身份 12 随机字节/16 字符格式及 8 次碰撞尝试策略；浏览器产物来自同一源码"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/business-identifiers-regression.mts"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.business-id-remap",
+      "type": "shared",
+      "root": "public/frontend/shared/business-id-remap.mts",
+      "publicEntry": "public/frontend/shared/business-id-remap.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "显式业务引用字段和路径段映射；保留正文与协议身份"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/business-identifiers-regression.mts"
       ],
       "status": "active"
     }
@@ -3092,6 +3167,7 @@
         "domain.tasks",
         "domain.notifications",
         "domain.auth",
+        "shared.ai-context",
         "http",
         "domain.health",
         "domain.checkins",
@@ -3103,6 +3179,7 @@
       "path": "public/frontend/app/runtime.mjs",
       "allowedImports": [
         "./application.mjs",
+        "./runtime/loaders.mjs",
         "./runtime/kernel.mjs",
         "../feature-registry/index.mjs",
         "../pages/index.mjs",

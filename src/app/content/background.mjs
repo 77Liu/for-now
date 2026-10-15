@@ -16,7 +16,7 @@ import {
 import { createAiTaskTargets } from "../ai-task-targets.mjs";
 import { createBackgroundAi } from "../background-ai.mjs";
 import { userModelRequiresCoreReady } from "../user-model.mjs";
-import { parseVerifiedAnswer } from "../answer-citations.mjs";
+import { prepareReferenceRequest, verifyReferenceAnswer } from "../answer-citations.mjs";
 
 const taskFailure = (message, statusCode, code) => Object.assign(
   new Error(message),
@@ -74,6 +74,9 @@ export function createContentBackground({
   contentAttachments,
   perception,
   recordCompressionTarget = null,
+  importanceTarget = null,
+  getImportanceModelSnapshot = () => null,
+  prepareImportanceContext = async () => null,
   getRecentTrend = () => null,
   mediaRuntime,
   getAccountId,
@@ -82,6 +85,7 @@ export function createContentBackground({
   runDeepSeek,
   now,
   createId,
+  createBusinessId = createId,
   hash,
   logEvent,
   debugServerUrl,
@@ -89,8 +93,9 @@ export function createContentBackground({
   debugFetch
 }) {
   const taskTargets = createAiTaskTargets({
+    createBusinessId,
     thoughts: createThoughtTaskTarget({
-      createId,
+      createId: createBusinessId,
       now,
       stripThoughtAnswerLead
     }),
@@ -98,6 +103,8 @@ export function createContentBackground({
     contentAttachments,
     perception,
     recordCompressionTarget,
+    importanceTarget,
+    getImportanceModelSnapshot,
     getRecentTrend,
     getAccountId,
     hash,
@@ -105,10 +112,15 @@ export function createContentBackground({
   });
   const backgroundAi = createBackgroundAi({
     repository,
-    tasks: createTaskLifecycle({ createId, now, hash }),
-    notifications: createNotificationService({ createId, now }),
+    tasks: createTaskLifecycle({ createId: createBusinessId, now, hash }),
+    notifications: createNotificationService({ createId: createBusinessId, now }),
     now,
     targets: taskTargets,
+    beforePrepare: async input => {
+      if (["importanceScoring", "thoughtAnswer", "followUpAnswer", "annotationShenji", "chat", "analysis", "journalReflection"].includes(input?.kind)) {
+        await prepareImportanceContext();
+      }
+    },
     shouldWaitForModel: (store, input) => (
       // 已提交的补充问答必须等整理结果；未提交时，思绪回答走缺省模型上下文。
       [
@@ -120,7 +132,8 @@ export function createContentBackground({
         "journalAssist",
         "journalReflection",
         "chat",
-        "analysis"
+        "analysis",
+        "importanceScoring"
       ].includes(input?.kind)
       && userModelRequiresCoreReady(store, input?.kind)
     ),
@@ -149,15 +162,22 @@ export function createContentBackground({
             code: "AI_TASK_STALE"
           });
         }
-        const generated = await runDeepSeek(work.prompt, {
+        const referenceRequest = work.citationsEnabled ? prepareReferenceRequest(
+          work.prompt, work.citationSources || [],
+          JSON.stringify([getAccountId(), work.scene, work.inputHash, work.contextReceipt]), work.contextReceipt
+        ) : null;
+        const generated = await runDeepSeek(referenceRequest?.prompt || work.prompt, {
           scene: work.scene,
+          modelOverride: work.modelOverride || null,
           systemPrompt: work.systemPrompt || systemPrompt(),
           captureReasoning: work.captureReasoning !== false,
           json: work.json === true,
           retryWithoutThinking: work.retryWithoutThinking,
           maxTokens: work.maxTokens || 16000,
           auditPrompt: work.auditPrompt !== false,
-          contextReceipt: work.contextReceipt || null,
+          contextReceipt: referenceRequest
+            ? { ...work.contextReceipt, referenceRequest: referenceRequest.receipt }
+            : work.contextReceipt || null,
           imagePaths,
           isCurrent,
           signal
@@ -170,7 +190,7 @@ export function createContentBackground({
           });
         }
         const verifiedAnswer = work.citationsEnabled
-          ? parseVerifiedAnswer(result.content, work.citationSources)
+          ? verifyReferenceAnswer(result.content, referenceRequest)
           : null;
         return {
           ...result,

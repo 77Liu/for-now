@@ -139,12 +139,16 @@ export function createRecordCompressionScanObserver({
   };
   // 此回调只在真实任务终态持久化后触发，费用来自完成后的实际usage读取。
   observe.settled = async outcome => {
-    await emit("system", "record_compression.task_finished", { level: outcome.status === "succeeded" ? "info" : "warn", ...outcome });
+    await emit("system", "record_compression.task_finished", { level: outcome.status === "succeeded" && outcome.summaryBudgetLevel !== "warn" ? "info" : "warn", ...outcome });
     const label = outcome.operation === "historicalSupplement" ? "历史补充" : "日摘要";
     const phase = outcome.status === "succeeded" ? "生成完成" : outcome.status === "failed" ? "生成失败" : "生成未完成";
     await send(`${label}${phase}`, [
       `日期：${outcome.localDate || "未知"}`,
+      ...(outcome.windowKey ? [`增量窗口：${outcome.windowKey}`] : []),
       `状态：${outcome.status}`,
+      ...(outcome.summaryBudgetLevel === "warn" ? [
+        `内部摘要预算：WARN；合法结果已保存，估算${outcome.summaryTokens} tokens（一级${outcome.summaryWarnTokens}/二级${outcome.summaryHardTokens}）。资金预算不变。`
+      ] : []),
       `该账户当日日压缩已记录费用：¥${Number.isFinite(outcome.knownSpentCny) ? outcome.knownSpentCny.toFixed(4) : "未知"}`,
       outcome.costReadFailed ? "当日费用记录读取失败，调用次数未知；已保存的任务终态不变。"
         : `该账户当日调用：${countMetric(outcome.knownCalls)}；费用未知调用：${countMetric(outcome.unknownCostCalls)}`
@@ -264,7 +268,12 @@ export function createRuntimeHttpWiring({
   const apiV1 = createApiV1Http({
     sendJson,
     getContext: () => requestStorage.getStore(),
-    openApi: openApiV1
+    openApi: openApiV1,
+    beforeHandle: async (req, url) => {
+      if (["POST", "PATCH"].includes(req.method) && /^\/api\/v1\/(?:ai-tasks|thought-chains|journals|chats|analyses|annotations|importance)(?:\/|$)/.test(url.pathname)) {
+        await contentRuntime.prepareImportanceContext();
+      }
+    }
   });
   const onboardingV2Handler = async (req, res, url, v1) => {
     const handled = await platformHttp.onboardingV2Http.handleV1(req, res, url, v1);
@@ -547,6 +556,7 @@ export function createRuntimeHttpWiring({
     startup: startupHttp.handleV1,
     sync: syncHttp.handleV1,
     personalContext: personalContextHttp.handleV1,
+    importance: contentHttp.importanceHttp.handleV1,
     aiBudget: platformHttp.aiBudgetHttp.handleV1,
     onboardingV2: onboardingV2Handler,
     userModel: platformHttp.userModelHttp.handleV1,
@@ -586,6 +596,11 @@ export function createRuntimeHttpWiring({
   }
 
   const legacyApi = createLegacyApi({
+    beforeHandle: async (req, url) => {
+      if (["POST", "PATCH"].includes(req.method) && /^\/api\/(?:ai-tasks|thoughts|journals|chat|analysis|annotations)(?:\/|$)/.test(url.pathname)) {
+        await contentRuntime.prepareImportanceContext();
+      }
+    },
     beforeStateHandlers: [
       reviewsChatHttp.handle,
       contentHttp.captureJournalHttp.handle,

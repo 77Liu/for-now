@@ -10,7 +10,7 @@ import {
   createApiV1Http,
   openApiV1
 } from "../src/http/index.mjs";
-import { createCaptureJournalWorkflows } from "../src/app/index.mjs";
+import { createCaptureJournalWorkflows, prepareReferenceRequest } from "../src/app/index.mjs";
 import { captureAudioPayload, capturePayload, createCaptureRecords } from "../src/modules/captures/index.mjs";
 import { createJournalRecords } from "../src/modules/journals/index.mjs";
 import { contentOriginalPayload } from "../src/modules/content-attachments/index.mjs";
@@ -280,6 +280,7 @@ const workflows = createCaptureJournalWorkflows({
   generate,
   hash: value => crypto.createHash("sha256").update(value).digest("hex"),
   contextKey: () => context.getStore().accountId,
+  getAccountId: () => context.getStore().accountId,
   today: () => "2026-09-29"
 });
 
@@ -1103,4 +1104,24 @@ for (const [route, method, header] of [
 
 assert.equal((await request("account-a", "GET", "/api/v1/not-capture-or-journal")).handled, false);
 
+const referenceStore = emptyStore();
+referenceStore.captures = Array.from({ length: 12 }, (_, index) => ({ id: `reference-capture-${index}`,
+  content: `合成原文 ${index}。` + "甲".repeat(1000), authorType: "user", version: 1, createdAt: now() }));
+stores.set("reference-account", referenceStore);
+ledgers.set("reference-account", new Map());
+await run("reference-account", async () => {
+  const created = await journals.create({ title: "合成日记", content: "今日原始日记", occurredAt: "2026-09-29T09:01:00.000Z" },
+    { clientRequestId: "reference-journal" });
+  await workflows.reflect({ id: created.value.id, clientRequestId: "reference-reflection" });
+  assert.ok(generationCalls.at(-1).options.contextReceipt.referenceRequest.providedCount >= 10);
+  const task = { kind: "journalReflection", targetId: created.value.id, id: "reference-task",
+    clientRequestId: "reference-background", payload: {}, createdAt: now() };
+  const work = workflows.personalizedTaskHandler.prepare(accountStore(), task);
+  assert.equal(prepareReferenceRequest(work.prompt, work.citationSources, "background-journal").receipt.providedCount, 11);
+  assert.equal(work.contextReceipt.importanceReferences.plan.sources.length, 10);
+  assert.ok(!work.contextReceipt.importanceReferences.plan.sources.some(source => JSON.parse(source.sourceKey)[1] === created.value.id),
+    "current journal uses the same canonical identity and is excluded from background sampling");
+  task.importanceSelectionPlan = structuredClone(work.contextReceipt.importanceReferences.plan);
+  assert.equal(workflows.personalizedTaskHandler.prepare(accountStore(), task).prompt, work.prompt);
+});
 console.log("Capture/journal regression passed: legacy compatibility, repository isolation, drafts, assist/reflection workflows, transcription scheduling, v1 idempotency/ETag/pagination/delete and 16-operation OpenAPI fragment.");

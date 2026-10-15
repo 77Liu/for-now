@@ -12,6 +12,7 @@ import { userModelOpenApiFragment } from "./openapi/user-model.mjs";
 import { aiBudgetOpenApiFragment } from "./openapi/ai-budget.mjs";
 import { speechOpenApiFragment } from "./openapi/speech.mjs";
 import { startupOpenApiFragment } from "./openapi/startup.mjs";
+import { isBusinessCreationPath } from "../../.build/typescript/backend/shared/business-identifiers/index.mjs";
 
 export const openApiV1 = Object.freeze({
   openapi: "3.1.0",
@@ -46,6 +47,9 @@ export const openApiV1 = Object.freeze({
     },
     parameters: {
       IdempotencyKey: { name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", maxLength: 100 } },
+      ClientProvisionalId: { name: "X-Client-Provisional-Id", in: "header", required: false,
+        description: "创建操作临时业务身份；需同时提供不可变客户端操作 ID 和请求指纹。提交与恢复回执返回正式映射。",
+        schema: { type: "string", pattern: "^[A-Za-z0-9_-]{16}$" } },
       IfMatch: { name: "If-Match", in: "header", required: true, schema: { type: "string", example: "\"3\"" } },
       Cursor: { name: "cursor", in: "query", required: false, schema: { type: "string" } },
       Limit: { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
@@ -64,6 +68,13 @@ export const openApiV1 = Object.freeze({
       ...(speechOpenApiFragment.components.parameters || {})
     },
     schemas: {
+      OccurrenceTimestamp: {
+        description: "可靠发生时刻；仅日期时为空字符串，并由 occurredOn 与 eventTimePrecision=date 表达，不以创建/更新时间补造。",
+        anyOf: [{ type: "string", format: "date-time" }, { type: "string", const: "" }]
+      },
+      EventTimePrecision: { type: "string", enum: ["instant", "date", "unknown"] },
+      OccurrenceDate: { description: "发生日期；历史精度未知时为空，不以登记日期伪回填。",
+        anyOf: [{ type: "string", format: "date" }, { type: "string", const: "" }] },
       Meta: {
         type: "object",
         required: ["traceId"],
@@ -156,3 +167,18 @@ export const openApiV1 = Object.freeze({
   },
   security: [{ cookieAuth: [] }]
 });
+
+// 创建路径和浏览器/服务端校验共用同一策略，避免逐领域维护头部清单。
+for (const [pathname, pathItem] of Object.entries(openApiV1.paths)) {
+  if (pathItem.post && isBusinessCreationPath("POST", `/api/v1${pathname}`)) {
+    pathItem.post.parameters = [...(pathItem.post.parameters || []), { $ref: "#/components/parameters/ClientProvisionalId" }];
+  }
+}
+for (const schema of Object.values(openApiV1.components.schemas)) {
+  if (schema.properties?.occurredAt && schema.properties?.occurredOn) {
+    schema.properties.eventTimePrecision = { $ref: "#/components/schemas/EventTimePrecision" };
+    const nullable = Array.isArray(schema.properties.occurredOn.type) && schema.properties.occurredOn.type.includes("null");
+    schema.properties.occurredOn = nullable ? { anyOf: [{ $ref: "#/components/schemas/OccurrenceDate" }, { type: "null" }] }
+      : { $ref: "#/components/schemas/OccurrenceDate" };
+  }
+}

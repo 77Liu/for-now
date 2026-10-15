@@ -203,11 +203,13 @@ const normalized = normalizeWithFixedClock(input);
 assert.deepEqual(input, originalInput, "normalization must not modify its input");
 assert.equal(normalized.version, STORE_VERSION);
 assert.equal(normalized.checkins[0].occurredOn, "2026-01-02");
-assert.equal(normalized.checkins[0].occurredAt, "2026-01-01T23:30:00.000Z");
+assert.equal(normalized.checkins[0].occurredAt, "");
+assert.equal(normalized.checkins[0].eventTimePrecision, "date");
 assert.equal(normalized.checkins[0].stress, 4);
 assert.deepEqual(normalized.checkins[0].futureRecordField, { retained: true });
-assert.equal(normalized.checkins[1].occurredOn, "2026-10-05");
-assert.equal(normalized.checkins[1].occurredAt, "2026-10-05T04:05:06.000Z");
+assert.equal(normalized.checkins[1].occurredOn, "");
+assert.equal(normalized.checkins[1].occurredAt, "");
+assert.equal(normalized.checkins[1].eventTimePrecision, "unknown");
 assert.deepEqual(normalized.captures[0].futureCaptureField, ["keep"]);
 assert.equal(normalized.recordCompressions[0].version, 1);
 assert.equal(normalized.recordCompressions[0].revision, 2);
@@ -278,6 +280,25 @@ assert.deepEqual(normalizeCommercialization(commercialization), commercializatio
 assert.deepEqual(normalizeWithFixedClock(normalized), normalized);
 const compressionJsonRoundTrip = normalizeWithFixedClock(JSON.parse(JSON.stringify(normalized)));
 assert.deepEqual(compressionJsonRoundTrip.recordCompressions, normalized.recordCompressions);
+const referenceRecordStore = structuredClone(normalized);
+const actualReferenceReceipt = { schemaVersion: 1, binding: "b".repeat(64),
+  aliasMapSha256: "a".repeat(64), promptSha256: "c".repeat(64), promptBytes: 2000,
+  promptByteLimit: 32000, unit: "UTF-8 bytes", providedCount: 10, coreModelProvided: true };
+referenceRecordStore.thoughts.push({ id: "new-reference-root", type: "question", content: "合成问题", version: 1,
+  authorType: "user", origin: "manual", createdAt: fixedNow });
+referenceRecordStore.thoughts.push({ id: "new-reference-answer", type: "answer", content: "合成回答", version: 1,
+  relatedTo: "new-reference-root", authorType: "ai", origin: "deepseek", createdAt: fixedNow,
+  providedReferences: [{ citationId: "real-record-citation", resourceType: "thought", resourceId: "new-reference-root", version: 1, recordType: "用户原文" }],
+  contextReceipt: { referenceRequest: actualReferenceReceipt },
+  rejectedReferences: [{ citationId: "r99", reason: "unknown_request_reference" }] });
+const normalizedReferenceStore = normalizeWithFixedClock(referenceRecordStore);
+const referenceMapping = mapStoreObjects("compression-account", normalizedReferenceStore);
+const restoredReferenceStore = normalizeWithFixedClock(rebuildStoreObjects(referenceMapping));
+const restoredReference = restoredReferenceStore.thoughts.find(item => item.id === "new-reference-answer");
+assert.deepEqual(restoredReference.contextReceipt.referenceRequest, actualReferenceReceipt);
+assert.deepEqual(restoredReference.providedReferences, referenceRecordStore.thoughts.at(-1).providedReferences);
+assert.deepEqual(restoredReference.rejectedReferences, referenceRecordStore.thoughts.at(-1).rejectedReferences);
+
 const compressionPostgresMap = mapStoreObjects("compression-account", normalized);
 const mappedCompression = compressionPostgresMap.objects.find(row => row.kind === "recordCompression");
 assert.equal(mappedCompression.collection, "recordCompressions");

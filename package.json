@@ -1,9 +1,9 @@
 {
   "name": "personal-growth-tracker",
-  "version": "0.5.14",
+  "version": "0.5.15",
   "private": true,
   "release": {
-    "iosBuildNumber": 10
+    "iosBuildNumber": 11
   },
   "type": "module",
   "scripts": {
@@ -76,7 +76,7 @@
     "test:performance-gate": "node scripts/system-test.mjs performance",
     "test:url-history": "node scripts/url-history-regression.mjs",
     "test:pwa": "node scripts/sync-release-metadata.mjs --check && node scripts/release-metadata-regression.mjs && node scripts/pwa-regression.mjs",
-    "test:notifications": "npm run build:frontend && node scripts/prepare-generated-runtime.mjs && node scripts/notification-entry-regression.mjs",
+    "test:notifications": "npm run build:runtime --silent && node scripts/notification-entry-regression.mjs",
     "test:ui": "node scripts/ui-regression.mjs",
     "test:journeys:validate": "node scripts/user-journey-regression.mjs validate",
     "test:journeys:smoke": "node scripts/user-journey-regression.mjs smoke",
@@ -146,14 +146,17 @@
     "replay:personalization:blind": "node scripts/personalization-blind-packet.mjs",
     "test:release-fence": "node scripts/release-fence-regression.mjs",
     "test:quality-boundaries": "node scripts/working-context-source-boundaries-regression.mjs && node scripts/personalization-quality-plan-regression.mjs",
-    "test:record-compressions": "node scripts/system-test.mjs record-compressions",
+    "test:record-compressions": "npm run build:runtime --silent && node scripts/system-test.mjs record-compressions",
     "typecheck:notifications": "tsc --noEmit -p tsconfig.notifications.json",
     "build:notifications": "tsc -p tsconfig.notifications.json",
-    "test:frontend-notifications": "npm run build:frontend && node scripts/prepare-generated-runtime.mjs && node scripts/frontend-notifications-feature-regression.mjs",
+    "test:frontend-notifications": "npm run build:runtime --silent && node scripts/frontend-notifications-feature-regression.mjs",
     "typecheck:control-plane": "tsc --noEmit -p tsconfig.control-plane.json",
     "build:control-plane": "tsc -p tsconfig.control-plane.json",
     "coordination:update": "npm run build:control-plane --silent && node .build/typescript/control-plane/control-plane-update.mjs",
-    "test:control-plane": "npm run coordination:update -- self-test"
+    "test:control-plane": "npm run coordination:update -- self-test",
+    "test:importance": "npm run build:backend --silent && tsc -p tsconfig.importance-regression.json && node .build/typescript/importance-regression/scripts/importance-scoring-regression.mjs",
+    "test:business-identifiers": "npm run build:runtime --silent && tsc -p tsconfig.business-identifiers-regression.json && node .build/typescript/business-identifiers-regression/scripts/business-identifiers-regression.mjs",
+    "test:record-windows": "npm run build:runtime --silent && tsc -p tsconfig.record-windows-regression.json && node .build/typescript/record-windows-regression/scripts/record-windows-regression.mjs"
   },
   "dependencies": {
     "@alicloud/credentials": "2.4.7",

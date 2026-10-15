@@ -1,3 +1,5 @@
+import { withoutReferenceOwnerMetadata } from "../src/app/index.mjs";
+import { createJsonHttp, createModelResponseHttp } from "../src/http/index.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {
@@ -87,6 +89,7 @@ const store = {
   commercialization: {
     assumptions: { privateRevenue: 999 }
   },
+  importanceScores: [{ sourceKey: "private-scoring-cache", score: 70 }],
   evidenceSources: [{ id: "private-evidence", accountId: "member" }],
   evidencePermissions: [{ sourceKey: "[\"capture\",\"capture\",\"\",\"\"]", accountId: "member" }],
   perceptionEvents: [{ id: "private-perception-event", accountId: "member" }],
@@ -123,6 +126,7 @@ assert.equal(Object.hasOwn(ownerState, "commercialization"), false);
 assert.equal(Object.hasOwn(ownerState, "trash"), false);
 assert.equal(Object.hasOwn(ownerState, "attachmentCleanup"), false);
 assert.equal(Object.hasOwn(ownerState, "speechCache"), false);
+assert.equal(Object.hasOwn(ownerState, "importanceScores"), false);
 assert.equal(Object.hasOwn(ownerState, "evidenceSources"), false);
 assert.equal(Object.hasOwn(ownerState, "evidencePermissions"), false);
 assert.equal(Object.hasOwn(ownerState, "perceptionEvents"), false);
@@ -163,6 +167,7 @@ const memberState = projectPublicState(store);
 assert.equal(memberState.ownerExtension.visible, true);
 assert.equal(Object.hasOwn(memberState, "userClaims"), false);
 assert.equal(Object.hasOwn(memberState, "modelUnknowns"), false);
+assert.equal(Object.hasOwn(memberState, "importanceScores"), false);
 assert.equal(JSON.stringify(memberState).includes("MODEL_DETAIL_MARKER"), false);
 assert.equal(JSON.stringify(memberState).includes("UNKNOWN_DETAIL_MARKER"), false);
 const privateContextOverview = withoutOwnerMetadata({
@@ -208,4 +213,43 @@ assert.throws(
   /requires user, owner, provider, hash and clock dependencies/
 );
 
+const newReferenceResult = {
+  content: "普通回答正文",
+  providedReferences: [
+    { citationId: "CORE_SOURCE_ID_MARKER", resourceType: "onboardingV2", resourceId: "CORE_RESOURCE_MARKER", recordType: "核心依据", version: 1 },
+    { citationId: "ordinary-source", resourceType: "thought", resourceId: "thought-record", recordType: "用户原文", version: 2 }
+  ],
+  contextReceipt: { referenceRequest: { schemaVersion: 1, binding: "b".repeat(64),
+    aliasMapSha256: "a".repeat(64), promptSha256: "c".repeat(64), promptBytes: 2000,
+    promptByteLimit: 32000, unit: "UTF-8 bytes", providedCount: 2, coreModelProvided: true } }
+};
+const ordinaryReferenceResult = withoutReferenceOwnerMetadata(newReferenceResult);
+assert.equal(ordinaryReferenceResult.providedReferenceCount, 2);
+assert.equal(ordinaryReferenceResult.providedReferences.length, 1);
+assert.ok(!JSON.stringify(ordinaryReferenceResult).includes("CORE_RESOURCE_MARKER"));
+assert.ok(!JSON.stringify(ordinaryReferenceResult).includes("CORE_SOURCE_ID_MARKER"));
+assert.equal(ordinaryReferenceResult.contextReceipt.referenceRequest.providedCount, 2);
+assert.equal(ordinaryReferenceResult.contextReceipt.referenceRequest.coreModelProvided, true);
+assert.equal(newReferenceResult.providedReferences.length, 2, "projection cannot modify the persisted owner directory");
+for (const owner of [false, true]) {
+  const context = { user: { role: owner ? "owner" : "member" }, secrets: [] };
+  const chunks = [];
+  const response = { destroyed: false, writableEnded: false, writeHead() {},
+    write(value) { chunks.push(value); }, end(value = "") { chunks.push(value); } };
+  const projectResponse = value => owner ? value : withoutReferenceOwnerMetadata(value);
+  const http = createJsonHttp({ getContext: () => context, maxBodyBytes: 1000, projectResponse });
+  http.sendJson(response, 200, newReferenceResult);
+  const json = JSON.parse(chunks.join(""));
+  assert.equal(json.providedReferences.length, owner ? 2 : 1);
+  assert.equal(json.contextReceipt.referenceRequest.providedCount, 2);
+  chunks.length = 0;
+  const streamed = createModelResponseHttp({ getContext: () => context, logEvent: async () => {},
+    sendJson: http.sendJson, projectResponse });
+  await streamed({ headers: { accept: "text/event-stream" } }, response, { run: async () => newReferenceResult });
+  const done = chunks.join("").split("\n").filter(line => line.startsWith("data: "))
+    .map(line => JSON.parse(line.slice(6))).find(event => event.type === "done");
+  assert.equal(done.result.providedReferences.length, owner ? 2 : 1);
+  assert.equal(done.result.contextReceipt.referenceRequest.promptBytes, 2000);
+  assert.equal(JSON.stringify(done.result).includes("CORE_RESOURCE_MARKER"), owner);
+}
 console.log("Public state regression passed.");

@@ -19,8 +19,8 @@ const isAiAnswer = item => (
   || Boolean(item?.reasoningContent)
 );
 const compareThoughtOccurrence = (left, right) => (
-  String(left?.occurredAt || left?.createdAt || "").localeCompare(
-    String(right?.occurredAt || right?.createdAt || "")
+  String(left?.occurredAt || left?.occurredOn || left?.createdAt || "").localeCompare(
+    String(right?.occurredAt || right?.occurredOn || right?.createdAt || "")
   )
   || String(left?.createdAt || "").localeCompare(String(right?.createdAt || ""))
   || String(left?.id || "").localeCompare(String(right?.id || ""))
@@ -331,6 +331,8 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
           ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
           ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}),
           ...(Array.isArray(result.citations) ? { citations: structuredClone(result.citations) } : {}),
+          ...(Array.isArray(result.providedReferences) ? { providedReferences: structuredClone(result.providedReferences) } : {}),
+          ...(Array.isArray(result.rejectedReferences) ? { rejectedReferences: structuredClone(result.rejectedReferences) } : {}),
           ...(result.citationStatus ? { citationStatus: result.citationStatus } : {})
         };
         thoughts.unshift(answer);
@@ -343,6 +345,7 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
       current.answer = result.content;
       current.modelDraft = result.content;
       current.answeredAt = now();
+      current.answerOccurredAt ||= current.answeredAt;
       current.origin = "deepseek";
       current.authorType = "ai";
       current.version = normalizedVersion(current.version) + 1;
@@ -352,6 +355,8 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
       if (result.contextReceipt) current.contextReceipt = structuredClone(result.contextReceipt);
       if (Array.isArray(result.citations)) current.citations = structuredClone(result.citations);
       if (result.citationStatus) current.citationStatus = result.citationStatus;
+      if (Array.isArray(result.providedReferences)) current.providedReferences = structuredClone(result.providedReferences);
+      if (Array.isArray(result.rejectedReferences)) current.rejectedReferences = structuredClone(result.rejectedReferences);
       root.version = normalizedVersion(root.version) + 1; root.updatedAt = now();
       return current.id;
     }
@@ -680,10 +685,11 @@ export function createThoughtService({
     },
 
     addRemark({ id, text }) {
-      const remark = { id: createId(), text, createdAt: now(), version: 1 };
       return repository.update(store => {
         const item = store.thoughts.find(value => value.id === id);
         if (!item) return { missing: true };
+        const occurredAt = now();
+        const remark = { id: createId(), text, createdAt: occurredAt, occurredAt, version: 1 };
         item.remarks.push(remark);
         touchRoot(item);
         return { value: remark };
@@ -719,9 +725,10 @@ export function createThoughtService({
         const followUp = {
           id: createId(),
           createdAt: now(),
+          questionOccurredAt: now(),
           question,
           answer,
-          ...(answer ? { answeredAt: now() } : {}),
+          ...(answer ? { answeredAt: now(), answerOccurredAt: now() } : {}),
           ...(clientRequestId ? { clientRequestId } : {}),
           origin: "manual",
           version: 1
@@ -743,9 +750,11 @@ export function createThoughtService({
           followUp.question = question;
         }
         if (hasAnswer) {
+          const originalAnswerAt = followUp.answerOccurredAt || followUp.answeredAt;
           reanchorAnnotations(root, `followup-answer:${followUpId}`, followUp.answer || "", answer);
           followUp.answer = answer;
           followUp.answeredAt = answer ? now() : null;
+          if (answer) followUp.answerOccurredAt ||= originalAnswerAt || followUp.answeredAt;
           if (followUp.modelDraft) followUp.editedFromModel = followUp.modelDraft !== answer;
           followUp.origin = "manual";
         }

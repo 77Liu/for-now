@@ -43,6 +43,8 @@ if (requestedSuite === ISOLATION_PROBE) {
 }
 
 const recordCompressionSuite = [
+  ["incremental window TypeScript contract build", ["node_modules/typescript/bin/tsc", "-p", "tsconfig.record-windows-regression.json"]],
+  ["incremental windows, processing aliases and read-only failure replacement", [".build/typescript/record-windows-regression/scripts/record-windows-regression.mjs"]],
   ["daily record compression input boundaries", ["scripts/record-compression-input-regression.mjs"]],
   ["daily record compression output budgets", ["scripts/record-compression-output-regression.mjs"]],
   ["record compression conservative provider token bound", ["scripts/record-compression-token-bound-regression.mjs"]],

@@ -1,5 +1,6 @@
 import path from "node:path";
-import { RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN } from "../modules/record-compressions/index.mjs";
+import { readInternalBudgets } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
+import { RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN, RECORD_SLOT_START_DATE } from "../modules/record-compressions/index.mjs";
 
 export const RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT = 2;
 export const RECORD_COMPRESSION_MAX_DAILY_BUDGET_CNY = 4;
@@ -112,6 +113,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     aiDailyCostCny = converted === 0 ? null : Math.max(0.01, converted);
   }
   return Object.freeze({
+    internalBudgets: readInternalBudgets(env),
     dataDir: env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.join(rootDir, "data"),
     port: Number(env.PORT || 4173),
     version: env.APP_VERSION || "development",
@@ -137,7 +139,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     recordCompressionPerCallBudgetCny: recordCompressionEnabled ? recordCompressionPerCallBudgetCny : 0,
     recordCompressionDailyInvocationLimit: recordCompressionEnabled ? configuredInvocationLimit : 0,
     recordCompressionAccountDailyInvocationLimit: RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT,
-    recordCompressionStartDate: String(env.RECORD_COMPRESSION_START_DATE ?? "").trim() || "2026-09-25",
+    recordCompressionStartDate: String(env.RECORD_COMPRESSION_START_DATE ?? "").trim() || RECORD_SLOT_START_DATE,
     recordCompressionMaxBackfillDatesPerScan: Math.max(
       0,
       Math.min(

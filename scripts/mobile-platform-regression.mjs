@@ -351,22 +351,23 @@ try {
     await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
     assert.equal(await waitUntil(`document.querySelector("#view-captures").classList.contains("active")
       && !document.querySelector("#view-captures").hasAttribute("aria-busy")
-      && document.querySelector('[data-capture-id="${speechCaptureId}"] .speech-asset-actions button')?.getBoundingClientRect().height>=44
-      && document.querySelector('[data-capture-id="${speechCaptureId}"] .speech-asset-actions select')?.getBoundingClientRect().height>=44`), true);
+      && document.querySelector('[data-capture-id="${speechCaptureId}"] [data-speech-synthesize]')?.getBoundingClientRect().height>=44
+      && document.querySelector('[data-capture-id="${speechCaptureId}"] [data-speech-generation-rate]')?.getBoundingClientRect().height>=44`), true);
     const speechCard = await evaluate(`(() => {
-      const card=document.querySelector('[data-capture-id="${speechCaptureId}"]'),controls=card.querySelector(".speech-asset-controls"),actions=controls.querySelector(".speech-asset-actions"),button=actions.querySelector("button"),select=actions.querySelector("select"),cardRect=card.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect(),buttonRect=button.getBoundingClientRect(),selectRect=select.getBoundingClientRect();
+      const card=document.querySelector('[data-capture-id="${speechCaptureId}"]'),controls=card.querySelector(".speech-asset-controls"),actions=controls.querySelector(".speech-asset-actions"),button=actions.querySelector("[data-speech-synthesize]"),generationRate=actions.querySelector("[data-speech-generation-rate]"),cardRect=card.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect(),buttonRect=button.getBoundingClientRect(),generationRateRect=generationRate.getBoundingClientRect();
       return {
         noVoice:!card.querySelector("[data-capture-voice]"),
         noDuplicateControls:!card.querySelector("[data-capture-speech-pause],[data-capture-speech-stop]"),
         buttons:actions.querySelectorAll("button").length,
         selects:actions.querySelectorAll("select").length,
+        generationRates:actions.querySelectorAll("[data-speech-generation-rate]").length,
         emptyPlayerAbsent:!card.querySelector("[data-speech-player]"),
         sourceType:controls.dataset.speechSourceType,
         buttonName:button.getAttribute("aria-label"),
-        rateName:select.getAttribute("aria-label"),
+        rateName:generationRate.getAttribute("aria-label"),
         buttonTarget:buttonRect.width>=44&&buttonRect.height>=44,
-        selectTarget:selectRect.width>=44&&selectRect.height>=44,
-        controlsInside:[buttonRect,selectRect].every(rect=>rect.left>=cardRect.left-.5&&rect.right<=cardRect.right+.5),
+        rateTarget:generationRateRect.width>=44&&generationRateRect.height>=44,
+        controlsInside:[buttonRect,generationRateRect].every(rect=>rect.left>=cardRect.left-.5&&rect.right<=cardRect.right+.5),
         inside:actionsRect.left>=cardRect.left&&actionsRect.right<=cardRect.right+.5,
         actionsFit:actions.scrollWidth<=actions.clientWidth+.5,
         noOverflow:document.documentElement.scrollWidth<=innerWidth
@@ -376,13 +377,14 @@ try {
       noVoice: true,
       noDuplicateControls: true,
       buttons: 1,
-      selects: 1,
+      selects: 0,
+      generationRates: 1,
       emptyPlayerAbsent: true,
       sourceType: "capture",
       buttonName: "生成捕念文字朗读",
-      rateName: "捕念文字朗读播放倍速",
+      rateName: "捕念文字朗读生成语速",
       buttonTarget: true,
-      selectTarget: true,
+      rateTarget: true,
       controlsInside: true,
       inside: true,
       actionsFit: true,

@@ -1,3 +1,4 @@
+import { supplementalImportanceContext, supplementalImportanceReceiptMatches } from "./task-context.mjs";
 import crypto from "node:crypto";
 import {
   compactPersonalContextReceipt,
@@ -21,7 +22,7 @@ import {
 } from "../modules/journals/index.mjs";
 import { eventTimeFields, localDateKey } from "../shared/time/index.mjs";
 import { recordVersion, safeText } from "../shared/validation/index.mjs";
-import { answerCitationSources, parseVerifiedAnswer } from "./answer-citations.mjs";
+import { answerCitationSources, prepareReferenceRequest, verifyReferenceAnswer } from "./answer-citations.mjs";
 
 const ASSIST_SCENES = {
   lead: "diaryLead",
@@ -96,11 +97,28 @@ export function createCaptureJournalWorkflows({
   createId = () => crypto.randomUUID(),
   coreModelReadiness = () => ({ ready: true }),
   getRecentTrend = () => null,
+  getImportanceModelSnapshot = () => null,
+  getAccountId = () => "local",
   currentTime = () => Date.now(),
   contextKey = () => "",
   today = () => localDateKey()
 }) {
   const activeReflections = new Map();
+  const reflectionContextReceiptMatches = (store, receipt) => personalContextReceiptMatches(store, receipt)
+    && supplementalImportanceReceiptMatches(store, receipt?.importanceReferences, getAccountId());
+  const addImportance = (store, context, journal, seed, frozenPlan = null) => {
+    const supplemental = supplementalImportanceContext(store, {
+      accountId: getAccountId(), text: journal.content || "日记回望", seed,
+      choice: getImportanceModelSnapshot(), frozenPlan,
+      excludeSourceRefs: [{ resourceType: "journal", resourceId: journal.id, rootId: "",
+        targetKey: "", version: recordVersion(journal.version) }]
+    });
+    if (!supplemental) return false;
+    context.prompt = [context.prompt, supplemental.prompt].filter(Boolean).join("\n\n");
+    context.receipt = { ...context.receipt, importanceReferences: supplemental.receipt };
+    context.importanceSources = supplemental.sources;
+    return true;
+  };
   const coreModelSnapshot = store => {
     if (!coreModelReadiness(store)?.ready) return null;
     const projected = coreUserModelProjection(store);
@@ -140,7 +158,7 @@ export function createCaptureJournalWorkflows({
       }))
     };
   };
-  const coreContextPayload = (snapshot, trend) => JSON.stringify({
+  const coreContextPayload = (snapshot, trend) => '<reference_context_data format="application/json">' + JSON.stringify({
     coreUserModel: {
       fingerprint: snapshot.model.fingerprint,
       claims: list(snapshot.model.claims),
@@ -151,9 +169,12 @@ export function createCaptureJournalWorkflows({
       ? { historicalUserSupplement: trend.historicalUserSupplement }
       : {}),
     ...(trend?.payload && typeof trend.payload === "object"
-      ? { sevenDayTrend: trend.payload }
+      ? { sevenDayTrend: trend.payload,
+        referenceEvidence: list(trend.citationSources).map(source => ({ citationId: source.citationId, text: source.text,
+      origin: source.source?.origin || "user", informationType: source.source?.informationType || "user_original" })) }
       : {})
-  });
+  }).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + '</reference_context_data>';
+
   const assertCoreModelCurrent = (store, expected) => {
     const current = coreModelSnapshot(store);
     if (!current || current.fingerprint !== expected?.fingerprint) throw staleCoreModel();
@@ -211,7 +232,7 @@ export function createCaptureJournalWorkflows({
   };
   const assertAssistContextCurrent = (store, expected) => {
     assertCoreModelCurrent(store, expected.coreModel);
-    if (!personalContextReceiptMatches(store, expected.personalContext.receipt)
+    if (!reflectionContextReceiptMatches(store, expected.personalContext.receipt)
       || hash(diaryActivityContext(store, expected.occurredOn)) !== expected.activityFingerprint) {
       throw staleJournalContext();
     }
@@ -270,6 +291,7 @@ export function createCaptureJournalWorkflows({
           prompt,
           contextFingerprint: hash(JSON.stringify({
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            importanceReferences: personalContext.receipt.importanceReferences || null,
             prompt: personalContext.prompt,
             activityContext,
             coreModel: coreModel.fingerprint
@@ -294,10 +316,12 @@ export function createCaptureJournalWorkflows({
         if (!coreModel) return null;
         const trend = trendFor(store, taskContextAsOf(task));
         const personalContext = personalContextProjection(store);
+        if (!addImportance(store, personalContext, journal,
+          hash(JSON.stringify([task.clientRequestId || task.id, coreModel.fingerprint])), task.importanceSelectionPlan || null)) return null;
         const currentJournal = journalCitationSource(journal);
-        const citationContext = JSON.stringify({
-          currentMaterial: { citationId: currentJournal.citationId }
-        });
+        const citationContext = '<reference_context_data format="application/json">' + JSON.stringify({
+          currentMaterial: { citationId: currentJournal.citationId, text: currentJournal.text }
+        }).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + '</reference_context_data>';
         return {
           kind: task.kind,
           inputVersion: recordVersion(journal.version),
@@ -306,19 +330,20 @@ export function createCaptureJournalWorkflows({
           prompt: userPrompt({
             context: stableContext(coreModel, trend, [personalContext.prompt, citationContext]
               .filter(Boolean).join("\n\n")),
-            ...journalReflectionInput(journal)
+            ...journalReflectionInput(journal, { materialInContext: true })
           }),
           scene: "diaryReflection",
           json: true,
           citationsEnabled: true,
           citationSources: answerCitationSources(coreModel.model, [
             ...trendCitationSources(trend),
-            currentJournal
+            currentJournal, ...(personalContext.importanceSources || [])
           ]),
           systemPrompt: citationSystemPrompt(diarySystemPrompt()),
           contextReceipt: personalContext.receipt,
           contextFingerprint: hash(JSON.stringify({
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            importanceReferences: personalContext.receipt.importanceReferences || null,
             coreModel: coreModel.fingerprint,
             trend: trend?.fingerprint || ""
           })),
@@ -347,10 +372,13 @@ export function createCaptureJournalWorkflows({
         content: result.content,
         ...(Array.isArray(result.citations) ? {
           citations: result.citations,
-          citationStatus: result.citationStatus
+          citationStatus: result.citationStatus,
+          providedReferences: result.providedReferences,
+          rejectedReferences: result.rejectedReferences
         } : {}),
         reasoningContent: result.reasoningContent,
-        contextReceipt: compactPersonalContextReceipt(work.contextReceipt)
+        contextReceipt: { ...compactPersonalContextReceipt(work.contextReceipt),
+          ...(result.referenceReceipt ? { referenceRequest: result.referenceReceipt } : {}) }
       }, {
         clientRequestId: task.clientRequestId,
         requestHash: hash(JSON.stringify({ id: task.targetId }))
@@ -489,36 +517,35 @@ export function createCaptureJournalWorkflows({
           target
         };
         const currentJournal = journalCitationSource(journal);
-        const citationContext = JSON.stringify({
-          currentMaterial: { citationId: currentJournal.citationId }
-        });
+        addImportance(store, personalContext, journal, hash(JSON.stringify([clientRequestId, coreModel.fingerprint])));
+        const citationContext = '<reference_context_data format="application/json">' + JSON.stringify({
+          currentMaterial: { citationId: currentJournal.citationId, text: currentJournal.text }
+        }).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + '</reference_context_data>';
         const bufferedDeltas = [];
-        const result = await generate(userPrompt({
+        const referenceRequest = prepareReferenceRequest(userPrompt({
           context: stableContext(coreModel, trend.trend, [personalContext.prompt, citationContext]
-            .filter(Boolean).join("\n\n")),
-          ...journalReflectionInput(journal)
-        }), {
+            .filter(Boolean).join("\n\n")), ...journalReflectionInput(journal, { materialInContext: true })
+        }), answerCitationSources(coreModel.model, [...trendCitationSources(trend.trend), currentJournal, ...(personalContext.importanceSources || [])]),
+        JSON.stringify([contextKey(), id, personalContext.receipt, sourceUpdatedAt]));
+        const result = await generate(referenceRequest.prompt, {
           scene: "diaryReflection",
           json: true,
           systemPrompt: citationSystemPrompt(diarySystemPrompt()),
           captureReasoning: true,
-          contextReceipt: personalContext.receipt,
+          contextReceipt: { ...personalContext.receipt, referenceRequest: referenceRequest.receipt },
           onDelta: notify ? event => bufferedDeltas.push(event) : null
         });
         const currentStore = await repository.read();
         assertCoreModelCurrent(currentStore, coreModel);
-        if (!personalContextReceiptMatches(currentStore, personalContext.receipt)) {
+        if (!reflectionContextReceiptMatches(currentStore, personalContext.receipt)) {
           throw failure("个人语境已变化，本次回望未写入", "STALE_PERSONAL_CONTEXT", 409);
         }
         assertJournalTargetCurrent(currentStore, { targetId: id }, target);
         assertTrendCurrent(currentStore, trend);
-        const verified = parseVerifiedAnswer(result.content, answerCitationSources(coreModel.model, [
-          ...trendCitationSources(trend.trend),
-          currentJournal
-        ]));
+        const verified = verifyReferenceAnswer(result.content, referenceRequest);
         const validateFreshness = document => {
           assertCoreModelCurrent(document, freshness.coreModel);
-          if (!personalContextReceiptMatches(document, freshness.personalContext.receipt)) {
+          if (!reflectionContextReceiptMatches(document, freshness.personalContext.receipt)) {
             throw failure("个人语境已变化，本次回望未写入", "STALE_PERSONAL_CONTEXT", 409);
           }
           assertJournalTargetCurrent(document, { targetId: id }, freshness.target);
@@ -529,10 +556,12 @@ export function createCaptureJournalWorkflows({
           content: verified.content,
           ...(verified.citations ? {
             citations: verified.citations,
-            citationStatus: verified.citationStatus
+            citationStatus: verified.citationStatus,
+            providedReferences: verified.providedReferences,
+            rejectedReferences: verified.rejectedReferences
           } : {}),
           reasoningContent: result.reasoningContent,
-          contextReceipt: compactPersonalContextReceipt(personalContext.receipt)
+          contextReceipt: { ...compactPersonalContextReceipt(personalContext.receipt), referenceRequest: verified.referenceReceipt }
         };
         let saved;
         if (idempotencyRequest && typeof repository.executeIdempotent === "function") {

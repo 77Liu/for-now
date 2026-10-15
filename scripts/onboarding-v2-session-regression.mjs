@@ -287,6 +287,25 @@ assert.deepEqual(response.body.data.session.collaboration.suggestionMode, {
   source: "system_default"
 });
 
+const answersBeforeDiscard = structuredClone(response.body.data.session.answers);
+const collaborationBeforeDiscard = structuredClone(response.body.data.session.collaboration);
+response = await request("account-a", "PATCH", "/api/v1/onboarding-v2/session", {
+  headers: { "if-match": "\"4\"", "idempotency-key": "onboarding-a-discard" },
+  body: {
+    selectedFlow: "v2",
+    status: "skipped",
+    step: "firstAction"
+  }
+});
+assert.equal(response.status, 200);
+assert.equal(response.body.data.session.revision, 4);
+assert.equal(response.body.data.session.status, "skipped");
+assert.equal(response.body.data.session.step, "firstAction");
+assert.deepEqual(response.body.data.session.answers, answersBeforeDiscard);
+assert.deepEqual(response.body.data.session.collaboration, collaborationBeforeDiscard);
+assert.equal(response.body.data.session.pausedAt, "");
+assert.equal(response.body.data.migration.selectedFlow, "v2");
+
 response = await request("account-b", "GET", "/api/v1/onboarding-v2/session");
 assert.equal(response.status, 200);
 assert.equal(response.body.data.session.revision, 0);
@@ -311,7 +330,7 @@ assert.equal(response.body.data.migration.entryPolicy, "already_onboarded");
 assert.equal(response.body.data.migration.legacy.modelSummaryType, "model_summary");
 
 response = await request("account-a", "PATCH", "/api/v1/onboarding-v2/session", {
-  headers: { "if-match": "\"4\"", "idempotency-key": "onboarding-a-invalid" },
+  headers: { "if-match": "\"5\"", "idempotency-key": "onboarding-a-invalid" },
   body: {
     answers: {
       currentContext: { rawText: "x".repeat(2001) }
@@ -385,4 +404,4 @@ await atomicService.patch({ status: "completed", step: "firstAction" }, {
 });
 assert.equal(scheduledAfterCommit, true);
 
-console.log("Onboarding v2 session contracts passed: stable five-question schema, partial recovery, skip-all completion, answer versions, ETag conflicts, idempotency and account isolation.");
+console.log("Onboarding v2 session contracts passed: stable schema, partial recovery, non-destructive discard, answer versions, ETag conflicts, idempotency and account isolation.");

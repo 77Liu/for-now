@@ -10,7 +10,8 @@ import {
   createAiGenerator,
   createAiAudit,
   createAiUsageService,
-  normalizeLlmSettings
+  normalizeLlmSettings,
+  llmSettingsForScene
 } from "../src/modules/ai/index.mjs";
 
 const promptManifest = JSON.parse(await fs.readFile(
@@ -282,6 +283,24 @@ releaseHeldGlobal();
 await assert.rejects(gatedAttempt, { code: "AI_TASK_STALE" });
 assert.equal(transportCalls.length, callsBeforePermissionChange,
   "permission changes while waiting on scene/global gates must prevent the provider send");
+
+// 同模型的 effort 更新也不能被旧 override 越过容量等待后的有效配置。
+const importanceGate = queuedGate();
+const releaseImportanceGate = await importanceGate.acquire();
+const requestedImportanceChoice = llmSettingsForScene(settings, "importanceScoring");
+const importanceGenerate = createAiGenerator({ provider, readSettings: async () => settings,
+  getContext: () => context.getStore(), reserveAttempt: quota.reserveAttempt, gate: importanceGate, audit });
+const beforeImportanceSend = transportCalls.length;
+const pendingImportance = run("importance-effective-config-race", () => importanceGenerate("合成评分材料", {
+  scene: "importanceScoring", modelOverride: { model: requestedImportanceChoice.model, effort: requestedImportanceChoice.effort },
+  retryWithoutThinking: false
+}));
+await importanceGate.waitForAcquisitions(2);
+settings.sceneEfforts.importanceScoring = requestedImportanceChoice.effort === "none" ? "high" : "none";
+releaseImportanceGate();
+await assert.rejects(pendingImportance, { code: "AI_TASK_STALE" });
+assert.equal(transportCalls.length, beforeImportanceSend);
+settings.sceneEfforts.importanceScoring = requestedImportanceChoice.effort;
 
 const siteBudgetExecutions = [];
 const siteBudgetGenerate = createAiGenerator({

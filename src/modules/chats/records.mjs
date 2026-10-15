@@ -66,7 +66,7 @@ export function createChatRecords({
   function saveInStore(document, input, { clientRequestId = "", requestHash = "" } = {}) {
     const parsed = chatMessage(input);
     if (parsed.error) return parsed;
-    if (!input.eventTime?.occurredAt || !input.eventTime?.occurredOn) {
+    if ((!input.eventTime?.occurredAt && input.eventTime?.eventTimePrecision !== "date") || !input.eventTime?.occurredOn) {
       return { error: "发生时间格式不正确" };
     }
     const data = readData(document);
@@ -85,6 +85,8 @@ export function createChatRecords({
       message: parsed.value,
       answer: String(input.answer ?? ""),
       ...(Array.isArray(input.citations) ? { citations: clone(input.citations) } : {}),
+      ...(Array.isArray(input.providedReferences) ? { providedReferences: clone(input.providedReferences) } : {}),
+      ...(Array.isArray(input.rejectedReferences) ? { rejectedReferences: clone(input.rejectedReferences) } : {}),
       ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
       annotations: [],
       annotationDrift: [],

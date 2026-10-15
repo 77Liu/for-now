@@ -122,7 +122,7 @@ export function reflectionEvidence({
 export function reflectionPrompt({ personalContext, reflectionData, evidenceLevel }) {
   return renderPrompt("analysis.review", {
     personalContext,
-    reflectionData: JSON.stringify(reflectionData),
+    reflectionData: '<reference_context_data format="application/json">' + JSON.stringify(reflectionData).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + '</reference_context_data>',
     evidenceLevel
   });
 }
@@ -267,6 +267,8 @@ export function createReviewRecords({
         reason: input.reason,
         content: input.content,
         ...(Array.isArray(input.citations) ? { citations: clone(input.citations) } : {}),
+      ...(Array.isArray(input.providedReferences) ? { providedReferences: clone(input.providedReferences) } : {}),
+      ...(Array.isArray(input.rejectedReferences) ? { rejectedReferences: clone(input.rejectedReferences) } : {}),
         ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
         reviewStatus: input.reviewStatus || "candidate",
         reviewedAt: input.reviewedAt || "",
@@ -290,6 +292,8 @@ export function createReviewRecords({
         reason: input.reason,
         content: input.content,
         ...(Array.isArray(input.citations) ? { citations: clone(input.citations) } : {}),
+      ...(Array.isArray(input.providedReferences) ? { providedReferences: clone(input.providedReferences) } : {}),
+      ...(Array.isArray(input.rejectedReferences) ? { rejectedReferences: clone(input.rejectedReferences) } : {}),
         ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
         reviewStatus: input.reviewStatus || "candidate",
         reviewedAt: input.reviewedAt || "",

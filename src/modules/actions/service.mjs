@@ -148,7 +148,6 @@ export function createActionsService({
     const parsed = actionPayload(input);
     if (parsed.error) return parsed;
     const createdAt = timestamp(now());
-    const id = generatedId(createId);
     const requestHash = clientRequestId ? requestDigest(parsed.value) : "";
     return createIdempotently("actions.create", clientRequestId, requestHash, (data, useLegacyLookup) => {
       if (clientRequestId && useLegacyLookup) {
@@ -159,6 +158,7 @@ export function createActionsService({
             : { conflict: true, reason: "idempotencyKeyReused" };
         }
       }
+      const id = generatedId(createId);
       if (data.actions.some(item => item.id === id)) return { conflict: true, reason: "duplicateId" };
       let action = {
         id,
@@ -313,7 +313,6 @@ export function createActionsService({
     const parsed = habitPayload(input);
     if (parsed.error) return parsed;
     const createdAt = timestamp(now());
-    const id = generatedId(createId);
     const requestHash = clientRequestId ? requestDigest(parsed.value) : "";
     return createIdempotently("habits.create", clientRequestId, requestHash, (data, useLegacyLookup) => {
       if (clientRequestId && useLegacyLookup) {
@@ -324,6 +323,7 @@ export function createActionsService({
             : { conflict: true, reason: "idempotencyKeyReused" };
         }
       }
+      const id = generatedId(createId);
       if (data.habits.some(item => item.id === id)) return { conflict: true, reason: "duplicateId" };
       const adjustmentHistory = parsed.value.adjustment
         ? [{

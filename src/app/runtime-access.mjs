@@ -1,3 +1,4 @@
+import { withoutReferenceOwnerMetadata } from "./public-state.mjs";
 import { buildAdminSnapshot } from "../../admin-snapshot.mjs";
 import {
   createAuthService,
@@ -81,14 +82,18 @@ export async function createRuntimeAccess({
     keepsakeMediaWorkflows
   } = contentRuntime;
 
+  const projectResponse = value => isOwner(requestStorage.getStore()?.user)
+    ? value : withoutReferenceOwnerMetadata(value);
   const { sendJson, bodyJson } = createJsonHttp({
     getContext: () => requestStorage.getStore(),
-    maxBodyBytes: httpLimits.standardBodyBytes
+    maxBodyBytes: httpLimits.standardBodyBytes,
+    projectResponse
   });
   const respondModel = createModelResponseHttp({
     getContext: () => requestStorage.getStore(),
     logEvent,
-    sendJson
+    sendJson,
+    projectResponse
   });
   const accountLifecycle = createAccountLifecycle({
     dataDir,

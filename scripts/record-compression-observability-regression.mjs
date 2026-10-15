@@ -99,4 +99,16 @@ assert.ok(messages.at(-1).lines.includes("本轮无生成任务。"));
 await stagedObserver.settled({ status: "succeeded", operation: "daily", localDate: "2026-10-10", costReadFailed: true });
 assert.ok(messages.at(-1).lines.some(line => line.includes("调用次数未知")));
 
+const warnEvents = [];
+const warnObserver = createRecordCompressionScanObserver({
+  async logEvent(type, event, fields) { warnEvents.push({ type, event, fields }); },
+  async notify(message) { messages.push(message); }
+});
+await warnObserver.settled({ status: "succeeded", operation: "daily", localDate: "2026-10-10",
+  knownSpentCny: 0.25, knownCalls: 2, unknownCostCalls: 0,
+  summaryBudgetLevel: "warn", summaryTokens: 1500, summaryWarnTokens: 900, summaryHardTokens: 5000 });
+assert.equal(warnEvents[0].fields.level, "warn");
+assert.equal(warnEvents[0].fields.status, "succeeded");
+assert.equal(messages.at(-1).title, "日摘要生成完成");
+assert.ok(messages.at(-1).lines.some(line => line.includes("WARN") && line.includes("合法结果已保存")));
 console.log("Record compression scheduler observability checks passed: lifecycle, counters, budget exhaustion, exception metadata, and privacy.");

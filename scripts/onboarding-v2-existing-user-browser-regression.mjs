@@ -132,9 +132,17 @@ const provider = http.createServer(async (request, response) => {
         .find(Boolean);
       assert.ok(envelope, "回答必须通过真实结构上下文生产者");
       const core = JSON.parse(envelope[1]).coreUserModel;
-      assert.ok(core?.fingerprint && core.answers.length > 0, "正常整理后不可使用空模型代替成功");
-      consumedCoreModels.push({ fingerprint: core.fingerprint, claims: core.claims,
-        sourceIds: core.answers.map(answer => answer.sourceId) });
+      assert.ok(core?.answers.length > 0, "正常整理后不可使用空模型代替成功");
+      assert.equal(Object.hasOwn(core, "fingerprint"), false, "内部模型指纹不能进入提供商数据边界");
+      assert.ok(core.answers.every(answer => /^r[1-9][0-9]*$/.test(answer.sourceId)),
+        "提供商上下文必须使用请求内短引用");
+      consumedCoreModels.push({
+        claims: core.claims,
+        answers: core.answers.map(answer => ({
+          sourceId: answer.sourceId,
+          text: answer.text
+        }))
+      });
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ model: "synthetic-local-model",
         choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ answer: "这是等待整理完成后的合成回答。", citations: [] }) } }],
@@ -552,8 +560,11 @@ try {
   assert.equal(consumerResult.response.status, 200, JSON.stringify(consumerResult.value));
   assert.equal(consumerResult.value.result.sourceTaskId, consumerTask.value.id);
   assert.equal(answerProviderCalls, 2);
-  assert.ok(consumedCoreModels.at(-1).claims.some(claim => claim.statement === CLAIM_STATEMENT
-    && claim.evidence.some(evidence => evidence.sourceId === "currentContext" && evidence.exactQuote === ANSWER)),
+  const consumedModel = consumedCoreModels.at(-1);
+  const currentContextAlias = consumedModel.answers.find(answer => answer.text === ANSWER)?.sourceId;
+  assert.match(currentContextAlias || "", /^r[1-9][0-9]*$/);
+  assert.ok(consumedModel.claims.some(claim => claim.statement === CLAIM_STATEMENT
+    && claim.evidence.some(evidence => evidence.sourceId === currentContextAlias && evidence.exactQuote === ANSWER)),
   "用户确认后的模型及精确来源必须实际进入生成器HTTP消费");
   const fullProviderMessages = JSON.stringify(providerMessageSequence);
   for (const marker of [MARKERS.a, MARKERS.b, OLD_PROFILE_MARKER, OLD_UNDERSTANDING_MARKER]) {
@@ -616,7 +627,8 @@ try {
     confirmedClaimId: pendingClaim.id,
     confirmedModelConsumerTaskId: consumerTask.value.id,
     consumedCoreModels: consumedCoreModels.map(core => ({
-      fingerprint: core.fingerprint, claimCount: core.claims.length, sourceIds: core.sourceIds
+      claimCount: core.claims.length,
+      sourceIds: core.answers.map(answer => answer.sourceId)
     })),
     providerCalls,
     providerThinking,
