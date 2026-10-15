@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 335,
-  "updated_at": "2026-10-15T17:26:29.452Z",
+  "revision": 337,
+  "updated_at": "2026-10-15T18:19:59.905Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,25 +9,22 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "da42cf",
+    "commit": "58db42",
     "effective_date": "2026-10-16",
-    "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.5；项目文件相对链接约定"
+    "source": "PROJECT_RULES.md及现有唯一正文；发布SOP v1.5补齐main回流后确定下一版起点"
   },
-  "work_mode": {
-    "status": "READY_FOR_DEVELOPMENT",
-    "scope": "v0.5.16资料迁移基线已接入本地develop；业务范围待Owner评审冻结"
-  },
+  "work_mode": "PLANNING_COMPLETE",
   "iteration": {
     "id": "v0.5.16",
-    "status": "READY_FOR_DEVELOPMENT",
-    "phase": "开发基线已固定，等待范围冻结"
+    "status": "PLANNED",
+    "phase": "八项需求范围已选择、线上与本地快照已同步；实施前确认共享契约及参数"
   },
   "scope": {
-    "description": "建立v0.5.16可恢复开发起点；本阶段只固化资料迁移、相对链接规则、链接检查和F1-F5评审输入",
+    "description": "v0.5.16需求规划：F1-F5五项技术问题加三项连续阅读/批注体验；F3仅同步窄读阶段A，其他阶段不纳入本版。当前仅更新需求资产、方案与本地基线，不实施业务。",
     "baseline": {
       "branch": "develop",
-      "commit": "756d80",
-      "source": "资料迁移、链接门和控制面消费者验证通过后本地fast-forward接入"
+      "commit": "22deb7",
+      "source": "已包含origin/main@f12fd1正常回流及发布SOP规则提交58db42；下一次实施前再次核对最新develop。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -35,17 +32,35 @@
       "docs/audits/engineering-2026-10-14.md"
     ],
     "exclusions": [
-      "F1-F5是否全部纳入v0.5.16尚未由本次资料迁移决定",
-      "不包含业务代码、API、schema、提示词或运行配置实现",
-      "不包含push、tag、Release、部署、生产写入或付费调用"
+      "F3差量写阶段B及资源命令阶段C、多实例改造",
+      "本次不实施业务代码，不push/tag/Release/部署/付费调用"
+    ],
+    "selected_requirement_ids": [
+      "reczz28NLb1qyuSM",
+      "reczz28NLb1qzsCc",
+      "reczz28NmXA3HYn6",
+      "reczz28NLb1qxaIE",
+      "reczz28NLb1qxhIC",
+      "reczz28JmUJNsOl9",
+      "reczz28JmeyoL7D0",
+      "recvxlWptXiRfk"
+    ],
+    "plan_ref": "docs/versions/v0.5.16/README.md",
+    "planned_deliveries": [
+      "reczz28NmYM0vJSR",
+      "reczz28NmYM0rrKt",
+      "reczz28NmYM0s39S"
     ]
   },
   "active_tasks": [],
   "candidate": null,
   "authorization": {
-    "source": "资料迁移与本地提交授权已执行完成；当前仅允许读取和评审F1-F5，实施及远程/生产动作须另行冻结与授权",
+    "source": "Owner本轮授权更新线上需求池等资产、同步本地唯一快照，并从当前需求池补选3至8项；此前授权origin/main正常回流develop及发布流程落地。",
     "allowed_actions": [
-      "读取和评审F1-F5及版本级集成设计"
+      "本地正常合并回流与发布SOP修改",
+      "线上需求/版本/交付资产更新",
+      "完整采集需求快照",
+      "确定八项规划范围及文档维护"
     ],
     "excluded": [
       "未冻结范围的业务实现",
@@ -69,7 +84,7 @@
     }
   },
   "blockers": [],
-  "next_action": "Owner评审F1-F5及版本级集成设计，明确v0.5.16实际范围、优先级和验收边界后，再从develop@756d80建立单一feat实施任务。",
+  "next_action": "基于届时最新develop复核F1/F2/F5共享契约及参数、F3阶段A边界、F4与三项批注复现；获得业务实施指令后登记唯一负责人和写集再推进。本轮不开展业务或发布。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -383,22 +398,32 @@
       ]
     },
     {
-      "id": "v0516-development-baseline",
+      "id": "v0516-baseline-and-intake",
+      "status": "PASS",
       "object": {
-        "kind": "git_commit",
-        "commit": "756d80",
-        "branch": "develop"
+        "branch": "develop",
+        "commit": "22deb7",
+        "main_commit": "f12fd1",
+        "rule_commit": "58db42"
       },
-      "conclusion": "资料迁移、相对链接、控制面消费者和F1-F5结构验证通过；本地develop已快进到迁移提交，可作为v0.5.16后续任务起点。",
-      "limitations": [
-        "尚未冻结F1-F5实际实施范围",
-        "未执行push、tag、Release、部署、生产写入或付费调用"
-      ],
-      "refs": [
-        "git:756d80",
+      "conclusion": "正式main回流08300f树不变，发布顺序规则已合入；线上14条需求更新、新增1条需求及3条计划交付，更新1条版本与2条历史交付。三表全字段、分页、唯一ID、关联和本次写入回读通过。",
+      "limits": "仅规划与资产同步；没有本版实现、运行验收或发布；账号历史根因、设备性能与普通空答现场未关闭。",
+      "references": [
         "docs/versions/v0.5.16/README.md",
-        "scripts/check-document-links.mjs"
-      ]
+        "SOP/release-and-observation.md",
+        "artifacts/local/requirements-current.json"
+      ],
+      "snapshot": {
+        "collected_at": "2026-10-16T02:18:23.881555+08:00",
+        "requirements_revision": 560,
+        "versions_revision": 43,
+        "deliveries_revision": 141,
+        "counts": {
+          "requirements": 321,
+          "versions": 39,
+          "deliveries": 106
+        }
+      }
     }
   ],
   "records": {
