@@ -14,7 +14,7 @@ export function createAttachmentCleanup({ repository, remove, now, contextKey, d
     if (timers.has(key)) return;
     timers.set(key, dispatch(() => {
       timers.delete(key);
-      void resume().catch(error => { onRetryFailure(error); schedule(); });
+      return resume().catch(error => { onRetryFailure(error); schedule(); });
     }, 60_000));
   }
 

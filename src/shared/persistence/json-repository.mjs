@@ -20,28 +20,34 @@ export function createJsonStoreRepository({
   clone = structuredClone,
   onCommit = async () => {},
   now = () => new Date().toISOString(),
-  getContext = () => ({})
+  getContext = () => ({}),
+  authorize = () => {},
+  assertCommit = () => {}
 }) {
   const afterCommit = Symbol.for("for-now.after-commit");
 
   const runExclusive = operation => {
     const file = getFile();
     const previous = queues.get(file) || Promise.resolve();
-    const current = previous.then(() => operation(file));
+    authorize();
+    const current = previous.then(() => { authorize(); return operation(file); });
     queues.set(file, current.catch(() => {}));
     return current;
   };
 
-  const readInternal = async file => preparePersistenceDocument(
-    normalize(await readDocument(file, emptyDocument)),
-    now
-  );
+  const readInternal = async file => {
+    authorize();
+    const value = await readDocument(file, emptyDocument);
+    authorize();
+    return preparePersistenceDocument(normalize(value), now);
+  };
   const read = async () => publicPersistenceDocument(await readInternal(getFile()));
 
   const transact = operation => runExclusive(async file => {
     const document = await readInternal(file);
     let before = clone(document);
     const commit = async () => {
+      assertCommit(before, document);
       synchronizePersistenceMetadata(before, document, now, { context: getContext() || {} });
       await writeDocument(file, document);
       const context = getContext();
@@ -62,6 +68,7 @@ export function createJsonStoreRepository({
     const before = await readInternal(file);
     await beforeWrite(publicPersistenceDocument(before), file);
     const document = preparePersistenceDocument(normalize(clone(value)), now, { force: true });
+    assertCommit(before, document);
     await writeDocument(file, document);
     await onCommit(publicPersistenceDocument(before), publicPersistenceDocument(document));
     return publicPersistenceDocument(document);

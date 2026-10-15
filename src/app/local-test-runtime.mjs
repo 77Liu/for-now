@@ -30,6 +30,7 @@ export function createLocalTestRuntime({
   controlFile,
   workspacesDir,
   resetOnStart,
+  runWorkspaceInitialization = operation => operation(),
   mainUserId,
   requestStorage,
   storeRepository,
@@ -105,7 +106,10 @@ export function createLocalTestRuntime({
     );
   };
 
-  async function resetWorkspace(
+  // 仅受控的本机测试工作区重建可创建缺失文档；普通账户恢复仍必须先通过只读校验。
+  const resetWorkspace = (...args) => runWorkspaceInitialization(() => resetWorkspaceInternal(...args));
+
+  async function resetWorkspaceInternal(
     mode,
     store,
     settings = null,

@@ -50,6 +50,7 @@ export function createAiGenerator({
   reserveAttempt,
   gate,
   sceneGates = {},
+  assertAccountReady = () => {},
   audit,
   executeBudgetTask = withoutSiteBudget,
   now = () => new Date().toISOString(),
@@ -76,6 +77,7 @@ export function createAiGenerator({
     budgetExecution = null,
     budgetStageIds = null
   } = {}) {
+    assertAccountReady();
     const settings = llmSettingsForScene(settingsOverride || await readSettings(), scene);
     if (modelOverride !== null) {
       if (scene !== "importanceScoring" || !LLM_MODELS.includes(modelOverride.model)
@@ -146,6 +148,7 @@ export function createAiGenerator({
             const sceneGate = sceneGates?.[scene];
             if (sceneGate?.acquire) releaseSceneCapacity = await sceneGate.acquire();
             releaseCapacity = await gate.acquire();
+            assertAccountReady();
             if (typeof isCurrent === "function" && !(await isCurrent())) {
               throw Object.assign(new Error("AI task inputs changed while waiting for provider capacity"), {
                 code: "AI_TASK_STALE"
@@ -232,6 +235,7 @@ export function createAiGenerator({
             try {
               return await execution.runStage(stageIds[attempt], async ({ recordUsage }) => {
                 recordBudgetUsage = typeof recordUsage === "function" ? recordUsage : () => false;
+                assertAccountReady();
                 providerStarted = true;
                 const { httpStatus, ...result } = await provider.complete({ apiKey: settings.apiKey, parameters, messages, signal: controller.signal, onDelta });
                 await finishAttempt({ status: "success", httpStatus, ...result });

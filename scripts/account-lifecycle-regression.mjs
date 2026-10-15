@@ -5,6 +5,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createAccountLifecycle } from "../src/app/index.mjs";
+import { createAccountRuntimeState } from "../.build/typescript/backend/app/account-runtime-state.mjs";
 import { createAuthService } from "../src/modules/auth/index.mjs";
 
 const RECOVERY_ORDER = [
@@ -27,7 +28,8 @@ function harness({
   postgresRuntime = null,
   localTestRuntime = null,
   readUsers = null,
-  failAt = () => false
+  failAt = () => false,
+  recoveryConfig = null
 }) {
   const dataDir = path.join(root, name);
   const requestStorage = new AsyncLocalStorage();
@@ -39,8 +41,10 @@ function harness({
       userId: context?.user?.id || "",
       dataDir: context?.dataDir || ""
     });
-    if (failAt(step, context)) throw new Error(`failed:${step}:${context?.user?.id || "current"}`);
+    const failure = failAt(step, context);
+    if (failure) throw failure instanceof Error ? failure : new Error(`failed:${step}:${context?.user?.id || "current"}`);
   };
+  const registry = recoveryConfig ? createAccountRuntimeState({ config: recoveryConfig, getContext: () => requestStorage.getStore() }) : null;
   const lifecycle = createAccountLifecycle({
     dataDir,
     authRequired,
@@ -58,9 +62,11 @@ function harness({
     backgroundAi: { resume: operation("background-ai") },
     keepsakeMediaWorkflows: { resume: operation("keepsake-media") },
     localTestRuntime,
-    readUsers
+    readUsers,
+    accountRuntime: registry,
+    validateCurrentStorage: recoveryConfig ? operation("validate") : async () => {}
   });
-  return { dataDir, events, lifecycle, requestStorage };
+  return { dataDir, events, lifecycle, requestStorage, registry };
 }
 
 {
@@ -329,6 +335,81 @@ function harness({
   );
   assert.equal(persisted.users.length, 1);
   await fs.access(registration.lifecycle.userDataDir(persisted.users[0]));
+}
+
+
+// 新隔离路径显式开启；未知故障仍全局失败，只有带账户证据的坏数据可隔离。
+const recoveryConfig = { enabled: true, concurrency: 1, accountDeadlineMs: 1000, retryCooldownMs: 1 };
+{
+  const current = harness({ name: "isolated-abc", authRequired: true, recoveryConfig,
+    failAt: (step, context) => step === "validate" && context.user.id === "b"
+      ? Object.assign(new Error("local data invalid"), { recoveryScope: "account", accountId: "b", reasonCode: "ACCOUNT_JSON_INVALID" }) : false });
+  await current.lifecycle.recoverAtStartup({ readUsers: async () => ["a", "b", "c"].map(id => ({ id })) });
+  assert.equal(current.registry.state("a").status, "ready");
+  assert.equal(current.registry.state("b").status, "quarantined");
+  assert.equal(current.registry.state("c").status, "ready");
+  assert.equal(current.registry.health().ready, true);
+  assert.equal(current.registry.health().degraded, true);
+  assert.deepEqual(current.events.filter(item => item.userId === "b").map(item => item.step), ["validate"]);
+  assert.throws(() => current.registry.assertReady("b"), error => error.code === "ACCOUNT_QUARANTINED");
+  const unknown = harness({ name: "unknown-global", authRequired: true, recoveryConfig, failAt: step => step === "validate" });
+  await assert.rejects(unknown.lifecycle.recoverAtStartup({ readUsers: async () => [{ id: "a" }, { id: "b" }] }));
+  assert.equal(unknown.registry.health().dependenciesHealthy, false);
+  assert.equal(unknown.events.some(item => item.userId === "b"), false);
+}
+
+{
+  const context = new AsyncLocalStorage();
+  const registry = createAccountRuntimeState({ config: { ...recoveryConfig, accountDeadlineMs: 10 }, getContext: () => context.getStore() });
+  let finish;
+  const io = new Promise(resolve => { finish = resolve; });
+  const recovery = context.run({ user: { id: "slow" } }, () => registry.recover("slow", async signal => { await io; assert.equal(signal.aborted, true); }));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(registry.state("slow").status, "recovering", "timeout must not release a live I/O slot");
+  const initial = registry.state("slow");
+  assert.equal(registry.retry("slow", initial.bootId, 0, async () => {}).attemptId, initial.attemptId);
+  finish(); await recovery;
+  assert.equal(registry.state("slow").status, "quarantined");
+  const state = registry.state("slow");
+  assert.throws(() => registry.retry("slow", "old-boot", state.epoch, async () => {}), error => error.statusCode === 409);
+  await new Promise(resolve => setTimeout(resolve, 3));
+  await context.run({ user: { id: "slow" } }, async () => {
+    let activate;
+    const ready = new Promise(resolve => { activate = resolve; });
+    const retry = registry.retry("slow", state.bootId, state.epoch, async () => { await ready; });
+    assert.equal(registry.retry("slow", state.bootId, state.epoch, async () => {}).attemptId, retry.attemptId);
+    activate();
+    while (registry.state("slow").status === "recovering") await new Promise(resolve => setImmediate(resolve));
+    const token = registry.assertReady("slow");
+    registry.beginAuditCall("existing-call");
+    let finishOperation, operationStarted;
+    const active = new Promise(resolve => { operationStarted = resolve; });
+    const operation = registry.withOperation(async () => { operationStarted(); await new Promise(resolve => { finishOperation = resolve; }); });
+    await active;
+    let dispatched = false, callback;
+    registry.dispatch(() => { dispatched = true; }, value => { callback = value; });
+    registry.noteFailure(Object.assign(new Error(), { recoveryScope: "account", accountId: "slow", reasonCode: "ACCOUNT_JSON_INVALID" }));
+    callback();
+    assert.equal(dispatched, false, "late callbacks must be dropped without uncaught exceptions");
+    assert.throws(() => registry.assertReady("slow", token));
+    const before = { captures: [{ id: "kept", content: "unchanged" }], aiTasks: [{ id: "task", attempt: 1, status: "running" }] };
+    const after = structuredClone(before); after.aiTasks[0].status = "cancelled";
+    registry.cleanupTask({ id: "task", attempt: 1 }, () => registry.assertCommit(before, after));
+    registry.cleanupTask({ id: "task", attempt: 1 }, () => registry.assertCommit(after, after));
+    const entry = { id: "existing-call", callId: "existing-call", costCny: 0.01 };
+    await registry.finalizeUsage(entry, async () => registry.assertCommit({ entries: [] }, { entries: [entry] }, "usage"));
+    assert.throws(() => registry.beginAuditCall("new-call"), error => error.statusCode === 503);
+    after.captures[0].content = "forbidden";
+    assert.throws(() => registry.cleanupTask({ id: "task", attempt: 1 }, () => registry.assertCommit(before, after)), error => error.code === "ACCOUNT_CLEANUP_NOT_ALLOWED");
+    const quarantined = registry.state("slow");
+    assert.throws(() => registry.retry("slow", quarantined.bootId, quarantined.epoch, async () => {}), error => error.code === "ACCOUNT_RECOVERY_DRAINING");
+    let stopped = false;
+    const stop = registry.stop().then(() => { stopped = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(stopped, false, "stop must await the real operation completion promise");
+    finishOperation(); await operation; await stop;
+    assert.equal(stopped, true);
+  });
 }
 
 await fs.rm(root, { recursive: true, force: true });

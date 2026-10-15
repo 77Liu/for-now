@@ -37,7 +37,8 @@ async function waitForServer(url, child) {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (child.exitCode != null) throw new Error(`认证测试服务提前退出：${child.exitCode}`);
     try {
-      if ((await fetch(`${url}/now/healthz`)).ok) return;
+      // F2在恢复期间先开放liveness；业务回归必须等完整扫描与共享依赖就绪。
+      if ((await fetch(`${url}/now/readyz`)).ok) return;
     } catch {}
     await sleep(50);
   }

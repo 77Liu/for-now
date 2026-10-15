@@ -26,7 +26,8 @@ export function createBackgroundAi({
   onError,
   shouldWaitForModel = () => false,
   beforePrepare = async () => {},
-  inspectIntent = targets?.inspectIntent
+  inspectIntent = targets?.inspectIntent,
+  cleanupExistingTask = null
 }) {
   const internalKinds = new Set(["perceptionExtraction", RECORD_COMPRESSION_TASK_KIND]);
   const isInternalTask = task => task?.internal === true || internalKinds.has(task?.kind);
@@ -125,7 +126,7 @@ export function createBackgroundAi({
         allocateIdentity: task => targetFor(task).allocateIdentity?.(store, task) }
     ));
   };
-  const schedule = taskId => dispatch(() => void run(taskId).catch(error => onError(taskId, error)));
+  const schedule = taskId => dispatch(() => run(taskId).catch(error => onError(taskId, error)));
   const stale = (store, task, message) => {
     targetFor(task).stale?.(store, task);
     tasks.complete(task, "stale", {
@@ -166,6 +167,7 @@ export function createBackgroundAi({
     const controller = new AbortController();
     controllers.set(key, controller);
     let executed = false;
+    let claimedIdentity = null;
     try {
       const initial = await repository.read();
       await beforePrepare(initial.aiTasks.find(item => item.id === taskId));
@@ -188,6 +190,7 @@ export function createBackgroundAi({
         }
         const claimedTask = tasks.claim(store.aiTasks, taskId);
         if (!claimedTask) return false;
+        claimedIdentity = { id: claimedTask.id, attempt: claimedTask.attempt };
         targetFor(claimedTask).started?.(store, claimedTask);
         notify(store, claimedTask, "running", "正在生成");
         return true;
@@ -195,6 +198,7 @@ export function createBackgroundAi({
       if (!claimed) return;
       executed = true;
       const store = await repository.read(), task = store.aiTasks.find(item => item.id === taskId);
+      if (task) claimedIdentity = { id: task.id, attempt: task.attempt };
       const work = task && prepareTarget(store, task);
       if (!task || !taskInputMatches(task, work)) {
         await repository.update(value => {
@@ -237,6 +241,7 @@ export function createBackgroundAi({
         notify(value, currentTask, "succeeded");
       });
     } catch (error) {
+      if (claimedIdentity && cleanupExistingTask && await cleanupExistingTask(claimedIdentity, error)) return;
       await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task) return;
@@ -494,6 +499,11 @@ export function createBackgroundAi({
     promoteInternalBudgetWaiting,
     retry: id => retryTask(id),
     retryInternal: id => retryTask(id, { includeInternal: true }),
+    abortAll() { for (const controller of controllers.values()) controller.abort(); },
+    abortCurrentAccount() {
+      const prefix = `${contextKey()}:`;
+      for (const [key, controller] of controllers) if (key.startsWith(prefix)) controller.abort();
+    },
     async resume() {
       await beforePrepare({ kind: "importanceScoring" });
       const ids = await repository.update(store => {

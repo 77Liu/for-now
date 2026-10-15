@@ -59,6 +59,7 @@ export function createServerRuntime({
         accountAccess,
         startupGate
       });
+      try {
       const access = await createRuntimeAccess(foundation);
       Object.assign(accountAccess, {
         readAuth: access.readAuth,
@@ -77,6 +78,10 @@ export function createServerRuntime({
         upstreamOrigin: foundation.appConfig.upstreamOrigin,
         localTestMode: foundation.appConfig.localTestMode,
         postgresRuntime: foundation.persistence.postgresRuntime,
+        accountRuntime: foundation.accountRuntime,
+        accountLifecycle: access.accountLifecycle,
+        readAuth: access.readAuth,
+        bodyJson: access.bodyJson,
         logEvent: foundation.observability.logEvent,
         sendJson: access.sendJson,
         apiV1: wiring.apiV1,
@@ -97,8 +102,14 @@ export function createServerRuntime({
         appConfig: foundation.appConfig,
         application,
         accountLifecycle: access.accountLifecycle,
+        accountRuntime: foundation.accountRuntime,
         localTestRuntime: access.localTestRuntime,
         readAuth: access.readAuth,
+        probeDependencies: async () => {
+          await foundation.persistence.postgresRuntime?.ready();
+          await foundation.aiRuntime.validateGlobalBudget();
+          if (foundation.appConfig.authRequired) await access.probeAuth();
+        },
         runPeriodicAnalyses: wiring.runPeriodicAnalyses,
         runRecordCompressionScheduler: wiring.runRecordCompressionScheduler,
         runSpeechCacheSweep: wiring.runSpeechCacheSweep,
@@ -106,6 +117,11 @@ export function createServerRuntime({
         postgresRuntime: foundation.persistence.postgresRuntime,
         processRef
       });
+      } catch (error) {
+        foundation.accountRuntime.failGlobal();
+        await foundation.persistence.postgresRuntime?.close().catch(() => {});
+        throw error;
+      }
     })();
     return lifecyclePromise;
   };
