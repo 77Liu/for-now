@@ -75,13 +75,16 @@ export function createSyncHttp({ repository, publicState }) {
     throw new TypeError("Sync HTTP requires a sync-capable repository and public state projector");
   }
 
-  async function snapshotAfter(after, waitMs) {
-    const snapshot = await repository.readSyncSnapshot();
+  async function snapshotAfter(after, waitMs, hasCursor) {
+    const read = () => repository.readSyncChanges
+      ? repository.readSyncChanges({ cursor: after, hasCursor, limit: MAX_INCREMENTAL_CHANGES, fieldsForDomains: publicState.syncProjectionFields })
+      : repository.readSyncSnapshot();
+    const snapshot = await read();
     if (snapshot.metadata.sync.cursor > after || waitMs === 0) return snapshot;
 
     // 长轮询等待期间不反复占用数据库连接；写入后的即时拉取仍使用 waitMs=0。
     await pause(waitMs);
-    return repository.readSyncSnapshot();
+    return read();
   }
 
   async function handleV1(req, res, url, v1) {
@@ -92,7 +95,7 @@ export function createSyncHttp({ repository, publicState }) {
       if (after == null || waitMs == null) {
         return v1.error(res, 400, "同步游标或等待时间无效", "INVALID_SYNC_CURSOR");
       }
-      const snapshot = await snapshotAfter(after, waitMs);
+      const snapshot = await snapshotAfter(after, waitMs, hasCursor);
       const { cursor, changes } = snapshot.metadata.sync;
       const oldest = changes[0]?.cursor || cursor + 1;
       if (after > cursor) {
@@ -111,7 +114,7 @@ export function createSyncHttp({ repository, publicState }) {
           changeCount: pending.length
         });
       }
-      const state = publicState(snapshot.document);
+      const state = pending.length ? publicState(snapshot.document, undefined, pending.map(change => change.domain)) : {};
       return v1.success(res, 200, {
         cursor,
         changes: pending,
@@ -121,7 +124,6 @@ export function createSyncHttp({ repository, publicState }) {
 
     const operation = url.pathname.match(/^\/api\/v1\/sync\/operations\/([A-Za-z0-9_.:-]{1,100})$/);
     if (req.method === "GET" && operation) {
-      const snapshot = await repository.readSyncSnapshot();
       const operationId = operation[1];
       const fingerprint = url.searchParams.get("fingerprint") || "";
       if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
@@ -133,7 +135,9 @@ export function createSyncHttp({ repository, publicState }) {
           v1.operationFingerprintErrorDetails("format")
         );
       }
-      const receipt = snapshot.metadata.sync.operations.find(item => item.operationId === operationId);
+      const receipt = repository.readOperationReceipt
+        ? await repository.readOperationReceipt(operationId)
+        : (await repository.readSyncSnapshot()).metadata.sync.operations.find(item => item.operationId === operationId);
       if (receipt && receipt.fingerprint !== fingerprint) {
         return v1.error(res, 409, "同一操作标识不能用于不同请求", "OPERATION_ID_REUSED");
       }

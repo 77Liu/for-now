@@ -325,6 +325,7 @@ export async function createRuntimeFoundation({
   const storeRepository = postgresRuntime
     ? postgresRuntime.createStoreRepository({
         normalize: normalizeStore,
+        pgIo: appConfig.pgIo,
         emptyDocument: emptyStore,
         onCommit: auditChanges,
         now,

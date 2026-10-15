@@ -40,6 +40,17 @@ export function loadAiQueueConfig(env = process.env) {
   return Object.freeze({ enabled: env.AI_QUEUE_ENABLED === "1", ...values });
 }
 
+/** 解析PostgreSQL同步窄读灰度；空白名单保持全读，JSON不采用SQL窄读。
+ * @since unreleased
+ */
+export function loadPgIoConfig(env = process.env) {
+  const syncReadMode = env.PG_SYNC_READ_MODE || "legacy";
+  if (!["legacy", "metadata"].includes(syncReadMode)) throw new Error("PG_SYNC_READ_MODE must be legacy or metadata");
+  const accountAllowlist = String(env.PG_SYNC_ACCOUNT_ALLOWLIST || "").split(",").map(value => value.trim()).filter(Boolean);
+  if (accountAllowlist.includes("*") && accountAllowlist.length !== 1) throw new Error("PG_SYNC_ACCOUNT_ALLOWLIST wildcard must stand alone");
+  return Object.freeze({ syncReadMode, accountAllowlist: Object.freeze(accountAllowlist) });
+}
+
 export function loadAttachmentConfig(env = process.env) {
   return Object.freeze({
     mode: env.ATTACHMENT_STORAGE || "local",
@@ -171,6 +182,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     authAdmission: loadAuthAdmissionConfig(env),
     accountRecovery: loadAccountRecoveryConfig(env),
     aiQueue: loadAiQueueConfig(env),
+    pgIo: loadPgIoConfig(env),
     dataDir: path.resolve(rootDir, env.DATA_DIR || "data"),
     port: Number(env.PORT || 4173),
     version: env.APP_VERSION || "development",

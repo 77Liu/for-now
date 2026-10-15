@@ -105,6 +105,16 @@ export function createJsonStoreRepository({
       return replay === undefined ? undefined : clone(replay);
     }),
     readPersistenceMetadata: () => runExclusive(async file => persistenceMetadata(await readInternal(file))),
+    /** JSON兼容同步端口，仍读取完整文件，不模拟SQL局部读取。 @since unreleased */
+    readSyncChanges: () => runExclusive(async file => {
+      const document = await readInternal(file);
+      return { document: publicPersistenceDocument(document), metadata: persistenceMetadata(document) };
+    }),
+    /** 从真实同步元数据查询操作回执；与幂等ledger分离。 @since unreleased */
+    readOperationReceipt: operationId => runExclusive(async file => {
+      const metadata = persistenceMetadata(await readInternal(file));
+      return clone(metadata.sync.operations.find(item => item.operationId === operationId));
+    }),
     readSyncSnapshot: () => runExclusive(async file => {
       const document = await readInternal(file);
       return {

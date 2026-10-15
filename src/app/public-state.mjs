@@ -1,3 +1,4 @@
+import { syncNeedsInsights, syncProjectionFields } from "../../.build/typescript/backend/app/sync-projection.mjs";
 import { publicCapture } from "../modules/captures/index.mjs";
 import { publicKeepsake } from "../modules/keepsakes/index.mjs";
 import { notificationUnread } from "../modules/notifications/index.mjs";
@@ -65,7 +66,11 @@ export function createPublicStateProjection({
     );
   }
 
-  return function publicStateFromStore(store, user = getUser()) {
+  // 按域模式只执行声明依赖的投影；普通完整状态的调用契约保持不变。
+  const project = function publicStateFromStore(store, user = getUser(), syncDomains = null) {
+    const domains = syncDomains === null ? null : new Set(syncDomains);
+    const wants = domain => domains === null || domains.has(domain);
+    const insights = domains === null || syncNeedsInsights(domains);
     const {
       trash,
       attachmentCleanup: _attachmentCleanup,
@@ -80,14 +85,15 @@ export function createPublicStateProjection({
     const ownerId = safeText(user?.id, 100) || "local";
     const state = {
       ...visible,
-      captures: visible.captures.map(publicCapture),
-      keepsakes: visible.keepsakes.map(publicKeepsake),
-      aiTasks: store.aiTasks.filter(task => task.internal !== true).slice(0, 100).map(publicAiTask),
-      notificationUnread: notificationUnread(store.notifications),
-      clusters: deriveThoughtClusters(store),
-      insights: deriveStateInsights(store, { currentDate: today() }),
-      trashCount: trash.length,
-      speech: {
+      ...(wants("captures") ? { captures: visible.captures.map(publicCapture) } : {}),
+      ...(wants("keepsakes") ? { keepsakes: visible.keepsakes.map(publicKeepsake) } : {}),
+      ...(wants("aiTasks") || wants("notifications") ? {
+        aiTasks: store.aiTasks.filter(task => task.internal !== true).slice(0, 100).map(publicAiTask),
+        notificationUnread: notificationUnread(store.notifications)
+      } : {}),
+      ...(insights ? { clusters: deriveThoughtClusters(store), insights: deriveStateInsights(store, { currentDate: today() }) } : {}),
+      ...(wants("trash") ? { trashCount: trash.length } : {}),
+      ...(wants("speechCache") ? { speech: {
         configured: speechProvider.configured,
         defaultVoice: speechProvider.defaultVoice,
         voices: speechProvider.voices,
@@ -97,11 +103,13 @@ export function createPublicStateProjection({
           currentTime: now(),
           hash
         })
-      },
+      } } : {}),
       vision: { configured: visionProvider.configured }
     };
     return isOwner(user) ? state : withoutOwnerMetadata(state);
   };
+  project.syncProjectionFields = syncProjectionFields;
+  return project;
 }
 
 /**

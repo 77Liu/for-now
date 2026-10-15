@@ -45,12 +45,19 @@ export async function writeStoreObjects(client, mapping) {
   }
 }
 
-// Caller owns a transaction and has set app.account_id locally.
-export async function readPostgresStoreObjects(client, accountId) {
+/**
+ * 读取账户关系映射；调用方必须持有同一读取事务并已设置app.account_id的RLS上下文。
+ * fields缺省读取原六类完整映射；指定时只取实际字段及同collection的完整对象子树，
+ * 不包含关系、附件索引、生命周期或幂等ledger，不得将该子集冒充完整仓库。
+ * fields只能来自受信投影依赖声明，SQL字段和表名保持固定。
+ */
+export async function readPostgresStoreObjects(client, accountId, { fields = null } = {}) {
   const mapping = {};
   for (const [key, [table, columns]] of Object.entries(TABLES)) {
+    if (fields && !["fields", "objects"].includes(key)) { mapping[key] = []; continue; }
     const select = Object.entries(columns).map(([key, column]) => `${column} AS "${key}"`).join(", ");
-    mapping[key] = (await client.query(`SELECT ${select} FROM for_now.${table} WHERE account_id = $1`, [accountId])).rows;
+    const selected = fields ? ` AND ${key === "fields" ? "field" : "collection"} = ANY($2::text[])` : "";
+    mapping[key] = (await client.query(`SELECT ${select} FROM for_now.${table} WHERE account_id = $1${selected}`, fields ? [accountId, fields] : [accountId])).rows;
   }
   if (!mapping.fields.length) throw Object.assign(new Error("账户存储映射缺失"), {
     statusCode: 503, code: "ACCOUNT_DATA_INVALID", recoveryScope: "account", accountId, reasonCode: "ACCOUNT_STORE_MAPPING_MISSING"
