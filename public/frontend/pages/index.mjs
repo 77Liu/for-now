@@ -82,7 +82,7 @@ const state={...history.state&&typeof history.state==="object"?history.state:{},
 history[method](state,"",applicationRouteUrl(route,basePath));
 }
 function captureScroll() {
-if(!startDisposer||!browserHistory) return;
+if(!startDisposer||!browserHistory||featureTransitionPending||routePath(currentRoute)!==routePath(committedRoute)) return;
 const entry=storedEntry();writeHistory("replaceState",committedRoute,{scroll:readScroll(),result:entry?.result||committedRoute.result||null,returnRoute:entry?.returnRoute||null});
 }
 function applyEffective(view,result=currentRoute.result||null) {if(view!==currentRoute.view)currentRoute={...pageRoute(view),result}}
@@ -160,8 +160,10 @@ committedRoute=currentRoute;
 if(browserHistory&&previousPath!==routePath(currentRoute))writeHistory("replaceState",currentRoute,{scroll:readScroll(),result:currentRoute.result||null});
 return viewName;
 }
-function replaceQuery(changes={},{apply=true}={}) {
+/** 更新查询；新增onlyCommitted选项（unreleased）用于位置写入，过渡未提交时返回false且不改历史。 */
+function replaceQuery(changes={},{apply=true,onlyCommitted=false}={}) {
 if(!startDisposer) return false;
+if(onlyCommitted&&(featureTransitionPending||routePath(currentRoute)!==routePath(committedRoute)))return false;
 const next=currentRoute.kind==="detail"
 ? detailRoute(currentRoute.resourceType,currentRoute.resourceId,{...currentRoute.query,...changes})
 : pageRoute(currentRoute.view,{...currentRoute.query,...changes});
@@ -242,6 +244,8 @@ event?.type==="keydown"
 ) return;
 restoreVer += 1;
 }
+/** 由已就绪页面的有效锚点接管位置恢复；无锚点时保留原绝对位置策略。 @since unreleased */
+function cancelScrollRestoration() { restoreVer += 1; }
 function restoreCurrentScroll(position=null,expectedVersion=++restoreVer) {
 if(!startDisposer) return false;
 const saved=position||storedEntry()?.scroll||{x:0,y:0};
@@ -305,7 +309,7 @@ if(initialResult&&typeof initialResult.catch==="function") void initialResult.ca
 return startDisposer;
 }
 return {
-start,switchView,restoreView,replaceQuery,openDetail,showList,backToList,
+start,switchView,restoreView,replaceQuery,openDetail,showList,backToList,cancelScrollRestoration,
 showUnavailable,clearResult,activate,captureScroll,restoreCurrentScroll,
 currentView: ()=>currentView,
 currentRoute: ()=>({...currentRoute,query: {...currentRoute.query}})

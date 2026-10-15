@@ -1,3 +1,5 @@
+import { THOUGHT_PAGING } from "../../../generated/thought-pagination-config.mjs";
+import { reconcileThoughtWindowMutation } from "../../features/thoughts/index.mjs";
 import { createNotificationRuntime } from "../../../generated/app/runtime/notification-runtime.mjs";
 import { BUSINESS_ID_BYTES, encodeBusinessId, isBusinessId } from "../../../generated/business-identifiers.mjs";
 import { sessionScope, sessionSerial } from "../../session/index.mjs";
@@ -106,7 +108,7 @@ function restorePendingProjection(snapshot,operationId){
     const prefix=`${snapshot.temporaryId}:`,previousLength=(state.thoughts||[]).length;
     state.thoughts=(state.thoughts||[]).filter(item=>(item.id!==snapshot.temporaryId&&!String(item.id).startsWith(prefix))||item._sync?.operationId!==operationId);
     if(state.thoughts.length===previousLength)return false;
-    publishDomains(new Set(["thoughts"]));return true
+    publishThoughtMutation();return true
   }
   if(snapshot.kind==="book.note.create"){
     const book=(state.books||[]).find(item=>item.id===snapshot.bookId);if(!book)return false;
@@ -136,14 +138,14 @@ function restorePendingProjection(snapshot,operationId){
   if(snapshot.kind==="thought.chain.update"){
     const root=snapshot.items.find(entry=>entry.value.id===snapshot.id),index=(state.thoughts||[]).findIndex(item=>item.id===snapshot.id);
     if(!root||index<0||state.thoughts[index]._sync?.operationId!==operationId)return false;
-    state.thoughts[index]=root.value;publishDomains(new Set(["thoughts"]));return true
+    state.thoughts[index]=root.value;publishThoughtMutation();return true
   }
   if(snapshot.kind==="thought.chain.delete"){
     if((state.thoughts||[]).some(item=>item.id===snapshot.id))return false;
     for(const entry of [...snapshot.items].sort((left,right)=>left.index-right.index)){
       if(!state.thoughts.some(item=>item.id===entry.value.id))state.thoughts.splice(Math.min(entry.index,state.thoughts.length),0,entry.value)
     }
-    publishDomains(new Set(["thoughts"]));return true
+    publishThoughtMutation();return true
   }
   return false
 }
@@ -165,7 +167,7 @@ function settlePendingProjection(projection,operationId,data){
     const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
     if(!root||root._sync?.operationId!==operationId)return false;
     if(data&&typeof data==="object")Object.assign(root,data);
-    delete root._sync;publishDomains(new Set(["thoughts"]));return true
+    delete root._sync;publishThoughtMutation();return true
   }
   return false
 }
@@ -191,7 +193,7 @@ async function requestV1(url,options={},coordination={}){
       if(coordination.projection?.kind==="thought.chain.delete"){
         const id=coordination.projection.id,previousLength=(state.thoughts||[]).length;
         state.thoughts=(state.thoughts||[]).filter(item=>item.id!==id&&item.relatedTo!==id);
-        if(state.thoughts.length!==previousLength)publishDomains(new Set(["thoughts"]));
+        if(state.thoughts.length!==previousLength)publishThoughtMutation();
         reconcileActiveThoughtRoute()
       }
     }catch(error){
@@ -267,6 +269,11 @@ function showToast(message,kind="success"){
   clearTimeout(runtime.toastTimer);
   runtime.toastTimer=setTimeout(()=>toast.hidden=true,3200)
 }
+function publishThoughtMutation() {
+  reconcileThoughtWindowMutation(state, runtime.pageRouter?.currentRoute(), runtime.featureFlags?.thoughtPaging?.enabled, THOUGHT_PAGING);
+  publishDomains(new Set(["thoughts"]));
+}
+
 function applyPendingProjection(record){
   const projection=record?.projection;
   if(!projection)return false;
@@ -333,19 +340,19 @@ function applyPendingProjection(record){
     }];
     if(projection.payload.idea)items.push({id:`${projection.temporaryId}:idea`,type:"idea",relatedTo:rootId,content:projection.payload.idea,authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync});
     if(projection.payload.answer)items.push({id:`${projection.temporaryId}:answer`,type:"answer",relatedTo:rootId,content:projection.payload.answer,authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync});
-    state.thoughts=[...items,...state.thoughts];publishDomains(new Set(["thoughts"]));return true
+    state.thoughts=[...items,...state.thoughts];publishThoughtMutation();return true
   }
   if(projection.kind==="thought.chain.delete"){
     const previousLength=(state.thoughts||[]).length;
     state.thoughts=(state.thoughts||[]).filter(item=>item.id!==projection.id&&item.relatedTo!==projection.id);
     if(state.thoughts.length===previousLength)return false;
-    publishDomains(new Set(["thoughts"]));return true
+    publishThoughtMutation();return true
   }
   if(projection.kind==="thought.chain.update"){
     const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
     if(!root)return false;
     Object.assign(root,{content:projection.payload.question,tags:projection.payload.tags,occurredAt:projection.payload.occurredAt,_sync:sync});
-    publishDomains(new Set(["thoughts"]));return true
+    publishThoughtMutation();return true
   }
   if(projection.kind==="action.command")return getActionsCoordinator().applyPendingRecord(record);
   return false
@@ -364,9 +371,24 @@ async function restorePendingProjections(){
   return restored
 }
 async function applyIncrementalSnapshot(snapshot,changes){
-  const domains=mergeStateSnapshot(snapshot);
+  let incoming = snapshot, thoughtWindowInvalidated = false;
+  if (runtime.featureFlags?.thoughtPaging?.enabled && Object.hasOwn(snapshot || {}, "thoughts")) {
+    const { thoughts: _fullThoughts, ...other } = snapshot;
+    const route = runtime.pageRouter?.currentRoute();
+    if (route?.view === "thoughts" && route.kind !== "detail" && state.thoughtPage?.kind === "list") {
+      const window = state.thoughtPage.window;
+      if (window) { window.stale = true; window.generation += 1; }
+      state.thoughtPage.stale = true;
+      incoming = other; thoughtWindowInvalidated = true;
+    } else if (route?.view === "thoughts" && route.kind === "detail") {
+      const rootId = route.resourceId;
+      incoming = { ...other, thoughts: snapshot.thoughts.filter(item => item.id === rootId || item.relatedTo === rootId) };
+    } else incoming = other;
+  }
+  const domains=mergeStateSnapshot(incoming);
   getActionsCoordinator().applyIncrementalSnapshot(snapshot,{sessionTicket:sessionScope.capture()});
   const rendered=new Set([...domains].filter(domain=>!["actions","habits","habitCheckins"].includes(domain)));
+  if(thoughtWindowInvalidated || domains.has("thoughtPage"))rendered.add("thoughts");
   if(domains.has("clusters")||domains.has("insights"))rendered.add("review");
   if(rendered.size)publishDomains(rendered);
   await restorePendingProjections();

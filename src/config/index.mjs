@@ -1,3 +1,4 @@
+import { THOUGHT_PAGING } from "../../.build/typescript/backend/shared/thought-pagination/index.mjs";
 import path from "node:path";
 import { readInternalBudgets } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import { RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN, RECORD_SLOT_START_DATE } from "../modules/record-compressions/index.mjs";
@@ -227,6 +228,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     }),
     attachments,
     features: Object.freeze({
+      thoughtPaging: Object.freeze({ ...THOUGHT_PAGING, enabled: env.THOUGHT_PAGING_ENABLED === "1" }),
       incrementalSync: String(env.INCREMENTAL_SYNC_ENABLED ?? "1") !== "0"
     }),
     platform: Object.freeze({

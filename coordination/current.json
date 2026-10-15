@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 364,
-  "updated_at": "2026-10-15T21:17:58.873Z",
+  "revision": 379,
+  "updated_at": "2026-10-15T23:27:01.800Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "IN_PROGRESS",
-    "phase": "F9服务端独审通过，准备本地接入"
+    "phase": "F8原生选区与批注"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "40d52b",
-      "source": "F3注册初始化返修bec958经独立审查正常合入，tree一致，develop投影专项通过；F9原差分已完整恢复。"
+      "commit": "e79d06",
+      "source": "F6实现59a1a1经主控独立全链及真实Chrome审查后正常合入，tree一致且develop批注专项通过；feat引用保留。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -53,7 +53,50 @@
       "reczz28NmYM0s39S"
     ]
   },
-  "active_tasks": [],
+  "active_tasks": [
+    {
+      "id": "v0516-F8-mobile-annotations",
+      "owner": "主开发Agent",
+      "mode": "implementation",
+      "branch": "feat/v0.5.16-mobile-annotations",
+      "baseline": "e79d06",
+      "status": "READY_FOR_INTEGRATION",
+      "allowed_write_set": [
+        "public/frontend/features/annotations/** (原生选区快照、文本规范、事件合并及当前账户/页面/源版本UI生命周期；复用F6计数)",
+        "public/frontend/shared/** (仅真实需要的F8 TypeScript选区/文本契约，不另建阅读或计数状态)",
+        "public/frontend/app/runtime/collaboration-runtime.mjs / session-runtime.mjs / page-descriptors-insights.mjs (仅必要当前route/source/选区保护端口；不改kernel)",
+        "public/frontend/features/thoughts/index.mjs / loader.mjs / controller.mjs / view.mjs (仅F8活跃原生选区保护与真实公开门面；保留F7阅读归属)",
+        "public/frontend/styles/application.css / r8.css (仅选区菜单/触摸可达性，不全局禁用原生手势)",
+        "scripts/** (直接受影响既有annotations/thoughts/collaboration/路由专项及实际DOM验收)",
+        "ios/App/AppUITests/AppUITests.swift (仅隔离本地功能XCUITest，真实长按/跨行/焦点；不向业务SceneDelegate新增测试代码)",
+        "tsconfig.frontend.json / knowledge/module-boundaries.json / 现有构建接线 (必要TS声明，无依赖或默认配置变更)",
+        "docs/technical-proposals/F8-iOS-PWA选字与批注-技术方案.md (必要契约澄清、4.1事实及原回执)",
+        "public/frontend/app/runtime/global-events.mjs (仅comment图片选择成功回调不得清除批注域更新的状态；不改其他编辑器、媒体manager、schema)"
+      ],
+      "forbidden_write_set": [
+        "coordination/**",
+        ".trae/**",
+        "Git/远程/生产/付费操作",
+        "新工作树/额外Agent",
+        "F9客户端调度或新F7/F6状态源",
+        "后端/schema/依赖/默认配置/kernel/业务中的测试夹具 (必要越界先说明)"
+      ],
+      "shared_file_owner": "主开发唯一实现者；主控唯一控制面和Git维护者，唯一工作目录串行。",
+      "integration_order": "F8独审后再让原F9分支正常接收届时develop续客户端；不预定后续基线。",
+      "acceptance_ref": "docs/technical-proposals/F8-iOS-PWA选字与批注-技术方案.md",
+      "contracts": [
+        "先核真实公开index/loader/actual controller装配与source→DOM→UTF16偏移→quote→既有服务端消费者；不要把已是document挂载误称生产根因。",
+        "保持浏览器原生选择/复制/触摸滚动；只合并当前选区事件，菜单触摸前保留当前快照，不全局preventDefault或自绘选区。",
+        "复用ui.pendingSelection，绑定账户/session/当前页面/稳定root-target与可得源版本；缺版本以实际原文范围复验，不猜版本。",
+        "失效选区明确退出但保留输入；异步写已提交事实与旧页面UI收尾分离，旧回调不得清掉新选区/草稿或打开旧根面板。",
+        "DOM文本遍历、选区偏移与锚点恢复使用同一规范，核对排除按钮/KaTeX等真实节点；不改用户quote凑通过。",
+        "F7阅读位置/显式关闭/焦点与F6统一计数保持；给F9提供活跃选区保护最小公开端口，实际loader必须透传。",
+        "新增源码TS/中文头/JSDoc，生成物隔离忽略；1000字符等现有限制本片不扩张。",
+        "真实Chrome行为与原生iOS模拟器分开记录；程序Range不证明长按，WKWebView不冒充Safari/PWA/真机；主动尝试既有本机iOS27模拟器的隔离本地原生路径，限制如实partial。"
+      ],
+      "handoff": "编辑后先完整自查再必要专项及实际DOM/原生尝试；固定六位指纹，在原F8方案4.1和artifacts/local/v0516-f8-acceptance-current.json交接，停写供主控独审；不得自行Git。"
+    }
+  ],
   "candidate": null,
   "authorization": {
     "source": "Owner 2026-10-16明确：通过现有方案，请按照项目规则开始开发。既有每版本必要付费API共用4元授权保留，超额申请。",
@@ -85,7 +128,7 @@
     }
   },
   "blockers": [],
-  "next_action": "主控提交并正常合入F9服务端切片；在届时最新develop锁定F4基线，开始双向分页，后续F7/F6/F8及F9客户端依序继续。",
+  "next_action": "主控提交固定19文件F8与相关控制面记录，正常合入develop并核tree和受影响集成专项；后续从届时最新develop统筹原F9分支接续，不推送发布。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -100,229 +143,10 @@
     "limitations": [
       "长期98%需持续真实观测，不能由本次限定窗口外推",
       "完整设备验收未完成",
-      "本次不重复付费真实模型调用，复用41d8667证据"
+      "本次不重复付费真实模型调用，复用41d866证据"
     ]
   },
   "evidence": [
-    {
-      "id": "production-compression-window",
-      "conclusion": "该次自然窗口生成失败，扫描通知错误地显示为生成完成",
-      "limitations": [
-        "该旧窗口原失败记录保持；v0.5.14本轮自然窗口3任务已生成成功，见当前自然窗口证据",
-        "旧失败活动记录仍未被有效替代/关闭；仍影响通知及历史回填，由v0.5.15的D处理，不改写原失败为通过"
-      ],
-      "refs": [
-        "artifacts/local/v0514-production-compression-window-current.json"
-      ],
-      "object": {
-        "kind": "production_observation",
-        "version": "v0.5.13",
-        "commit": "a901c8",
-        "observed_at": "2026-10-13T10:05:00Z"
-      }
-    },
-    {
-      "id": "production-v0514-observation",
-      "object": {
-        "kind": "production",
-        "version": "v0.5.14",
-        "commit": "a4d2ec"
-      },
-      "conclusion": "11/11样本、10分14秒，readyz与活动目录一致，PID983502稳定、重启0、应用错误0、监控问题0；生产已登录浏览器首页/概要/展开保持通过",
-      "limitations": [
-        "限定运行与读取观察，不代表长期SLO、真机录音或新版自然06:00/18:05生成成功；旧失败保持原始记录"
-      ],
-      "refs": [
-        "artifacts/local/v0514-production-observation-current.json",
-        "artifacts/local/v0514-production-browser-current.json",
-        "artifacts/local/v0514-deploy-current.json"
-      ]
-    },
-    {
-      "id": "formal-v0514-publication",
-      "object": {
-        "kind": "git_refs",
-        "tag": "v0.5.14",
-        "release_branch": "release/v0.5.14",
-        "application_commit": "a4d2ec",
-        "main_commit": "548223"
-      },
-      "conclusion": "Gitee正式Release创建成功；PR!3现有审查/测试通过并合并，main包含已发布候选且tree完全相同；13条需求发布事实回流，均保留待验收",
-      "limitations": [
-        "main为平台合并提交，应用/tag继续精确a4d2ec；未移动tag或重复部署；旧v0.5.13收口锚点保留，不改历史"
-      ],
-      "refs": [
-        "https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.14",
-        "https://gitee.com/Liu_772021/for-now/pulls/3",
-        "artifacts/local/v0514-requirements-return-current.json",
-        "artifacts/local/v0514-release-proof.png"
-      ]
-    },
-    {
-      "id": "v0515-A-independent-review",
-      "object": {
-        "kind": "implementation_commit",
-        "commit": "5b91d2"
-      },
-      "conclusion": "主控独立审查A及跨块返修后本地提交5b91d2，无冲突整合为develop24a88c且tree完全相同；develop局部引用专项通过。证据整请求反例已关闭，2参考/2截断保持，原失败留事件审计。",
-      "limitations": [
-        "仅A切片实现/本地集成，不代表整个版本候选冻结",
-        "没有本切片真实模型、实际PG重启或浏览器验收",
-        "D增量时段与活动失败替代及最终全局门尚未完成；A不代表完整版本验收"
-      ],
-      "refs": [
-        "src/shared/ai-context/reference-aliases.mts",
-        "src/app/answer-citations.mjs",
-        "src/app/content/background.mjs",
-        "src/app/startup-projections.mjs",
-        "src/app/runtime-access.mjs"
-      ]
-    },
-    {
-      "id": "production-v0514-natural-window",
-      "object": {
-        "kind": "production_observation",
-        "version": "v0.5.14",
-        "commit": "a4d2ec",
-        "observed_at": "2026-10-13T22:03:58.851Z"
-      },
-      "conclusion": "06:00自然窗口3个真实任务成功，摘要已保存；3条调用的应用账本已记录金额合计¥0.00735372，未知费用调用0。日期覆盖10月12日（两账户）及9月27日（一账户）。本轮只读，无手工触发。",
-      "limitations": [
-        "仅证明这3个任务的生成/保存/应用账本记录，不代表第三方账单核销、通知送达或生产新回答消费已验收",
-        "当前v0.5.14仍按日期摘要/回填，不是v0.5.15计划的上海半开增量窗口",
-        "16个等待预算和16个原失败仍存在；新版D替代/失效策略未交付，不能把旧失败写成通过或全历史补齐"
-      ],
-      "refs": [
-        "artifacts/local/v0515-production-natural-window-current.json"
-      ]
-    },
-    {
-      "id": "v0515-B-independent-review",
-      "object": {
-        "kind": "implementation_commit",
-        "commit": "7c4ebb",
-        "integration_commit": "38a31a"
-      },
-      "conclusion": "主控独立核对700f0d到36d538实际返修及评分、准备/发送、来源、选材、引用映射、保存/DTO消费者。配置身份与发送前有效配置核验、可选材料按总字节余量收敛、真实来源性质及当前日记排除已关闭；完整API真实两种问答生命周期门通过。 已提交7c4ebb并整合develop38a31a，两者tree一致，develop重要性专项通过。",
-      "limitations": [
-        "仅B切片本地接入审查；尚无本版本真实提供商闭环或PG重启验证",
-        "D半开增量/活动失败替代及最终有状态门未完成"
-      ],
-      "refs": [
-        "src/shared/ai-context/importance.mts",
-        "src/shared/ai-context/importance-runtime.mts",
-        "src/shared/ai-context/importance-selection.mts",
-        "src/app/task-context.mjs",
-        "src/app/background-ai.mjs",
-        "src/modules/ai/generation.mjs",
-        "src/app/capture-journal-workflows.mjs",
-        "src/app/answer-citations.mjs",
-        "src/app/startup-projections.mjs",
-        "scripts/api-v1-contract-regression.mjs",
-        "scripts/importance-scoring-regression.mts"
-      ]
-    },
-    {
-      "id": "v0515-C-independent-review",
-      "object": {
-        "kind": "implementation_commit",
-        "commit": "a32507",
-        "integration_commit": "691907"
-      },
-      "conclusion": "主控独立审查固定C完整受影响链。明确操作与Pointer/URL位置绑定关闭同账户及同请求内真实引用误改；幂等映射随JSON/PG真实提交及重启恢复，IDB原子中止无部分写。三个构建命令最小返修，主控无生成物源副本重跑原失败入口退出0。允许C本地接入。 已本地整合develop691907，与实现提交tree相同，develop专项通过。",
-      "limitations": [
-        "这是C切片，不是全版本有状态门",
-        "没有本版本真实付费或生产验证",
-        "D增量窗口与活动失败替代未实施"
-      ],
-      "refs": [
-        "artifacts/local/v0515-c-acceptance-current.json",
-        "src/shared/persistence/business-identifiers.mts",
-        "src/shared/persistence/json-repository.mjs",
-        "src/shared/persistence/postgres-runtime.mjs",
-        "src/shared/persistence/persistence-metadata.mjs",
-        "src/http/api-v1.mjs",
-        "src/http/sync.mjs",
-        "public/frontend/shared/business-id-remap.mts",
-        "public/frontend/sync/index.mjs",
-        "public/frontend/app/runtime/data-runtime.mjs",
-        "package.json"
-      ]
-    },
-    {
-      "id": "v0515-real-api-cold-start-failure",
-      "object": {
-        "kind": "validation_run",
-        "version": "v0.5.15",
-        "commit": "4ebc4b",
-        "observed_at": "2026-10-14T13:12:10Z"
-      },
-      "conclusion": "真实API首次闭环FAIL：两项摘要成功保存并进入七天趋势，PG停止/重启恢复通过；最终冷启问答status=failed、claimCount=0。4次DeepSeek调用已知费用累计¥0.02332372。",
-      "limitations": [
-        "尚未确认是输出契约、零候选、来源过滤还是验收场景问题；不得盲重试或宣称真实模型门通过"
-      ],
-      "refs": [
-        "artifacts/local/v0515-compression-loop-current.json",
-        "artifacts/local/v0515-paid-acceptance-current.json"
-      ]
-    },
-    {
-      "id": "v0515-real-api-span-fix",
-      "object": {
-        "kind": "implementation_commit",
-        "commit": "4bd85c"
-      },
-      "conclusion": "初始真实调用返回5条claims但因来源span无效整批失败；返修后真实DeepSeek返回8条候选，其中2处span由声明来源内唯一逐字quote安全重建，任务成功、候选持久化。候选态不自动进入active用户事实。后台恢复任务重复调度与入口所有权遗漏一并关闭。",
-      "limitations": [
-        "真实调用使用五条合成原文，不含生产用户正文",
-        "新提交状态门尚待执行"
-      ],
-      "refs": [
-        "artifacts/local/v0515-paid-acceptance-current.json",
-        "docs/versions/v0.5.15/README.md",
-        "git_commit:4bd85c6"
-      ]
-    },
-    {
-      "id": "v0515-final-candidate-validation",
-      "object": {
-        "kind": "git_commit",
-        "commit": "41d866"
-      },
-      "conclusion": "新鲜只读生产快照绑定41d8667/tree525c43，隔离PG16.14四账户102任务启动、readyz、同库重启、认证读取、保存往返、任务通知读取PASS，外部副作用0。真实合成候选提取5条并安全恢复1处span；重要性评分2/2；真实回答2条逐字引用全部匹配、拒绝0。",
-      "limitations": [
-        "真实调用仅使用合成原文",
-        "长期SLO、完整设备验收与生产新版本未执行"
-      ],
-      "refs": [
-        "artifacts/local/v0515-startup-gate-current.json",
-        "artifacts/local/v0515-real-claim-current.json",
-        "artifacts/local/v0515-real-ai-current.json",
-        "artifacts/local/v0515-paid-acceptance-current.json",
-        "git_commit:41d8667"
-      ]
-    },
-    {
-      "id": "v0515-onboarding-discard-final-candidate-validation",
-      "object": {
-        "kind": "git_commit",
-        "commit": "a99c14"
-      },
-      "conclusion": "新增“放弃本次且不保存”：PATCH仅含selectedFlow/status/step，不发送本地answers/collaboration；服务端旧回答及其他记录保持，本地IndexedDB草稿删除，刷新后终态不再自动弹出。并发冲突使用最新会话重试同一无内容补丁。最终smoke 17/17、release级、PG稳定套件和新鲜生产快照隔离状态门通过。",
-      "limitations": [
-        "功能尚未部署到V0.5.14生产环境",
-        "真实模型付费闭环未因本次前端能力重复调用"
-      ],
-      "refs": [
-        "git_commit:80be6a3",
-        "git_commit:a99c146",
-        "artifacts/user-journeys/2026-10-15T03-15-44-615Z.json",
-        "artifacts/user-journeys/2026-10-15T03-18-04-678Z.json",
-        "artifacts/local/v0515-startup-gate-a99c146.json",
-        "artifacts/local/v0515-startup-snapshot-a99c146.json",
-        "docs/versions/v0.5.15/README.md"
-      ]
-    },
     {
       "id": "production-v0515-observation",
       "object": {
@@ -360,22 +184,6 @@
         "https://gitee.com/Liu_772021/for-now/pulls/5",
         "git:f12fd1",
         "github:refs/tags/v0.5.15"
-      ]
-    },
-    {
-      "id": "requirements-return-v0515",
-      "object": {
-        "kind": "lark_base",
-        "base_token": "MwUibJRQKaae9hsY9lMceQBYnAh",
-        "delivery_record_id": "reczz28Nj8w3Amti"
-      },
-      "conclusion": "需求池rev557的8条v0.5.15记录均回写已发布/待验收并关联统一生产发布交付；版本表rev42与交付表rev138定向读回一致。",
-      "limitations": [
-        "技术发布不代替产品完整验收；认证后页面、完整设备与长期98%仍保留待验收"
-      ],
-      "refs": [
-        "artifacts/local/v0515-requirements-return-current.json",
-        "https://my.feishu.cn/base/MwUibJRQKaae9hsY9lMceQBYnAh"
       ]
     },
     {
@@ -502,9 +310,11 @@
         "kind": "source_manifest",
         "branch": "feat/v0.5.16-sync-latency",
         "base_commit": "40d52b",
-        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json"
+        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "commit": "ee44fe",
+        "integration_commit": "208149"
       },
-      "conclusion": "18文件独立全链审查通过，真实JSON/PG、会话撤销/断连/排空及本地目标激活必要门通过；准许本地服务端切片接入，尚未合入。",
+      "conclusion": "18文件独立全链审查后正常合入develop，tree一致且集成同步专项通过；真实JSON/PG、会话撤销/断连/排空及本地目标激活必要门通过，仅服务端切片。",
       "limitations": [
         "默认SYNC_ACCOUNT_WAKE_ENABLED=0；生产未启用。",
         "局部8样本仓储+handler及单样本HTTP对照不代表全站500ms；F9客户端、跨工作区旧请求取消、设备与有状态全局门未完成。"
@@ -512,6 +322,84 @@
       "refs": [
         "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md",
         "artifacts/local/v0516-f9-server-acceptance-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F4-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-thought-pagination",
+        "base_commit": "208149",
+        "receipt": "artifacts/local/v0516-f4-acceptance-current.json",
+        "commit": "1f70ee",
+        "integration_commit": "391f97"
+      },
+      "conclusion": "28文件完整契约独审后正常合入develop，tree一致及集成思绪专项通过；1001静态双向/有界DOM和主控独立详情/离线/ACK实际闭环。",
+      "limitations": [
+        "THOUGHT_PAGING_ENABLED默认0，生产未启用。",
+        "iOS/真机、全站性能、3.7完整观测及有状态全局门未完成。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f4-acceptance-current.json",
+        "docs/technical-proposals/F4-思绪完整游标分页-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-F7-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-thought-reading-state",
+        "base_commit": "391f97",
+        "receipt": "artifacts/local/v0516-f7-acceptance-current.json",
+        "commit": "21bac8",
+        "integration_commit": "bcdcd7"
+      },
+      "conclusion": "8文件完整契约独审及主控真实Chrome补证后正常合入develop，tree一致、集成思绪专项通过；F4深页1px及旧链接工程门已有效关闭。",
+      "limitations": [
+        "旧帧用例早期一次断言差异未归因，原FAIL/UNKNOWN保留；当前固定指纹独立同路径通过，组合门继续核对。",
+        "仅隔离JSON桌面；iOS、整版PG有状态、全站分位与生产观察未验；不是整版发布GO。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f7-acceptance-current.json",
+        "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-F6-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-annotation-counts",
+        "base_commit": "bcdcd7",
+        "receipt": "artifacts/local/v0516-f6-acceptance-current.json",
+        "commit": "59a1a1",
+        "integration_commit": "e79d06"
+      },
+      "conclusion": "15文件完整独审与主控实际Chrome通过后，F6实现59a1a1正常合入develop e79d06，tree一致且集成批注专项通过。",
+      "limitations": [
+        "原生iOS、真实鉴权多账户、整版PG有状态及全站P75未验；非整版发布GO。",
+        "裁切analysis保持unknown，未新增后端完整读取协议。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F6-批注入口与计数一致-技术方案.md",
+        "artifacts/local/v0516-f6-acceptance-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F8-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-mobile-annotations",
+        "base_commit": "e79d06",
+        "receipt": "artifacts/local/v0516-f8-acceptance-current.json"
+      },
+      "conclusion": "主控亲读19文件及实际生产者/公开门面/持久与UI消费者；独立Chrome公式锚点和真实两账户登录切换通过，原生WK跨段41UTF16闭环原始证据已独立核对；仅本地功能接入GO。",
+      "limitations": [
+        "Safari、安装PWA、真机、全站分位及整版PG快照有状态门未验。",
+        "公式内部及跨公式视觉Range明确不支持，不伪造quote。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f8-acceptance-current.json",
+        "docs/technical-proposals/F8-iOS-PWA选字与批注-技术方案.md"
       ]
     }
   ],

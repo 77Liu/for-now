@@ -721,7 +721,8 @@
       "publicEntry": "src/config/index.mjs",
       "allowedDependencies": [
         "domain.record-compressions",
-        "shared.ai-context"
+        "shared.ai-context",
+        "shared.thought-pagination"
       ],
       "owns": {
         "data": [
@@ -803,7 +804,8 @@
         "shared.persistence",
         "shared.observability",
         "frontend.pages",
-        "shared.ai-context"
+        "shared.ai-context",
+        "shared.thought-pagination"
       ],
       "owns": {
         "data": [
@@ -1373,7 +1375,9 @@
       "root": "public/frontend/features/annotations",
       "publicEntry": "public/frontend/features/annotations/index.mjs",
       "allowedDependencies": [
-        "frontend.ai-task-status"
+        "frontend.ai-task-status",
+        "frontend.annotation-counts",
+        "frontend.annotation-selection"
       ],
       "owns": {
         "data": [
@@ -1859,7 +1863,8 @@
       "allowedDependencies": [
         "frontend.content",
         "frontend.time",
-        "frontend.ai-task-status"
+        "frontend.ai-task-status",
+        "frontend.thought-page-window"
       ],
       "owns": {
         "data": [
@@ -1882,7 +1887,8 @@
         "frontend.media",
         "frontend.time",
         "frontend.feature.thoughts-model",
-        "frontend.ai-task-status"
+        "frontend.ai-task-status",
+        "frontend.annotation-counts"
       ],
       "owns": {
         "data": [
@@ -1908,7 +1914,8 @@
         "frontend.feature.thoughts-model",
         "frontend.feature.thoughts-presentation",
         "frontend.ai-task-status",
-        "frontend.personalized-ai-task"
+        "frontend.personalized-ai-task",
+        "frontend.thought-page-window"
       ],
       "owns": {
         "data": [
@@ -2491,7 +2498,8 @@
         "frontend.state",
         "frontend.time",
         "frontend.ai-task-status",
-        "frontend.app.personalized-task-runtime"
+        "frontend.app.personalized-task-runtime",
+        "frontend.feature.thoughts"
       ],
       "owns": {
         "data": [
@@ -2548,7 +2556,8 @@
       "publicEntry": "public/frontend/app/runtime/record-events.mjs",
       "allowedDependencies": [
         "frontend.state",
-        "frontend.app.chat-submission"
+        "frontend.app.chat-submission",
+        "frontend.feature.thoughts"
       ],
       "owns": {
         "data": [
@@ -2740,7 +2749,8 @@
         "shared.validation",
         "shared.observability",
         "shared.speech",
-        "shared.ai-context"
+        "shared.ai-context",
+        "shared.thought-pagination"
       ],
       "owns": {
         "data": [
@@ -2909,7 +2919,8 @@
         "shared.attachments",
         "shared.persistence",
         "shared.validation",
-        "shared.prompts"
+        "shared.prompts",
+        "shared.thought-pagination"
       ],
       "owns": {
         "data": [
@@ -3011,6 +3022,75 @@
       },
       "tests": [
         "scripts/business-identifiers-regression.mts"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "shared.thought-pagination",
+      "type": "shared",
+      "root": "src/shared/thought-pagination",
+      "publicEntry": "src/shared/thought-pagination/index.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "shared thought paging capacity and cursor limits"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/thought-service-regression.mjs",
+        "scripts/frontend-thoughts-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.thought-page-window",
+      "type": "shared",
+      "root": "public/frontend/shared/thought-page-window.mts",
+      "publicEntry": "public/frontend/shared/thought-page-window.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "bounded adjacent thought page windows, position-only checkpoints and selector-driven summary projection"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-thoughts-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.annotation-counts",
+      "type": "shared",
+      "root": "public/frontend/shared/annotation-counts.mts",
+      "publicEntry": "public/frontend/shared/annotation-counts.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "stateless confirmed annotation projection and loaded/unknown count labels"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-annotations-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.annotation-selection",
+      "type": "shared",
+      "root": "public/frontend/shared/annotation-selection.mts",
+      "publicEntry": "public/frontend/shared/annotation-selection.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "native annotation text/UTF16 range mapping, atomic formula boundary"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-annotations-feature-regression.mjs"
       ],
       "status": "active"
     }

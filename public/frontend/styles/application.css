@@ -2138,3 +2138,7 @@ body.image-viewer-open{overflow:hidden}
 
 /* 录音编辑面板打开时，侧栏不能遮住录音和上传操作。 */
 body.capture-editor-open .sidebar{z-index:0}
+
+/* 原生选字与系统复制保持；批注工具栏仅扩大自身触摸命中区域。 */
+.commentable{-webkit-user-select:text;user-select:text}
+.selection-tools button{min-width:44px;min-height:44px}

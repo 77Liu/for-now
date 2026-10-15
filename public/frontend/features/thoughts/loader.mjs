@@ -30,6 +30,14 @@ export function createThoughtsFeatureController(options = {}) {
     resetSession() {
       return controller?.resetSession();
     },
+    /** 公开门面透传当前挂载的活跃选区，未加载为false。 @since unreleased */
+    hasActiveAnnotationSelection() { return controller?.hasActiveAnnotationSelection() || false; },
+    /** 仅恢复已加载当前视图的暂缓呈现，不触发模块加载。 @since unreleased */
+    resumeSelectionRender() { return controller?.resumeSelectionRender() || false; },
+    /** 完整性来自已挂载的实际控制器；模块未加载时不得宣称根完整。 @since unreleased */
+    isAnnotationRootLoaded(id) {
+      return controller?.isAnnotationRootLoaded(id) || false;
+    },
     patchTarget(target) {
       return controller?.patchTarget(target) || false;
     },
