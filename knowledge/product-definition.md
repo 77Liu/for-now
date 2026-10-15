@@ -1,6 +1,6 @@
 # 产品定义
 
-图示更新时间：2026-09-27 20:54（Asia/Shanghai）。[产品介绍 · 260927-2045](../assets/产品介绍-260927-2045.png)；[本版说明](../reports/product-visuals-260927-2045.md)。
+图示更新时间：2026-09-27 20:54（Asia/Shanghai）。[产品介绍 · 260927-2045](../assets/产品介绍-260927-2045.png)；[本版说明](../knowledge/long-term/outdated/design/product-visuals-260927-2045.md)。
 
 本文件是项目定位、价值主张和核心能力边界的单一事实来源。
 

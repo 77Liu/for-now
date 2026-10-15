@@ -112,7 +112,7 @@ PostgreSQL **16.15**，签名密钥指纹核对通过。安装时阻止包脚本
 精确重放、请求哈希冲突、永久清理后防重复、重启和双进程序列化全部通过；
 测试在独立临时集群及 384 MiB/零 Swap cgroup 中运行，仅允许本机网络，
 结束后临时集群、候选和依赖均已删除。
-机器摘要见 [`ecs-postgres-trial-2026-09-30.json`](../reports/ecs-postgres-trial-2026-09-30.json)。
+机器摘要见 [`ecs-postgres-trial-2026-09-30.json`](../docs/versions/v0.2.0/evidence/ecs-postgres-trial.json)。
 收尾时已删除服务器上的临时候选源码、依赖和测试脚本，数据库空闲 cgroup
 约 50.3 MiB，主机可用内存 890 MiB；主应用、中台、`dysf` 与公网健康检查
 通过，OpenClaw 和 MySQL 继续保持停用。
@@ -159,7 +159,7 @@ OSS 操作只有 List/Get，没有远端写入。
 演练完成后两套隔离数据库、临时角色/会话、候选依赖、生产快照和下载附件
 均已删除。正式库仍为空，生产环境摘要、应用软链接和三个服务 PID 未变化；
 收尾可用内存约 857 MiB，Swap 未增长。机器证据见
-[`production-postgres-recovery-2026-09-30.json`](../reports/production-postgres-recovery-2026-09-30.json)。
+[`production-postgres-recovery-2026-09-30.json`](../docs/versions/v0.2.0/evidence/production-postgres-recovery.json)。
 发布窗口仍需冻结更新后的 JSON/OSS、重查变化并完成最终导入；还需先配置
 PostgreSQL 自动启动、生产连接、数据库备份与监控。
 

@@ -13,7 +13,7 @@
 - P0 移动端已完成 iPhone SE/15、Pixel 7 与 Android 横屏强化模拟；真实 iOS WebKit、已安装 PWA、Android Chrome 真机和触觉仍待实体设备，不阻塞 A1 数据正确性退出条件。
 - P1-P3 本地探索版只验证交互和契约，不作为 A2、PostgreSQL、独立 Worker、向量服务、分片或多区域已实施的证据。
 
-逐项状态和验收证据见 [`README-TODO.md`](../README-TODO.md)、[`../reports/p00-p0-acceptance-2026-09-28.md`](../reports/p00-p0-acceptance-2026-09-28.md)、[`../reports/iteration-plan-v0.2.0-2026-09-28.md`](../reports/iteration-plan-v0.2.0-2026-09-28.md) 与 [`../reports/g2-r4-postgres-2026-09-30.json`](../reports/g2-r4-postgres-2026-09-30.json)。模块化和数据库迁移在同一轮渐进推进，但正式数据源切换仍必须等待生产恢复演练与发布授权；边界、影响矩阵和迁移门禁统一见 [`modularization-design.md`](modularization-design.md)。
+逐项状态和验收证据见 [`README-TODO.md`](../README-TODO.md)、[`../docs/versions/v0.1.0/README.md`](../docs/versions/v0.1.0/README.md)、[`../docs/versions/v0.2.0/README.md`](../docs/versions/v0.2.0/README.md) 与 [`../docs/versions/v0.2.0/evidence/g2-r4-postgres.json`](../docs/versions/v0.2.0/evidence/g2-r4-postgres.json)。模块化和数据库迁移在同一轮渐进推进，但正式数据源切换仍必须等待生产恢复演练与发布授权；边界、影响矩阵和迁移门禁统一见 [`modularization-design.md`](modularization-design.md)。
 
 ## 1. 决策摘要
 

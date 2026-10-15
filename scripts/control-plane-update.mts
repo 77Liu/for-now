@@ -13,7 +13,10 @@ import { CONTROL_EVENT_FORMAT, stateChanges, replayChanges, materializeEvent, sh
 import { projectRoot } from "./project-root.mjs";
 
 type ObjectValue = Record<string, unknown>;
-const CURRENT = "reports/requirement-coordination-current.json";
+const CURRENT = "coordination/current.json";
+const LEGACY_CURRENT = "reports/requirement-coordination-current.json";
+const VERSION_ROOT = "coordination/versions";
+const LEGACY_VERSION_ROOT = "reports/iterations";
 const KEYS = new Set([
   "schema_version", "revision", "updated_at", "canonical_path", "coordinator", "rule_baseline",
   "work_mode", "iteration", "scope", "active_tasks", "candidate", "authorization", "blockers",
@@ -57,7 +60,23 @@ function versionName(value: unknown): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(version)) throw new Error("版本路径无效");
   return version;
 }
-const directory = (root: string, version: string) => path.join(root, "reports/iterations", version);
+const directory = (root: string, version: string) => path.join(root, VERSION_ROOT, version);
+const eventPath = (version: string) => `${VERSION_ROOT}/${version}/events.jsonl`;
+const terminalPath = (version: string) => `${VERSION_ROOT}/${version}/terminal.json`;
+const legacyEventPath = (version: string) => `${LEGACY_VERSION_ROOT}/${version}/events.jsonl`;
+
+function migratedHeldIterations(value: unknown): unknown[] {
+  return ((value ?? []) as unknown[]).map(item => {
+    const reference = object(item, "未收口版本引用");
+    versionName(reference.iteration_id);
+    const legacyOwner = /^reports\/iterations\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/events\.jsonl$/u
+      .exec(String(reference.events))?.[1];
+    return {
+      ...reference,
+      events: legacyOwner ? eventPath(versionName(legacyOwner)) : reference.events
+    };
+  });
+}
 
 function validateState(state: ObjectValue, root: string, allowRelocated = false): void {
   for (const key of Object.keys(state)) if (!KEYS.has(key)) throw new Error(`当前状态不允许字段：${key}`);
@@ -73,8 +92,9 @@ function validateState(state: ObjectValue, root: string, allowRelocated = false)
   visit(state);
   if (state.schema_version !== 3) throw new Error("当前控制面须使用schema 3");
   const location = String(state.canonical_path);
-  const relocatedLegacy = allowRelocated && path.isAbsolute(location)
-    && path.normalize(location) === location && location.endsWith(`/${CURRENT}`);
+  const relocatedLegacy = allowRelocated && (location === LEGACY_CURRENT
+    || (path.isAbsolute(location) && path.normalize(location) === location
+      && (location.endsWith(`/${CURRENT}`) || location.endsWith(`/${LEGACY_CURRENT}`))));
   if (location !== CURRENT && !relocatedLegacy) {
     throw new Error("控制面位置不一致");
   }
@@ -90,8 +110,11 @@ function validateState(state: ObjectValue, root: string, allowRelocated = false)
     const sourceVersion = versionName(reference.iteration_id);
     text(reference.event_id, "未收口版本事件ID");
     text(reference.status, "未收口版本状态");
-    if (!/^reports\/iterations\/[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/events\.jsonl$/u.test(String(reference.events))) {
-      throw new Error("未收口版本事件路径不一致");
+    const expectedEvents = String(reference.events);
+    const currentEvents = /^coordination\/versions\/[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/events\.jsonl$/u.test(expectedEvents);
+    const legacyEvents = /^reports\/iterations\/[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/events\.jsonl$/u.test(expectedEvents);
+    if (!currentEvents && !(allowRelocated && legacyEvents)) {
+      throw new Error(`未收口版本事件路径不一致：${expectedEvents}`);
     }
     if (!/^(?:[a-f0-9]{6}|[a-f0-9]{64})$/u.test(String(reference.state_after_hash))) throw new Error("未收口版本状态摘要无效");
     if (!Object.hasOwn(reference, "candidate_sha")
@@ -106,8 +129,11 @@ function validateState(state: ObjectValue, root: string, allowRelocated = false)
   const records = object(state.records, "记录入口");
   if (state.iteration !== null) {
     const version = versionName(object(state.iteration, "当前迭代").id);
-    if (records.events !== `reports/iterations/${version}/events.jsonl`
-      || records.terminal !== `reports/iterations/${version}/terminal.json`) throw new Error("版本记录入口不一致");
+    const validRecords = records.events === eventPath(version) && records.terminal === terminalPath(version);
+    const relocatedRecords = allowRelocated
+      && records.events === legacyEventPath(version)
+      && records.terminal === `${LEGACY_VERSION_ROOT}/${version}/terminal.json`;
+    if (!validRecords && !relocatedRecords) throw new Error("版本记录入口不一致");
   } else if (records.events !== null || records.terminal !== null) {
     throw new Error("无活动迭代时记录入口须清空，历史引用放evidence");
   }
@@ -256,7 +282,7 @@ async function verifyHeldIterations(root: string, state: ObjectValue): Promise<v
     const reference = object(value, "未收口版本引用");
     const version = versionName(reference.iteration_id);
     const expectedPath = String(reference.events);
-    const ownerMatch = /^reports\/iterations\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/events\.jsonl$/u.exec(expectedPath);
+    const ownerMatch = /^(?:coordination\/versions|reports\/iterations)\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/events\.jsonl$/u.exec(expectedPath);
     if (!ownerMatch) throw new Error("未收口版本事件路径无效");
     const eventOwner = versionName(ownerMatch[1]);
     const events = await readEvents(path.join(directory(root, eventOwner), "events.jsonl"));
@@ -386,7 +412,7 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
   const close = mode === "close";
   const requestedVersion = versionName(request.iteration_id);
   const sourceVersion = mode === "handoff" ? versionName(request.from_iteration_id) : requestedVersion;
-  const lockFile = path.join(root, "reports/iterations/.control-plane.lock");
+  const lockFile = path.join(root, "coordination/versions/.control-plane.lock");
   const lock = await fs.open(lockFile, "wx", 0o600);
   try {
     await lock.writeFile(JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
@@ -417,7 +443,10 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     desired.canonical_path = CURRENT;
     validateState(desired, root);
     if (!close && object(desired.iteration, "目标迭代").id !== requestedVersion) throw new Error("更新版本不一致");
-    if (mode !== "handoff" && canonical(desired.held_iterations ?? []) !== canonical(shortRecordHashes(current.held_iterations ?? []))) {
+    const currentHeld = relocating
+      ? shortRecordHashes(migratedHeldIterations(current.held_iterations))
+      : shortRecordHashes(current.held_iterations ?? []);
+    if (mode !== "handoff" && canonical(desired.held_iterations ?? []) !== canonical(currentHeld)) {
       throw new Error("当前更新不能丢弃或改写未收口版本引用");
     }
     const actor = text(request.actor, "协调者");
@@ -512,7 +541,7 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     if (mode === "handoff") {
       const heldReference = {
         iteration_id: sourceVersion,
-        events: `reports/iterations/${sourceVersion}/events.jsonl`,
+        events: `coordination/versions/${sourceVersion}/events.jsonl`,
         event_id: latest!.id,
         state_after_hash: String(latest!.state_after_hash).slice(0, 6),
         status: object(current.iteration, "交接来源迭代").status,
@@ -576,7 +605,7 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
 async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectValue> {
   const sourceVersion = versionName(request.from_iteration_id);
   const targetVersion = versionName(request.iteration_id);
-  const lockFile = path.join(root, "reports/iterations/.control-plane.lock");
+  const lockFile = path.join(root, "coordination/versions/.control-plane.lock");
   const lock = await fs.open(lockFile, "wx", 0o600);
   try {
     await lock.writeFile(JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
@@ -630,7 +659,7 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
       .find(value => value.iteration_id === targetVersion && value.event_id === details.held_event_id);
     if (!reference) throw new Error("目标版本不在当前未收口版本引用中");
     await verifyHeldIterations(root, current);
-    const heldOwner = /^reports\/iterations\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/events\.jsonl$/u.exec(String(reference.events))![1];
+    const heldOwner = /^(?:coordination\/versions|reports\/iterations)\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/events\.jsonl$/u.exec(String(reference.events))![1];
     const heldEvents = await readEvents(path.join(directory(root, versionName(heldOwner)), "events.jsonl"));
     await verifyVersionEvents(root, versionName(heldOwner), heldEvents);
     const heldEvent = heldEvents.find(event => event.id === reference.event_id)!;
@@ -671,7 +700,7 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
         ...object(heldState.iteration, "恢复目标迭代"),
         started_by: { iteration_id: sourceVersion, event_id: eventId }
       },
-      records: { events: `reports/iterations/${targetVersion}/events.jsonl`, terminal: `reports/iterations/${targetVersion}/terminal.json` },
+      records: { events: `coordination/versions/${targetVersion}/events.jsonl`, terminal: `coordination/versions/${targetVersion}/terminal.json` },
       held_iterations: priorHeld,
       revision: Number(current.revision) + 1,
       updated_at: now
@@ -680,7 +709,7 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
       const snapshotEvent = outgoingSnapshot!;
       const outgoing = {
         iteration_id: sourceVersion,
-        events: `reports/iterations/${snapshotEvent.iteration_id}/events.jsonl`,
+        events: `coordination/versions/${snapshotEvent.iteration_id}/events.jsonl`,
         event_id: snapshotEvent.id,
         state_after_hash: String(snapshotEvent.state_after_hash).slice(0, 6),
         status: currentIteration.status,
@@ -760,11 +789,11 @@ async function testEvents(file: string): Promise<ObjectValue[]> {
 async function selfTest(): Promise<void> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "control-plane-update-"));
   try {
-    await fs.mkdir(path.join(root, "reports/iterations"), { recursive: true });
+    await fs.mkdir(path.join(root, VERSION_ROOT), { recursive: true });
     const state: ObjectValue = {
       schema_version: 3, revision: 1, canonical_path: CURRENT, coordinator: { thread_id: "coordinator" },
       iteration: { id: "fixture" }, scope: {}, active_tasks: [], candidate: null, blockers: [], evidence: [],
-      records: { events: "reports/iterations/fixture/events.jsonl", terminal: "reports/iterations/fixture/terminal.json" }
+      records: { events: "coordination/versions/fixture/events.jsonl", terminal: "coordination/versions/fixture/terminal.json" }
     };
     await atomicJson(path.join(root, CURRENT), state);
     const request = { actor: "coordinator", expected_revision: 1, iteration_id: "fixture", state: { ...state, scope: { changed: true } },
@@ -807,11 +836,18 @@ async function selfTest(): Promise<void> {
 
     const relocatedRoot = path.join(root, "relocated");
     await fs.mkdir(directory(relocatedRoot, "fixture"), { recursive: true });
-    const relocatedState = { ...state, canonical_path: path.join("/previous-project-root", CURRENT) };
+    const relocatedState = {
+      ...state,
+      canonical_path: LEGACY_CURRENT,
+      records: {
+        events: `${LEGACY_VERSION_ROOT}/fixture/events.jsonl`,
+        terminal: `${LEGACY_VERSION_ROOT}/fixture/terminal.json`
+      }
+    };
     await atomicJson(path.join(relocatedRoot, CURRENT), relocatedState);
     const relocationRequest = {
       actor: "coordinator", expected_revision: 1, iteration_id: "fixture",
-      state: { ...relocatedState, canonical_path: CURRENT },
+      state: { ...relocatedState, canonical_path: CURRENT, records: state.records },
       event: {
         id: "fixture-control-path-migrated", type: "control_path_migrated", phase: "decision",
         reason: "项目根目录迁移后改用根目录相对位置", evidence: ["fixture"]
@@ -922,7 +958,7 @@ async function selfTest(): Promise<void> {
       schema_version: 3, revision: 1, canonical_path: CURRENT,
       coordinator: { thread_id: "coordinator" }, iteration: { id: directVersion, status: "ACTIVE" },
       scope: { description: "直接收口夹具" }, active_tasks: [], candidate: null, blockers: [], evidence: [],
-      records: { events: `reports/iterations/${directVersion}/events.jsonl`, terminal: `reports/iterations/${directVersion}/terminal.json` }
+      records: { events: `coordination/versions/${directVersion}/events.jsonl`, terminal: `coordination/versions/${directVersion}/terminal.json` }
     };
     await fs.mkdir(directory(directCloseRoot, directVersion), { recursive: true });
     await atomicJson(path.join(directCloseRoot, CURRENT), directState);
@@ -939,7 +975,7 @@ async function selfTest(): Promise<void> {
     assert.equal((await audit(directCloseRoot)).status, "IDLE");
 
     const prepareHandoff = async (fixtureRoot: string, options: { status?: string; activeTasks?: unknown[]; gate?: string; requiredGates?: string[] } = {}) => {
-      await fs.mkdir(path.join(fixtureRoot, "reports/iterations"), { recursive: true });
+      await fs.mkdir(path.join(fixtureRoot, VERSION_ROOT), { recursive: true });
       const sourceVersion = "v0.5.13";
       const targetVersion = "v0.5.14";
       const requiredGates = options.requiredGates ?? ["snapshot", "runtime_start"];
@@ -951,7 +987,7 @@ async function selfTest(): Promise<void> {
         coordinator: { thread_id: "coordinator" }, iteration: { id: sourceVersion, status: "ACTIVE" },
         scope: { description: "旧版本范围" }, active_tasks: [], candidate: null, blockers: [], evidence: [],
         authorization: { version: sourceVersion, execution_enabled: false }, held_iterations: [],
-        records: { events: `reports/iterations/${sourceVersion}/events.jsonl`, terminal: `reports/iterations/${sourceVersion}/terminal.json` }
+        records: { events: `coordination/versions/${sourceVersion}/events.jsonl`, terminal: `coordination/versions/${sourceVersion}/terminal.json` }
       };
       await atomicJson(path.join(fixtureRoot, CURRENT), baseState);
       const readyState = {
@@ -975,7 +1011,7 @@ async function selfTest(): Promise<void> {
         scope: null, active_tasks: [], candidate: null, blockers: [], evidence: [],
         authorization: null, rule_baseline: { revision: "2.1" }, runtime: { observed_release: "v0.5.13" },
         next_action: { owner: "coordinator", action: "刷新需求", status: "PLANNED" },
-        records: { events: `reports/iterations/${targetVersion}/events.jsonl`, terminal: `reports/iterations/${targetVersion}/terminal.json` }
+        records: { events: `coordination/versions/${targetVersion}/events.jsonl`, terminal: `coordination/versions/${targetVersion}/terminal.json` }
       };
       const handoffRequest = {
         actor: "coordinator", expected_revision: sourceState.revision,
@@ -1050,7 +1086,7 @@ async function selfTest(): Promise<void> {
     let targetState = await readJson(path.join(handoffRoot, CURRENT));
     assert.deepEqual(targetState.held_iterations, [{
       iteration_id: handoff.sourceVersion,
-      events: `reports/iterations/${handoff.sourceVersion}/events.jsonl`,
+      events: `coordination/versions/${handoff.sourceVersion}/events.jsonl`,
       event_id: sourceEvents[0].id,
       state_after_hash: sourceEvents[0].state_after_hash,
       status: "READY_WAIT_OWNER",

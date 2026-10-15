@@ -516,7 +516,7 @@ G1 于 2026-09-29 在当前工作区完成技术冻结，契约版本为 `API v1
 | B2 前端共享能力 | `refactor/v020-b2-frontend-shared` / `/private/tmp/for-now-v020-b2` | `4182` / `data/worktrees/b2` / 不启用 PostgreSQL | `frontend/content`、`time`、`media` 和专项 | 页面壳、`public/app.js`、HTML/CSS、后端 schema/OpenAPI、锁文件 |
 | B3 契约分片与专项 | `refactor/v020-b3-contract-tests` / `/private/tmp/for-now-v020-b3` | `4183` / `data/worktrees/b3` / `for_now_v020_b3` | 思绪 OpenAPI 分片和引用/运行覆盖专项 | 根 OpenAPI、公共错误/游标实现、服务入口、模块登记、锁文件、全局 CSS |
 
-三路工作树、分支和隔离资源已创建；未启动真实供应商或生产连接。集成后 `npm run check`、三组新增专项、`npm test` 与 `npm run test:system` 均通过；本轮未改持久化/schema，`npm run test:postgres` 单次复验仍在业务断言前命中已知 macOS 启动错误，继续引用同日 40 项真实数据库基线。机器可读证据见 `reports/s3-10-integration-2026-09-29.json`。G1 只允许纯重构，产品功能 A-D 仍由 G2 阻断。
+三路工作树、分支和隔离资源已创建；未启动真实供应商或生产连接。集成后 `npm run check`、三组新增专项、`npm test` 与 `npm run test:system` 均通过；本轮未改持久化/schema，`npm run test:postgres` 单次复验仍在业务断言前命中已知 macOS 启动错误，继续引用同日 40 项真实数据库基线。机器可读证据见 `docs/versions/v0.2.0/evidence/s3-10-integration.json`。G1 只允许纯重构，产品功能 A-D 仍由 G2 阻断。
 
 ## 13. G2 功能轮与 I 串行集成
 
@@ -529,13 +529,13 @@ G1 于 2026-09-29 在当前工作区完成技术冻结，契约版本为 `API v1
 | C 行动与习惯 | `feature/v020-g2-c-actions` / `/private/tmp/for-now-v020-g2-c` | 行动优先级/来源/完成撤销，习惯频次/启停/调整/自然日打卡，幂等创建和父子回收恢复 |
 | D 反馈与验证 | `feature/v020-g2-d-feedback` / `/private/tmp/for-now-v020-g2-d` | 主动上下文授权的反馈、状态流转，以及同意/退出、补偿/奖励和真实参与证据台账 |
 
-I 集成后 `/api/v1` 共 32 条 OpenAPI 路径、51 个操作，前端共 23 个视图。`npm run test:system` 43/43 阶段通过，且没有运行容量压测、真实 AI/分割供应商、commit、push 或部署。因本轮新增 PostgreSQL 对象与关系映射，旧 40 项数据库基线不能替代复验；当前环境的单次 `npm run test:postgres` 在业务断言前失败，错误为 `postmaster became multithreaded during startup`。因此 I 本地集成通过，但 G2 正式关闭仍待获准本机环境的真实 PostgreSQL 复验。机器证据见 `../reports/g2-i-integration-2026-09-29.json`。
+I 集成后 `/api/v1` 共 32 条 OpenAPI 路径、51 个操作，前端共 23 个视图。`npm run test:system` 43/43 阶段通过，且没有运行容量压测、真实 AI/分割供应商、commit、push 或部署。因本轮新增 PostgreSQL 对象与关系映射，旧 40 项数据库基线不能替代复验；当前环境的单次 `npm run test:postgres` 在业务断言前失败，错误为 `postmaster became multithreaded during startup`。因此 I 本地集成通过，但 G2 正式关闭仍待获准本机环境的真实 PostgreSQL 复验。机器证据见 `../docs/versions/v0.2.0/evidence/g2-i-integration.json`。
 
 ## 14. V0.3.0 串并行开发入口
 
 V0.3.0 不复用上述 G2 的长期未提交工作树。当前调度、任务编号、`v0.2.x`
 功能批次、最多两条实现线并行和串行合入规则统一见
-[`reports/iteration-plan-v0.3.0-2026-09-30.md`](../reports/iteration-plan-v0.3.0-2026-09-30.md)。
+[`docs/versions/v0.3.0/README.md`](../docs/versions/v0.3.0/README.md)。
 
 本阶段继续遵守模块边界和影响矩阵，但工作树生命周期改为：
 

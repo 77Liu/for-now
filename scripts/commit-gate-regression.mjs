@@ -35,7 +35,7 @@ async function makeRepository(name, { failingCheck = false, delayedCheck = false
   await fs.mkdir(path.join(directory, "public/frontend/features/home"), { recursive: true });
   await fs.mkdir(path.join(directory, "public/frontend/features/personal-context"), { recursive: true });
   await fs.mkdir(path.join(directory, "scripts"), { recursive: true });
-  await fs.mkdir(path.join(directory, "reports"), { recursive: true });
+  await fs.mkdir(path.join(directory, "docs"), { recursive: true });
   const checkSource = [
     "import assert from 'node:assert/strict';",
     "import fs from 'node:fs';",
@@ -226,8 +226,8 @@ try {
   {
     const directory = await makeRepository("docs-only");
     git(directory, ["switch", "-c", "docs/task"]);
-    await fs.writeFile(path.join(directory, "reports/task.md"), "# Task record\n");
-    git(directory, ["add", "reports/task.md"]);
+    await fs.writeFile(path.join(directory, "docs/task.md"), "# Task record\n");
+    git(directory, ["add", "docs/task.md"]);
     const result = invokeGate(directory, "docs(task): record local delivery");
     assert.equal(result.status, 0, result.stderr);
     assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Type: docs/);

@@ -63,29 +63,15 @@
 
 ### 3.1 事实层报告
 
-单版本：
-
-```text
-reports/<version>-development-process-YYYY-MM-DD.md
-```
-
-跨版本：
-
-```text
-reports/<start>-to-<end>-development-process-YYYY-MM-DD.md
-```
-
-已有权威报告时优先追加，不为同一范围创建平行报告。历史验收节点、流程图和
-决策记录采用追加保留，不覆盖或压缩成无法追溯的汇总节点。
+事实层写入该版本唯一正文 `docs/versions/<version>/README.md`。跨版本结论压缩
+写入 `knowledge/iteration-history.md` 并链接各版本正文，不创建平行过程报告。
+历史验收节点、流程图和决策记录采用追加保留，不覆盖或压缩成无法追溯的汇总
+节点。
 
 ### 3.2 复盘层
 
-复盘层优先写入事实报告的独立“复盘结论与行动项”章节。只有内容将长期跨版本
-复用，或需要单独跟踪行动项时，才创建：
-
-```text
-reports/<version>-retrospective-YYYY-MM-DD.md
-```
+复盘层写入版本正文的独立“复盘结论与行动项”章节。跨版本长期有效的原则回流
+对应 `knowledge/` 唯一正文；行动状态进入协调控制面，不另建复盘文件。
 
 ### 3.3 最小交付
 

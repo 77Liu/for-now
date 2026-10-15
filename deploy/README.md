@@ -26,7 +26,7 @@ verify them before deployment. Credentials remain only in root-owned
 starts automatically, and `/srv/for-now/data/.persistence-mode.json` prevents
 direct reuse of the stale JSON write source. Cutover and recovery evidence is
 recorded in
-[`reports/v0.2.1-production-cutover-2026-09-30.json`](../reports/v0.2.1-production-cutover-2026-09-30.json).
+[`docs/versions/v0.2.1/evidence/production-cutover.json`](../docs/versions/v0.2.1/evidence/production-cutover.json).
 
 ## Access model
 
@@ -223,7 +223,7 @@ restore result are maintained in `knowledge/operations-capacity.md`.
 
 ### 受保护的私有媒体分发接入
 
-云资源与对象验收见 [媒体配置记录](../knowledge/aliyun-media-distribution-config.md)。
+云资源与对象验收见 [v0.5.9 版本记录](../docs/versions/v0.5.9/README.md)。
 应用分发须绑定完成独立审查的完整候选、实际应用验收和新 production decision。
 先按发布记录安装独立 guard、核验旧部署 worker 已停止，再签发精确候选与当前
 生产 SHA 的 attempt。安装 guard 不等于部署应用，Preview 与生产决定分开记录。

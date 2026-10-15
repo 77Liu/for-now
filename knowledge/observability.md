@@ -118,4 +118,4 @@ S3 中阿里云适配通过注入的审计接口报告各次调用，记录结�
 - 业务写入、用量账本与 NDJSON 不是同一事务。任一日志失败会记录 `logging.failed / ai.log_failed`，不覆盖已经提交的数据，也不让已完成的模型回答自动重试；尚无自动补写和对账。
 - 在线日志按时间清理但未设单日容量上限，JSON 账本会增长并在统计时全量读取。当前单进程队列不支持多实例共同写文件。
 - 最低告警依赖服务器配置的飞书 webhook；当前已完成测试消息、受控服务停止严重告警和恢复通知的真实投递。每次发布后仍需观察 30 分钟：检查新 `storage.*_failed / logging.failed / ai.log_failed`，检查无终态调用、AI 失败与重试量、响应耗时和磁盘增长；任一持久化故障或账户串写立即停止发布并恢复上一版本。
-- 本地可复核命令：`npm run test:observability`、`npm run test:auth`、`npm run test:monitor` 和 `npm test`。当前生产验证、发布结论与未关闭项见 `reports/mvp-operations-validation-2026-09-27.md`。
+- 本地可复核命令：`npm run test:observability`、`npm run test:auth`、`npm run test:monitor` 和 `npm test`。当前生产验证、发布结论与未关闭项见 `docs/versions/v0.1.0/README.md`。

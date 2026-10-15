@@ -70,7 +70,7 @@
 OSS 备份已在两套隔离库完成无损导入、导出、恢复和候选 HTTP 验证，演练库
 与私有副本均已清理。生产应用继续 JSON 单写，尚未接线或切换。
 配置与证据见 [`operations-capacity.md`](operations-capacity.md) 和
-[`production-postgres-recovery-2026-09-30.json`](../reports/production-postgres-recovery-2026-09-30.json)。
+[`production-postgres-recovery-2026-09-30.json`](../docs/versions/v0.2.0/evidence/production-postgres-recovery.json)。
 
 正式角色如下，均为 `NOSUPERUSER / NOBYPASSRLS / NOCREATEDB / NOCREATEROLE`：
 
@@ -221,4 +221,4 @@ OSS 模式还需显式 `--allow-remote-attachments`。导出取得应用排他�
   回滚都必须先导出并核验 PostgreSQL 新增数据。
 
 完整脱敏证据见
-[`v0.2.1-production-cutover-2026-09-30.json`](../reports/v0.2.1-production-cutover-2026-09-30.json)。
+[`v0.2.1-production-cutover-2026-09-30.json`](../docs/versions/v0.2.1/evidence/production-cutover.json)。

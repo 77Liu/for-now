@@ -1,6 +1,6 @@
 # 状态来源地图
 
-当前任务、范围、候选、授权、发布和运行状态只有一份：共同仓库根目录的 `reports/requirement-coordination-current.json`，仅由当前协调者维护。完整字段、消费者边界和更新协议见 [唯一协调控制面协议](knowledge/coordination-control-plane.md)。本文件不保存状态值。
+当前任务、范围、候选、授权、发布和运行状态只有一份：共同仓库根目录的 `coordination/current.json`，仅由当前协调者维护。完整字段、消费者边界和更新协议见 [唯一协调控制面协议](knowledge/coordination-control-plane.md)。本文件不保存状态值。
 
 | 内容 | 维护位置与责任 |
 | --- | --- |

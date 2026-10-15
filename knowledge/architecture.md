@@ -1,12 +1,12 @@
 # 本地应用架构
 
-图示更新时间：2026-09-27 20:54（Asia/Shanghai）。[系统架构 · 260927-2045](../assets/系统架构-260927-2045.png)；[本版说明](../reports/product-visuals-260927-2045.md)。
+图示更新时间：2026-09-27 20:54（Asia/Shanghai）。[系统架构 · 260927-2045](../assets/系统架构-260927-2045.png)；[本版说明](../knowledge/long-term/outdated/design/product-visuals-260927-2045.md)。
 
 本文同时记录当前生产基线和工作区候选结构，两者不得混写为同一部署状态。
 生产与 Preview 应用均为 `v0.5.5@fed30539d3d6`，PostgreSQL 为唯一正式
 写源，Store 当前版本为 v16。生产版本与验证证据见
 [`../README.md`](../README.md) 的“当前状态”和
-[`../reports/pre-launch-2026-10-04-v0.5.5.md`](../reports/pre-launch-2026-10-04-v0.5.5.md)；
+[`../docs/versions/v0.5.5/README.md`](../docs/versions/v0.5.5/README.md)；
 逐项状态只在 [`../README-TODO.md`](../README-TODO.md) 维护。
 
 ## 历史生产基线（v0.1.1）

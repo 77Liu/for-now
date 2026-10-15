@@ -16,7 +16,7 @@
 
 旧 `archive/*`、`codex/*`、`feat/*`、`fix/*`、`hotfix/*`、`release/*`、`docs/*`、`explore/*`、`refactor/*` 和工作树只用于审计与恢复。它们不是当前代码基线，不得继续修改、迁回、合并或作为新任务起点。需要复用时，必须在 `develop` 上由主控选择性搬运，重新验证并记录来源。
 
-归档恢复引用位于 `refs/archive/git-cleanup-20261011/heads/*`；补丁、未跟踪文件和哈希见 `reports/git-handoff/index.md` 与 `reports/git-archive/git-cleanup-20261011-manifest.json`。
+归档恢复引用位于 `refs/archive/git-cleanup-20261011/heads/*`；补丁、未跟踪文件和哈希见 `docs/archive/git-cleanup-20261011/handoffs/index.md` 与 `docs/archive/git-cleanup-20261011/manifests/git-cleanup-20261011-manifest.json`。
 
 ## 新任务卡最小字段
 

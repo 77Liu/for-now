@@ -18,7 +18,7 @@ const manifestVersion = manifestFlag >= 0 ? process.argv[manifestFlag + 1] : "v2
 const plan = await buildPersonalizationLivePlan(root, { manifestVersion });
 const live = process.argv.includes("--live");
 const outputFlag = process.argv.indexOf("--output");
-let output = path.resolve(outputFlag >= 0 ? process.argv[outputFlag + 1] : path.join(root, `reports/personalization-live-${plan.requestInputVersion}-v0.5.9.json`));
+let output = path.resolve(outputFlag >= 0 ? process.argv[outputFlag + 1] : path.join(root, `artifacts/personalization-live-${plan.requestInputVersion}-v0.5.9.json`));
 const treeFlag = process.argv.indexOf("--tree");
 const candidateTree = treeFlag >= 0 ? process.argv[treeFlag + 1] : execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).trim();
 assert.match(candidateTree, /^[a-f0-9]{40}$/);

@@ -274,13 +274,13 @@ macOS 文件沙箱可能遗漏依赖包的 dylib 符号链接。若 `postgres --
 
 专项脚本为数据库子进程固定 `LC_ALL=C`、`LANG=C`、`TZ=UTC`，并在 macOS 上将现有相邻 `lib` 目录传入 `DYLD_LIBRARY_PATH`，兼容沙箱重定位二进制；启动失败输出 PostgreSQL 日志后再清理临时簇。
 
-2026-09-29 当前结论：原有 EDB PostgreSQL 16.14 和未修改的 `scripts/postgres-integration.mjs` 已在 Codex 获准的本机执行环境完整通过（退出码 0），覆盖现有脚本全部断言，包括账户文档/成本并发隔离、版本化删除恢复、附件清理失败及重启、新数据库恢复。机器可读结果和三个测试脚本/数据库二进制 SHA-256 见 `reports/postgres-validation-2026-09-29.json`。真实数据库启动不再阻塞当前脚本验收；S3 其余工作与 G 准入按唯一协调控制面执行。
+2026-09-29 当前结论：原有 EDB PostgreSQL 16.14 和未修改的 `scripts/postgres-integration.mjs` 已在 Codex 获准的本机执行环境完整通过（退出码 0），覆盖现有脚本全部断言，包括账户文档/成本并发隔离、版本化删除恢复、附件清理失败及重启、新数据库恢复。机器可读结果和三个测试脚本/数据库二进制 SHA-256 见 `docs/versions/v0.2.0/evidence/postgres-validation.json`。真实数据库启动不再阻塞当前脚本验收；S3 其余工作与 G 准入按唯一协调控制面执行。
 
 同日 G1 复验中，当前受限执行环境内的 `npm run test:postgres` 与下述绝对 Node 命令均在业务断言前再次报 `postmaster became multithreaded during startup`。本段未修改 schema、映射或 repository，因此保留上述 40 项通过证据作为 S2 基线，不把本次环境失败记为业务回归通过；后续一旦修改持久化边界，仍须回到获准本机执行环境重跑。
 
 S3-10 集成后又按约束单次执行 `npm run test:postgres`，仍在临时集群启动阶段命中相同错误，未进入业务断言。本轮只迁移状态/健康记录、前端无业务共享能力和 OpenAPI 分片，未修改 schema、映射或 repository；因此继续引用同日 40 项基线，但机器可读 S3-10 证据明确记为环境失败而非通过。S3-11/12 收口后再次单次复验，仍为相同的启动前环境失败；完整功能系统测试为 38/38 阶段通过（165661 ms）。
 
-G2/I 集成将 Store 升至 v15，并新增行动、习惯、习惯打卡、反馈、验证台账对象及来源/父子关系映射，因此旧 40 项真实 PostgreSQL 基线不能替代本轮验收。2026-09-29 单次复验仍在任何业务断言前报 `postmaster became multithreaded during startup`，虽然 43/43 功能系统阶段通过，G2 正式门仍须在先前可用的获准本机环境重跑并取得新证据后才能关闭。详情见 `../reports/g2-i-integration-2026-09-29.json`。
+G2/I 集成将 Store 升至 v15，并新增行动、习惯、习惯打卡、反馈、验证台账对象及来源/父子关系映射，因此旧 40 项真实 PostgreSQL 基线不能替代本轮验收。2026-09-29 单次复验仍在任何业务断言前报 `postmaster became multithreaded during startup`，虽然 43/43 功能系统阶段通过，G2 正式门仍须在先前可用的获准本机环境重跑并取得新证据后才能关闭。详情见 `../docs/versions/v0.2.0/evidence/g2-i-integration.json`。
 
 G2 R3 又新增持久幂等账本、生命周期/tombstone 元数据和跨体裁图片原文任务关系。2026-09-29 分别执行 `npm run test:postgres` 与 `node scripts/persistence-ledger-postgres-regression.mjs`，两者仍在任何业务断言前由 PostgreSQL 16.14 报 `postmaster became multithreaded during startup`；脚本已固定 `LC_ALL=C`、`LANG=C`、`TZ=UTC`，追加 `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` 复跑仍失败。因此本轮 JSON、映射和功能系统证据可用于代码验收，但不能替代 P0-16/P0-26 的最新真实 PostgreSQL 运行证据。
 
@@ -310,7 +310,7 @@ PG_TEST_BIN=/tmp/for-now-postgresql-16.14/bin npm run test:postgres
 Store v18（含证据/许可/感知事件与日压缩摘要）新领域、元数据顺序与扩展字段、JSON `null` 幂等响应、旧表从账户
 快照精确升级、全量关系恢复对比、自动回答默认关闭、设置并发、治理中台
 PostgreSQL 脱敏快照和小物派生路径；机器证据见
-`../reports/g2-r4-postgres-2026-09-30.json`。生产仍必须
+`../docs/versions/v0.2.0/evidence/g2-r4-postgres.json`。生产仍必须
 使用受支持的标准 PostgreSQL 构建，本地兼容构建不构成生产配置或切换证据。
 
 2026-10-06 V0.5.8 G4 复验：目标工作树默认发现路径未命中，但显式设置

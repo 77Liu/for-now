@@ -170,7 +170,7 @@ function regressionSurface(name) {
 function isDocumentation(file) {
   return (
     /^(?:README(?:-TODO)?|one-mistake-one-rule)\.md$/.test(file)
-    || /^(?:knowledge|reports)\/.+\.md$/.test(file)
+    || /^(?:docs|knowledge|SOP)\/.+\.md$/.test(file)
   );
 }
 
@@ -203,7 +203,6 @@ function blockedReason(file) {
   ) return "shared, security-sensitive, migration, dependency, deployment, or release surface";
   if (
     /^public\/explore/.test(file)
-    || /^reports\/(?:exploration|feature-atlas)/.test(file)
   ) return "exploration assets are outside the automatic feat gate";
   return "";
 }
