@@ -55,7 +55,7 @@ export function createHttpApplication({
     logEvent,
     sendJson,
     sendError: (res, status, value, context) => context.apiVersion === "v1"
-      ? apiV1.error(res, status, value.error, value.code, value.details)
+      ? apiV1.error(res, status, value.error, value.code, Number.isFinite(value.retryAfterMs) ? { ...(value.details || {}), retryAfterMs: value.retryAfterMs } : value.details)
       : sendJson(res, status, value),
     isStorageError: error => Boolean(
       postgresRuntime

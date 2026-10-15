@@ -1,4 +1,4 @@
-import { OFFICIAL_PROVIDER_PRICING } from "../modules/ai/index.mjs";
+import { createDispatchAttempt, stageHasBillableDispatch, OFFICIAL_PROVIDER_PRICING } from "../modules/ai/index.mjs";
 
 const MICROS_PER_CNY = 1_000_000;
 const DEEPSEEK_SERVICE = "chat-completions";
@@ -49,11 +49,11 @@ const knownUsageCost = entry => {
   return value;
 };
 
-const combinedFailure = (executionError, finalizationError, action) => new AggregateError(
+const combinedFailure = (executionError, finalizationError, action) => Object.assign(new AggregateError(
   [executionError, finalizationError],
   `AI task failed and budget ${action} also failed`,
   { cause: executionError }
-);
+), { code: executionError?.code || "AI_BUDGET_FINALIZATION_FAILED", statusCode: executionError?.statusCode || 503, cleanupFailed: true });
 
 export function estimateDeepSeekPeakCostCny({
   model,
@@ -113,7 +113,8 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {}, asse
     throw new TypeError("AI budget runtime onRecoveryError must be a function");
   }
 
-  async function executeTask(plan, execute) {
+  async function executeTask(plan, execute, { control } = {}) {
+    control?.throwIfStopped();
     assertAccountReady();
     if (typeof execute !== "function") {
       throw new TypeError("AI budget runtime execute callback is required");
@@ -135,6 +136,8 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {}, asse
       reservation.stages.filter(stage => stage.startedAt).map(stage => stage.id)
     );
     const actualUsage = new Map();
+    const notInvoked = new Set(reservation.stages.filter(stage => stage.dispatchState === "not_invoked").map(stage => stage.id));
+    const claimedStages = new Set(started);
 
     const requireStage = stageId => {
       const normalizedId = requiredText(stageId, "stageId");
@@ -145,7 +148,7 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {}, asse
 
     const recordUsage = (stageId, usageEntry) => {
       const stage = requireStage(stageId);
-      if (!started.has(stage.id)) {
+      if (!started.has(stage.id) || notInvoked.has(stage.id)) {
         throw new Error(`AI budget runtime stage "${stage.id}" has not started`);
       }
       if (usageEntry?.costKnown === false) {
@@ -158,34 +161,55 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {}, asse
       return true;
     };
 
-    const runStage = async (stageId, operation) => {
+    const runStage = async (stageId, operation, options = {}) => {
       const stage = requireStage(stageId);
-      if (typeof operation !== "function") {
-        throw new TypeError("AI budget runtime stage operation is required");
-      }
-      if (started.has(stage.id)) {
-        throw new Error(`AI budget runtime stage "${stage.id}" was already started`);
-      }
-      assertAccountReady();
-      await budget.startStage({ reservationId: reservation.id, stageId: stage.id });
+      if (typeof operation !== "function") throw new TypeError("AI budget runtime stage operation is required");
+      if (claimedStages.has(stage.id) || stage.startedAt) throw new Error(`AI budget runtime stage "${stage.id}" was already started`);
+      claimedStages.add(stage.id);
+      const guard = () => { options.control?.throwIfStopped(); assertAccountReady(); options.dispatchGuard?.(); };
+      guard();
+      // 旧媒体runStage无options时保持保守语义；私有证明只适用于受控文本派发能力。
+      const attempt = options.control && typeof options.dispatchGuard === "function" && typeof budget.markStageNotInvoked === "function"
+        ? createDispatchAttempt() : null;
+      await budget.startStage({ reservationId: reservation.id, stageId: stage.id, ...(attempt ? { dispatchAttemptId: attempt.id } : {}) });
       started.add(stage.id);
-      assertAccountReady();
-      return operation({
-        stage,
-        reservation,
-        recordUsage: usageEntry => recordUsage(stage.id, usageEntry)
-      });
+      let result, stageError = null;
+      try {
+        guard();
+        result = await operation({ stage, reservation,
+          recordUsage: usageEntry => recordUsage(stage.id, usageEntry),
+          ...(attempt ? { dispatch: callback => attempt.invoke(callback, guard) } : {}) });
+      } catch (error) {
+        if (!options.canRetry?.(error)) options.control?.terminate?.(error);
+        stageError = error;
+      }
+      finally { attempt?.close(); }
+      if (attempt && !attempt.invoked) {
+        try {
+          const capability = attempt.proof(reservation.id, stage.id, stageError?.code === "AI_TASK_STALE" ? "stale" : stageError?.code === "AI_TASK_CANCELLED" ? "cancelled" : /TIMEOUT/.test(stageError?.code || "") ? "timeout" : "failed_before_io");
+          await budget.markStageNotInvoked({ reservationId: reservation.id, stageId: stage.id, dispatchAttemptId: attempt.id }, capability);
+          notInvoked.add(stage.id);
+        } catch (proofError) {
+          if (stageError) throw combinedFailure(stageError, proofError, "no-I/O proof");
+          throw proofError;
+        }
+      }
+      if (stageError) throw stageError;
+      return result;
     };
 
     let value;
     let executionError = null;
     try {
+      control?.throwIfStopped();
       value = await execute({ reservation, runStage, recordUsage });
     } catch (error) {
+      control?.terminate?.(error);
       executionError = error;
     }
 
-    if (!started.size) {
+    const effectiveStarted = [...started].filter(id => !notInvoked.has(id));
+    if (!effectiveStarted.length) {
       try {
         await budget.releaseTask({
           reservationId: reservation.id,
@@ -196,7 +220,7 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {}, asse
         throw admissionFailure(releaseError, false);
       }
     } else {
-      const settlementStages = [...started].map(stageId => ({
+      const settlementStages = effectiveStarted.map(stageId => ({
         stageId,
         started: true,
         ...(actualUsage.get(stageId) || {})
@@ -214,7 +238,7 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {}, asse
     }
 
     // 无stage启动且release成功才可等待；已开始/结果未知均不得标记可重跑。
-    if (executionError) throw admissionFailure(executionError, started.size === 0);
+    if (executionError) throw admissionFailure(executionError, effectiveStarted.length === 0);
     return value;
   }
 
@@ -229,7 +253,7 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {}, asse
     };
     for (const reservation of reservations) {
       const startedStages = (Array.isArray(reservation?.stages) ? reservation.stages : [])
-        .filter(stage => stage.startedAt)
+        .filter(stageHasBillableDispatch)
         .map(stage => ({ stageId: stage.id, started: true }));
       const action = startedStages.length ? "settle" : "release";
       try {

@@ -43,6 +43,7 @@ export async function createAiRuntime({
   dataRoot,
   postgresRuntime = null,
   accountRuntime = null,
+  aiQueue = null,
   storagePaths,
   requestStorage,
   readStoredJson,
@@ -88,8 +89,9 @@ export async function createAiRuntime({
   } = dependencies;
   const createId = () => cryptoApi.randomUUID();
 
-  const aiGate = createRateGateImpl(aiQps, aiConcurrency);
-  const recordCompressionGate = createRateGateImpl(aiQps, 1);
+  const gateOptions = aiQueue?.enabled ? { maxPending: aiQueue.maxPendingPerGate } : undefined;
+  const aiGate = createRateGateImpl(aiQps, aiConcurrency, gateOptions);
+  const recordCompressionGate = createRateGateImpl(aiQps, 1, gateOptions);
   const aiBudgetRepository = createAiBudgetRepositoryImpl({
     runtime: postgresRuntime,
     dataRoot
@@ -212,6 +214,7 @@ export async function createAiRuntime({
     ),
     updateUsage: updateAiUsage,
     beginCall: id => accountRuntime?.beginAuditCall(id),
+    endUninvokedCall: id => accountRuntime?.endUninvokedAuditCall(id),
     finalizeUsage: (entry, operation) => accountRuntime ? accountRuntime.finalizeUsage(entry, operation) : operation(),
     logEvent,
     now,
@@ -345,7 +348,7 @@ export async function createAiRuntime({
     }
   }
 
-  async function executeDeepSeekBudgetTask(details, execute) {
+  async function executeDeepSeekBudgetTask(details, execute, options) {
     try {
         if (details.scene === RECORD_COMPRESSION_TASK_KIND) {
         const maximumCost = estimateDeepSeekPeakCostCny({
@@ -371,9 +374,9 @@ export async function createAiRuntime({
           maxOutputTokens: details.maxOutputTokens,
           maxAttempts: details.maxAttempts
         })
-      }, execute);
+      }, execute, options);
     } catch (error) {
-      if (error.statusCode === 429 || /(?:BUDGET|LIMIT)/.test(error.code || "")) {
+      if (!["AI_QUEUE_FULL", "AI_QUEUE_TIMEOUT", "AI_REQUEST_TIMEOUT", "AI_TASK_CANCELLED"].includes(error.code) && (error.statusCode === 429 || /(?:BUDGET|LIMIT)/.test(error.code || ""))) {
         await logBudgetRejection(details, error);
       }
       throw error;
@@ -409,6 +412,7 @@ export async function createAiRuntime({
     getContext: () => requestStorage.getStore(),
     reserveAttempt: reserveAiAttempt,
     gate: aiGate,
+    aiQueue,
     assertAccountReady: () => accountRuntime?.assertDispatch(),
     sceneGates: { [RECORD_COMPRESSION_TASK_KIND]: recordCompressionGate },
     audit: aiAudit,

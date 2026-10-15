@@ -1,5 +1,5 @@
 import { withoutReferenceOwnerMetadata } from "../src/app/index.mjs";
-import { createJsonHttp, createModelResponseHttp } from "../src/http/index.mjs";
+import { createJsonHttp, createModelResponseHttp, createApiV1Http } from "../src/http/index.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {
@@ -251,5 +251,17 @@ for (const owner of [false, true]) {
   assert.equal(done.result.providedReferences.length, owner ? 2 : 1);
   assert.equal(done.result.contextReceipt.referenceRequest.promptBytes, 2000);
   assert.equal(JSON.stringify(done.result).includes("CORE_RESOURCE_MARKER"), owner);
+}
+// F5：SSE已发头保留终态code，v1包装保留可选重试间隔，不将失败伪装为done。
+for (const [code, statusCode] of [["AI_TASK_CANCELLED", 409], ["AI_QUEUE_TIMEOUT", 504], ["AI_REQUEST_TIMEOUT", 504], ["AI_QUEUE_FULL", 429]]) {
+  const chunks = []; const current = {};
+  const response = { destroyed: false, writableEnded: false, writeHead(status) { this.statusCode = status; }, write(value) { chunks.push(value); }, end() { this.writableEnded = true; } };
+  const v1 = createApiV1Http({ getContext: () => current, sendJson: () => {} });
+  const stream = createModelResponseHttp({ getContext: () => current, logEvent: async () => {}, sendJson: () => {} });
+  await stream({ headers: { accept: "text/event-stream" } }, response, { run: async () => { throw Object.assign(new Error("终止"), { code, statusCode, retryAfterMs: 5000 }); }, formatError: error => ({ type: "error", ...v1.errorEnvelope(error) }) });
+  const events = chunks.join("").split("\n").filter(line => line.startsWith("data: ")).map(line => JSON.parse(line.slice(6)));
+  assert.equal(response.statusCode, 200); assert.equal(current.applicationStatus, statusCode);
+  assert.ok(events.some(event => event.type === "error" && event.error.code === code && event.error.details.retryAfterMs === 5000));
+  assert.equal(events.some(event => event.type === "done"), false);
 }
 console.log("Public state regression passed.");
