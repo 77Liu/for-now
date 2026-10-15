@@ -1,4 +1,5 @@
 import path from "node:path";
+import { promises as fs } from "node:fs";
 import { withoutReferenceOwnerMetadata } from "./public-state.mjs";
 import { buildAdminSnapshot } from "../../admin-snapshot.mjs";
 import {
@@ -271,11 +272,17 @@ export async function createRuntimeAccess({
     readDocument: readStoredJson,
     writeDocument: writeJsonAtomic,
     onCommit: auditAuthChanges,
-    onInvalid: () => logEvent("system", "storage.read_failed", {
-      level: "error",
-      file: "auth.json",
-      error: { code: "INVALID_AUTH_DOCUMENT" }
-    })
+    // 旧根目录数据仍允许首个Owner导入；已有账户目录则不能证明是全新实例。
+    canInitialize: async () => {
+      try { return (await fs.readdir(usersDir)).length === 0; }
+      catch (error) { if (error.code === "ENOENT") return true; throw error; }
+    },
+    onInvalid: async error => {
+      accountRuntime?.failGlobal(error);
+      await logEvent("system", "storage.read_failed", {
+        level: "error", file: "auth.json", error: errorMetadata(error)
+      });
+    }
   });
   readAuth = () => authRepository.read();
   const authService = createAuthService({

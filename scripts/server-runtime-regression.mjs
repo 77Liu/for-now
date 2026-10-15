@@ -380,6 +380,30 @@ assert.deepEqual(
       runtime = create(); started = await runtime.start(); base = `http://127.0.0.1:${started.port}`;
       assert.equal((await call(base, "/api/state", users[1].cookie)).response.status, 200);
     }
+    // 认证文件丢失不能变成空库：运行中阻断、排空，重启仍拒绝，原账户正文保持。
+    const authenticationFile = path.join(directory, "auth.json");
+    const authenticationOriginal = await fs.readFile(authenticationFile, "utf8");
+    const accountOriginals = await Promise.all(users.map(user => fs.readFile(path.join(directory, "users", user.id, "store.json"), "utf8")));
+    await fs.unlink(authenticationFile);
+    const missingAuth = await call(base, "/api/auth/me", users[0].cookie);
+    assert.equal(missingAuth.response.status, 503);
+    assert.equal(missingAuth.body.code, "AUTH_STORAGE_MISSING");
+    for (let n = 0; n < 900 && !exits.length; n++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.deepEqual(exits, [1], "missing shared authentication must request nonzero exit");
+    await assert.rejects(fetch(base + "/readyz"), /fetch failed/);
+    await runtime.stop(); exits.length = 0;
+    runtime = create();
+    await assert.rejects(runtime.start(), error => error.code === "AUTH_STORAGE_MISSING");
+    await assert.rejects(fs.access(authenticationFile), error => error.code === "ENOENT");
+    assert.deepEqual((await fs.readdir(path.join(directory, "users"))).sort(), users.map(user => user.id).sort());
+    for (let n = 0; n < users.length; n++) assert.equal(await fs.readFile(path.join(directory, "users", users[n].id, "store.json"), "utf8"), accountOriginals[n]);
+    await runtime.stop().catch(error => { assert.equal(error.code, "AUTH_STORAGE_MISSING"); }); exits.length = 0;
+    await fs.writeFile(authenticationFile, authenticationOriginal);
+    runtime = create(); started = await runtime.start(); base = `http://127.0.0.1:${started.port}`;
+    const restoredAuth = await call(base, "/api/auth/me", users[0].cookie);
+    assert.equal(restoredAuth.response.status, 200);
+    assert.equal(restoredAuth.body.user.role, "owner");
+    assert.equal(restoredAuth.body.userCount, 3);
     // 普通账户复用Owner配置不继承Owner业务资格；Owner store损坏仍能准备并真实完成本机模型调用。
     assert.equal((await call(base, "/api/settings", users[0].cookie, "POST", { apiKey: "f2-local-provider-key" })).response.status, 200);
     const member = users[2];

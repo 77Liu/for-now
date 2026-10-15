@@ -138,7 +138,7 @@ let errors = "";
 const startApp = () => {
   const app = spawn(globalThis.process.execPath, ["server.mjs"], {
     cwd: ROOT,
-    env: { ...globalThis.process.env, NODE_ENV: "test", DATA_DIR: dataDir, PORT: String(port), APP_BASE_PATH: "/now", INVITE_CODE_HASH: invitationHash, COOKIE_SECURE: "1", UPSTREAM_ORIGIN: "", PLATFORM_SERVICE_TOKEN_HASH: platformTokenHash, BACKUP_STATUS_FILE: path.join(dataDir, "missing-backup-marker"), DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}` },
+    env: { ...globalThis.process.env, NODE_ENV: "test", ACCOUNT_RECOVERY_ENABLED: "0", DATA_DIR: dataDir, PORT: String(port), APP_BASE_PATH: "/now", INVITE_CODE_HASH: invitationHash, COOKIE_SECURE: "1", UPSTREAM_ORIGIN: "", PLATFORM_SERVICE_TOKEN_HASH: platformTokenHash, BACKUP_STATUS_FILE: path.join(dataDir, "missing-backup-marker"), DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}` },
     stdio: ["ignore", "pipe", "pipe"]
   });
   app.stderr.on("data", chunk => { errors += chunk; });
@@ -681,6 +681,20 @@ try {
   assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedFollowUpQuestion.id).followUps.filter(item => item.sourceTaskId === queuedTasks[1].id).length, 0);
   assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedAnnotationQuestion.id).annotations[0].shenji.filter(item => item.sourceTaskId === queuedTasks[2].id).length, 0);
 
+  // 即使恢复开关关闭，认证缺失也不得重新注册为Owner；失败不重建文件或新增账户目录。
+  const authenticationFile = path.join(dataDir, "auth.json");
+  const authenticationOriginal = await fs.readFile(authenticationFile, "utf8");
+  const originalAccountDirectories = (await fs.readdir(path.join(dataDir, "users"))).sort();
+  await fs.unlink(authenticationFile);
+  const missingRegistration = await jsonRequest(`${base}/now/api/auth/register`, {
+    method: "POST", body: JSON.stringify({ username: "replacement-owner", password: "SyntheticPass123", invitation })
+  });
+  assert.equal(missingRegistration.response.status, 503);
+  assert.equal(missingRegistration.body.code, "AUTH_STORAGE_MISSING");
+  await assert.rejects(fs.access(authenticationFile), error => error.code === "ENOENT");
+  assert.deepEqual((await fs.readdir(path.join(dataDir, "users"))).sort(), originalAccountDirectories);
+  await fs.writeFile(authenticationFile, authenticationOriginal);
+  assert.equal((await jsonRequest(`${base}/now/api/auth/me`, { headers: { cookie: secondCookie } })).response.status, 200);
   await fs.writeFile(path.join(dataDir, "auth.json"), "{PRIVATE_CORRUPT_AUTH");
   const damaged = await jsonRequest(`${base}/now/api/auth/me`, { headers: { cookie: secondCookie } });
   assert.equal(damaged.response.status, 500);
