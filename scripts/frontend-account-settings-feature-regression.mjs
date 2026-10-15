@@ -593,6 +593,7 @@ function createSettingsHarness(overrides = {}) {
         if (path === "/api/auth/username") {
           return { user: { ...user, username: body.username } };
         }
+        if (path === "/api/auth/password") return { authenticated: false, reauthRequired: true };
         if (path.includes("/role")) {
           return { user: { id: path.split("/").at(-2), username: "更新账户", role: body.role } };
         }
@@ -630,7 +631,9 @@ function createSettingsHarness(overrides = {}) {
   fixture.newPassword.value = "new-password-1";
   fixture.confirmPassword.value = "new-password-1";
   fixture.root.dispatch("submit", fixture.passwordForm);
-  await waitFor(() => toasts.includes("密码已更新"), "password request did not settle");
+  await waitFor(() => resets.length === 1, "password change did not force reauthentication");
+  assert.equal(resets[0], "密码已更新，所有设备已退出，请使用新密码重新登录。");
+  assert.ok(toasts.includes("密码已更新，请重新登录"));
   assert.equal(authCalls[1][0], "/api/auth/password");
   assert.equal(authCalls[1][2], "PATCH");
 
@@ -660,8 +663,8 @@ function createSettingsHarness(overrides = {}) {
   selfButton.root = fixture.root;
   selfButton.parent = selfRow;
   fixture.root.dispatch("click", selfButton);
-  await waitFor(() => resets.length === 1, "self-demotion did not force reauthentication");
-  assert.equal(resets[0], "账户权限已变更，请重新登录。");
+  await waitFor(() => resets.length === 2, "self-demotion did not force reauthentication");
+  assert.equal(resets[1], "账户权限已变更，请重新登录。");
 
   fixture.root.dispatch("click", fixture.logout);
   assert.equal(logouts, 1);

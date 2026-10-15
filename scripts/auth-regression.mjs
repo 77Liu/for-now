@@ -204,7 +204,7 @@ try {
   assert.equal(registered.body.user.recordTimezone, DEFAULT_RECORD_TIMEZONE);
   const ownerSetCookie = registered.response.headers.get("set-cookie");
   assert.match(ownerSetCookie, /;\s*Secure(?:;|$)/i);
-  const ownerCookie = ownerSetCookie.split(";")[0];
+  let ownerCookie = ownerSetCookie.split(";")[0];
   const ownerState = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: ownerCookie } });
   assert.equal(ownerState.body.captures[0].content, "legacy-owner-data");
   assert.equal(ownerState.body.commercialization, undefined);
@@ -531,7 +531,8 @@ try {
     headers: { cookie: ownerCookie },
     body: JSON.stringify({ currentPassword: "wrong-password-1", newPassword: "new-secure-password-2" })
   });
-  assert.equal(wrongCurrentPassword.response.status, 403);
+  assert.equal(wrongCurrentPassword.response.status, 401);
+  assert.equal(wrongCurrentPassword.body.code, "AUTH_INVALID_CREDENTIALS");
 
   const changedPassword = await jsonRequest(`${base}/now/api/auth/password`, {
     method: "PATCH",
@@ -539,7 +540,10 @@ try {
     body: JSON.stringify({ currentPassword: "correct-horse-battery-1", newPassword: "new-secure-password-2" })
   });
   assert.equal(changedPassword.response.status, 200);
-  assert.equal((await fetch(`${base}/now/api/state`, { headers: { cookie: ownerCookie } })).status, 200);
+  assert.equal(changedPassword.body.authenticated, false);
+  assert.equal(changedPassword.body.reauthRequired, true);
+  assert.match(changedPassword.response.headers.get("set-cookie"), /Max-Age=0/);
+  assert.equal((await fetch(`${base}/now/api/state`, { headers: { cookie: ownerCookie } })).status, 401);
 
   const oldPasswordLogin = await jsonRequest(`${base}/now/api/auth/login`, {
     method: "POST",
@@ -551,6 +555,7 @@ try {
     body: JSON.stringify({ username: "keeper", password: "new-secure-password-2" })
   });
   assert.equal(newPasswordLogin.response.status, 200);
+  ownerCookie = newPasswordLogin.response.headers.get("set-cookie").split(";")[0];
 
   const promoted = await jsonRequest(`${base}/now/api/auth/users/${second.body.user.id}/role`, {
     method: "PATCH",

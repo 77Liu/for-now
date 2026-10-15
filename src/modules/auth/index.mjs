@@ -1,4 +1,12 @@
+/**
+ * 账户凭据、会话签发与账户权限管理。
+ * 建立时间：未知
+ * 状态：active
+ * 边界：密码计算不占持久化写锁；凭据快照必须在提交时复验；改密撤销全部旧会话。
+ */
 import crypto from "node:crypto";
+import { createAuthAdmission, assertAuthRequestActive } from "../../../.build/typescript/backend/modules/auth/admission.mjs";
+import { loadAuthAdmissionConfig } from "../../config/index.mjs";
 import { DEFAULT_RECORD_TIMEZONE } from "../../shared/time/index.mjs";
 
 export const AUTH_DOCUMENT_VERSION = 3;
@@ -84,21 +92,25 @@ export function normalizeAuthDocument(value = {}) {
   return auth;
 }
 
-export function createAuthService({ repository, initializeUserStorage, authRequired, inviteCodeHash }) {
-  const loginAttempts = new Map();
-  const loginQueues = new Map();
+/**
+ * 提供认证与会话管理；密码计算及失败延时在写事务外，签发与撤销在原子提交后生效。
+ */
+export function createAuthService({ repository, initializeUserStorage, authRequired, inviteCodeHash, authAdmission = loadAuthAdmissionConfig({}) }) {
+  const admission = createAuthAdmission(authAdmission);
+  // 合法固定占位散列保证未知账户也执行一次相同算法；不对应任何可登录账户。
+  const dummyHash = `scrypt$${Buffer.alloc(16).toString("base64")}$${Buffer.alloc(64).toString("base64")}`;
+  const credentialSnapshot = user => user ? Object.freeze({
+    id: user.id, username: user.username.toLocaleLowerCase(),
+    passwordHash: user.passwordHash, sessionVersion: versionOf(user.sessionVersion)
+  }) : null;
+  const sameCredentials = (user, snapshot) => Boolean(user && snapshot
+    && user.id === snapshot.id && user.username.toLocaleLowerCase() === snapshot.username
+    && user.passwordHash === snapshot.passwordHash && versionOf(user.sessionVersion) === snapshot.sessionVersion);
+  const invalidCredentials = () => fail(401, "用户名或密码错误", "AUTH_INVALID_CREDENTIALS");
   const replaceDocument = (target, value) => {
     for (const key of Object.keys(target)) delete target[key];
     Object.assign(target, value);
     return target;
-  };
-  const withLoginLock = (key, operation) => {
-    const previous = loginQueues.get(key) || Promise.resolve();
-    const current = previous.catch(() => {}).then(operation);
-    loginQueues.set(key, current);
-    return current.finally(() => {
-      if (loginQueues.get(key) === current) loginQueues.delete(key);
-    });
   };
   const update = mutator => repository.update(auth => {
     replaceDocument(auth, normalizeAuthDocument(auth));
@@ -194,25 +206,36 @@ export function createAuthService({ repository, initializeUserStorage, authRequi
         throw error;
       }
     },
-    async login(input, remoteAddress) {
+    async login(input, remoteAddress, { signal } = {}) {
       if (!authRequired) fail(400, "本机模式无需登录");
-      const username = usernameValue(input.username), password = String(input.password || ""), key = `${remoteAddress}:${username.toLocaleLowerCase()}`;
-      return withLoginLock(key, async () => {
-        const recent = (loginAttempts.get(key) || []).filter(value => Date.now() - value < 15 * 60000);
-        loginAttempts.set(key, recent);
-        if (recent.length >= 8) fail(429, "登录尝试过多，请 15 分钟后再试");
-        const result = await update(async auth => {
-          const user = auth.users.find(item => item.username.toLocaleLowerCase() === username.toLocaleLowerCase());
-          if (!user || !await passwordMatches(password, user.passwordHash)) {
-            recent.push(Date.now());
-            await new Promise(resolve => setTimeout(resolve, 250));
-            fail(401, "用户名或密码错误");
-          }
-          return issueSession(auth, user);
+      if (typeof input?.username !== "string" || typeof input?.password !== "string") fail(400, "请输入用户名和密码");
+      const username = usernameValue(input.username), password = input.password;
+      validateUsername(username);
+      if (password.length > 128 || !password.length) fail(400, "请输入有效密码");
+      const attempt = admission.reserve(remoteAddress, username.toLocaleLowerCase(), signal);
+      try {
+        const auth = normalizeAuthDocument(await repository.read());
+        const snapshot = credentialSnapshot(auth.users.find(item => item.username.toLocaleLowerCase() === username.toLocaleLowerCase()));
+        const release = await admission.acquireKdf(attempt);
+        let matched;
+        try {
+          assertAuthRequestActive(attempt);
+          matched = await passwordMatches(password, snapshot?.passwordHash || dummyHash);
+        }
+        finally { release(); }
+        assertAuthRequestActive(attempt);
+        if (!snapshot || !matched) {
+          attempt.confirmFailure();
+          await admission.delayFailure(attempt);
+          invalidCredentials();
+        }
+        return await update(document => {
+          assertAuthRequestActive(attempt);
+          const current = document.users.find(user => user.id === snapshot.id);
+          if (!sameCredentials(current, snapshot)) invalidCredentials();
+          return issueSession(document, current);
         });
-        loginAttempts.delete(key);
-        return result;
-      });
+      } finally { attempt.settle(); }
     },
     async listUsers(token) {
       accountMode();
@@ -266,20 +289,42 @@ export function createAuthService({ repository, initializeUserStorage, authRequi
         return user;
       });
     },
-    async changePassword(token, input) {
+    async changePassword(token, input, { source, signal } = {}) {
       accountMode();
-      const requester = await requireUser(token), currentPassword = String(input.currentPassword || ""), newPassword = String(input.newPassword || "");
+      const requester = await requireUser(token);
+      const currentPassword = String(input.currentPassword || ""), newPassword = String(input.newPassword || "");
       validatePassword(newPassword);
+      if (!currentPassword.length || currentPassword.length > 128) invalidCredentials();
+      const snapshot = credentialSnapshot(requester);
+      const attempt = admission.reserve(source, snapshot.username, signal);
       const tokenHash = sha256(token || "");
-      return update(async auth => {
-        const user = auth.users.find(item => item.id === requester.id);
-        if (!user) fail(404, "账户不存在");
-        if (!await passwordMatches(currentPassword, user.passwordHash)) fail(403, "当前密码不正确");
-        user.passwordHash = await passwordHash(newPassword);
-        user.updatedAt = now();
-        auth.sessions = auth.sessions.filter(session => session.userId !== user.id || session.tokenHash === tokenHash);
-        return user;
-      });
+      try {
+        const release = await admission.acquireKdf(attempt);
+        let matched, hashed;
+        try {
+          assertAuthRequestActive(attempt);
+          matched = await passwordMatches(currentPassword, snapshot.passwordHash);
+          assertAuthRequestActive(attempt);
+          if (matched) hashed = await passwordHash(newPassword);
+        } finally { release(); }
+        assertAuthRequestActive(attempt);
+        if (!matched) {
+          attempt.confirmFailure();
+          await admission.delayFailure(attempt);
+          invalidCredentials();
+        }
+        return await update(auth => {
+          assertAuthRequestActive(attempt);
+          const authentication = authenticationFromDocument(auth, tokenHash);
+          const user = authentication.user;
+          if (!sameCredentials(user, snapshot)) invalidCredentials();
+          user.passwordHash = hashed;
+          user.sessionVersion = versionOf(user.sessionVersion) + 1;
+          user.updatedAt = now();
+          auth.sessions = auth.sessions.filter(session => session.userId !== user.id);
+          return { authenticated: false, reauthRequired: true };
+        });
+      } finally { attempt.settle(); }
     },
     async logout(token) {
       if (token && authRequired) await update(auth => { auth.sessions = auth.sessions.filter(item => item.tokenHash !== sha256(token)); });
