@@ -10,7 +10,7 @@ export function usageEntryFromAudit(entry) {
   return value && typeof value === "object" && !Array.isArray(value) ? structuredClone(value) : null;
 }
 
-export function createAiAudit({ textLimit, getContext, append, updateUsage, logEvent, beginCall = () => {}, finalizeUsage = (entry, operation) => operation(), now = () => new Date().toISOString(), createId = () => crypto.randomUUID() }) {
+export function createAiAudit({ textLimit, getContext, append, updateUsage, logEvent, beginCall = () => {}, endUninvokedCall = () => {}, finalizeUsage = (entry, operation) => operation(), now = () => new Date().toISOString(), createId = () => crypto.randomUUID() }) {
   const pendingUsage = new Map();
   const pendingAudit = new Map();
   const text = value => {
@@ -114,7 +114,15 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
       await safeLog("system", "ai.log_failed", { level: "error", callId: entry.callId, target: "audit_start", error: errorMetadata(error) });
     }
   };
-  const recordDeepSeekAttempt = async ({ usage, audit, usageMetadata, reservation = null }) => {
+  const recordDeepSeekAttempt = async ({ usage, audit, usageMetadata, reservation = null, invoked = true }) => {
+    if (!invoked) {
+      // 本机可明确证明尚未进入provider：仅终结审计，不写成未知收费调用或消费账户额度。
+      const entry = { ...audit, dispatchState: "not_invoked", persistence: { usage: "not_applicable" } };
+      let auditPersisted = false;
+      try { await record(entry); auditPersisted = true; } catch { queueAudit(entry); }
+      endUninvokedCall(audit.callId || audit.id);
+      return { usagePersisted: false, usageRequired: false, auditPersisted };
+    }
     const usageEntry = deepSeekUsageEntry({ usage, ...usageMetadata });
     const scope = entryScope(audit);
     reservation?.retain?.(usageEntry);

@@ -27,6 +27,10 @@ assert.equal(defaults.port, 4173);
 assert.equal(defaults.version, "development");
 assert.equal(defaults.promptCatalogVersion, "");
 assert.equal(defaults.persistenceBackend, "json");
+assert.equal(defaults.aiQueue.enabled, false);
+assert.ok(Object.isFrozen(defaults.aiQueue));
+assert.throws(() => config({ AI_QUEUE_ENABLED: "1", AI_QUEUE_MAX_OUTSTANDING: "1", AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT: "2" }), /must not exceed/);
+assert.throws(() => config({ AI_QUEUE_MAX_QUEUE_WAIT_MS: "0" }), /positive integer/);
 assert.deepEqual(defaults.features, { incrementalSync: true });
 assert.equal(config({ INCREMENTAL_SYNC_ENABLED: "0" }).features.incrementalSync, false);
 assert.deepEqual(defaults.limits, {
@@ -203,7 +207,9 @@ const { sendJson, bodyJson } = createJsonHttp({ getContext: requestContext.getSt
 const pending = new Set(), consoleMessages = [];
 const originalConsoleError = console.error;
 console.error = message => consoleMessages.push(message);
-let firstEntered, releaseFirst;
+let firstEntered, releaseFirst, waitingRequestEntered;
+let disconnectedSignalObserved = false;
+const waitingRequest = new Promise(resolve => { waitingRequestEntered = resolve; });
 const entered = new Promise(resolve => { firstEntered = resolve; });
 const released = new Promise(resolve => { releaseFirst = resolve; });
 const handler = createRequestHandler({
@@ -219,6 +225,11 @@ const handler = createRequestHandler({
       return res.end('data: {"type":"error"}\n\n');
     }
     if (url.pathname === "/api/disconnect") return res.destroy();
+    if (url.pathname === "/api/ai-wait") {
+      waitingRequestEntered();
+      await new Promise(resolve => current.signal.addEventListener("abort", () => { disconnectedSignalObserved = current.signal.aborted; resolve(); }, { once: true }));
+      return;
+    }
     if (req.method !== "POST") return sendJson(res, 200, {});
     const user = req.headers["x-user"];
     assert.ok(["a", "b"].includes(user));
@@ -270,6 +281,10 @@ try {
   assert.deepEqual(await database.json(), { error: "数据服务暂时不可用，请稍后重试", code: "STORAGE_UNAVAILABLE" });
   assert.equal((await fetch(`${base}/now/api/stream`)).status, 200);
   await assert.rejects(fetch(`${base}/now/api/disconnect`));
+  const abortRequest = new AbortController();
+  const waitingResponse = fetch(`${base}/now/api/ai-wait`, { signal: abortRequest.signal });
+  await waitingRequest; abortRequest.abort(); await assert.rejects(waitingResponse);
+  await Promise.all([...pending]); assert.equal(disconnectedSignalObserved, true, "HTTP disconnect must reach the actual request context signal");
   await Promise.all([...pending]);
   assert.equal(requestContext.getStore(), undefined);
   for (const user of ["a", "b"]) {

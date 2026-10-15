@@ -86,7 +86,7 @@ export function createApiV1Http({ sendJson, getContext, openApi, beforeHandle = 
     },
 
     envelope,
-    errorEnvelope: error => errorEnvelope(error.message || "服务暂时不可用", error.code, error.details),
+    errorEnvelope: error => errorEnvelope(error.message || "服务暂时不可用", error.code, Number.isFinite(error.retryAfterMs) ? { ...(error.details || {}), retryAfterMs: error.retryAfterMs } : error.details),
 
     operationFingerprintErrorDetails(reason) {
       return operationFingerprintDetails(reason, getContext());

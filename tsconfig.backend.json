@@ -21,6 +21,9 @@
     "src/shared/ai-context/index.mts",
     "src/shared/persistence/business-identifiers.mts",
     "src/modules/record-compressions/windows.mts",
-    "src/modules/record-compressions/source-aliases.mts"
+    "src/modules/record-compressions/source-aliases.mts",
+    "src/shared/concurrency/rate-gate.mts",
+    "src/modules/ai/execution-control.mts",
+    "src/modules/ai/dispatch-proof.mts"
   ]
 }
