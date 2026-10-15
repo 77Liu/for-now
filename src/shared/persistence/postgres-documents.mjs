@@ -58,9 +58,15 @@ export async function readAccountDocument(client, accountId, document, fallback 
   const exists = (await client.query("SELECT 1 FROM for_now.account_documents WHERE account_id = $1 AND document = $2", [accountId, document])).rowCount;
   if (!exists) return structuredClone(fallback);
   const actual = await selectMapping(client, "for_now", DOCUMENT_TABLES, "WHERE account_id = $1 AND document = $2", [accountId, document]);
-  const value = rebuildAccountDocument(actual);
-  verifyMapping(actual, mapAccountDocument(accountId, document, value), Object.keys(DOCUMENT_TABLES));
-  return value;
+  try {
+    const value = rebuildAccountDocument(actual);
+    verifyMapping(actual, mapAccountDocument(accountId, document, value), Object.keys(DOCUMENT_TABLES));
+    return value;
+  } catch (cause) {
+    throw Object.assign(new Error("账户文档映射损坏，原数据已保留"), {
+      statusCode: 503, code: "ACCOUNT_DATA_INVALID", recoveryScope: "account", accountId, reasonCode: "ACCOUNT_DOCUMENT_MAPPING_INVALID", cause
+    });
+  }
 }
 
 export async function verifyAccountDocument(client, mapping) {

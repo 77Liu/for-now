@@ -52,7 +52,9 @@ export async function readPostgresStoreObjects(client, accountId) {
     const select = Object.entries(columns).map(([key, column]) => `${column} AS "${key}"`).join(", ");
     mapping[key] = (await client.query(`SELECT ${select} FROM for_now.${table} WHERE account_id = $1`, [accountId])).rows;
   }
-  if (!mapping.fields.length) throw new Error(`No mapped store for account: ${accountId}`);
+  if (!mapping.fields.length) throw Object.assign(new Error("账户存储映射缺失"), {
+    statusCode: 503, code: "ACCOUNT_DATA_INVALID", recoveryScope: "account", accountId, reasonCode: "ACCOUNT_STORE_MAPPING_MISSING"
+  });
   return mapping;
 }
 

@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 // The domain supplies normalization and upgrade policy; the adapter owns I/O and serialization.
 export function createAccountDocumentRepository({
   runtime, name, getFile, readDocument, writeDocument, normalize, emptyDocument,
-  onCommit = null, now = () => new Date().toISOString()
+  onCommit = null, now = () => new Date().toISOString(), assertCommit = () => {}
 }) {
   const queues = new Map();
   const exclusive = operation => {
@@ -22,7 +22,9 @@ export function createAccountDocumentRepository({
       let before, after;
       const result = await runtime.documents.update(name, emptyDocument, async document => {
         if (onCommit) before = structuredClone(document);
+        const original = structuredClone(document);
         const value = await mutator(document);
+        assertCommit(original, document, name);
         if (onCommit) after = structuredClone(document);
         return value;
       }, normalize);
@@ -31,7 +33,9 @@ export function createAccountDocumentRepository({
     }
     return exclusive(async file => {
       const document = normalize(await readDocument(file, emptyDocument)), before = onCommit ? structuredClone(document) : null;
+      const original = structuredClone(document);
       const result = await mutator(document);
+      assertCommit(original, document, name);
       await writeDocument(file, document);
       await onCommit?.(before, document);
       return result;
@@ -40,12 +44,14 @@ export function createAccountDocumentRepository({
   const write = async (value, normalizeBefore = normalize) => {
     if (runtime) {
       const before = await normalizeBefore(await read());
+      assertCommit(before, value, name);
       await runtime.documents.write(name, value);
       await onCommit?.(before, value);
       return;
     }
     return exclusive(async file => {
       const before = await normalizeBefore(await readDocument(file, emptyDocument));
+      assertCommit(before, value, name);
       await writeDocument(file, value);
       await onCommit?.(before, value);
     });
@@ -60,6 +66,7 @@ export function createAccountDocumentRepository({
         await fs.chmod(backup, 0o600);
       }
       const normalized = normalize(original || {});
+      assertCommit(original || {}, normalized, name);
       await writeDocument(file, normalized);
       if (onCommit) await onCommit(normalize(original || {}), normalized);
     });

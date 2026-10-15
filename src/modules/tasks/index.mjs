@@ -518,3 +518,18 @@ export function createTaskLifecycle({ createId, now, hash }) {
     }
   };
 }
+
+/**
+ * 终结已核验的同一任务尝试；账户隔离收尾不改变业务内容或创建新任务。
+ * 已终态、身份或尝试不匹配时保持原状，供恢复和重试幂等复用。
+ * @since unreleased
+ */
+export function cancelExistingTaskForAccountRecovery(tasks, id, attempt, now) {
+  const task = tasks.find(item => item.id === id);
+  if (!task || task.attempt !== attempt || !["queued", "running", "cancelling"].includes(task.status)) return false;
+  task.status = "cancelled";
+  task.error = "账户数据暂不可用，当前任务已停止；修复后可重新提交";
+  task.errorCode = "ACCOUNT_QUARANTINED";
+  task.updatedAt = task.completedAt = now();
+  return true;
+}

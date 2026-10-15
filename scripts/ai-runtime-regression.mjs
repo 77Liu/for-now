@@ -278,7 +278,8 @@ function createHarness({
     }
   };
 
-  const create = () => createAiRuntime({
+  const create = (runtimeOptions = {}) => createAiRuntime({
+    ...runtimeOptions,
     dataRoot: "/data",
     postgresRuntime: { kind: "postgres-double" },
     storagePaths: () => ({
@@ -650,6 +651,25 @@ const deepSeekGeneratorDouble = (options, { events }) => async () => (
     directory: "/accounts/member/logs",
     retentionDays: 30
   });
+}
+
+// F2共享账本先只读核验已有语义；不得将非法金额归零、丢弃事件或改写引用后恢复。
+for (const raw of [
+  { days: [{ key: "2026-10-16", knownCostMicros: "invalid" }] },
+  { events: [{ id: "event", type: "charge", createdAt: "invalid" }] },
+  { days: [{ key: "2026-10-16", users: [{ accountId: "same", calls: 1 }, { accountId: "same", calls: 2 }] }] },
+  { reservations: [{ id: "reservation", accountId: "account", taskId: "task", day: "2026-10-16", month: "2026-09", stages: [{ id: "stage" }] }] }
+]) {
+  const harness = createHarness(); const original = clone(raw);
+  harness.budget.read = async () => clone(raw);
+  await assert.rejects(harness.create({ accountRuntime: { enabled: true } }), /全局预算/);
+  assert.deepEqual(raw, original);
+  assert.equal(harness.budget.calls.length, 0, "invalid ledger must be rejected before recovery writes");
+}
+{
+  const harness = createHarness();
+  harness.budget.read = async () => ({ days: [{ key: "2026-10-16", knownCostMicros: 12 }], reservations: [] });
+  await harness.create({ accountRuntime: { enabled: true } });
 }
 
 console.log("AI runtime regression passed: recovery, wiring, late-bound settings, budget ordering, unknown costs, release and audit usage recovery.");

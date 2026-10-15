@@ -67,6 +67,20 @@ export function loadAuthAdmissionConfig(env = process.env) {
   })));
 }
 
+/** 解析启动时账户恢复参数；隔离开关不允许在运行中旁路资格。
+ * @since unreleased
+ */
+export function loadAccountRecoveryConfig(env = process.env) {
+  const defaults = { concurrency: 1, accountDeadlineMs: 30000, retryCooldownMs: 60000, dependencyProbeMs: 5000 };
+  if (env.ACCOUNT_RECOVERY_ENABLED !== undefined && !["0", "1"].includes(env.ACCOUNT_RECOVERY_ENABLED)) throw new Error("ACCOUNT_RECOVERY_ENABLED must be 0 or 1");
+  return Object.freeze({ enabled: env.ACCOUNT_RECOVERY_ENABLED === "1", ...Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => {
+    const name = `ACCOUNT_RECOVERY_${key.replace(/[A-Z]/g, letter => `_${letter}`).toUpperCase()}`;
+    const value = env[name] === undefined || env[name] === "" ? fallback : Number(env[name]);
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+    return [key, value];
+  })) });
+}
+
 export function loadAppConfig({ rootDir, env = process.env }) {
   const persistenceBackend = env.PERSISTENCE_BACKEND || "json";
   const upstreamOrigin = String(env.UPSTREAM_ORIGIN || "").replace(/\/+$/, "");
@@ -139,6 +153,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
   return Object.freeze({
     internalBudgets: readInternalBudgets(env),
     authAdmission: loadAuthAdmissionConfig(env),
+    accountRecovery: loadAccountRecoveryConfig(env),
     dataDir: path.resolve(rootDir, env.DATA_DIR || "data"),
     port: Number(env.PORT || 4173),
     version: env.APP_VERSION || "development",

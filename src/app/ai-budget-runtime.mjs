@@ -103,7 +103,7 @@ export function deepSeekBudgetStages({
   }));
 }
 
-export function createAiBudgetRuntime({ budget, onRecoveryError = () => {} }) {
+export function createAiBudgetRuntime({ budget, onRecoveryError = () => {}, assertAccountReady = () => {} }) {
   for (const method of ["read", "reserveTask", "startStage", "settleTask", "releaseTask"]) {
     if (typeof budget?.[method] !== "function") {
       throw new TypeError(`AI budget runtime requires budget.${method}()`);
@@ -114,6 +114,7 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {} }) {
   }
 
   async function executeTask(plan, execute) {
+    assertAccountReady();
     if (typeof execute !== "function") {
       throw new TypeError("AI budget runtime execute callback is required");
     }
@@ -165,8 +166,10 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {} }) {
       if (started.has(stage.id)) {
         throw new Error(`AI budget runtime stage "${stage.id}" was already started`);
       }
+      assertAccountReady();
       await budget.startStage({ reservationId: reservation.id, stageId: stage.id });
       started.add(stage.id);
+      assertAccountReady();
       return operation({
         stage,
         reservation,

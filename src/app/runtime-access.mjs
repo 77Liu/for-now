@@ -1,7 +1,9 @@
+import path from "node:path";
 import { withoutReferenceOwnerMetadata } from "./public-state.mjs";
 import { buildAdminSnapshot } from "../../admin-snapshot.mjs";
 import {
   createAuthService,
+  normalizeAuthDocument,
   isOwner
 } from "../modules/auth/index.mjs";
 import {
@@ -18,7 +20,7 @@ import {
   createReadOnlyUpstream,
   createUpstreamProxy
 } from "../http/index.mjs";
-import { createAuthRepository } from "../shared/persistence/index.mjs";
+import { mapAuthDocument, createAuthRepository } from "../shared/persistence/index.mjs";
 import { errorMetadata } from "../shared/observability/index.mjs";
 import { createAccountLifecycle } from "./account-lifecycle.mjs";
 import { createLocalTestRuntime } from "./local-test-runtime.mjs";
@@ -29,6 +31,7 @@ const LOCAL_TEST_SESSION_MAX_AGE_SECONDS = 30 * 60;
 
 export async function createRuntimeAccess({
   appConfig,
+  accountRuntime,
   paths,
   httpLimits,
   clock,
@@ -60,7 +63,8 @@ export async function createRuntimeAccess({
     writeJsonAtomic,
     readStore,
     updateStore,
-    ensureStore
+    ensureStore,
+    validateCurrentStorage
   } = persistence;
   const {
     settingsRepository,
@@ -101,6 +105,8 @@ export async function createRuntimeAccess({
     authRequired,
     postgresRuntime,
     requestStorage,
+    accountRuntime,
+    validateCurrentStorage,
     emptyStore,
     normalizeStore,
     normalizeLlmSettings,
@@ -148,6 +154,7 @@ export async function createRuntimeAccess({
     rewriteResponse: input => localTestHttp.rewriteProxyResponse(input)
   });
   const localTestRuntime = createLocalTestRuntime({
+    runWorkspaceInitialization: operation => accountRuntime?.enabled ? accountRuntime.provision(accountRuntime.currentAccountId(), operation) : operation(),
     enabled: localTestMode,
     upstreamConfigured: Boolean(upstreamOrigin),
     dataDir,
@@ -234,6 +241,10 @@ export async function createRuntimeAccess({
   });
 
   const auditAuthChanges = async (before, after) => {
+    if (accountRuntime?.enabled) {
+      const prior = new Set((before?.users || []).map(user => user.id));
+      for (const user of after?.users || []) if (!prior.has(user.id)) await accountLifecycle.registerCommittedUser(user);
+    }
     const current = requestStorage.getStore() || {};
     let actor = current.user || null;
     if (!actor) {
@@ -274,7 +285,26 @@ export async function createRuntimeAccess({
     inviteCodeHash,
     initializeUserStorage
   });
-  if (authRequired) await authService.migrate();
+  const probeAuth = async () => {
+    const raw = await readAuth();
+    const invalid = () => { throw Object.assign(new Error("认证持久化数据无效，原文件已保留"), { code: "AUTH_STORAGE_INVALID" }); };
+    mapAuthDocument(normalizeAuthDocument(raw));
+    for (const user of raw.users) {
+      if (user.role !== undefined && !["owner", "user"].includes(user.role)) invalid();
+      if (user.sessionVersion !== undefined && (!Number.isSafeInteger(user.sessionVersion) || user.sessionVersion < 1)) invalid();
+      const parts = String(user.passwordHash || "").split("$");
+      if (parts[0] !== "scrypt" || parts.length !== 3 || Buffer.from(parts[1], "base64").length !== 16 || Buffer.from(parts[2], "base64").length !== 64) invalid();
+    }
+    for (const session of raw.sessions) {
+      if (!/^[a-f0-9]{64}$/.test(session.tokenHash) || !Number.isFinite(Date.parse(session.expiresAt))) invalid();
+      if (session.sessionVersion !== undefined && (!Number.isSafeInteger(session.sessionVersion) || session.sessionVersion < 1)) invalid();
+    }
+    return raw;
+  };
+  if (authRequired) {
+    if (accountRuntime?.enabled) await probeAuth();
+    await authService.migrate();
+  }
   const { requestAuthentication, authApi } = createAuthHttp({
     service: authService,
     sendJson,
@@ -290,10 +320,7 @@ export async function createRuntimeAccess({
     if (!authRequired || isOwner(context.user)) return userSettings;
     const owner = (await readAuth()).users.find(isOwner);
     if (!owner) return userSettings;
-    const ownerSettings = await requestStorage.run(
-      { ...context, user: owner, dataDir: userDataDir(owner) },
-      readLlmSettings
-    );
+    const ownerSettings = await aiRuntime.readSharedSettings({ accountId: owner.id, file: path.join(userDataDir(owner), "llm-settings.json") });
     return normalizeLlmSettings({
       ...userSettings,
       provider: ownerSettings.provider,
@@ -315,6 +342,7 @@ export async function createRuntimeAccess({
     proxyToUpstream,
     adminHttp,
     readAuth,
+    probeAuth,
     requestAuthentication,
     authApi
   };

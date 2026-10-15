@@ -159,6 +159,7 @@ export function createRecordCompressionScanObserver({
 
 export function createRuntimeHttpWiring({
   appConfig,
+  accountRuntime,
   releaseVersion,
   paths,
   httpLimits,
@@ -329,7 +330,7 @@ export function createRuntimeHttpWiring({
       const users = appConfig.authRequired
         ? (await readAuth()).users
         : [{ id: "local" }];
-      const eligibleUsers = Array.isArray(users) ? users : [];
+      const eligibleUsers = (Array.isArray(users) ? users : []).filter(user => !accountRuntime?.enabled || accountRuntime.state(user.id)?.status === "ready");
       const globalDay = `${parts.year}-${parts.month}-${parts.day}`;
       const compressionBudgetState = typeof readRecordCompressionBudget === "function"
         ? await readRecordCompressionBudget()
@@ -373,8 +374,10 @@ export function createRuntimeHttpWiring({
         secrets: [],
         route: "background/record-compression"
       });
+      const runAccountScan = (user, operation) => requestStorage.run(contextFor(user), () =>
+        accountRuntime?.enabled ? accountRuntime.withOperation(operation) : operation());
       for (const user of eligibleUsers) {
-        const accountUsage = await requestStorage.run(contextFor(user), async () => {
+        const accountUsage = await runAccountScan(user, async () => {
           const [usage, store] = await Promise.all([readAiUsage(), readStore()]);
           const dailyEntries = (Array.isArray(usage?.entries) ? usage.entries : [])
             .filter(entry => entry?.scene === RECORD_COMPRESSION_TASK_KIND
@@ -455,7 +458,7 @@ export function createRuntimeHttpWiring({
         }
         const slot = parts.hour === "06" ? "morning" : "evening";
         const maxQueued = recordCompressionSlotQueueAllowance(slot, availableQueueAllowance);
-        const scanResult = await requestStorage.run(contextFor(user), () => (
+        const scanResult = await runAccountScan(user, () => (
           runRecordCompressionScan({ asOf: timestamp, slot, maxQueued })
         ));
         waitingBudgetCount += Number.isSafeInteger(scanResult?.waitingBudgetCount)
@@ -578,16 +581,15 @@ export function createRuntimeHttpWiring({
       ? (await readAuth()).users
       : [{ id: "local" }];
     for (const user of users) {
+      if (accountRuntime?.enabled && accountRuntime.state(user.id)?.status !== "ready") continue;
+      const run = async () => { await ensureAuditLogs(); await maybeRunPeriodicAnalysis(); };
       await requestStorage.run({
         user,
         traceId: createId(),
         dataDir: appConfig.authRequired ? userDataDir(user) : paths.dataDir,
         secrets: [],
         route: "background/analysis"
-      }, async () => {
-        await ensureAuditLogs();
-        await maybeRunPeriodicAnalysis();
-      });
+      }, () => accountRuntime?.enabled ? accountRuntime.withOperation(run) : run());
     }
     await pruneLogs(
       path.join(paths.dataDir, "logs"),

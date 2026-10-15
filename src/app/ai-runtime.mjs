@@ -1,3 +1,4 @@
+import { normalizePersistedDocument } from "../shared/persistence/index.mjs";
 import nodeCrypto from "node:crypto";
 import { promises as nodeFs } from "node:fs";
 import nodePath from "node:path";
@@ -11,6 +12,7 @@ import {
   createLlmSettingsService,
   defaultLlmSettings,
   normalizeAiUsage,
+  normalizeAiBudgetState,
   normalizeLlmSettings,
   resolveOfficialProviderPricing,
   usageEntryFromAudit
@@ -40,6 +42,7 @@ const DEFAULT_BILLING_GAP = "运行时计量单位或合同单价尚未完成映
 export async function createAiRuntime({
   dataRoot,
   postgresRuntime = null,
+  accountRuntime = null,
   storagePaths,
   requestStorage,
   readStoredJson,
@@ -91,6 +94,39 @@ export async function createAiRuntime({
     runtime: postgresRuntime,
     dataRoot
   });
+  const validateGlobalBudget = async () => {
+    const raw = await aiBudgetRepository.read();
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("全局预算数据无效");
+    for (const key of ["days", "months", "reservations", "events"]) {
+      if (Object.hasOwn(raw, key) && !Array.isArray(raw[key])) throw new Error("全局预算集合无效");
+    }
+    const normalized = normalizeAiBudgetState(raw);
+    // 对照真实消费者的规范化结果验证已有字段；缺失旧字段允许补默认，但不得归零、丢行或改写引用。
+    const identity = item => item && typeof item === "object" ? item.id ?? item.key ?? item.accountId ?? item.reservationId : undefined;
+    const verify = (before, after, field = "budget") => {
+      const invalid = () => { throw new Error("全局预算数据无法无损读取"); };
+      if (Array.isArray(after)) {
+        if (!Array.isArray(before) || before.length !== after.length) invalid();
+        const keyed = before.length > 0 && before.every(item => identity(item) !== undefined);
+        if (keyed && new Set(before.map(identity)).size !== before.length) invalid();
+        for (let index = 0; index < before.length; index++) {
+          const current = keyed ? after.find(item => identity(item) === identity(before[index])) : after[index];
+          if (current === undefined) invalid();
+          verify(before[index], current, field);
+        }
+      } else if (after && typeof after === "object") {
+        if (!before || typeof before !== "object" || Array.isArray(before)) invalid();
+        for (const key of Object.keys(after)) if (Object.hasOwn(before, key)) verify(before[key], after[key], key);
+      } else if (typeof after === "number") {
+        if ((typeof before !== "number" && typeof before !== "string") || String(before).trim() === "" || !Number.isFinite(Number(before)) || Number(before) !== after) invalid();
+      } else if (["createdAt", "startedAt"].includes(field) && before !== after && typeof before === "string" && before && after) {
+        if (!Number.isFinite(Date.parse(before)) || Date.parse(before) !== Date.parse(after)) invalid();
+      } else if (before !== after) invalid();
+    };
+    verify(raw, normalized);
+
+  };
+  if (accountRuntime?.enabled) await validateGlobalBudget();
   const aiBudgetService = createAiBudgetServiceImpl({
     repository: aiBudgetRepository,
     policy: budgetPolicy,
@@ -103,6 +139,7 @@ export async function createAiRuntime({
   });
   const aiBudgetRuntime = createAiBudgetRuntimeImpl({
     budget: aiBudgetService,
+    assertAccountReady: () => accountRuntime?.assertDispatch(),
     onRecoveryError: (error, details) => logEvent("system", "ai.budget_recovery_failed", {
       level: "error",
       ...details,
@@ -110,6 +147,7 @@ export async function createAiRuntime({
     })
   });
   const aiBudgetRecovery = await aiBudgetRuntime.recover();
+  if (accountRuntime?.enabled && aiBudgetRecovery.failures.length) throw new Error("全局预算恢复失败，拒绝就绪");
   if (aiBudgetRecovery.scanned || aiBudgetRecovery.failures.length) {
     await logEvent("system", "ai.budget_recovery_completed", {
       level: aiBudgetRecovery.failures.length ? "error" : "info",
@@ -127,6 +165,7 @@ export async function createAiRuntime({
     readDocument: readStoredJson,
     writeDocument: writeJsonAtomic,
     normalize: normalizeLlmSettings,
+    assertCommit: (before, after, name) => accountRuntime?.assertCommit(before, after, name),
     emptyDocument: defaultLlmSettings,
     onCommit: auditChanges
   });
@@ -146,6 +185,7 @@ export async function createAiRuntime({
     readDocument: readStoredJson,
     writeDocument: writeJsonAtomic,
     normalize: normalizeAiUsage,
+    assertCommit: (before, after, name) => accountRuntime?.assertCommit(before, after, name),
     emptyDocument: {}
   });
   const aiUsageService = createAiUsageServiceImpl({
@@ -171,6 +211,8 @@ export async function createAiRuntime({
       entry
     ),
     updateUsage: updateAiUsage,
+    beginCall: id => accountRuntime?.beginAuditCall(id),
+    finalizeUsage: (entry, operation) => accountRuntime ? accountRuntime.finalizeUsage(entry, operation) : operation(),
     logEvent,
     now,
     createId
@@ -234,6 +276,8 @@ export async function createAiRuntime({
   );
 
   async function meteredProviderCall(details, invoke, summarize, budgetContext = null) {
+    accountRuntime?.assertDispatch();
+    const guardedInvoke = (...args) => { accountRuntime?.assertDispatch(); return invoke(...args); };
     const {
       budgeted = true,
       estimatedCostCny,
@@ -244,7 +288,7 @@ export async function createAiRuntime({
       0,
       Number(estimatedCostCny ?? budgetStage.estimatedCostCny) || 0
     );
-    if (!budgeted) return aiAudit.providerCall(auditDetails, invoke, summarize);
+    if (!budgeted) return aiAudit.providerCall(auditDetails, guardedInvoke, summarize);
 
     const execute = async execution => {
       const accountReservation = await reserveAiAttempt({
@@ -267,7 +311,7 @@ export async function createAiRuntime({
       const auditedCall = () => aiAudit.providerCall({
         ...auditDetails,
         reservation
-      }, invoke, summarize);
+      }, guardedInvoke, summarize);
       let stageStarted = false;
       try {
         return await execution.runStage(
@@ -343,6 +387,7 @@ export async function createAiRuntime({
     readDocument: readStoredJson,
     writeDocument: writeJsonAtomic,
     normalize: value => value,
+    assertCommit: (before, after, name) => accountRuntime?.assertCommit(before, after, name),
     emptyDocument: null,
     onCommit: auditChanges
   });
@@ -364,6 +409,7 @@ export async function createAiRuntime({
     getContext: () => requestStorage.getStore(),
     reserveAttempt: reserveAiAttempt,
     gate: aiGate,
+    assertAccountReady: () => accountRuntime?.assertDispatch(),
     sceneGates: { [RECORD_COMPRESSION_TASK_KIND]: recordCompressionGate },
     audit: aiAudit,
     executeBudgetTask: executeDeepSeekBudgetTask,
@@ -420,8 +466,30 @@ export async function createAiRuntime({
     await recoverAiUsageFromAuditLogs();
   }
 
+  /**
+   * 读取已由认证层确认的Owner共享模型settings；仅此固定文档，不授予Owner业务store、写入或新派发资格。
+   * 独立只读校验失败直接报错，不能以默认配置覆盖或掩盖损坏。
+   * @since unreleased
+   */
+  async function readSharedSettings({ accountId, file }) {
+    try {
+    const value = postgresRuntime
+      ? await postgresRuntime.readSharedSettings(accountId)
+      : JSON.parse(await fileSystem.readFile(file, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw Object.assign(new Error("共享模型配置不可用"), { code: "SHARED_MODEL_SETTINGS_INVALID" });
+    for (const key of ["profiles", "scenarios", "sceneEfforts"]) {
+      if (value[key] != null && (typeof value[key] !== "object" || Array.isArray(value[key]))) throw Object.assign(new Error("共享模型配置不可用"), { code: "SHARED_MODEL_SETTINGS_INVALID" });
+    }
+    return normalizePersistedDocument(value, normalizeLlmSettings);
+    } catch (cause) {
+      throw Object.assign(new Error("共享模型配置不可用", { cause }), { code: "SHARED_MODEL_SETTINGS_INVALID", statusCode: 503 });
+    }
+  }
+
   return Object.freeze({
     aiGate,
+    validateGlobalBudget,
+    readSharedSettings,
     recordCompressionGate,
     deepSeekProvider,
     aiBudgetRepository,

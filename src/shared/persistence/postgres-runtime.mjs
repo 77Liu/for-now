@@ -42,10 +42,11 @@ function validateRecordCompressionQuota(value) {
   return structuredClone(value);
 }
 
-async function transaction(client, operation, readOnly = false) {
+async function transaction(client, operation, readOnly = false, beforeCommit = () => {}) {
   await client.query(readOnly ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");
   try {
     const result = await operation();
+    beforeCommit();
     await client.query("COMMIT");
     return result;
   } catch (error) {
@@ -131,7 +132,10 @@ export async function createPostgresRuntime({
   requireMigration = false,
   authRequired = null,
   readOnly = false,
-  onPoolError = () => {}
+  onPoolError = () => {},
+  authorizeAccount = () => {},
+  assertAccountCommit = () => {},
+  onAccountFailure = () => {}
 }) {
   if (!connectionString || !authConnectionString || !budgetConnectionString) {
     throw invalid("DATABASE_URL, AUTH_DATABASE_URL and AI_BUDGET_DATABASE_URL are required");
@@ -149,6 +153,10 @@ export async function createPostgresRuntime({
   const dataPool = makePool(connectionString, "for-now-data-runtime");
   const authPool = makePool(authConnectionString, "for-now-auth-runtime");
   const budgetPool = makePool(budgetConnectionString, "for-now-ai-budget-runtime", 2);
+  const connect = async pool => {
+    try { return await pool.connect(); }
+    catch (error) { onAccountFailure(error); throw error; }
+  };
   const context = new AsyncLocalStorage(), authContext = new AsyncLocalStorage();
   let applicationClient = null;
   const close = async () => {
@@ -173,7 +181,7 @@ export async function createPostgresRuntime({
       throw invalid("Runtime data/auth/AI budget roles must be distinct and use the same database server");
     }
     if (authRequired === true) {
-      const probe = await dataPool.connect();
+      const probe = await connect(dataPool);
       try {
         await transaction(probe, async () => {
           await probe.query("SELECT set_config('app.account_id', 'local', true)");
@@ -183,7 +191,7 @@ export async function createPostgresRuntime({
         }, true);
       } finally { probe.release(); }
     }
-    const client = await authPool.connect();
+    const client = await connect(authPool);
     try {
       await transaction(client, async () => {
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended('for-now-bundle', 0))");
@@ -210,18 +218,20 @@ export async function createPostgresRuntime({
   };
   const bind = (client, id) => client.query("SELECT set_config('app.account_id', $1, true)", [id]);
   const withAccountLock = async operation => {
+    authorizeAccount();
     const id = accountId(), current = context.getStore();
     if (current?.active && current.id === id) return operation(current.client, id);
-    const client = await dataPool.connect();
+    const client = await connect(dataPool);
     let destroy = false;
     try {
       // Session lock intentionally survives each explicit commit (attachment
       // cleanup persists its intent before touching external binary storage).
       await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [accountKey(id)]);
       const scope = { id, client, active: true, pending: Promise.resolve() };
-      try { return await context.run(scope, () => operation(client, id)); }
+      try { authorizeAccount(); return await context.run(scope, () => operation(client, id)); }
       finally { await scope.pending; scope.active = false; }
-    } finally {
+    } catch (error) { onAccountFailure(error); throw error; }
+    finally {
       try { await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [accountKey(id)]); }
       catch { destroy = true; }
       client.release(destroy);
@@ -231,19 +241,23 @@ export async function createPostgresRuntime({
     const current = context.getStore();
     const pending = current.pending.then(() => transaction(client, async () => {
       await bind(client, id);
+      authorizeAccount();
       return operation(client, id);
-    }));
+    }, false, authorizeAccount));
     current.pending = pending.catch(() => {});
     return pending;
   });
   const readAccount = async operation => {
-    const id = accountId(), client = await dataPool.connect();
+    authorizeAccount();
+    const id = accountId(), client = await connect(dataPool);
     try {
       return await transaction(client, async () => {
         await bind(client, id);
+        authorizeAccount();
         return operation(client, id);
-      }, true);
-    } finally { client.release(); }
+      }, true, authorizeAccount);
+    } catch (error) { onAccountFailure(error); throw error; }
+    finally { client.release(); }
   };
   const markAccount = async (client, id) => {
     const result = await client.query(
@@ -258,12 +272,14 @@ export async function createPostgresRuntime({
       const raw = await readAccountDocument(client, id, name, fallback);
       const document = normalizePersistedDocument(raw, normalize);
       const result = await mutator(document);
+      assertAccountCommit(raw, document, name);
       await writeAccountDocument(client, id, name, preserveDocumentExtensions(raw, document));
       await markAccount(client, id);
       return result;
     }),
     write: (name, value) => accountTransaction(async (client, id) => {
       const before = await readAccountDocument(client, id, name, null);
+      assertAccountCommit(before, value, name);
       await writeAccountDocument(client, id, name, preserveDocumentExtensions(before, value));
       await markAccount(client, id);
     })
@@ -276,7 +292,16 @@ export async function createPostgresRuntime({
     getContext = () => ({})
   }) => {
     const afterCommit = Symbol.for("for-now.after-commit");
-    const readRaw = (client, id) => readPostgresStoreObjects(client, id).then(rebuildStoreObjects);
+    const readRaw = async (client, id) => {
+      const mapping = await readPostgresStoreObjects(client, id);
+      try { return rebuildStoreObjects(mapping); }
+      catch (cause) {
+        const error = Object.assign(new Error("账户存储映射损坏，原数据已保留"), {
+          statusCode: 503, code: "ACCOUNT_DATA_INVALID", recoveryScope: "account", accountId: id, reasonCode: "ACCOUNT_STORE_MAPPING_INVALID", cause
+        });
+        onAccountFailure(error); throw error;
+      }
+    };
     const transact = operation => withAccountLock(async (client, id) => {
       const initial = await transaction(client, async () => {
         await bind(client, id);
@@ -290,6 +315,7 @@ export async function createPostgresRuntime({
       );
       let before = structuredClone(document), revision = initial.revision;
       const commit = async () => {
+        assertAccountCommit(before, document, "store");
         synchronizePersistenceMetadata(before, document, now, { context: getContext() || {} });
         const mapping = mapStoreObjects(id, document);
         const next = await transaction(client, async () => {
@@ -315,7 +341,7 @@ export async function createPostgresRuntime({
               AND NOT EXISTS (SELECT 1 FROM for_now.store_attachment_refs r WHERE r.account_id = i.account_id AND r.path = i.path)
           `, [id]);
           return result.rows[0].revision;
-        });
+        }, false, authorizeAccount);
         revision = next;
         const context = getContext();
         if (context?.clientOperationId) context.operationCommitted = true;
@@ -339,6 +365,14 @@ export async function createPostgresRuntime({
       return structuredClone(response);
     });
     return {
+      validate: ({ allowCreate = false } = {}) => readAccount(async (client, id) => {
+        const exists = (await client.query("SELECT 1 FROM for_now.accounts WHERE account_id = $1", [id])).rowCount;
+        if (!exists && allowCreate) return null;
+        if (!exists) throw Object.assign(new Error("迁移账户缺失，拒绝空初始化"), {
+          statusCode: 503, code: "ACCOUNT_DATA_INVALID", recoveryScope: "account", accountId: id, reasonCode: "ACCOUNT_MIGRATION_MISSING"
+        });
+        return readRaw(client, id);
+      }),
       read: () => readAccount(async (client, id) => publicPersistenceDocument(preparePersistenceDocument(
         normalizePersistedDocument(await readRaw(client, id), normalize),
         now
@@ -399,7 +433,7 @@ export async function createPostgresRuntime({
   };
   const aiBudget = {
     read: async () => {
-      const client = await budgetPool.connect();
+      const client = await connect(budgetPool);
       try {
         return await transaction(client, async () => {
           const row = (await client.query(
@@ -411,11 +445,11 @@ export async function createPostgresRuntime({
             recordCompressionQuota: validateRecordCompressionQuota(row.recordCompressionQuota)
           };
         }, true);
-      } finally { client.release(); }
+      } catch (error) { onAccountFailure(error); throw error; } finally { client.release(); }
     },
     update: async mutator => {
       if (typeof mutator !== "function") throw new TypeError("AI budget update requires a mutator");
-      const client = await budgetPool.connect();
+      const client = await connect(budgetPool);
       try {
         return await transaction(client, async () => {
           const row = (await client.query(
@@ -435,17 +469,18 @@ export async function createPostgresRuntime({
           );
           return result;
         });
-      } finally { client.release(); }
+      } catch (error) { onAccountFailure(error); throw error; } finally { client.release(); }
     }
   };
   const auth = {
     read: async () => {
-      const client = await authPool.connect();
+      const client = await connect(authPool);
       try { return await transaction(client, () => readAuthDocument(client), true) || { version: 1, users: [], sessions: [] }; }
+      catch (error) { onAccountFailure(error); throw error; }
       finally { client.release(); }
     },
     update: async mutator => {
-      const client = await authPool.connect();
+      const client = await connect(authPool);
       try {
         return await transaction(client, async () => {
           await client.query("SELECT pg_advisory_xact_lock(hashtextextended('for-now-bundle', 0))");
@@ -458,7 +493,7 @@ export async function createPostgresRuntime({
           }
           return result;
         });
-      } finally { client.release(); }
+      } catch (error) { onAccountFailure(error); throw error; } finally { client.release(); }
     },
     provision: (id, store, values) => {
       const current = authContext.getStore();
@@ -508,7 +543,7 @@ export async function createPostgresRuntime({
     })
   };
   const claimApplication = async onLost => {
-    const client = await authPool.connect();
+    const client = await connect(authPool);
     try {
       const result = await client.query("SELECT pg_try_advisory_lock(hashtextextended('for-now-application', 0)) AS acquired");
       if (!result.rows[0].acquired) throw invalid("Only one application instance per database is supported by the current scheduler and global quotas");
@@ -520,5 +555,16 @@ export async function createPostgresRuntime({
     dataPool.query("SELECT 1"), authPool.query("SELECT 1"), budgetPool.query("SELECT 1"),
     ...(applicationClient ? [applicationClient.query("SELECT 1")] : [])
   ]);
-  return { createStoreRepository, documents, aiBudget, auth, attachments, ready, claimApplication, close };
+  /**
+   * 读取认证层已确认Owner的固定settings文档；独立只读事务不授予业务store、写入或新派发资格。
+   * 调用者须独立校验配置，损坏时拒绝，不写默认值。
+   * @since unreleased
+   */
+  const readSharedSettings = async id => {
+    const client = await connect(dataPool);
+    try { return await transaction(client, async () => { await bind(client, id); return readAccountDocument(client, id, "settings", null); }, true); }
+    catch (error) { onAccountFailure(error); throw error; }
+    finally { client.release(); }
+  };
+  return { createStoreRepository, documents, aiBudget, auth, attachments, ready, claimApplication, close, readSharedSettings };
 }

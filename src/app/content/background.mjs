@@ -70,6 +70,7 @@ export async function enqueueContentImageUnderstanding(backgroundAi, work) {
 
 export function createContentBackground({
   repository,
+  cleanupExistingTask = null,
   annotationService,
   contentAttachments,
   perception,
@@ -112,6 +113,7 @@ export function createContentBackground({
   });
   const backgroundAi = createBackgroundAi({
     repository,
+    cleanupExistingTask,
     tasks: createTaskLifecycle({ createId: createBusinessId, now, hash }),
     notifications: createNotificationService({ createId: createBusinessId, now }),
     now,

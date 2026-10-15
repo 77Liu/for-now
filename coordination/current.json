@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 345,
-  "updated_at": "2026-10-15T19:05:45.442Z",
+  "revision": 351,
+  "updated_at": "2026-10-15T19:47:21.228Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "IN_PROGRESS",
-    "phase": "F1本地功能切片审查通过；准备集成与F2"
+    "phase": "F2本地审查通过，准备提交与正常集成"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "58ba88",
-      "source": "已批准九项方案与统一集成设计已正常合入develop；本轮实施从此创建feat/v0.5.16-reliability。"
+      "commit": "c470c2",
+      "source": "已批准方案58ba88与F1认证切片677ea9正常整合；develop实际并发专项通过。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -85,7 +85,7 @@
     }
   },
   "blockers": [],
-  "next_action": "提交并正常合入F1到develop，在集成候选执行局部验证；然后从最新develop启动F2账户恢复隔离。",
+  "next_action": "主控本地提交F2原子切片并正常合入develop，核对实际集成对象后从最新develop创建F5实施分支；保留所有分支引用，不推送或发布。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -424,7 +424,7 @@
       },
       "conclusion": "F6-F9四份独立方案补齐；F1-F5共享边界微调；K1-K6责任、共享文件互斥及九项接入波次写入现有总体设计。9份结构检查和130个本地引用检查通过。线上同步需求复用recvxyrQv7utyV并关联v0.5.16及既有同步交付。",
       "limitations": [
-        "尚未实施或测得P75；移动真机与生产耗时基线待实施时获取。",
+        "F9同步/按钮P75与移动真机/生产耗时基线尚待相应切片实施；F1具体已验边界见v0516-F1-local-review。",
         "F3仅阶段A，B/C不纳入；没有新增工作树、业务代码、付费调用或发布动作。"
       ],
       "refs": [
@@ -433,9 +433,9 @@
         "artifacts/local/requirements-current.json"
       ],
       "snapshot": {
-        "requirements_revision": 563,
+        "requirements_revision": 564,
         "versions_revision": 44,
-        "deliveries_revision": 142,
+        "deliveries_revision": 143,
         "counts": {
           "requirements": 321,
           "versions": 39,
@@ -449,11 +449,13 @@
         "kind": "source_manifest",
         "branch": "feat/v0.5.16-reliability",
         "base_commit": "58ba88",
-        "receipt": "artifacts/local/v0516-f1-acceptance-current.json"
+        "receipt": "artifacts/local/v0516-f1-acceptance-current.json",
+        "commit": "677ea9",
+        "integration_commit": "c470c2"
       },
-      "conclusion": "主控独立核对实际12文件差分及JSON/PG读写、HTTP、会话退出消费者；凭据复验、计算许可、错误429/503与全会话撤销正确，批准本地功能切片接入。回执12文件摘要均与当前源码匹配，14项执行记录exit0。",
+      "conclusion": "主控独立核对实际12文件差分及JSON/PG读写、HTTP、会话退出消费者；凭据复验、计算许可、错误429/503与全会话撤销正确，批准本地功能切片接入。回执12文件摘要均与当前源码匹配，14项执行记录exit0。 实现677ea9正常合入develop c470c2，合并后真实集成对象auth-concurrency专项通过。 主控对固定集成提交c470c2完成真实Chrome账户表单：错旧密码仍可纠正，成功改密进入完整登录门、清Cookie、拒绝旧会话，新密码可重登，浏览器运行异常0。 主控200次正常+200次六错登干扰的本地真实scrypt对照：P95增量78.3ms，当前Mac/串行内存适配器场景通过，不外推生产PG。",
       "limitations": [
-        "仅本地功能接入；真实浏览器、负载分位和生产观测未验。",
+        "本地功能、桌面Chrome及限定本地负载通过；iOS、生产同规格PG负载/共享NAT校准和生产观测未验。",
         "生产看板/写锁指标与F2/F5组合必须在版本发布门前补齐或明确处置，不声称整版可发布。"
       ],
       "refs": [
@@ -461,7 +463,43 @@
         "artifacts/local/v0516-auth-baseline-current.json",
         "artifacts/local/v0516-auth-after-current.json",
         "artifacts/local/v0516-sync-baseline-current.json",
-        "artifacts/local/v0516-f1-acceptance-current.json"
+        "artifacts/local/v0516-f1-acceptance-current.json",
+        "artifacts/local/v0516-f1-browser-current.json",
+        "artifacts/local/v0516-f1-load-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F2-startup-baseline",
+      "object": {
+        "kind": "git_commit",
+        "commit": "c470c2"
+      },
+      "conclusion": "主控在实际隔离JSON服务中注册A/B/C，停机后仅损坏B的store.json；重启退出1、readyz不可连接，坏数据原字节保留。确认修复前单账户损坏阻塞整服务。",
+      "limitations": [
+        "仅修复前复现，不证明F2新实现已通过；F2源码仍在返修和验证。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f2-baseline-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F2-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-account-recovery",
+        "base_commit": "c470c2",
+        "receipt": "artifacts/local/v0516-f2-acceptance-current.json"
+      },
+      "conclusion": "主控独立审查真实恢复/JSON及PG持久化重建/HTTP/后台媒体/预算审计/退出链路，31文件摘要全部匹配；修复共享故障传播、真实排空、受限计费、坏账本保留及未知文件I/O缺口。开发者受影响专项及实际PG16.14应用通过；主控固定副本JSON与入口门禁通过，批准本地功能接入。",
+      "limitations": [
+        "默认ACCOUNT_RECOVERY_ENABLED=0，验收显式开启；没有生产开启或发布授权。",
+        "主控固定副本happy路径结果在末轮I/O返修前取得，相关逻辑未变；两文件I/O变化经独立差分审查与实际权限专项关闭。",
+        "本版本有状态快照门、设备/负载/生产观测尚未完成；F1生产负载与指标限制仍保留。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F2-账户恢复故障隔离-技术方案.md",
+        "artifacts/local/v0516-f2-acceptance-current.json",
+        "artifacts/local/v0516-f2-independent-current.json"
       ]
     }
   ],

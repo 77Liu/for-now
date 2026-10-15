@@ -10,7 +10,7 @@ export function usageEntryFromAudit(entry) {
   return value && typeof value === "object" && !Array.isArray(value) ? structuredClone(value) : null;
 }
 
-export function createAiAudit({ textLimit, getContext, append, updateUsage, logEvent, now = () => new Date().toISOString(), createId = () => crypto.randomUUID() }) {
+export function createAiAudit({ textLimit, getContext, append, updateUsage, logEvent, beginCall = () => {}, finalizeUsage = (entry, operation) => operation(), now = () => new Date().toISOString(), createId = () => crypto.randomUUID() }) {
   const pendingUsage = new Map();
   const pendingAudit = new Map();
   const text = value => {
@@ -46,11 +46,11 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
   const auditKey = entry => `${entry.callId || entry.id}:${entry.status || entry.type || "unknown"}`;
   const queueAudit = (entry, scope = entryScope(entry)) => pendingAudit.set(`${scope}\u0000${auditKey(entry)}`, { entry, scope });
   const pendingCount = (values, scope) => [...values].filter(item => item.scope === scope).length;
-  const persistUsage = entry => updateUsage(value => {
+  const persistUsage = entry => finalizeUsage(entry, () => updateUsage(value => {
     if (!Array.isArray(value.entries)) value.entries = [];
     const callId = entry.callId || entry.id;
     if (!value.entries.some(item => (item.callId || item.id) === callId)) value.entries.push(entry);
-  });
+  }));
   const usageRecoveredAudit = pending => ({
     id: `${pending.entry.callId}:usage-recovered`,
     type: "ai.usage_recovered",
@@ -105,6 +105,7 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
     };
   };
   const start = async entry => {
+    beginCall(entry.callId || entry.id);
     const started = { ...entry, status: "started" };
     try {
       await record(started);
