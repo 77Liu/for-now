@@ -53,6 +53,36 @@ export function createAnnotationModel({ getSnapshot, getAccountId, storage, isRo
       ? (snapshot[ROOT_COLLECTIONS[type]] || []).find(item => item.id === id) || null
       : null;
   };
+  /** 当前真实来源及已存在版本；缺失版本不猜测，后续以原文与范围复验。 @since unreleased */
+  function selectionSource(rootKey, targetKey) {
+    const root = rootFor(rootKey);
+    if (!root) return null;
+    const { type } = parseAnnotationRootKey(rootKey);
+    let source = root, value;
+    if (type === "thought") {
+      if (targetKey === `question:${root.id}`) value = root.content;
+      else {
+        source = (getSnapshot()?.thoughts || []).find(item => item.relatedTo === root.id && `${item.type}:${item.id}` === targetKey);
+        if (source) value = source.content;
+        else {
+          source = root.followUps?.find(item => [`followup-question:${item.id}`, `followup-answer:${item.id}`].includes(targetKey));
+          if (source) value = targetKey.startsWith("followup-question:") ? source.question : source.answer;
+        }
+      }
+    } else if (type === "chat") value = ["message", "answer"].includes(targetKey) ? root[targetKey] : undefined;
+    else if (type === "journal" && targetKey !== "content") {
+      source = root.reflections?.find(item => `reflection:${item.id}` === targetKey);
+      value = source?.content;
+    } else if (type === "book") {
+      if (targetKey === "description") value = root.description;
+      else {
+        source = root.notes?.find(item => `note:${item.id}` === targetKey);
+        value = source?.content;
+      }
+    } else if (targetKey === "content") value = root.content;
+    if (typeof value !== "string") return null;
+    return { value, version: Number.isFinite(source?.version) ? source.version : null };
+  }
   /**
    * 按稳定ID合并确认回执，保留更新版本及并发回复。创建仅可接入提交时仍相同的根和集合，
    * 返回null要求调用方权威重读，禁止复活已删除/未完整加载目标。
@@ -185,6 +215,7 @@ export function createAnnotationModel({ getSnapshot, getAccountId, storage, isRo
   return Object.freeze({
     ui,
     rootFor,
+    selectionSource,
     mergeConfirmed,
     mergeReply,
     counts: value => projectAnnotationCounts(rootFor(value), {

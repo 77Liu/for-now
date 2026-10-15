@@ -477,3 +477,89 @@ private extension XCUIElement {
         }
     }
 }
+
+/// 隔离本机的原生选字功能验收；不继承默认启动生产地址的用例，不代表Safari/PWA/真机性能。
+final class MobileAnnotationFunctionalTests: XCTestCase {
+    private var application: XCUIApplication?
+
+    override func tearDownWithError() throws {
+        application?.terminate()
+        XCUIDevice.shared.orientation = .portrait
+    }
+
+    func testNativeLongPressAndAnnotationSave() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let rawURL = environment["CIKE_F8_TEST_URL"],
+              let url = URL(string: rawURL), ["http", "https"].contains(url.scheme ?? ""),
+              let host = url.host, host.hasPrefix("192.168."),
+              environment["CIKE_F8_ISOLATED"] == "1" else {
+            throw XCTSkip("Requires an explicitly isolated private-LAN local F8 fixture URL")
+        }
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        application = app
+        app.launchEnvironment["CIKE_IOS_PERF_ENABLED"] = "1"
+        app.launchEnvironment["CIKE_IOS_PERF_ISOLATED"] = "1"
+        app.launchEnvironment["CIKE_IOS_PERF_LAN_HTTP"] = "1"
+        app.launchEnvironment["CIKE_IOS_PERF_TEST_URL"] = rawURL
+        app.launchEnvironment["CIKE_IOS_PERF_SHADOW_USERNAME"] = "isolated-f8-fixture"
+        app.launchEnvironment["CIKE_IOS_PERF_SHADOW_PASSWORD"] = "isolated-f8-fixture"
+        app.launch()
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 20))
+        let text = web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "原生选择第一行")).firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 30), "Isolated thought fixture was not loaded")
+        let start = text.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.15))
+        let end = text.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.8))
+        start.press(forDuration: 1.2, thenDragTo: end)
+        // 此隔离fixture固定为SE3、375pt竖屏；沿前轮实际截图中的蓝色结束手柄拖到下一段。
+        guard abs(app.frame.width - 375) < 1 else { throw XCTSkip("Cross-line handle fixture requires the prepared SE3 375pt simulator") }
+        let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        let handle = origin.withOffset(CGVector(dx: 310, dy: 182))
+        let nextParagraph = origin.withOffset(CGVector(dx: 300, dy: 340))
+        handle.press(forDuration: 0.4, thenDragTo: nextParagraph)
+        let comment = web.buttons["评论"]
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "f8-native-long-press-and-drag"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertTrue(comment.waitForExistence(timeout: 10), "Native press/drag did not expose annotation action")
+        XCTAssertTrue(comment.isHittable, "Annotation action is not reachable after native selection")
+        comment.tap()
+        let input = web.textViews.firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        input.tap()
+        if let value = input.value as? String, !value.isEmpty,
+           value != "写下评论，输入 @神鸡 可同时发起回答…" {
+            input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.utf16.count))
+        }
+        let marker = "F8-native-\(UUID().uuidString.prefix(8))"
+        input.typeText(marker)
+        let submit = web.buttons["评论"].firstMatch
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        submit.tap()
+        let saved = web.staticTexts[marker]
+        XCTAssertTrue(saved.waitForExistence(timeout: 15), "Confirmed annotation did not render")
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        components.path = "/api/v1/thought-chains/native-f8-root"
+        components.query = nil
+        let completed = expectation(description: "Persisted annotation readback")
+        var readback: [String: Any]?
+        URLSession.shared.dataTask(with: components.url!) { data, _, _ in
+            if let data, let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                readback = body["data"] as? [String: Any]
+            }
+            completed.fulfill()
+        }.resume()
+        wait(for: [completed], timeout: 15)
+        let annotations = try XCTUnwrap(readback?["annotations"] as? [[String: Any]])
+        let item = try XCTUnwrap(annotations.first { $0["text"] as? String == marker })
+        let quote = try XCTUnwrap(item["quote"] as? String)
+        XCTAssertTrue(quote.contains("第二行"), "Native end-handle drag did not cover the explicit second-paragraph marker")
+        let metric = XCTAttachment(string: "Native gesture persisted quote UTF16 length: \(quote.utf16.count); start: \(item["start"] ?? "unknown"); rawStart: \(item["rawStart"] ?? "unknown")")
+        metric.name = "f8-native-readback"
+        metric.lifetime = .keepAlways
+        add(metric)
+    }
+}

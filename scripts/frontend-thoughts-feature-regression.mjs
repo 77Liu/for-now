@@ -315,6 +315,8 @@ const thoughtController = createThoughtsFeatureController({
     window: thoughtWindow
   },
 });
+assert.equal(thoughtController.hasActiveAnnotationSelection(), false, "未加载门面不保护不存在的选区");
+assert.equal(thoughtController.resumeSelectionRender(), false, "未加载不触发异步模块/重绘");
 assert.equal(thoughtController.isAnnotationRootLoaded("root-new"), false, "公开loader未加载时不声称批注完整");
 await thoughtController.mount({
   root: thoughtRoot,

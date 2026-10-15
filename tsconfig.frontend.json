@@ -17,6 +17,7 @@
     "public/frontend/shared/reference-summary.mts",
     "public/frontend/shared/business-id-remap.mts",
     "public/frontend/shared/thought-page-window.mts",
-    "public/frontend/shared/annotation-counts.mts"
+    "public/frontend/shared/annotation-counts.mts",
+    "public/frontend/shared/annotation-selection.mts"
   ]
 }

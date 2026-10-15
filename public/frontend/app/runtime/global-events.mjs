@@ -240,7 +240,7 @@ $$("[data-active-date]").forEach(input => input.addEventListener("change", async
 $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",async event=>{
   const fileInput=event.currentTarget,editor=fileInput.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
   if(editor?.dataset.contentImageEditor==="capture")return;
-  try{delete editor.closest("form")?.dataset.requestId;await setContentImageFiles(editor.dataset.contentImageEditor,fileInput.files);fileInput.value="";if(status)status.textContent=""}
+  try{delete editor.closest("form")?.dataset.requestId;await setContentImageFiles(editor.dataset.contentImageEditor,fileInput.files);fileInput.value="";if(status&&editor.dataset.contentImageEditor!=="comment")status.textContent=""}
   catch(error){
     fileInput.value="";
     const message=presentError(error,{

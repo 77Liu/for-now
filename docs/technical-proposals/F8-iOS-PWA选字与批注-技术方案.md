@@ -4,7 +4,7 @@
 |---|---|
 |需求编号|[recvxlWptXiRfk](https://my.feishu.cn/base/MwUibJRQKaae9hsY9lMceQBYnAh?table=tblHW2FjQpyJlSck&record=recvxlWptXiRfk)|
 |Owner / 协作角色|Owner；主控负责契约与接入，主开发负责实施；暂无新增角色派发|
-|状态 / 版本 / 日期|有前提的Owner评审稿，r1，2026-10-16；尚未实施|
+|状态 / 版本 / 日期|r1，2026-10-16|
 |范围|iOS-PWA选字与批注；复用当前系统，不扩大为全站重构|
 
 ## 评审摘要
@@ -359,10 +359,21 @@ F7提供阅读恢复，F8只管理选区与菜单，不抢滚动/焦点恢复所
 
 # 4. 开发测试
 
-本章为计划，尚未执行应用验证。
+## 4.1 开发明细
 
-## 4.1 开发明细（必填；评审时留空，开发结束后填写）
+以 `e79d06` 为实施基线。状态由唯一控制面维护；本机唯一回执 `artifacts/local/v0516-f8-acceptance-current.json` 保存实际源码六位摘要、命令、有效证据、原失败和限制，不作为额外状态或报告链。
 
+- 真实shell一直挂载document；本片不将监听根冒认为已证明线上根因。document选择事件合并为单个待处理回调，卸载清理；菜单触摸前复用 `pendingSelection` 固定普通值快照，原生选区坍塌仍可打开表单，不全局阻止系统选择、复制或触摸滚动。
+- 新增 TypeScript 正文片段/UTF-16端口，DOM正文、原生范围及锚点使用同一规范；排除按钮等控件，公式按既有 `data-tex` 原文计入偏移，不重复计算KaTeX视觉与隐藏树。公式内部或跨公式无法精确对应的视觉选区明确不支持，不能改写quote凑通过；公式前后、段落/列表/表格及emoji沿真实消费者核对。
+- 优先使用既有 `rawStart/start`，唯一精确上下文作恢复；重复词没有可靠位置不猜首项。快照绑定账户/session、语义页面、稳定根/目标及真实来源；非正文版本递增仍以精确原文和范围复验。思绪仅位置query不当作页面变化。
+- 活跃原生Range沿公开index/loader/controller接入实际thought view重绘保护；表单快照不阻止普通ACK呈现。释放后消费既有延后patch/consume凭据，离页清理，不新增阅读状态源。已提交数据事实与当前页面UI收尾分离，迟到ACK不能清新页面选区或草稿。
+- 失效锚点与废弃整份草稿区分：`reselect`保留文字/图片及明确重新选取入口，不触发既有media消费者的 `invalid→abandon`；过期quote不可提交。重复恢复不覆盖正在输入或在途快照，也不反复提示。
+- 主控接入审查确认aside评论编辑器不在既有main form重置范围；会话重置现明确清当前DOM的文字、选区、提示及请求/在途标识，恢复提交按钮，不删除owner持久草稿。既有专项验证A残留→resetSession→B打开及旧响应不写新账户。
+- 本机Chrome覆盖原生Range/触摸模拟、同文刷新、公式后重复词、真实POST及持久回读、坍塌退出与旧页ACK/新页草稿；主控独立Chrome亦验证真实KaTeX后第二处重复词start/rawStart一致、1POST、无内部快照字段泄入HTTP。具体适用源码及后续补证见同一回执。
+- iOS27.0 SE3模拟器、375pt竖屏WKWebView：XCUITest真实长按→蓝色结束手柄拖至第二段→评论→键盘输入→保存→HTTP回读通过，41 UTF-16引用覆盖明确第二段标记，start/rawStart均2。截图仍有系统Copy菜单；未用JS造Range。测试URL为临时本机HTTPS反代，临时自签证书仅加入该模拟器信任，不改业务SceneDelegate或全局Node/系统信任。
+- 补齐图片change的真实竞争闭包：仅comment成功回调不再清批注域的新警告，其他编辑器保持原行为；source失效时图片仍可恢复。原生恢复为reselect而非整份草稿abandon。
+- 原失败保留：首次xctestrun环境注入层级不符导致skip；用例误找“发送”导致失败；private-LAN HTTP非secure源未提供randomUUID，未保存，换本机HTTPS夹具验证，不修改业务ID实现。单行8字符原生PASS不能替代后续跨段41字符PASS。
+- 不宣称Safari、安装PWA、真机、生产、全站500ms分位或整版发布门通过。没有后端/schema、依赖、默认配置、Git或生产操作；后续F9调度不在本片实施。
 
 
 ## 4.2 测试方案（必填）
