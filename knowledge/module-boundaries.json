@@ -1376,7 +1376,8 @@
       "publicEntry": "public/frontend/features/annotations/index.mjs",
       "allowedDependencies": [
         "frontend.ai-task-status",
-        "frontend.annotation-counts"
+        "frontend.annotation-counts",
+        "frontend.annotation-selection"
       ],
       "owns": {
         "data": [
@@ -3068,6 +3069,23 @@
       "owns": {
         "data": [
           "stateless confirmed annotation projection and loaded/unknown count labels"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-annotations-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.annotation-selection",
+      "type": "shared",
+      "root": "public/frontend/shared/annotation-selection.mts",
+      "publicEntry": "public/frontend/shared/annotation-selection.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "native annotation text/UTF16 range mapping, atomic formula boundary"
         ],
         "routes": []
       },

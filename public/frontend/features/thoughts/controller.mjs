@@ -148,6 +148,7 @@ export function createThoughtsFeatureController({
   });
   const thoughtView = createThoughtView({
     getSnapshot: data.getSnapshot,
+    hasActiveSelection: container => annotations.hasActiveSelection?.(container) || false,
     getActiveDate: crossDomain.getActiveDate,
     isFullRouteStateLoaded: data.isFullRouteStateLoaded,
     contentState: viewPort.contentState,
@@ -388,6 +389,7 @@ export function createThoughtsFeatureController({
     if (!current) return false;
     operations.resetPaging();
     readingState.invalidate();
+    thoughtView.clearSelectionRender();
     activation = null;
     current.unlink();
     platform.clearTimer(searchTimer);
@@ -517,6 +519,10 @@ export function createThoughtsFeatureController({
       }
     },
     isAnnotationRootLoaded,
+    /** 当前实际选区是否占用本挂载正文；公开给后续同步保护，不另建选区状态。 @since unreleased */
+    hasActiveAnnotationSelection: () => Boolean(activation && annotations.hasActiveSelection?.(activation.root)),
+    /** 释放原生选区后结算同一视图暂缓的呈现/ACK，不跨挂载恢复旧页面。 @since unreleased */
+    resumeSelectionRender: () => activation ? thoughtView.flushSelectionRender() : false,
     patchTarget: target => activation ? thoughtView.patchTarget(target) : false,
     reconcileRoute: operations.reconcileRoute
   });

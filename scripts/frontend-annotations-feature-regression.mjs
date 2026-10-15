@@ -182,6 +182,7 @@ const requestGate = deferred();
 const toasts = [];
 let frame = 0;
 const cancelledFrames = [];
+let persistentDraftClears = 0;
 const controller = createAnnotationsFeatureController({
   data: {
     getSnapshot: () => snapshot,
@@ -193,12 +194,12 @@ const controller = createAnnotationsFeatureController({
     openSelectionQuote() {}
   },
   media: {
-    resetDraft() {},
+    resetDraft() { persistentDraftClears += 1; },
     startDraft() {},
     persistDraft: async () => {},
     submitDraft: async () => ({ uploadedPaths: [], attachmentPaths: [] }),
     buildPayload: value => value,
-    clearDraft: async () => {},
+    clearDraft: async () => { persistentDraftClears += 1; },
     discardUploads: async () => {},
     uncertainSubmission: () => false,
     contentImagesMarkup: () => ""
@@ -258,7 +259,22 @@ document.dispatch("click", new FakeAction({
 }));
 await flush();
 
+document.elements["comment-text"].value = "账户A未提交的私密评论";
+document.elements["comment-status"].textContent = "账户A的提交提示";
+document.elements["comment-quote"].textContent = "账户A的选区";
+Object.assign(document.elements["comment-composer"].dataset, {
+  requestId: "account-a-request", assistantClientRequestId: "account-a-assistant",
+  annotationSubmission: "account-a-submission"
+});
+const oldSubmit = { disabled: true };
+document.elements["comment-composer"].querySelector = selector => selector === 'button[type="submit"]' ? oldSubmit : null;
 controller.resetSession();
+assert.equal(document.elements["comment-text"].value, "", "session reset clears private aside composer text");
+assert.equal(document.elements["comment-status"].textContent, "");
+assert.equal(document.elements["comment-quote"].textContent, "");
+assert.deepEqual(document.elements["comment-composer"].dataset, {}, "old account request ownership must not survive reset");
+assert.equal(document.elements["comment-composer"].hidden, true);
+assert.equal(oldSubmit.disabled, false, "old submission must not disable the next account composer");
 accountId = "account-b";
 snapshot = {
   thoughts: [{
@@ -286,6 +302,11 @@ assert.equal(document.count("click"), 0);
 assert.equal(window.count("scroll"), 0);
 assert.ok(cancelledFrames.length > 0, "session reset must cancel pending layout frames");
 assert.equal(secondDispose(), false);
+controller.mount({ root: document });
+controller.openPanel("thought:root");
+assert.equal(document.elements["comment-text"].value, "", "account B opening a panel must not inherit account A text");
+assert.equal(persistentDraftClears, 0, "session DOM reset must preserve owner-scoped persistent drafts");
+controller.unmount();
 
 console.log("Frontend annotations feature checks passed: repeat mount cleanup, session reset and late-account response isolation.");
 
@@ -316,4 +337,31 @@ console.log("Frontend annotations feature checks passed: repeat mount cleanup, s
   assert.equal(projectAnnotationCounts(root, { complete: false }).replyCount, null);
   assert.equal(projectAnnotationCounts({ annotations: [], annotationDrift: [] }).threadCount, 0);
   assert.equal(projectAnnotationCounts(root, { targetKey: "another" }).threadCount, 0);
+}
+
+// F8规范锚点优先真实rawStart；重复原文没有唯一可信位置时不猜第一处。
+{
+  const { annotationAnchorOffset } = await import("../public/frontend/features/annotations/index.mjs");
+  const source = "前重复中😀重复尾";
+  assert.equal(annotationAnchorOffset(source, { quote: "重复", start: 1, rawStart: 6 }), 6);
+  assert.equal(annotationAnchorOffset(source, { quote: "重复", start: 100 }), null);
+  assert.equal(annotationAnchorOffset(source, { quote: "重复", contextBefore: "😀", contextAfter: "尾" }), 6);
+  assert.equal(annotationAnchorOffset(source, { quote: "😀", start: 0 }), 4);
+}
+
+// F8锚点过期不等于废弃整份草稿：实际消费者只会对invalid调用abandon。
+{
+  const context = { selection: { rootKey: "thought:root", targetKey: "question:root", start: 0, end: 2, quote: "旧文", sourceValue: "旧文", sourceVersion: 1 }, text: "需要恢复的评论" };
+  const restored = controller.restoreCommentDraft(context);
+  assert.equal(restored, "reselect");
+  assert.notEqual(restored, "invalid", "source失效不能触发content-media-runtime的整份abandon");
+  assert.equal(document.elements["comment-text"].value, context.text);
+  assert.match(document.elements["comment-status"].textContent, /文字和图片草稿已保留/);
+  const restoredContext = controller.commentDraftContext();
+  assert.equal(restoredContext.selection.phase, "invalid");
+  assert.equal(restoredContext.text, context.text);
+  assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(restoredContext)).selection, "host"), false);
+  const feedback = toasts.length;
+  assert.equal(controller.restoreCommentDraft(context), true);
+  assert.equal(toasts.length, feedback, "同一失效草稿重复恢复不反复弹提示");
 }

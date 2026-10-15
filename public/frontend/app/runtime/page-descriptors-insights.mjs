@@ -66,6 +66,7 @@ export function installInsightsDescriptors(descriptors, ports) {
         tagTargets:tagCommentableTargets,
         applyAnchors:applyCommentAnchors,
         scheduleLayout:scheduleAnnotationLineCounts,
+        hasActiveSelection:container=>runtime.annotationsController?.hasActiveSelection(container)||false,
         openPanel:openCommentPanel,
         rootKey:commentRootKey
       },

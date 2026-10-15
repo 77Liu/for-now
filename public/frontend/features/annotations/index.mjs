@@ -16,3 +16,5 @@ export {
 export { createAnnotationsFeatureController } from "./controller.mjs";
 
 export { projectAnnotationCounts, annotationCountLabel } from "../../../generated/annotation-counts.mjs";
+
+export { annotationText, annotationRangeValue, annotationAnchorOffset } from "../../../generated/annotation-selection.mjs";

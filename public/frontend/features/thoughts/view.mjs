@@ -14,6 +14,7 @@ function requireFunction(value, name) {
 
 export function createThoughtView({
   getSnapshot,
+  hasActiveSelection = () => false,
   getActiveDate,
   isFullRouteStateLoaded,
   contentState,
@@ -358,8 +359,22 @@ export function createThoughtView({
     return true;
   }
 
+  let deferredRender = false;
+  const deferredPatches = new Map();
+  function clearSelectionRender() { deferredRender = false; deferredPatches.clear(); }
+  /** 选区释放后消费原ACK凭据并用当前快照呈现；凭据随现有挂载清理，不保存第二份业务/阅读状态。 @since unreleased */
+  function flushSelectionRender() {
+    if (!surface || hasActiveSelection(surface)) return false;
+    const patches = [...deferredPatches.values()];
+    deferredPatches.clear();
+    const needed = deferredRender;
+    deferredRender = false;
+    for (const target of patches) patchTarget(target);
+    return needed ? render() : patches.length > 0;
+  }
   function render(extraOpen = {}) {
     if (!surface || !route) return false;
+    if (hasActiveSelection(surface)) { deferredRender = true; return false; }
     renderToken = readingState.beginRender();
     if (renderedScope !== renderToken.scope) expandedContent.clear();
     const position = renderedScope === renderToken.scope ? captureReadingPosition(surface) : null;
@@ -433,6 +448,12 @@ export function createThoughtView({
 
   function patchTarget(target) {
     if (!surface || !route) return false;
+    if (hasActiveSelection(surface)) {
+      const key = JSON.stringify([target.targetId, target.consumeFollowUp?.kind || "", target.consumeFollowUp?.followUpId || ""]);
+      deferredPatches.set(key, target);
+      deferredRender = true;
+      return true;
+    }
     renderToken = readingState.beginRender();
     if (renderedScope !== renderToken.scope) expandedContent.clear();
     const position = renderedScope === renderToken.scope ? captureReadingPosition(surface) : null;
@@ -502,6 +523,7 @@ export function createThoughtView({
 
   return Object.freeze({
     mount(root, nextRoute, result) {
+      clearSelectionRender();
       surface = root;
       updateRoute(nextRoute, result);
     },
@@ -510,6 +532,7 @@ export function createThoughtView({
     syncOverflow,
     toggleExpanded,
     clear() {
+      clearSelectionRender();
       audioLifecycle?.dispose(surface);
       expandedContent.clear();
       renderedScope = "";
@@ -528,6 +551,8 @@ export function createThoughtView({
       query = String(value || "");
     },
     patchTarget,
+    flushSelectionRender,
+    clearSelectionRender,
     applySavedFollowUp,
     chains: mode => createThoughtChains(getSnapshot().thoughts, mode || sortMode),
     findChain: id => createThoughtChains(getSnapshot().thoughts, sortMode)

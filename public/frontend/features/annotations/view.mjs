@@ -1,3 +1,4 @@
+import { annotationText, annotationTextSegments, annotationRangeValue, annotationAnchorOffset } from "../../../generated/annotation-selection.mjs";
 import { annotationCountLabel } from "../../../generated/annotation-counts.mjs";
 import { pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
 import { annotationMenuItems, annotationPresentation, groupAnnotationLineCounts, sortAnnotationItemsByPosition } from "./presentation.mjs";
@@ -19,7 +20,11 @@ export function createAnnotationView({
   requestFrame,
   cancelFrame,
   matchesMedia,
-  isMounted
+  isMounted,
+  selectionScope = () => "",
+  selectionPageKey = () => "",
+  onSelectionReleased = () => {},
+  containsSelectionHost = () => true
 }) {
   const { ui } = model; let lineFrame = 0;
   const frames = new Set();
@@ -56,32 +61,16 @@ export function createAnnotationView({
     return counts;
   }
 
-  function textNodes(container) {
-    const walker = document.createTreeWalker(container, window.NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (!node.nodeValue?.length) return window.NodeFilter.FILTER_REJECT;
-        const parent = node.parentElement;
-        if (!parent || parent.closest("button, textarea, input")
-          || parent.closest('.katex-html[aria-hidden="true"]')) {
-          return window.NodeFilter.FILTER_REJECT;
-        }
-        return window.NodeFilter.FILTER_ACCEPT;
-      }
-    });
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-    return nodes;
-  }
-  const textContent = container => textNodes(container)
-    .map(node => node.nodeValue)
-    .join("");
+  const textContent = container => annotationText(container);
 
   function wrapRange(container, start, end, rootKey, annotationId, kind = "comment") {
     let offset = 0;
-    for (const node of textNodes(container)) {
+    for (const segment of annotationTextSegments(container)) {
+      const { node } = segment;
       const nodeStart = offset;
-      const nodeEnd = offset + node.nodeValue.length;
+      const nodeEnd = offset + segment.text.length;
       offset = nodeEnd;
+      if (segment.atomic) continue;
       if (end <= nodeStart || start >= nodeEnd) continue;
       const from = Math.max(0, start - nodeStart);
       const to = Math.min(node.nodeValue.length, end - nodeStart);
@@ -111,13 +100,9 @@ export function createAnnotationView({
         `.comment-anchor[data-annotation-id="${escapeSelector(annotation.id)}"]`
       )) return;
       const text = textContent(element);
-      let start = Number(annotation.start) || 0;
-      let end = Number(annotation.end) || start;
-      if (text.slice(start, end) !== annotation.quote) {
-        start = text.indexOf(annotation.quote);
-        end = start + annotation.quote.length;
-      }
-      if (start >= 0 && end > start) {
+      const start = annotationAnchorOffset(text, annotation);
+      const end = start === null ? null : start + annotation.quote.length;
+      if (start !== null && end !== null && end > start) {
         wrapRange(element, start, end, rootKey, annotation.id, annotation.kind);
       }
     });
@@ -143,13 +128,9 @@ export function createAnnotationView({
         .sort((left, right) => right.start - left.start);
       for (const annotation of annotations) {
         const text = textContent(element);
-        let start = Number(annotation.start) || 0;
-        let end = Number(annotation.end) || start;
-        if (text.slice(start, end) !== annotation.quote) {
-          start = text.indexOf(annotation.quote);
-          end = start + annotation.quote.length;
-        }
-        if (start >= 0 && end > start) {
+        const start = annotationAnchorOffset(text, annotation);
+        const end = start === null ? null : start + annotation.quote.length;
+        if (start !== null && end !== null && end > start) {
           wrapRange(element, start, end, rootKey, annotation.id, annotation.kind);
         }
       }
@@ -215,60 +196,100 @@ export function createAnnotationView({
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
     const range = selection.getRangeAt(0);
-    const startElement = range.startContainer.nodeType === 3
-      ? range.startContainer.parentElement
-      : range.startContainer;
-    const endElement = range.endContainer.nodeType === 3
-      ? range.endContainer.parentElement
-      : range.endContainer;
-    const startTarget = startElement?.closest?.(".commentable");
-    const endTarget = endElement?.closest?.(".commentable");
-    if (!startTarget || startTarget !== endTarget) return null;
-    const quote = selection.toString().trim();
-    if (!quote || quote.length > 1000) return null;
-    const prefix = document.createRange();
-    prefix.selectNodeContents(startTarget);
-    prefix.setEnd(range.startContainer, range.startOffset);
-    const raw = selection.toString();
-    const start = prefix.toString().length + raw.length - raw.trimStart().length;
-    return {
-      rootKey: startTarget.dataset.commentRoot,
-      targetKey: startTarget.dataset.commentTarget,
-      start,
-      end: start + quote.length,
-      quote,
-      rect: range.getBoundingClientRect()
-    };
+    const element = node => node.nodeType === 3 ? node.parentElement : node;
+    const host = element(range.startContainer)?.closest?.(".commentable");
+    if (!host || host !== element(range.endContainer)?.closest?.(".commentable")
+      || !host.getClientRects().length || !containsSelectionHost(host)) return null;
+    const value = annotationRangeValue(document, host, range);
+    const source = model.selectionSource(host.dataset.commentRoot, host.dataset.commentTarget);
+    if (!value || !source || Object.hasOwn(model.rootFor(host.dataset.commentRoot) || {}, "blockCount")) return null;
+    return { ...value, rootKey: host.dataset.commentRoot, targetKey: host.dataset.commentTarget,
+      rect: Object.fromEntries(["left", "top", "right", "bottom", "width", "height"].map(key => [key, range.getBoundingClientRect()[key]])), scope: selectionScope(),
+      pageKey: selectionPageKey(), sourceVersion: source.version, sourceValue: source.value, phase: "captured" };
+  }
+  function selectionHost(selection) {
+    if (!selection) return null;
+    return queryAll(`.commentable[data-comment-root="${escapeSelector(selection.rootKey)}"][data-comment-target="${escapeSelector(selection.targetKey)}"]`)
+      .find(host => host.isConnected && host.getClientRects().length && containsSelectionHost(host)) || null;
+  }
+  /** 当前快照仍属于原页面和真实来源；DOM按稳定目标读取，表单快照不依赖已重绘的旧Element。 @since unreleased */
+  function isSelectionCurrent(selection = ui.pendingSelection) {
+    if (!selection || selection.phase === "invalid" || ui.pendingSelection !== selection || selection.scope !== selectionScope()) return false;
+    const source = model.selectionSource(selection.rootKey, selection.targetKey), host = selectionHost(selection);
+    return Boolean(source && host && source.value === selection.sourceValue
+      && textContent(host).slice(selection.start, selection.end) === selection.quote);
+  }
+  /** 只撤销旧选区归属，保留用户输入供重新选取；释放时通知现有页面重绘端口。 @since unreleased */
+  function invalidateSelection(message = "", { persist = true } = {}) {
+    const previous = ui.pendingSelection;
+    if (persist && previous && ["composing", "submitting"].includes(previous.phase)) void persistCommentDraft();
+    ui.pendingSelection = message && previous ? { ...previous, rect: undefined, phase: "invalid" } : null;
+    const tools = query("#selection-tools");
+    if (tools) tools.hidden = true;
+    if (message) {
+      const status = query("#comment-status");
+      if (status) status.textContent = message;
+      const composer = query("#comment-composer");
+      if (composer) composer.hidden = false;
+    }
+    if (previous) onSelectionReleased();
+  }
+  /** 供真实重绘消费者保护当前宿主；源变则放行刷新并保留输入，不永久显示旧正文。 @since unreleased */
+  function hasActiveSelection(container) {
+    const pending = ui.pendingSelection;
+    if (pending && pending.phase !== "invalid" && !isSelectionCurrent(pending)) {
+      invalidateSelection("选区来源已变化，输入已保留，请重新选择正文。");
+      return false;
+    }
+    const active = document.activeElement;
+    if (active?.matches?.("textarea,input,[contenteditable=true]") && active.getClientRects?.().length) return false;
+    const found = selectionValue();
+    if (!found) {
+      if (pending?.phase === "captured") invalidateSelection();
+      return false;
+    }
+    if (!pending || pending.phase === "invalid") ui.pendingSelection = found;
+    const host = selectionHost(found);
+    return Boolean(host && (!container || container.contains(host)));
   }
   function showSelectionTools() {
     if (!isMounted()) return;
+    const tools = query("#selection-tools"), previous = ui.pendingSelection;
     const found = selectionValue();
-    const tools = query("#selection-tools");
-    if (!found) {
-      if (tools) tools.hidden = true;
+    if (found && previous && ui.panelOpen && ["composing", "submitting"].includes(previous.phase)
+      && ["rootKey", "targetKey", "start", "end", "quote"].every(key => previous[key] === found[key])) {
+      onSelectionReleased();
       return;
     }
+    if (!found && previous && ["menu", "composing", "submitting"].includes(previous.phase)) {
+      if (!isSelectionCurrent(previous)) invalidateSelection("选区来源已变化，输入已保留，请重新选择正文。");
+      if (tools && previous.phase !== "menu") tools.hidden = true;
+      onSelectionReleased();
+      return;
+    }
+    if (!found) { invalidateSelection(); return; }
+    if (previous && ["composing", "submitting"].includes(previous.phase)) void persistCommentDraft();
     ui.pendingSelection = found;
     tools.hidden = false;
     const viewport = window.visualViewport;
-    const left = viewport?.offsetLeft || 0;
-    const top = viewport?.offsetTop || 0;
-    const width = viewport?.width || window.innerWidth;
-    const height = viewport?.height || window.innerHeight;
-    const x = Math.max(left + 8, Math.min(
-      left + width - tools.offsetWidth - 8,
-      found.rect.left + found.rect.width / 2 - tools.offsetWidth / 2
-    ));
+    const left = viewport?.offsetLeft || 0, top = viewport?.offsetTop || 0;
+    const width = viewport?.width || window.innerWidth, height = viewport?.height || window.innerHeight;
+    const x = Math.max(left + 8, Math.min(left + width - tools.offsetWidth - 8,
+      found.rect.left + found.rect.width / 2 - tools.offsetWidth / 2));
     const above = found.rect.top - tools.offsetHeight - 9;
-    const y = above >= top + 8
-      ? above
-      : Math.min(top + height - tools.offsetHeight - 8, found.rect.bottom + 9);
+    const y = above >= top + 8 ? above : Math.min(top + height - tools.offsetHeight - 8, found.rect.bottom + 9);
     tools.style.left = `${x}px`;
     tools.style.top = `${Math.max(top + 8, y)}px`;
   }
-  function hideSelectionTools() {
+  function hideSelectionTools({ preserve = false } = {}) {
     const tools = query("#selection-tools");
     if (tools) tools.hidden = true;
+    if (!preserve && ui.pendingSelection?.phase === "captured") invalidateSelection();
+  }
+  /** 菜单触摸前固定既有快照，焦点坍塌不能改换目标；不阻止系统触摸/选择。 @since unreleased */
+  function retainSelectionForMenu() {
+    if (!isSelectionCurrent()) showSelectionTools();
+    if (isSelectionCurrent()) ui.pendingSelection.phase = "menu";
   }
 
   function menuMarkup(annotation) {
@@ -373,8 +394,8 @@ export function createAnnotationView({
   }
   function closePanel() {
     queryAll("#comment-panel [data-shenji-form]").forEach(model.stashAssistantDraft);
-    void persistCommentDraft();
     setPanelVisibility(false);
+    void persistCommentDraft();
     hideSelectionTools();
     window.getSelection()?.removeAllRanges();
   }
@@ -505,48 +526,78 @@ export function createAnnotationView({
   function commentDraftContext() {
     if (!ui.pendingSelection) return null;
     return {
-      selection: { ...ui.pendingSelection },
+      selection: { ...ui.pendingSelection, rect: undefined, scope: undefined },
+      panelOpen: ui.panelOpen,
       text: query("#comment-text")?.value || "",
       requestId: query("#comment-composer")?.dataset.requestId || "",
       assistantClientRequestId:
         query("#comment-composer")?.dataset.assistantClientRequestId || ""
     };
   }
+  /**
+   * 恢复纯值草稿；页面未就绪返回false，锚点过期新增reselect结果供原消费者保留文字/图片而非abandon。
+   * 同页活跃表单优先于旧持久快照，失效quote保持不可提交。
+   */
   function restoreCommentDraft(context) {
     const selection = context?.selection;
     if (!selection) return "invalid";
+    if (selection.pageKey != null && selection.pageKey !== selectionPageKey()) return false;
+    // 同页恢复不能覆盖正在写的新输入，也不能更换在途提交的快照身份。
+    if (ui.pendingSelection && ["composing", "submitting"].includes(ui.pendingSelection.phase)
+      && isSelectionCurrent()) return true;
     const root = model.rootFor(selection.rootKey);
-    const target = root ? query(
-      `.commentable[data-comment-root="${escapeSelector(selection.rootKey)}"]`
-      + `[data-comment-target="${escapeSelector(selection.targetKey)}"]`
-    ) : null;
-    if (!root || !target) return false;
-    const source = textContent(target);
-    const start = source.slice(selection.start, selection.end) === selection.quote
-      ? selection.start
-      : source.indexOf(selection.quote);
-    if (start < 0) return "invalid";
-    ui.pendingSelection = {
-      ...selection,
-      start,
-      end: start + selection.quote.length
-    };
+    if (root && Object.hasOwn(root, "blockCount")) return false;
+    const target = root ? selectionHost(selection) : null;
+    const current = model.selectionSource(selection.rootKey, selection.targetKey);
+    const valid = Boolean(target && current
+      && textContent(target).slice(selection.start, selection.end) === selection.quote
+      && (selection.sourceValue != null ? selection.sourceValue === current.value
+        : selection.sourceVersion == null || selection.sourceVersion === current.version));
+    const repeatedInvalid = ui.pendingSelection?.phase === "invalid"
+      && ui.pendingSelection.rootKey === selection.rootKey && query("#comment-text")?.value === context.text;
+    ui.pendingSelection = { ...selection, scope: selectionScope(),
+      sourceVersion: valid ? current.version : selection.sourceVersion,
+      sourceValue: valid ? current.value : selection.sourceValue, phase: valid ? "composing" : "invalid" };
     ui.activeRootKey = selection.rootKey;
-    ui.panelOpen = true;
+    ui.panelOpen = context.panelOpen !== false;
     query("#comment-text").value = context.text || "";
     const form = query("#comment-composer");
-    if (context.requestId) form.dataset.requestId = context.requestId;
-    if (context.assistantClientRequestId) {
-      form.dataset.assistantClientRequestId = context.assistantClientRequestId;
+    delete form.dataset.requestId;
+    delete form.dataset.assistantClientRequestId;
+    if (valid) {
+      if (context.requestId) form.dataset.requestId = context.requestId;
+      if (context.assistantClientRequestId) form.dataset.assistantClientRequestId = context.assistantClientRequestId;
     }
     renderPanel();
+    if (!valid) {
+      form.hidden = false;
+      query("#comment-status").textContent = "原选区已失效，文字和图片草稿已保留；请重新选择正文继续。";
+      return repeatedInvalid ? true : "reselect";
+    }
     return true;
   }
+
   function resetDom() {
     for (const selector of ["#comment-panel", "#comment-panel-reopen",
       "#selection-tools", "#annotation-line-counts"]) {
       const element = query(selector);
       if (element) element.hidden = true;
+    }
+    // 会话边界只清理当前DOM，不触及按owner保存的持久草稿。
+    const composer = query("#comment-composer");
+    if (composer) {
+      composer.hidden = true;
+      delete composer.dataset.requestId;
+      delete composer.dataset.assistantClientRequestId;
+      delete composer.dataset.annotationSubmission;
+      const submit = composer.querySelector('button[type="submit"]');
+      if (submit) submit.disabled = false;
+    }
+    const text = query("#comment-text");
+    if (text) text.value = "";
+    for (const selector of ["#comment-status", "#comment-quote"]) {
+      const element = query(selector);
+      if (element) element.textContent = "";
     }
     const list = query("#comment-panel-list");
     if (list) list.replaceChildren();
@@ -565,6 +616,10 @@ export function createAnnotationView({
     cancelLayout,
     showSelectionTools,
     hideSelectionTools,
+    isSelectionCurrent,
+    invalidateSelection,
+    retainSelectionForMenu,
+    hasActiveSelection,
     closePanel,
     renderPanel,
     refreshCounts,
