@@ -299,9 +299,9 @@ assert.deepEqual(
     response.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: "本机隔离验证回答", citations: [] }) }, finish_reason: "stop" }], usage: { prompt_tokens: 2, completion_tokens: 1 } }));
   });
   await new Promise(resolve => provider.listen(0, "127.0.0.1", resolve));
-  const keys = ["DATA_DIR", "PORT", "AUTH_REQUIRED", "INVITE_CODE_HASH", "APP_BASE_PATH", "ACCOUNT_RECOVERY_ENABLED", "ACCOUNT_RECOVERY_RETRY_COOLDOWN_MS", "ACCOUNT_RECOVERY_DEPENDENCY_PROBE_MS", "DEEPSEEK_API_URL", "AI_QUEUE_ENABLED", "AI_QUEUE_MAX_OUTSTANDING", "AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT"];
+  const keys = ["DATA_DIR", "PORT", "AUTH_REQUIRED", "INVITE_CODE_HASH", "APP_BASE_PATH", "ACCOUNT_RECOVERY_ENABLED", "ACCOUNT_RECOVERY_RETRY_COOLDOWN_MS", "ACCOUNT_RECOVERY_DEPENDENCY_PROBE_MS", "DEEPSEEK_API_URL", "AI_QUEUE_ENABLED", "AI_QUEUE_MAX_OUTSTANDING", "AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT", "SYNC_ACCOUNT_WAKE_ENABLED"];
   const priorEnv = Object.fromEntries(keys.map(key => [key, process.env[key]]));
-  Object.assign(process.env, { DATA_DIR: directory, AI_QUEUE_ENABLED: "1", AI_QUEUE_MAX_OUTSTANDING: "1", AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT: "1", DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}`, PORT: "0", AUTH_REQUIRED: "1", INVITE_CODE_HASH: crypto.createHash("sha256").update("f2-invite").digest("hex"), APP_BASE_PATH: "/", ACCOUNT_RECOVERY_ENABLED: "1", ACCOUNT_RECOVERY_RETRY_COOLDOWN_MS: "1", ACCOUNT_RECOVERY_DEPENDENCY_PROBE_MS: "20" });
+  Object.assign(process.env, { DATA_DIR: directory, SYNC_ACCOUNT_WAKE_ENABLED: "1", AI_QUEUE_ENABLED: "1", AI_QUEUE_MAX_OUTSTANDING: "1", AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT: "1", DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}`, PORT: "0", AUTH_REQUIRED: "1", INVITE_CODE_HASH: crypto.createHash("sha256").update("f2-invite").digest("hex"), APP_BASE_PATH: "/", ACCOUNT_RECOVERY_ENABLED: "1", ACCOUNT_RECOVERY_RETRY_COOLDOWN_MS: "1", ACCOUNT_RECOVERY_DEPENDENCY_PROBE_MS: "20" });
   // F5持久未调用证明必须经过F2全局预算只读校验，实际启动恢复后零费用释放。
   const seedBudget = createAiBudgetService({ repository: createAiBudgetRepository({ dataRoot: directory }) });
   const seed = await seedBudget.reserveTask({ accountId: "f5-startup", taskId: "f5-startup-proof", stages: [{ id: "text", provider: "deepseek", service: "chat-completions", scene: "thoughtAnswer", costKnown: true, estimatedCostCny: 0.01 }] });
@@ -330,7 +330,11 @@ assert.deepEqual(
     }
     const bFile = path.join(directory, "users", users[1].id, "store.json");
     const savedB = await fs.readFile(bFile, "utf8");
+    const drainingCursor = (await call(base, "/api/v1/sync", users[1].cookie)).body.data.cursor;
+    const drainingPoll = call(base, `/api/v1/sync?cursor=${drainingCursor}&waitMs=1500`, users[1].cookie);
+    await new Promise(resolve => setTimeout(resolve, 20));
     await runtime.stop();
+    assert.equal((await drainingPoll).response.status, 503, "stop drains waiting sync before closing server");
     await fs.writeFile(bFile, "{BROKEN_B_PRIVATE_BODY");
     runtime = create(); started = await runtime.start(); base = `http://127.0.0.1:${started.port}`;
     const ready = await call(base, "/readyz");
@@ -404,6 +408,14 @@ assert.deepEqual(
     assert.equal(restoredAuth.response.status, 200);
     assert.equal(restoredAuth.body.user.role, "owner");
     assert.equal(restoredAuth.body.userCount, 3);
+    // 已提交会话撤销唤醒同账户等待者重新鉴权，不能继续返回旧会话数据。
+    const spareLogin = await call(base, "/api/auth/login", "", "POST", { username: "owner-a", password: "valid-password-1" });
+    const spareCookie = spareLogin.response.headers.get("set-cookie").split(";")[0];
+    const spareCursor = (await call(base, "/api/v1/sync", spareCookie)).body.data.cursor;
+    const revokedPoll = call(base, `/api/v1/sync?cursor=${spareCursor}&waitMs=1500`, spareCookie);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal((await call(base, "/api/auth/logout", spareCookie, "POST")).response.status, 200);
+    assert.equal((await revokedPoll).response.status, 401);
     // 普通账户复用Owner配置不继承Owner业务资格；Owner store损坏仍能准备并真实完成本机模型调用。
     assert.equal((await call(base, "/api/settings", users[0].cookie, "POST", { apiKey: "f2-local-provider-key" })).response.status, 200);
     const member = users[2];
@@ -413,8 +425,12 @@ assert.deepEqual(
     const patch = await fetch(base + "/api/v1/onboarding-v2/session", { method: "PATCH", headers: { cookie: member.cookie, "content-type": "application/json", "if-match": session.response.headers.get("etag"), "idempotency-key": "f2-onboarding" }, body: JSON.stringify({ selectedFlow: "v2", status: "completed", answers, collaboration: { answerDisposition: "declined", contextAllowed: false } }) });
     const patched = await patch.json(); assert.equal(patch.status, 200, JSON.stringify(patched));
     assert.equal((await call(base, "/api/v1/onboarding-v2/extractions", member.cookie, "POST", { sourceRevision: patched.data.session.revision })).response.status, 200);
+    const ownerCursor = (await call(base, "/api/v1/sync", users[0].cookie)).body.data.cursor;
+    const quarantinedPoll = call(base, `/api/v1/sync?cursor=${ownerCursor}&waitMs=1500`, users[0].cookie);
+    await new Promise(resolve => setTimeout(resolve, 20));
     await fs.writeFile(path.join(directory, "users", users[0].id, "store.json"), "{OWNER_BUSINESS_BROKEN");
     assert.equal((await call(base, "/api/state", users[0].cookie)).response.status, 503);
+    assert.equal((await quarantinedPoll).response.status, 503);
     const draft = { question: "本机共享配置验证", requestId: "f2-shared-settings", targetId: "f2-test", inputVersion: 1 };
     const answered = await call(base, "/api/answer-drafts", member.cookie, "POST", draft);
     assert.equal(answered.response.status, 200, JSON.stringify(answered.body));
@@ -455,6 +471,35 @@ assert.deepEqual(
     for (const key of keys) { if (priorEnv[key] === undefined) delete process.env[key]; else process.env[key] = priorEnv[key]; }
     await fs.rm(directory, { recursive: true, force: true });
   }
+}
+
+// F9真实装配：关闭保留原有界截止，开启按JSON提交唤醒；仅本机无鉴权空实例，不调用模型。
+{
+  const keys = ["DATA_DIR", "PORT", "AUTH_REQUIRED", "APP_BASE_PATH", "PERSISTENCE_BACKEND", "ACCOUNT_RECOVERY_ENABLED", "SYNC_ACCOUNT_WAKE_ENABLED"];
+  const before = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  const samples = [];
+  try {
+    for (const enabled of ["0", "1"]) {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-f9-runtime-"));
+      Object.assign(process.env, { DATA_DIR: directory, PORT: "0", AUTH_REQUIRED: "0", APP_BASE_PATH: "/", PERSISTENCE_BACKEND: "json", ACCOUNT_RECOVERY_ENABLED: "0", SYNC_ACCOUNT_WAKE_ENABLED: enabled });
+      const processRef = new EventEmitter(); processRef.exit = code => { throw new Error(`unexpected exit ${code}`); };
+      const runtime = createServerRuntime({ rootUrl: pathToFileURL(path.join(ROOT, "server.mjs")).href, processRef });
+      try {
+        const started = await runtime.start(), base = `http://127.0.0.1:${started.port}`;
+        const initial = await (await fetch(base + "/api/v1/sync")).json();
+        const startedAt = performance.now();
+        const polling = fetch(base + `/api/v1/sync?cursor=${initial.data.cursor}&waitMs=400`);
+        await new Promise(resolve => setTimeout(resolve, 50));
+        const write = await fetch(base + "/api/captures", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "F9本机等待对照" }) });
+        assert.equal(write.status, 201, await write.text());
+        const result = await (await polling).json(), elapsed = performance.now() - startedAt;
+        assert.ok(result.data.cursor > initial.data.cursor);
+        assert.ok(enabled === "0" ? elapsed >= 350 : elapsed < 300, `flag=${enabled}, elapsed=${elapsed}`);
+        samples.push({ enabled, requestToResponseMs: elapsed, configuredWaitMs: 400 });
+      } finally { await runtime.stop(); await fs.rm(directory, { recursive: true, force: true }); }
+    }
+    console.log("F9_RUNTIME_FLAG_METRICS " + JSON.stringify(samples));
+  } finally { for (const key of keys) { if (before[key] === undefined) delete process.env[key]; else process.env[key] = before[key]; } }
 }
 
 console.log(

@@ -11,6 +11,10 @@ import { bindBusinessIdResponse, withBusinessIdTransaction } from "../../../.bui
 
 const queues = new Map();
 
+/**
+ * 维护同一真实文件的串行账户仓储。
+ * 新增onCommitted（unreleased）只在落盘成功后、审计前提供best-effort提示，失败不改提交结果。
+ */
 export function createJsonStoreRepository({
   getFile,
   readDocument,
@@ -19,12 +23,16 @@ export function createJsonStoreRepository({
   emptyDocument,
   clone = structuredClone,
   onCommit = async () => {},
+  onCommitted = () => {},
   now = () => new Date().toISOString(),
   getContext = () => ({}),
   authorize = () => {},
   assertCommit = () => {}
 }) {
   const afterCommit = Symbol.for("for-now.after-commit");
+  const hintCommitted = (file, document) => {
+    try { void Promise.resolve(onCommitted({ storageScope: file, cursor: document._persistence?.sync?.cursor })).catch(() => {}); } catch {}
+  };
 
   const runExclusive = operation => {
     const file = getFile();
@@ -50,6 +58,7 @@ export function createJsonStoreRepository({
       assertCommit(before, document);
       synchronizePersistenceMetadata(before, document, now, { context: getContext() || {} });
       await writeDocument(file, document);
+      hintCommitted(file, document);
       const context = getContext();
       if (context?.clientOperationId) context.operationCommitted = true;
       await onCommit(publicPersistenceDocument(before), publicPersistenceDocument(document));
@@ -70,6 +79,7 @@ export function createJsonStoreRepository({
     const document = preparePersistenceDocument(normalize(clone(value)), now, { force: true });
     assertCommit(before, document);
     await writeDocument(file, document);
+    hintCommitted(file, document);
     await onCommit(publicPersistenceDocument(before), publicPersistenceDocument(document));
     return publicPersistenceDocument(document);
   });
@@ -89,6 +99,8 @@ export function createJsonStoreRepository({
   });
 
   return {
+    /** 当前受信数据文件作用域，包含local-test独立工作目录。 @since unreleased */
+    syncScope: () => getFile(),
     read,
     update,
     replace,

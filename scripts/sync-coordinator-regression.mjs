@@ -1,3 +1,10 @@
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { EventEmitter } from "node:events";
+import { performance } from "node:perf_hooks";
+import { createAccountCommitNotifier } from "../src/shared/concurrency/index.mjs";
+import { createJsonStoreRepository } from "../src/shared/persistence/index.mjs";
 import assert from "node:assert/strict";
 import { createSyncHttp } from "../src/http/index.mjs";
 import {
@@ -951,5 +958,90 @@ const readsBeforeLongPoll = speechSnapshotReads;
 const longPollResponse = await readSpeechSync(3, 1500);
 assert.equal(longPollResponse.status, 200);
 assert.equal(speechSnapshotReads - readsBeforeLongPoll, 2, "long polling must read one initial and one final snapshot");
+
+// F9服务端：真实JSON持久游标与提交端口，提示只能加速，不能代替权威回读。
+{
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-sync-wake-"));
+  const notifier = createAccountCommitNotifier();
+  let hintMode = "normal";
+  const makeRepository = (file, accountId = "account-a", onCommit = async () => {}) => createJsonStoreRepository({
+    getFile: () => file, emptyDocument: { version: 18, captures: [], trash: [] }, normalize: value => value,
+    readDocument: async (file, fallback) => { try { return JSON.parse(await fs.readFile(file, "utf8")); } catch (error) { if (error.code === "ENOENT") return structuredClone(fallback); throw error; } },
+    writeDocument: async (file, document) => { await fs.writeFile(file + ".tmp", JSON.stringify(document)); await fs.rename(file + ".tmp", file); },
+    onCommitted: ({ storageScope }) => { if (hintMode === "fail") throw new Error("hint unavailable"); if (hintMode !== "drop") notifier.notifyAccountCommitted({ accountId, storageScope }); }, onCommit
+  });
+  const file = path.join(directory, "a.json");
+  const repository = makeRepository(file);
+  const scope = { accountId: "account-a", storageScope: file };
+  const publicState = document => ({ captures: document.captures });
+  const create = (repo = repository, assertAccess) => createSyncHttp({ repository: repo, publicState, notifier, getAccountId: () => "account-a", assertAccess });
+  const invoke = async (http, cursor, waitMs = 1500, req = new EventEmitter(), res = new EventEmitter()) => {
+    req.method = "GET"; let response;
+    await http.handleV1(req, res, new URL(`http://local/api/v1/sync?cursor=${cursor}&waitMs=${waitMs}`), {
+      success: (_res, status, data) => { response = { status, data }; return true; },
+      error: (_res, status, message, code) => { response = { status, code }; return true; }
+    });
+    assert.equal(req.listenerCount("aborted"), 0); assert.equal(res.listenerCount("close"), 0);
+    return response;
+  };
+  const cursor = async () => (await repository.readSyncSnapshot()).metadata.sync.cursor;
+  let sequence = 0;
+  const write = repo => repo.update(document => document.captures.push({ id: `wake-${sequence++}`, content: "实际保存" }));
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  try {
+    await repository.update(() => {});
+    const samples = [];
+    for (let n = 0; n < 8; n++) {
+      const after = await cursor(), pending = invoke(create(), after);
+      await sleep(50); const committed = performance.now(); await write(repository);
+      const result = await pending;
+      assert.ok(result.data.cursor > after); samples.push(performance.now() - committed);
+      assert.equal(notifier.activeSubscriptions(), 0);
+    }
+    assert.ok(samples.every(value => value < 500), "local JSON commit-to-response must avoid original1500ms sleep");
+    // 读取已拿到旧快照但尚未返回时提交，generation必须保留该通知。
+    const readEntered = deferred(), releaseRead = deferred(); let first = true;
+    const racing = { ...repository, async readSyncChanges() { const result = await repository.readSyncChanges(); if (first) { first = false; readEntered.resolve(); await releaseRead.promise; } return result; } };
+    const beforeRace = await cursor(); const raced = invoke(create(racing), beforeRace);
+    await readEntered.promise; await write(repository); releaseRead.resolve();
+    assert.ok((await raced).data.cursor > beforeRace);
+    const workspace = makeRepository(path.join(directory, "other-workspace.json")); await workspace.update(() => {});
+    const beforeHints = await cursor(); let completed = false;
+    const hinted = invoke(create(), beforeHints).then(value => { completed = true; return value; });
+    notifier.notifyAccountCommitted(scope); notifier.notifyAccountCommitted(scope);
+    notifier.notifyAccountCommitted({ ...scope, accountId: "account-b" });
+    await write(workspace); await sleep(25); assert.equal(completed, false, "duplicates/other account/workspace are not committed cursor changes");
+    await assert.rejects(repository.update(() => { throw new Error("rollback before write"); }));
+    await sleep(20); assert.equal(completed, false);
+    await write(repository); assert.ok((await hinted).data.cursor > beforeHints);
+    // 丢失/失败提示走同一截止后的最终读取；通知异常不改变已提交结果。
+    for (hintMode of ["drop", "fail"]) {
+      const after = await cursor(), started = performance.now(), pending = invoke(create(), after, 150);
+      await sleep(20); await write(repository); const result = await pending;
+      assert.ok(result.data.cursor > after); assert.ok(performance.now() - started >= 100);
+    }
+    hintMode = "normal";
+    const auditFailure = makeRepository(file, "account-a", async () => { throw new Error("existing audit failure"); });
+    const beforeAudit = await cursor(), auditWait = invoke(create(), beforeAudit);
+    await sleep(20); const auditStarted = performance.now(); await assert.rejects(write(auditFailure), /existing audit failure/);
+    assert.ok((await auditWait).data.cursor > beforeAudit); assert.ok(performance.now() - auditStarted < 500, "committed hint must precede audit failure");
+    // 断连与真实资格撤销都清理订阅；不撤销此前写入事实。
+    const request = new EventEmitter(), response = new EventEmitter();
+    const disconnected = invoke(create(), await cursor(), 1500, request, response);
+    await sleep(20); response.destroyed = true; response.emit("close"); await disconnected;
+    assert.equal(notifier.activeSubscriptions(), 0);
+    let allowed = true;
+    const revoked = invoke(create(repository, async () => { if (!allowed) throw Object.assign(new Error("quarantined"), { code: "ACCOUNT_QUARANTINED", statusCode: 503 }); }), await cursor());
+    await sleep(20); allowed = false; notifier.invalidateAccount("account-a");
+    await assert.rejects(revoked, error => error.code === "ACCOUNT_QUARANTINED"); assert.equal(notifier.activeSubscriptions(), 0);
+    const stopped = invoke(create(), await cursor());
+    const stopReadEntered = deferred(), stopReadRelease = deferred();
+    const readingAtStop = invoke(create({ ...repository, async readSyncChanges() { const snapshot = await repository.readSyncChanges(); stopReadEntered.resolve(); await stopReadRelease.promise; return snapshot; } }), await cursor());
+    await stopReadEntered.promise; notifier.stop(); stopReadRelease.resolve();
+    await assert.rejects(stopped, error => error.code === "ACCOUNT_DEPENDENCIES_UNAVAILABLE");
+    await assert.rejects(readingAtStop, error => error.code === "ACCOUNT_DEPENDENCIES_UNAVAILABLE"); assert.equal(notifier.activeSubscriptions(), 0);
+    console.log("F9_JSON_WAKE_METRICS " + JSON.stringify({ samples, p75CommitToResponseMs: [...samples].sort((a, b) => a - b)[5] }));
+  } finally { notifier.stop(); await fs.rm(directory, { recursive: true, force: true }); }
+}
 
 console.log("Sync coordinator contracts passed: durable-first writes, stable keys, resource serialization, parallel resources, deterministic health metrics, recovery resnapshots, disabled-to-enabled gray recovery, stale-session rejection, cross-tab invalidation, incremental cursors, retry/failure classification, audit minimization and account isolation.");

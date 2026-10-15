@@ -680,13 +680,15 @@
       "allowedDependencies": [],
       "owns": {
         "data": [
-          "FIFO rolling QPS and in-flight limits"
+          "FIFO rolling QPS and in-flight limits",
+          "account/storage-scoped best-effort commit hints and cancellable sync wait lifecycle"
         ],
         "routes": []
       },
       "tests": [
         "scripts/segmentation-regression.mjs",
-        "scripts/boundaries-regression.mjs"
+        "scripts/boundaries-regression.mjs",
+        "scripts/sync-coordinator-regression.mjs"
       ],
       "status": "active"
     },

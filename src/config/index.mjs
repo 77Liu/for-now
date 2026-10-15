@@ -109,6 +109,7 @@ export function loadAccountRecoveryConfig(env = process.env) {
 }
 
 export function loadAppConfig({ rootDir, env = process.env }) {
+  if (env.SYNC_ACCOUNT_WAKE_ENABLED !== undefined && !["0", "1"].includes(env.SYNC_ACCOUNT_WAKE_ENABLED)) throw new Error("SYNC_ACCOUNT_WAKE_ENABLED must be 0 or 1");
   const persistenceBackend = env.PERSISTENCE_BACKEND || "json";
   const upstreamOrigin = String(env.UPSTREAM_ORIGIN || "").replace(/\/+$/, "");
   const testCurrentDate = env.NODE_ENV === "test" ? String(env.TEST_CURRENT_DATE || "").trim() : "";
@@ -183,6 +184,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     accountRecovery: loadAccountRecoveryConfig(env),
     aiQueue: loadAiQueueConfig(env),
     pgIo: loadPgIoConfig(env),
+    syncAccountWakeEnabled: env.SYNC_ACCOUNT_WAKE_ENABLED === "1",
     dataDir: path.resolve(rootDir, env.DATA_DIR || "data"),
     port: Number(env.PORT || 4173),
     version: env.APP_VERSION || "development",

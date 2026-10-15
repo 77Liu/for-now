@@ -160,6 +160,7 @@ export function createRecordCompressionScanObserver({
 export function createRuntimeHttpWiring({
   appConfig,
   accountRuntime,
+  syncNotifier,
   releaseVersion,
   paths,
   httpLimits,
@@ -547,7 +548,19 @@ export function createRuntimeHttpWiring({
   });
   const syncHttp = createSyncHttp({
     repository: storeRepository,
-    publicState: publicStateFromStore
+    publicState: publicStateFromStore,
+    notifier: syncNotifier,
+    getAccountId: () => accountRuntime.currentAccountId(),
+    assertAccess: async req => {
+      const id = requestStorage.getStore()?.user?.id;
+      const auth = access.localTestRuntime.enabled
+        ? access.localTestHttp.authentication(req)
+        : await access.requestAuthentication(req);
+      if (!auth.user || auth.user.id !== id || auth.reauthRequired) throw Object.assign(new Error("会话已失效，请重新登录"), {
+        code: auth.reauthRequired ? "AUTH_REAUTH_REQUIRED" : "AUTH_REQUIRED", statusCode: 401
+      });
+      accountRuntime.authorize();
+    }
   });
   const personalContextHttp = createPersonalContextHttp({
     readStore,

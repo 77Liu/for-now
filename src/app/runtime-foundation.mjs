@@ -1,3 +1,4 @@
+import { createAccountCommitNotifier } from "../shared/concurrency/index.mjs";
 import { createAccountRuntimeState } from "../../.build/typescript/backend/app/account-runtime-state.mjs";
 import { normalizePersistedDocument } from "../shared/persistence/index.mjs";
 import { normalizeLlmSettings, normalizeAiUsage, llmSettingsForScene } from "../modules/ai/index.mjs";
@@ -92,21 +93,27 @@ export async function createRuntimeFoundation({
     rootDir: dataDir,
     version: appConfig.version
   });
+  const syncNotifier = createAccountCommitNotifier();
   let contentRuntime = null;
   const accountRuntime = createAccountRuntimeState({
     config: appConfig.accountRecovery,
     getContext: () => requestStorage.getStore(),
     defaultAccount: "local",
     getAccountKey: () => appConfig.localTestMode ? "local" : requestStorage.getStore()?.user?.id || "local",
-    onUnavailable: () => contentRuntime?.backgroundAi?.abortAll?.(),
+    onUnavailable: () => { syncNotifier.stop(); contentRuntime?.backgroundAi?.abortAll?.(); },
     onDispatchError: error => { void logEvent("system", "account.dispatch_failed", { level: "warn", error: errorMetadata(error) }).catch(() => {}); },
     onTransition: state => {
+      if (state.status !== "ready") syncNotifier.invalidateAccount(state.accountId);
       if (state.status === "quarantined") contentRuntime?.backgroundAi?.abortCurrentAccount?.();
       void logEvent("system", "account.recovery_state", {
       level: state.status === "quarantined" ? "warn" : "info",
       accountId: state.accountId, status: state.status, phase: state.phase, epoch: state.epoch, reasonCode: state.reasonCode
     }).catch(() => {}); }
   });
+  const notifyStoreCommitted = ({ accountId, storageScope }) => {
+    if (!appConfig.syncAccountWakeEnabled) return;
+    try { syncNotifier.notifyAccountCommitted({ accountId: accountId || accountRuntime.currentAccountId(), storageScope }); } catch {}
+  };
   const runtimeMemorySampler = createRuntimeMemorySampler({
     logEvent,
     intervalMs: runtimeMemorySampleIntervalMs
@@ -192,6 +199,8 @@ export async function createRuntimeFoundation({
       });
       assertStorageAccess(file);
       await fs.rename(temp, file);
+      // 恢复与local-test也会直接写store；真实rename后提示，不能等后续仓储/审计步骤。
+      if (path.basename(file) === "store.json") { try { notifyStoreCommitted({ storageScope: file }); } catch {} }
     } catch (error) {
       if (String(error.code || "").startsWith("ACCOUNT_")) throw error;
       const sharedIoFailure = reportStorageIoFailure(error);
@@ -328,6 +337,7 @@ export async function createRuntimeFoundation({
         pgIo: appConfig.pgIo,
         emptyDocument: emptyStore,
         onCommit: auditChanges,
+        onCommitted: notifyStoreCommitted,
         now,
         getContext: () => requestStorage.getStore()
       })
@@ -339,6 +349,7 @@ export async function createRuntimeFoundation({
         emptyDocument: emptyStore,
         clone,
         onCommit: auditChanges,
+        onCommitted: notifyStoreCommitted,
         now,
         getContext: () => requestStorage.getStore(),
         authorize: () => accountRuntime.authorize(),
@@ -539,6 +550,7 @@ export async function createRuntimeFoundation({
   return {
     appConfig,
     accountRuntime,
+    syncNotifier,
     releaseVersion,
     paths,
     httpLimits: Object.freeze({

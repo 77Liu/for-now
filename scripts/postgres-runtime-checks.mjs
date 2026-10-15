@@ -17,6 +17,7 @@ import { createEmptyStore, createStoreNormalizer, createPublicStateProjection, c
 import { evidenceSourceKey } from "../src/modules/user-model/index.mjs";
 import { onboardingV2Schema } from "../src/modules/onboarding/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
+import { createAccountCommitNotifier } from "../src/shared/concurrency/index.mjs";
 import { createSyncHttp } from "../src/http/index.mjs";
 import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
@@ -142,7 +143,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       cwd: path.resolve(import.meta.dirname, ".."),
       env: {
         ...process.env, NODE_ENV: "test", PERSISTENCE_BACKEND: backend, DATA_DIR: directory,
-        PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*", ACCOUNT_RECOVERY_ENABLED: "0",
+        PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*", ACCOUNT_RECOVERY_ENABLED: "0", SYNC_ACCOUNT_WAKE_ENABLED: "1",
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
         AUTH_REQUIRED: "1", INVITE_CODE_HASH: crypto.createHash("sha256").update("runtime-invite").digest("hex"),
@@ -432,6 +433,68 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       console.log("F3A_QUERY_METRICS " + JSON.stringify(metrics));
     } finally { pg.Client.prototype.query = originalQuery; }
 
+    // F9服务端：PG真实COMMIT后发送提示，等待期间无事务、回滚无提示，提示失败不改变提交。
+    const wakeNotifier = createAccountCommitNotifier();
+    let wakeHintFailure = false;
+    const wakeCommitted = ({ accountId, storageScope }) => {
+      if (wakeHintFailure) throw new Error("F9 hint failure");
+      wakeNotifier.notifyAccountCommitted({ accountId, storageScope });
+    };
+    const wakeOptions = { ...syncOptions, pgIo: { syncReadMode: "metadata", accountAllowlist: ["*"] }, onCommitted: wakeCommitted };
+    const wakeRepo = runtime.createStoreRepository(wakeOptions);
+    const wakeHttp = createSyncHttp({ repository: wakeRepo, publicState: project, notifier: wakeNotifier, getAccountId: () => context.getStore() });
+    const wakeRequest = async (after, waitMs = 1500, http = wakeHttp) => {
+      let output;
+      await http.handleV1({ method: "GET" }, {}, new URL(`http://local/api/v1/sync?cursor=${after}&waitMs=${waitMs}`), {
+        success: (_res, status, data) => { output = { status, data }; return true; },
+        error: (_res, status, message, code) => { output = { status, code }; return true; }
+      });
+      return output;
+    };
+    try {
+      await account("sync-a", async () => {
+        const samples = [];
+        for (let n = 0; n < 8; n++) {
+          const before = (await wakeRepo.readSyncSnapshot()).metadata.sync.cursor;
+          const pending = wakeRequest(before);
+          await pause(50);
+          if (n === 0) assert.equal((await database.query("SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database() AND application_name='for-now-data-runtime' AND state='idle in transaction'")).rows[0].n, 0);
+          const committed = performance.now();
+          await wakeRepo.update(store => { store.notifications[0].readAt = new Date(Date.parse(syncNow()) + n + 1000).toISOString(); });
+          assert.ok((await pending).data.cursor > before); samples.push(performance.now() - committed);
+          assert.equal(wakeNotifier.activeSubscriptions(), 0);
+        }
+        const subscription = wakeNotifier.subscribeAccountCommits({ accountId: "sync-a", storageScope: "postgres" });
+        const generation = subscription.generation();
+        await assert.rejects(wakeRepo.update(() => { throw new Error("F9 rollback"); }), /F9 rollback/);
+        assert.equal(subscription.generation(), generation, "rollback must not hint"); subscription.close();
+        // PG读取已完成但handler尚未收到时提交，通知不能被初始旧快照覆盖。
+        let readEntered, releaseRead, firstRead = true;
+        const enteredRead = new Promise(resolve => { readEntered = resolve; });
+        const heldRead = new Promise(resolve => { releaseRead = resolve; });
+        const racingRepo = { ...wakeRepo, async readSyncChanges(options) { const snapshot = await wakeRepo.readSyncChanges(options); if (firstRead) { firstRead = false; readEntered(); await heldRead; } return snapshot; } };
+        const raceAfter = (await wakeRepo.readSyncSnapshot()).metadata.sync.cursor;
+        const race = wakeRequest(raceAfter, 1500, createSyncHttp({ repository: racingRepo, publicState: project, notifier: wakeNotifier, getAccountId: () => context.getStore() }));
+        await enteredRead; await wakeRepo.update(store => { store.notifications[0].readAt = "racing-commit"; }); releaseRead();
+        assert.ok((await race).data.cursor > raceAfter);
+        const lostAfter = (await wakeRepo.readSyncSnapshot()).metadata.sync.cursor;
+        const lostStarted = performance.now(), lostHint = wakeRequest(lostAfter, 600);
+        await pause(20); wakeHintFailure = true;
+        await wakeRepo.update(store => { store.notifications[0].readAt = "hint-failed-committed"; });
+        assert.ok((await lostHint).data.cursor > lostAfter);
+        assert.ok(performance.now() - lostStarted >= 500, "lost PG hint must recover through deadline read");
+        assert.equal((await wakeRepo.read()).notifications[0].readAt, "hint-failed-committed");
+        wakeHintFailure = false;
+        const auditFailure = runtime.createStoreRepository({ ...wakeOptions, onCommit: async () => { throw new Error("F9 audit failure"); } });
+        const before = (await wakeRepo.readSyncSnapshot()).metadata.sync.cursor, pending = wakeRequest(before);
+        await pause(20); const committed = performance.now();
+        await assert.rejects(auditFailure.update(store => { store.notifications[0].readAt = "audit-failed-committed"; }), /F9 audit failure/);
+        assert.ok((await pending).data.cursor > before); assert.ok(performance.now() - committed < 500);
+        assert.ok([...samples].sort((a, b) => a - b)[5] < 500);
+        console.log("F9_PG_WAKE_METRICS " + JSON.stringify({ samples, p75CommitToResponseMs: [...samples].sort((a, b) => a - b)[5] }));
+      });
+    } finally { wakeNotifier.stop(); }
+
     const sweepPath = "/attachments/postgres-sweep.tts.mp3";
     const sweepAudio = Buffer.from("ID3-postgres-sweep");
     const sweepSha256 = crypto.createHash("sha256").update(sweepAudio).digest("hex");
@@ -549,6 +612,13 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     app = await startApp();
     const afterRestart = await initialSync();
     console.log("F3A_PROVISION_INITIAL_SYNC " + JSON.stringify({ recoveryEnabled: false, beforeRestart, afterRestart }));
+    // 真实网络+认证PG长轮询断连，不应占着读事务或阻碍后续同步。
+    const disconnectCursor = (await request(app.base, "/api/v1/sync", { cookie })).body.data.cursor;
+    const disconnect = new AbortController();
+    const disconnected = fetch(app.base + `/api/v1/sync?cursor=${disconnectCursor}&waitMs=1500`, { headers: { cookie }, signal: disconnect.signal });
+    await pause(30); disconnect.abort(); await assert.rejects(disconnected, error => error.name === "AbortError");
+    assert.equal((await request(app.base, "/api/v1/sync?waitMs=0", { cookie })).status, 200);
+
     const unknownCoreAnswers = Object.fromEntries(onboardingV2Schema.questions
       .filter(question => question.questionId !== "collaboration")
       .map(question => [question.questionId, {
@@ -908,6 +978,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await account(second.body.user.id, () => repo.read())).attachmentCleanup.length, 0);
 
     // Check runtime state across process death, including the original session.
+    const beforeRestartSyncCursor = (await request(app.base, "/api/v1/sync", { cookie })).body.data.cursor;
     await stop(app.child);
     await fs.rmdir(retryFile);
     await fs.writeFile(retryFile, png, { mode: 0o600 });
@@ -939,6 +1010,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(interruptedTask.status, "failed");
     assert.match(interruptedTask.error, /避免重复计费/);
     assert.equal(providerCalls, 5, "Restart must only replay queued tasks");
+    const restartSyncStarted = performance.now();
+    const restartSync = await request(app.base, `/api/v1/sync?cursor=${beforeRestartSyncCursor}&waitMs=1500`, { cookie });
+    assert.ok(restartSync.body.data.cursor > beforeRestartSyncCursor);
+    assert.ok(performance.now() - restartSyncStarted < 500, "restart recovers from persistent cursor without old in-memory hints");
     const inventory = (await database.query("SELECT path,state FROM for_now.attachment_inventory WHERE account_id = $1", [id])).rows;
     assert.deepEqual(inventory, [{ path: "/attachments/interrupted-present.png", state: "verified" }]);
     assert.deepEqual((await account(id, () => repo.read())).attachmentCleanup, []);

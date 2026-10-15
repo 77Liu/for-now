@@ -33,6 +33,7 @@ const LOCAL_TEST_SESSION_MAX_AGE_SECONDS = 30 * 60;
 export async function createRuntimeAccess({
   appConfig,
   accountRuntime,
+  syncNotifier,
   paths,
   httpLimits,
   clock,
@@ -156,6 +157,11 @@ export async function createRuntimeAccess({
   });
   const localTestRuntime = createLocalTestRuntime({
     runWorkspaceInitialization: operation => accountRuntime?.enabled ? accountRuntime.provision(accountRuntime.currentAccountId(), operation) : operation(),
+    onWorkspaceCommitted: ({ dataDir: targetDir }) => {
+      if (appConfig.syncAccountWakeEnabled) syncNotifier.notifyAccountCommitted({
+        accountId: accountRuntime.currentAccountId(), storageScope: path.join(targetDir, "store.json")
+      });
+    },
     enabled: localTestMode,
     upstreamConfigured: Boolean(upstreamOrigin),
     dataDir,
@@ -242,6 +248,16 @@ export async function createRuntimeAccess({
   });
 
   const auditAuthChanges = async (before, after) => {
+    // 认证事务已提交；角色/会话撤销只唤醒重新鉴权，不把提示当作权限事实。
+    const revoked = new Set();
+    for (const user of before?.users || []) {
+      const next = (after?.users || []).find(item => item.id === user.id);
+      if (!next || next.role !== user.role || next.sessionVersion !== user.sessionVersion) revoked.add(user.id);
+    }
+    const sessions = new Set((after?.sessions || []).map(session => session.tokenHash));
+    for (const session of before?.sessions || []) if (!sessions.has(session.tokenHash)) revoked.add(session.userId);
+    for (const id of revoked) { try { syncNotifier?.invalidateAccount(id); } catch {} }
+
     if (accountRuntime?.enabled) {
       const prior = new Set((before?.users || []).map(user => user.id));
       for (const user of after?.users || []) if (!prior.has(user.id)) await accountLifecycle.registerCommittedUser(user);
