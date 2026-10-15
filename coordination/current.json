@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 334,
-  "updated_at": "2026-10-15T17:23:55.051Z",
+  "revision": 335,
+  "updated_at": "2026-10-15T17:26:29.452Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -14,20 +14,20 @@
     "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.5；项目文件相对链接约定"
   },
   "work_mode": {
-    "status": "PLANNING",
-    "scope": "v0.5.16开发起点：资料目录迁移和链接治理已完成，业务范围待Owner评审冻结"
+    "status": "READY_FOR_DEVELOPMENT",
+    "scope": "v0.5.16资料迁移基线已接入本地develop；业务范围待Owner评审冻结"
   },
   "iteration": {
     "id": "v0.5.16",
-    "status": "PLANNING",
-    "phase": "开发起点与评审输入准备"
+    "status": "READY_FOR_DEVELOPMENT",
+    "phase": "开发基线已固定，等待范围冻结"
   },
   "scope": {
     "description": "建立v0.5.16可恢复开发起点；本阶段只固化资料迁移、相对链接规则、链接检查和F1-F5评审输入",
     "baseline": {
       "branch": "develop",
-      "commit": "54fd2d",
-      "source": "v0.5.15正式收口后的develop"
+      "commit": "756d80",
+      "source": "资料迁移、链接门和控制面消费者验证通过后本地fast-forward接入"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -43,13 +43,12 @@
   "active_tasks": [],
   "candidate": null,
   "authorization": {
-    "source": "Owner 2026-10-16明确要求执行资料迁移、全面链接审查并本地提交为v0.5.16开发起点",
+    "source": "资料迁移与本地提交授权已执行完成；当前仅允许读取和评审F1-F5，实施及远程/生产动作须另行冻结与授权",
     "allowed_actions": [
-      "本地资料迁移",
-      "本地链接与相关专项验证",
-      "本地Git提交"
+      "读取和评审F1-F5及版本级集成设计"
     ],
     "excluded": [
+      "未冻结范围的业务实现",
       "push",
       "tag",
       "Release",
@@ -70,7 +69,7 @@
     }
   },
   "blockers": [],
-  "next_action": "Owner评审F1-F5及版本级集成设计后，明确v0.5.16实际范围、优先级和验收边界；未冻结前不启动业务实现。",
+  "next_action": "Owner评审F1-F5及版本级集成设计，明确v0.5.16实际范围、优先级和验收边界后，再从develop@756d80建立单一feat实施任务。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -381,6 +380,24 @@
         "coordination/current.json",
         "scripts/control-plane-update.mts",
         ".gitignore"
+      ]
+    },
+    {
+      "id": "v0516-development-baseline",
+      "object": {
+        "kind": "git_commit",
+        "commit": "756d80",
+        "branch": "develop"
+      },
+      "conclusion": "资料迁移、相对链接、控制面消费者和F1-F5结构验证通过；本地develop已快进到迁移提交，可作为v0.5.16后续任务起点。",
+      "limitations": [
+        "尚未冻结F1-F5实际实施范围",
+        "未执行push、tag、Release、部署、生产写入或付费调用"
+      ],
+      "refs": [
+        "git:756d80",
+        "docs/versions/v0.5.16/README.md",
+        "scripts/check-document-links.mjs"
       ]
     }
   ],
