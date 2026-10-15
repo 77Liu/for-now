@@ -284,15 +284,23 @@ export async function createPostgresRuntime({
       await markAccount(client, id);
     })
   };
+  /**
+   * 创建账户仓储；新增onCommitted（unreleased）位于真实COMMIT之后、审计之前。
+   * 提示失败不回滚或重判已提交事实；仍由持久游标与回执确认结果。
+   */
   const createStoreRepository = ({
     normalize,
     pgIo = null,
     emptyDocument,
     onCommit = async () => {},
+    onCommitted = () => {},
     now = () => new Date().toISOString(),
     getContext = () => ({})
   }) => {
     const afterCommit = Symbol.for("for-now.after-commit");
+    const hintCommitted = id => {
+      try { void Promise.resolve(onCommitted({ accountId: id, storageScope: "postgres" })).catch(() => {}); } catch {}
+    };
     const readRaw = async (client, id) => {
       const mapping = await readPostgresStoreObjects(client, id);
       try { return rebuildStoreObjects(mapping); }
@@ -405,6 +413,7 @@ export async function createPostgresRuntime({
           return result.rows[0].revision;
         }, false, authorizeAccount);
         revision = next;
+        hintCommitted(id);
         const context = getContext();
         if (context?.clientOperationId) context.operationCommitted = true;
         const previous = before;
@@ -427,6 +436,8 @@ export async function createPostgresRuntime({
       return structuredClone(response);
     });
     return {
+      /** 数据库实例由运行时独占，账户由受信上下文另行绑定。 @since unreleased */
+      syncScope: () => "postgres",
       validate: ({ allowCreate = false } = {}) => readAccount(async (client, id) => {
         const exists = (await client.query("SELECT 1 FROM for_now.accounts WHERE account_id = $1", [id])).rowCount;
         if (!exists && allowCreate) return null;
@@ -467,7 +478,9 @@ export async function createPostgresRuntime({
         const snapshot = metadata ? { metadata } : await fullSyncSnapshot(client, id);
         return structuredClone(snapshot.metadata.sync.operations.find(item => item.operationId === operationId));
       }),
-      initialize: ({ allowCreate = false } = {}) => accountTransaction(async (client, id) => {
+      initialize: ({ allowCreate = false } = {}) => {
+        const id = accountId();
+        return accountTransaction(async (client, id) => {
         const exists = (await client.query("SELECT 1 FROM for_now.accounts WHERE account_id = $1", [id])).rowCount;
         if (!exists && !allowCreate) throw invalid("Missing migrated account; refusing empty initialization");
         if (!exists) {
@@ -487,7 +500,8 @@ export async function createPostgresRuntime({
           }
         }
         await markAccount(client, id);
-      }),
+        }).then(result => { hintCommitted(id); return result; });
+      },
       waitForIdle: () => withAccountLock(async () => {})
     };
   };

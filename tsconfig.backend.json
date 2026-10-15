@@ -25,6 +25,7 @@
     "src/shared/concurrency/rate-gate.mts",
     "src/modules/ai/execution-control.mts",
     "src/modules/ai/dispatch-proof.mts",
-    "src/app/sync-projection.mts"
+    "src/app/sync-projection.mts",
+    "src/shared/concurrency/account-commits.mts"
   ]
 }

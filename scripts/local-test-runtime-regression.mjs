@@ -19,6 +19,8 @@ let failControlWrite = false;
 let failControlWriteAt = 0;
 let controlWriteCount = 0;
 let failEnsureUsage = false;
+let failCommitHint = false;
+const committedWorkspaces = [];
 let upstreamItems = [];
 let holdUpdateCommit = false;
 let updateMutatorDone;
@@ -133,6 +135,10 @@ const runtime = createLocalTestRuntime({
     list: async () => clone(upstreamItems)
   },
   now: () => fixedNow,
+  onWorkspaceCommitted: async ({ mode, dataDir }) => {
+    committedWorkspaces.push({ mode, dataDir, targetExists: (await fs.stat(dataDir)).isDirectory(), controlMode: documents.get(controlFile)?.mode });
+    if (failCommitHint) throw new Error("hint failed after commit");
+  },
   removeDocument: async file => { documents.delete(file); }
 });
 const ownerRequest = { headers: {} };
@@ -144,6 +150,7 @@ await assert.rejects(
   error => error.code === "WRITE_FAILED"
 );
 assert.equal(replaceCalls, 0);
+assert.deepEqual(committedWorkspaces, []);
 assert.equal(documents.has(controlFile), false);
 failControlWrite = false;
 
@@ -173,6 +180,7 @@ assert.equal(workspaceStore("simulation").onboarding.status, "completed");
 holdReplace = false;
 workspaceStore("simulation").captures.push({ id: "preserved-local" });
 const beforeFailedReset = clone(workspaceStore("simulation"));
+const hintsBeforeFailure = committedWorkspaces.length;
 failEnsureUsage = true;
 await assert.rejects(
   runtime.switchMode(ownerRequest, "simulation"),
@@ -186,6 +194,7 @@ await assert.rejects(
   error => error.code === "WRITE_FAILED"
 );
 failControlWriteAt = 0;
+assert.equal(committedWorkspaces.length, hintsBeforeFailure, "staging/control rollback must not hint target activation");
 assert.deepEqual(workspaceStore("simulation"), beforeFailedReset);
 assert.equal((await readDocument(controlFile, {})).mode, "simulation");
 stores.set(
@@ -263,5 +272,14 @@ assert.ok(recoveredControl.loadedScopes.includes("captures"));
 assert.ok(recoveredControl.loadedCollections.includes("captures"));
 assert.equal(documents.has(`${controlFile}.pending`), false);
 
+holdReplace = false;
+failCommitHint = true;
+assert.equal((await runtime.switchMode(ownerRequest, "simulation")).mode, "simulation");
+assert.equal(committedWorkspaces.at(-1).mode, "simulation", "hint failure cannot roll back committed workspace");
+for (const hint of committedWorkspaces) {
+  assert.equal(hint.dataDir, runtime.workspaceDir(hint.mode));
+  assert.equal(hint.targetExists, true, "hint must observe the activated target directory");
+  assert.equal(hint.controlMode, hint.mode, "control must commit before target hint");
+}
 await fs.rm(root, { recursive: true, force: true });
 console.log("Local test runtime checks passed: staged resets, generation-safe switch barriers, pending-control recovery and active-task rejection.");

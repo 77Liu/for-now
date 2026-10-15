@@ -23,6 +23,12 @@ const fail = (statusCode, message, code) => {
   throw Object.assign(new Error(message), { statusCode, code });
 };
 
+/**
+ * 协调本机隔离工作区的准备、原子替换与请求上下文切换。
+ * @param {object} options 工作区及既有持久化端口。
+ * @param {Function|null} [options.onWorkspaceCommitted] unreleased 新增：目标目录及控制状态提交后
+ * 的 best-effort 提示端口；不得承载业务提交，其失败不回滚已提交工作区。
+ */
 export function createLocalTestRuntime({
   enabled,
   upstreamConfigured,
@@ -52,7 +58,8 @@ export function createLocalTestRuntime({
   upstream,
   now,
   clone = structuredClone,
-  removeDocument = file => fs.rm(file, { force: true })
+  removeDocument = file => fs.rm(file, { force: true }),
+  onWorkspaceCommitted = null
 }) {
   let controlQueue = Promise.resolve();
   let switchBarrier = Promise.resolve();
@@ -193,6 +200,9 @@ export function createLocalTestRuntime({
           throw error;
         }
       }));
+      // 暂存写入不代表目标已生效；目录和控制状态均提交后才提示目标作用域。
+      // 提示失败不能把已提交的替换改判失败，也不触发回滚。
+      try { await onWorkspaceCommitted?.({ mode, dataDir: targetDir }); } catch {}
       await fs.rm(backupDir, { recursive: true, force: true }).catch(() => {});
       return nextControl ? normalizeLocalTestControl(nextControl) : null;
     } finally {
