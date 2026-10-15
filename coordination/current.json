@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 354,
-  "updated_at": "2026-10-15T20:16:59.576Z",
+  "revision": 356,
+  "updated_at": "2026-10-15T20:23:31.277Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "IN_PROGRESS",
-    "phase": "F5独立审查通过，准备本地接入"
+    "phase": "F2认证缺失返修审查通过，准备接入"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "cdcba5",
-      "source": "F2实现80d7df正常合入，集成tree一致，develop账户生命周期专项通过；包含F1全部已接入优化。"
+      "commit": "d3a30d",
+      "source": "F5实现77a039正常合入，集成tree一致，develop预算runtime专项通过；原F2分支正常接收该基线为853610。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -55,44 +55,42 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-F5",
+      "id": "v0516-F2-auth-missing",
       "owner": "主开发Agent",
       "mode": "integration",
-      "branch": "feat/v0.5.16-ai-queue-control",
-      "baseline": "cdcba5",
+      "branch": "feat/v0.5.16-account-recovery",
+      "baseline": "853610",
+      "integration_baseline": {
+        "branch": "develop",
+        "commit": "d3a30d"
+      },
       "status": "REVIEWED",
       "allowed_write_set": [
-        "src/shared/concurrency/** (仅可取消有界gate及原无参兼容)",
-        "src/modules/ai/** (仅control/admission、生成、审计、预算阶段未调用证明与所有真实消费者)",
-        "src/app/** (仅F5装配、预算runStage/恢复、后台取消与F2资格/受限清理消费者)",
-        "src/http/** (仅既有AI/SSE/legacy/v1的取消、超时、过载错误映射)",
-        "src/shared/persistence/** (仅F5新增预算阶段字段的原子持久化/读取/恢复，不做F3/B/C)",
-        "src/config/index.mjs",
-        "deploy/for-now.env.example",
-        "tsconfig.backend.json",
-        "knowledge/module-boundaries.json (仅真实新接口/依赖归属)",
-        "scripts/** (复用F5直接受影响的已有验证；新增源码mts且有必要性)"
+        "src/shared/persistence/auth-repository.mjs",
+        "src/app/runtime-access.mjs",
+        "src/app/runtime-foundation.mjs (仅已有认证缺失的读取、启动与全局故障衔接)",
+        "src/modules/auth/** (仅认证缺失/合法初始化与旧格式兼容必需消费者)",
+        "scripts/** (仅复用受影响的认证、实际JSON启动/恢复专项)",
+        "必要新源码mts及tsconfig.backend.json/module-boundaries.json的真实接线"
       ],
       "forbidden_write_set": [
         "coordination/**",
         ".trae/**",
-        ".gitignore",
-        "package-lock.json",
-        "业务前端/其他需求重构",
+        "其他F3/F4/F6-F9实现",
+        "预算/队列行为变更",
         "提交、切分支、合入或删除引用",
-        "生产/远程/部署/付费动作"
+        "生产/远程/付费动作"
       ],
-      "shared_file_owner": "主开发独占列明实现/配置与验证入口；主控独占控制面，其他代码写者为零。",
-      "integration_order": "F1/F2已接入；本切片完整闭环独立审查后接入，再F3-A→F9服务端→F4/F7/F6/F8→F9客户端。",
-      "acceptance_ref": "docs/technical-proposals/F5-AI排队取消与超时-技术方案.md",
+      "shared_file_owner": "主开发独占上述实现及验证；主控仅控制面与接入审查，单一工作目录无额外工作树。",
+      "integration_order": "F5已接入；本返修在原F2分支完成自查/必要验证及独立审查后回develop；然后F3-A。",
+      "acceptance_ref": "artifacts/local/v0516-f2-auth-missing-current.json",
       "contracts": [
-        "K1沿F2的账户资格/epoch；K2既有操作受限收尾和真实排空，不因隔离丢费用或放开新provider。",
-        "取消/排队与总截止首次原因固定；scene+global共用排队截止，不可等待占用者release后才退出。",
-        "站点reservation/账户quota/场景和全局许可/admission各自唯一清理者；父budgetExecution子仅报自己stage，不能释放父其他stage。",
-        "not_invoked私有证明必须在规范化、持久化、settle/release/recover和读者全部可解释后生效；未知或第三方已发不得假设免费。",
-        "其他媒体无参acquire保持兼容；不得宣称已迁移所有媒体取消。"
+        "已有认证持久化缺失不得回退成新实例或创建替代Owner；运行中和重启均覆盖。",
+        "真正空实例初始化、合法旧auth迁移与原根目录旧数据首次导入仍保持。",
+        "沿原实际存储消费者/故障排空链；保留账户数据，不用删除坏数据或放宽断言制造通过。",
+        "JSON已复现与PG未知边界明确区分；不扩大为全面认证迁移。"
       ],
-      "handoff": "连续完成实现、自查完整生产者/转换/持久化/消费者，再必要验证并集中交接；新源码mts、中文文件头/必要JSDoc；不自行commit/merge/切分支。"
+      "handoff": "完成完整读取/初始化/注册/会话/预检/故障消费者自查，再受影响验证；固定最终文件摘要与既有回执，暂停供独立审查。"
     }
   ],
   "candidate": null,
@@ -125,24 +123,8 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [
-    {
-      "id": "v0516-F2-auth-missing",
-      "owner": "主控/主开发Agent",
-      "status": "OPEN",
-      "severity": "release-blocking",
-      "reason": "固定cdcba5实际JSON实例中，已有auth.json丢失后被缺省为空用户库，readyz仍200，合法邀请的新注册成为首个Owner；不能将已有认证数据丢失当新实例。",
-      "return_branch": "feat/v0.5.16-account-recovery",
-      "scheduled_after": "当前F5自查交接；不得夹带到F5或重复开同一功能分支，启动返修时再选最新develop基线。",
-      "refs": [
-        "artifacts/local/v0516-f2-auth-missing-current.json",
-        "src/shared/persistence/auth-repository.mjs",
-        "src/app/runtime-foundation.mjs",
-        "src/app/runtime-access.mjs"
-      ]
-    }
-  ],
-  "next_action": "主控提交并正常合入F5，补受影响develop验证；随后回原F2分支正常接收届时最新develop，修复认证文件缺失后再启动F3-A。",
+  "blockers": [],
+  "next_action": "主控提交并正常合入F2返修，确认集成对象及受影响验证后，从届时最新develop创建F3-A分支。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -533,14 +515,17 @@
         "base_commit": "c470c2",
         "receipt": "artifacts/local/v0516-f2-acceptance-current.json",
         "commit": "80d7df",
-        "integration_commit": "cdcba5"
+        "integration_commit": "cdcba5",
+        "followup": {
+          "base_commit": "853610",
+          "receipt": "artifacts/local/v0516-f2-auth-missing-current.json"
+        }
       },
-      "conclusion": "已验隔离/恢复/计费与全局故障路径仍有效，F2已接入cdcba5；主控后续完整链核对确认原有认证文件缺失被当空用户库的额外边界FAIL，需在原F2分支返修。本条不将该新缺口算通过。",
+      "conclusion": "账户隔离/恢复与已有调用收尾已本地接入；认证文件缺失额外缺口经原分支返修、独立代码审查和实际子进程验证关闭，允许本地接入。历史失败保留原复现，不改写为通过。",
       "limitations": [
         "默认ACCOUNT_RECOVERY_ENABLED=0，验收显式开启；没有生产开启或发布授权。",
-        "主控固定副本happy路径结果在末轮I/O返修前取得，相关逻辑未变；两文件I/O变化经独立差分审查与实际权限专项关闭。",
         "本版本有状态快照门、设备/负载/生产观测尚未完成；F1生产负载与指标限制仍保留。",
-        "已有认证文件丢失时的空库回退已实际复现，当前为版本发布阻碍，见v0516-F2-auth-missing。"
+        "认证缺失返修结论针对JSON，PG端口未改；关闭恢复时不扩大readiness/退出机制，仍拒绝再建Owner。"
       ],
       "refs": [
         "docs/technical-proposals/F2-账户恢复故障隔离-技术方案.md",
@@ -555,9 +540,11 @@
         "kind": "source_manifest",
         "branch": "feat/v0.5.16-ai-queue-control",
         "base_commit": "cdcba5",
-        "receipt": "artifacts/local/v0516-f5-acceptance-current.json"
+        "receipt": "artifacts/local/v0516-f5-acceptance-current.json",
+        "commit": "77a039",
+        "integration_commit": "d3a30d"
       },
-      "conclusion": "主控独立核对生成/派发/真实存储重读/恢复与HTTP/SSE消费者，26文件摘要一致、16执行记录exit0，批准本地切片接入。",
+      "conclusion": "主控独立核对实际完整链路，26文件摘要和16执行记录一致；实现77a039正常合入develop d3a30d，tree一致，develop预算runtime专项通过。",
       "limitations": [
         "AI_QUEUE_ENABLED默认0，验收显式开启，生产未启用；其他媒体仅无参兼容。",
         "生产容量、设备分位及本版有状态发布门未验；F2认证缺失仍阻碍发布。"
