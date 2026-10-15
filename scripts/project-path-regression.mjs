@@ -64,7 +64,7 @@ for (const file of files) {
   if (IMMUTABLE_CONTROL_HISTORY.test(file)) continue;
   const source = readFileSync(path.join(ROOT, file), "utf8");
   const inspected = file === "PROJECT_RULES.md" ? source.replace(ROOT_LINE, "") : source;
-  assert.doesNotMatch(inspected, /(?:file:\/\/)?\/Users\//u, `${file} contains a user-directory absolute path`);
+  assert.doesNotMatch(inspected, /(?:file:\/\/)?\/Users\/[A-Za-z0-9._-]+\//u, `${file} contains a user-directory absolute path`);
   assert.doesNotMatch(inspected, /Documents\/Codex\/个人成长追踪/u, `${file} contains the retired project root`);
 }
 

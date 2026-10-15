@@ -1,17 +1,17 @@
 {
   "schema_version": 3,
-  "revision": 321,
-  "updated_at": "2026-10-15T03:41:07.359Z",
-  "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
+  "revision": 322,
+  "updated_at": "2026-10-15T08:09:47.191Z",
+  "canonical_path": "reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
     "role": "主控",
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "cf984c",
-    "effective_date": "2026-10-14",
-    "source": "PROJECT_RULES.md及其唯一正文引用；控制面协议2.3、源码partial提交治理与每版本¥4共享测试许可"
+    "commit": "71ee0b",
+    "effective_date": "2026-10-15",
+    "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.4；项目根目录相对路径约定"
   },
   "work_mode": {
     "status": "ACTIVE",
