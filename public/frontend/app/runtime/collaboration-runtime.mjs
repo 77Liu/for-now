@@ -157,6 +157,19 @@ function createRuntimeAnnotationsController(module){return module.createAnnotati
     getSnapshot:()=>state,
     getAccountId:()=>runtime.currentUser?.id||"",
     request,
+    isRootComplete:rootKey=>{
+      const {type,id}=parseCommentRootKey(rootKey);
+      // 这些路由和同步保留完整根；review分析会裁切批注，不能由两数组推断完整。
+      if(runtime.fullRouteStateLoaded)return true;
+      if(["capture","journal","chat","book","quote"].includes(type))return true;
+      return type==="thought" && [...thoughtsFeatureControllers]
+        .some(controller=>controller.isAnnotationRootLoaded?.(id));
+    },
+    refreshRoot:rootKey=>{
+      const {type,id}=parseCommentRootKey(rootKey);
+      const domain={thought:"thoughts",capture:"captures",journal:"journals",chat:"chat",analysis:"review",book:"books",quote:"quotes"}[type];
+      return domain?refreshState(domain,{chainId:id,patchOnly:true}):Promise.resolve(false);
+    },
     refreshNotifications:()=>refreshState("notifications"),
     scheduleNotificationPoll,
     clearThoughtTracePending,

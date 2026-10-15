@@ -37,6 +37,43 @@ export function createAnnotationOperations({
   } = media;
   const { createRequestId, confirm, prompt, writeClipboard, window } = platform;
 
+  async function acceptCreated(rootKey, annotation, originRoot, originAnnotations, operation) {
+    if (model.mergeConfirmed(rootKey, annotation, { create: true, originRoot, originAnnotations })) return true;
+    try {
+      if (!data.refreshRoot || await data.refreshRoot(rootKey) === false) throw new Error("读取未完成");
+      assertCurrent(operation);
+      if (ui.refreshFailureRoot === rootKey) ui.refreshFailureRoot = "";
+      if (!model.counts(rootKey).loaded) throw new Error("完整批注尚未读取");
+      return true;
+    } catch (error) {
+      assertCurrent(operation);
+      ui.refreshFailureRoot = rootKey;
+      annotationView.refreshCounts(rootKey);
+      return false;
+    }
+  }
+
+  /** 仅重读已保存但呈现未同步的当前根；账户生命周期失效不得发布，未完整读取仍保留恢复提示。 @since unreleased */
+  async function retryRefresh(candidate) {
+    const operation = ticket(candidate), rootKey = ui.refreshFailureRoot;
+    if (!rootKey) return;
+    try {
+      if (!data.refreshRoot || await data.refreshRoot(rootKey) === false) throw new Error("读取未完成");
+      assertCurrent(operation);
+      ui.refreshFailureRoot = "";
+      if (!model.counts(rootKey).loaded) throw new Error("完整批注尚未读取");
+      if (ui.activeRootKey === rootKey) annotationView.renderPanel();
+      annotationView.refreshCounts(rootKey);
+      showToast("批注已重新读取");
+    } catch (error) {
+      if (isCurrent(operation)) {
+        ui.refreshFailureRoot = rootKey;
+        annotationView.refreshCounts(rootKey);
+        showToast("批注已保存，完整内容仍未读取；请打开该记录详情后重试读取。", "error");
+      }
+    }
+  }
+
   async function enqueueAssistant({
     rootKey,
     annotationId,
@@ -114,21 +151,24 @@ export function createAnnotationOperations({
       return;
     }
     try {
+      const originRoot = model.rootFor(selection.rootKey);
+      const originAnnotations = originRoot?.annotations;
       const annotation = await request(model.endpoint(selection.rootKey), {
         method: "POST",
         body: JSON.stringify({ ...selection, kind: action, text: "" })
       });
       assertCurrent(operation);
-      const root = model.rootFor(selection.rootKey);
-      if (root) {
-        root.annotations ||= [];
-        root.annotations.push(annotation);
-      }
+      const presentationSynced = await acceptCreated(selection.rootKey, annotation, originRoot, originAnnotations, operation);
+      assertCurrent(operation);
       clearThoughtTracePending(selection.rootKey);
       ui.pendingSelection = null;
       window.getSelection()?.removeAllRanges();
       annotationView.applyAnchor(selection.rootKey, annotation);
-      showToast(action === "emphasis" ? "已添加红色加重" : "已添加绿色划线");
+      if (!presentationSynced) annotationView.openPanel(selection.rootKey);
+      showToast(presentationSynced
+        ? action === "emphasis" ? "已添加红色加重" : "已添加绿色划线"
+        : "标记已保存，当前呈现尚未同步；可在批注面板重试读取。",
+      presentationSynced ? "success" : "error");
     } catch (error) {
       if (isCurrent(operation)) showToast(error.message, "error");
     }
@@ -161,6 +201,8 @@ export function createAnnotationOperations({
         content: intent.text,
         attachmentPaths: submission.attachmentPaths
       });
+      const originRoot = model.rootFor(selection.rootKey);
+      const originAnnotations = originRoot?.annotations;
       const annotation = await request(model.endpoint(selection.rootKey), {
         method: "POST",
         headers: { "idempotency-key": requestId },
@@ -171,13 +213,8 @@ export function createAnnotationOperations({
         })
       });
       assertCurrent(operation);
-      const root = model.rootFor(selection.rootKey);
-      if (root) {
-        root.annotations ||= [];
-        if (!root.annotations.some(item => item.id === annotation.id)) {
-          root.annotations.push(annotation);
-        }
-      }
+      const presentationSynced = await acceptCreated(selection.rootKey, annotation, originRoot, originAnnotations, operation);
+      assertCurrent(operation);
       clearThoughtTracePending(selection.rootKey);
       ui.activeAnnotationId = annotation.id;
       annotationView.applyAnchor(selection.rootKey, annotation);
@@ -212,14 +249,16 @@ export function createAnnotationOperations({
       ui.pendingSelection = null;
       window.getSelection()?.removeAllRanges();
       annotationView.renderPanel({ focusActive: true });
-      const message = !intent.asksAssistant
+      const message = !presentationSynced
+        ? "评论已保存，当前呈现尚未同步；可在批注面板重试读取。"
+        : !intent.asksAssistant
         ? "评论已保存"
         : !assistantQueued
           ? "评论已保存，可在批注中重试神鸡"
           : notificationRefreshFailed
             ? "评论已保存，神鸡任务已提交，但通知刷新失败"
             : "评论已保存，神鸡回复已在后台排队";
-      showToast(message, assistantQueued || !intent.asksAssistant ? "success" : "error");
+      showToast(message, presentationSynced && (assistantQueued || !intent.asksAssistant) ? "success" : "error");
     } catch (error) {
       if (!isCurrent(operation)) return;
       if (!uncertainSubmission(error)) await discardUploads(uploadedPaths);
@@ -247,11 +286,8 @@ export function createAnnotationOperations({
         { method: "POST", body: JSON.stringify({ text: input.value }) }
       );
       assertCurrent(operation);
-      const annotation = model.rootFor(rootKey)?.annotations
-        ?.find(item => item.id === annotationId);
+      const annotation = model.mergeReply(rootKey, annotationId, saved);
       if (annotation) {
-        annotation.replies ||= [];
-        annotation.replies.push(saved);
         if (ui.activeRootKey === rootKey) {
           ui.activeAnnotationId = annotationId;
           annotationView.refreshAnnotation(annotation);
@@ -346,14 +382,14 @@ export function createAnnotationOperations({
         }
       );
       assertCurrent(operation);
-      Object.assign(annotation, updated);
+      const current = model.mergeConfirmed(rootKey, updated);
       if (ui.activeRootKey === rootKey) {
         annotationView.removeAnchors(annotation.id);
-        annotationView.applyAnchor(rootKey, annotation);
-        ui.activeAnnotationId = annotation.id;
+        if (current) annotationView.applyAnchor(rootKey, current);
+        ui.activeAnnotationId = current?.id || "";
         annotationView.renderPanel();
       }
-      showToast(`已转为${annotationPresentation(annotation).label}`);
+      showToast(`已转为${annotationPresentation(current || updated).label}`);
     } catch (error) {
       if (isCurrent(operation)) showToast(error.message, "error");
     }
@@ -374,10 +410,11 @@ export function createAnnotationOperations({
         { method: "DELETE" }
       );
       assertCurrent(operation);
-      if (root) {
-        root.annotations = (root.annotations || [])
-          .filter(item => item.id !== annotationId);
+      const currentRoot = model.rootFor(rootKey);
+      if (Array.isArray(currentRoot?.annotations)) {
+        currentRoot.annotations = currentRoot.annotations.filter(item => item.id !== annotationId);
       }
+      annotationView.refreshCounts(rootKey);
       model.clearAssistantDraft(rootKey, annotationId);
       if (ui.activeRootKey === rootKey) {
         annotationView.removeAnchors(annotationId);
@@ -405,10 +442,10 @@ export function createAnnotationOperations({
       );
       assertCurrent(operation);
       const root = model.rootFor(rootKey);
-      if (root) {
-        root.annotationDrift = (root.annotationDrift || [])
-          .filter(item => item.id !== driftId);
+      if (Array.isArray(root?.annotationDrift)) {
+        root.annotationDrift = root.annotationDrift.filter(item => item.id !== driftId);
       }
+      annotationView.refreshCounts(rootKey);
       if (ui.activeRootKey === rootKey) annotationView.renderPanel();
       showToast("漂流批注已移入回收站");
     } catch (error) {
@@ -418,6 +455,7 @@ export function createAnnotationOperations({
 
   return Object.freeze({
     selectionAction,
+    retryRefresh,
     commentSubmit,
     reply,
     assistantSubmit,

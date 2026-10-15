@@ -1,3 +1,4 @@
+import { projectAnnotationCounts, uniqueAnnotationEntries } from "../../../generated/annotation-counts.mjs";
 import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
 
 const ROOT_COLLECTIONS = Object.freeze({
@@ -30,13 +31,14 @@ export function parseAnnotationRootKey(value) {
     : { type: value.slice(0, divider), id: value.slice(divider + 1) };
 }
 
-export function createAnnotationModel({ getSnapshot, getAccountId, storage }) {
+export function createAnnotationModel({ getSnapshot, getAccountId, storage, isRootComplete }) {
   const ui = {
     pendingSelection: null,
     activeRootKey: "",
     activeAnnotationId: "",
     activeAssistantComposer: "",
-    panelOpen: false
+    panelOpen: false,
+    refreshFailureRoot: ""
   };
   let drafts = {};
 
@@ -51,6 +53,33 @@ export function createAnnotationModel({ getSnapshot, getAccountId, storage }) {
       ? (snapshot[ROOT_COLLECTIONS[type]] || []).find(item => item.id === id) || null
       : null;
   };
+  /**
+   * 按稳定ID合并确认回执，保留更新版本及并发回复。创建仅可接入提交时仍相同的根和集合，
+   * 返回null要求调用方权威重读，禁止复活已删除/未完整加载目标。
+   * @since unreleased
+   */
+  function mergeConfirmed(rootKey, saved, { create = false, originRoot, originAnnotations } = {}) {
+    const root = rootFor(rootKey);
+    if (!Array.isArray(root?.annotations)) return null;
+    const current = root.annotations.find(item => item.id === saved.id);
+    if (!current) {
+      if (!create || root !== originRoot || root.annotations !== originAnnotations) return null;
+      root.annotations.push(saved);
+      return saved;
+    }
+    if (Number(current.version || 1) > Number(saved.version || 1)) return current;
+    const replies = uniqueAnnotationEntries([...(current.replies || []), ...(saved.replies || [])]);
+    const shenji = uniqueAnnotationEntries([...(current.shenji || []), ...(saved.shenji || [])]);
+    Object.assign(current, saved, { replies, shenji });
+    return current;
+  }
+  /** 按当前根及稳定回复ID接入ACK；缺失目标不重建，同步先达不重复追加。 @since unreleased */
+  function mergeReply(rootKey, annotationId, saved) {
+    const annotation = rootFor(rootKey)?.annotations?.find(item => item.id === annotationId);
+    if (!annotation) return null;
+    annotation.replies = uniqueAnnotationEntries([...(annotation.replies || []), saved]);
+    return annotation;
+  }
   const draftStorageKey = () => (
     getAccountId() ? `cike:annotation-drafts:${getAccountId()}` : ""
   );
@@ -147,7 +176,8 @@ export function createAnnotationModel({ getSnapshot, getAccountId, storage }) {
       activeRootKey: "",
       activeAnnotationId: "",
       activeAssistantComposer: "",
-      panelOpen: false
+      panelOpen: false,
+      refreshFailureRoot: ""
     });
     drafts = {};
   }
@@ -155,6 +185,11 @@ export function createAnnotationModel({ getSnapshot, getAccountId, storage }) {
   return Object.freeze({
     ui,
     rootFor,
+    mergeConfirmed,
+    mergeReply,
+    counts: value => projectAnnotationCounts(rootFor(value), {
+      complete: ui.refreshFailureRoot === value ? false : isRootComplete?.(value)
+    }),
     rootLabel: value => ROOT_LABELS[parseAnnotationRootKey(value).type] || "正文",
     endpoint,
     pendingTask,

@@ -1,3 +1,4 @@
+import { annotationCountLabel } from "../../../generated/annotation-counts.mjs";
 import { pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
 import { annotationMenuItems, annotationPresentation, groupAnnotationLineCounts, sortAnnotationItemsByPosition } from "./presentation.mjs";
 import { annotationRootKey, parseAnnotationRootKey } from "./model.mjs";
@@ -30,6 +31,30 @@ export function createAnnotationView({
     frames.add(frame);
     return frame;
   };
+
+  /** 从同一确认集合窄刷新入口/面板数量；未知仍可打开恢复，不重绘草稿或改变阅读状态。 @since unreleased */
+  function refreshCounts(rootKey = ui.activeRootKey) {
+    const counts = model.counts(rootKey);
+    const label = annotationCountLabel(counts);
+    queryAll(`[data-annotation-count-root="${escapeSelector(rootKey)}"]`).forEach(button => {
+      button.textContent = label;
+      button.dataset.annotationCountState = counts.loaded ? "loaded" : "unknown";
+      button.disabled = false;
+    });
+    if (rootKey === ui.activeRootKey) {
+      const title = query("#comment-panel")?.querySelector("header h2");
+      if (title) title.textContent = `${model.rootLabel(rootKey)} · ${label}`;
+    }
+    const reopen = query("#comment-panel-reopen");
+    const oldCount = query("#comment-panel-reopen-count");
+    if (oldCount) { oldCount.textContent = ""; oldCount.hidden = true; }
+    if (reopen) {
+      const text = reopen.querySelector("span");
+      if (text) text.textContent = "返回批注";
+      reopen.setAttribute("aria-label", "返回上次批注面板");
+    }
+    return counts;
+  }
 
   function textNodes(container) {
     const walker = document.createTreeWalker(container, window.NodeFilter.SHOW_TEXT, {
@@ -74,6 +99,10 @@ export function createAnnotationView({
     }
   }
   function applyAnchor(rootKey, annotation) {
+    refreshCounts(rootKey);
+    const current = model.rootFor(rootKey)?.annotations?.find(item => item.id === annotation.id);
+    if (!current) return;
+    annotation = current;
     queryAll(
       `.commentable[data-comment-root="${escapeSelector(rootKey)}"]`
       + `[data-comment-target="${escapeSelector(annotation.targetKey)}"]`
@@ -105,6 +134,8 @@ export function createAnnotationView({
     scheduleLayout();
   }
   function applyAnchors(container) {
+    const roots = new Set([...container?.querySelectorAll(".commentable") || []].map(item => item.dataset.commentRoot));
+    for (const rootKey of roots) refreshCounts(rootKey);
     container?.querySelectorAll(".commentable").forEach(element => {
       const rootKey = element.dataset.commentRoot;
       const annotations = (model.rootFor(rootKey)?.annotations || [])
@@ -128,14 +159,23 @@ export function createAnnotationView({
   function renderLineCounts() {
     lineFrame = 0;
     const layer = query("#annotation-line-counts");
+    layer?.setAttribute("aria-label", "行级批注导航");
     if (!layer || !isMounted()) return;
     const entries = [];
     const hosts = new Map();
+    const rootTargets = new Map();
     queryAll(".commentable").forEach((host, hostIndex) => {
       if (!host.offsetParent) return;
-      const comments = (model.rootFor(host.dataset.commentRoot)?.annotations || [])
-        .filter(item => !["highlight", "emphasis"].includes(item.kind)
-          && item.targetKey === host.dataset.commentTarget);
+      const rootKey = host.dataset.commentRoot;
+      if (!rootTargets.has(rootKey)) {
+        const targets = new Map();
+        for (const item of model.counts(rootKey).threads) {
+          const items = targets.get(item.targetKey) || [];
+          items.push(item); targets.set(item.targetKey, items);
+        }
+        rootTargets.set(rootKey, targets);
+      }
+      const comments = rootTargets.get(rootKey).get(host.dataset.commentTarget) || [];
       if (!comments.length) return;
       const hostKey = `${host.dataset.commentRoot}|${host.dataset.commentTarget}|${hostIndex}`;
       hosts.set(hostKey, host);
@@ -156,7 +196,7 @@ export function createAnnotationView({
         window.scrollX + (rect?.right || 0) + 7
       );
       const top = window.scrollY + group.top - 1;
-      return `<button type="button" style="left:${Math.max(window.scrollX + 2, left)}px;top:${Math.max(window.scrollY + 2, top)}px" data-comment-line="${index}" data-comment-root="${escapeHtml(host?.dataset.commentRoot || "")}" data-annotation-id="${escapeHtml(group.annotationIds[0])}" aria-label="本行 ${group.count} 条评论" title="本行 ${group.count} 条评论">${group.count}</button>`;
+      return `<button type="button" style="left:${Math.max(window.scrollX + 2, left)}px;top:${Math.max(window.scrollY + 2, top)}px" data-comment-line="${index}" data-comment-root="${escapeHtml(host?.dataset.commentRoot || "")}" data-annotation-id="${escapeHtml(group.annotationIds[0])}" aria-label="定位本行批注" title="定位本行批注">↗</button>`;
     }).join("");
     layer.hidden = !groups.length;
   }
@@ -361,23 +401,26 @@ export function createAnnotationView({
     if (ui.pendingSelection?.rootKey === ui.activeRootKey) {
       query("#comment-quote").textContent = ui.pendingSelection.quote;
     }
-    const annotations = sortAnnotationItemsByPosition(root.annotations || []);
-    const drift = [...(root.annotationDrift || [])]
+    const counts = refreshCounts(ui.activeRootKey);
+    const annotations = sortAnnotationItemsByPosition(counts.entries);
+    const drift = [...counts.drift]
       .sort((left, right) => (
         right.driftedAt || right.createdAt
       ).localeCompare(left.driftedAt || left.createdAt));
     const live = annotations.length
       ? annotations.map(annotationCard).join("")
-      : emptyStateMarkup("还没有有效评论或标记。选中正文后即可添加。");
+      : emptyStateMarkup(counts.loaded
+        ? "还没有有效评论或标记。选中正文后即可添加。"
+        : "批注尚未完整加载，请打开完整详情后查看。数量暂未知。");
     const driftSection = drift.length
       ? `<section class="drift-box"><header><h3>评论漂流箱</h3><span>${drift.length}</span></header><p class="drift-help">原文被改写或删除后，无法可靠定位的批注会保留在这里。</p>${drift.map(driftCard).join("")}</section>`
       : "";
-    query("#comment-panel-list").innerHTML = live + driftSection;
+    const warning = ui.refreshFailureRoot === ui.activeRootKey
+      ? '<p class="status" role="status">批注已保存，当前呈现尚未同步。<button type="button" class="subtle-action" data-annotation-refresh>重试读取批注</button></p>'
+      : "";
+    query("#comment-panel-list").innerHTML = warning + live + driftSection;
     panel.querySelectorAll("[data-shenji-form]").forEach(model.hydrateAssistantForm);
     renderLatex(query("#comment-panel-list"));
-    query("#comment-panel-reopen-count").textContent = String(
-      annotations.filter(item => !["highlight", "emphasis"].includes(item.kind)).length
-    );
     setPanelVisibility(ui.panelOpen);
     nextFrame(() => {
       if (focusActive && ui.activeAnnotationId) {
@@ -392,10 +435,13 @@ export function createAnnotationView({
     return true;
   }
   function refreshAnnotation(annotation) {
+    annotation = model.rootFor(ui.activeRootKey)?.annotations?.find(item => item.id === annotation.id);
+    if (!annotation) return renderPanel();
     const current = query(
       `[data-comment-card="${escapeSelector(annotation.id)}"]`
     );
     if (!current) return renderPanel();
+    refreshCounts(ui.activeRootKey);
     model.stashAssistantDraft(current.querySelector("[data-shenji-form]"));
     const composerOpen = !current.querySelector("[data-shenji-form]")?.hidden;
     const template = document.createElement("template");
@@ -406,6 +452,7 @@ export function createAnnotationView({
     model.hydrateAssistantForm(composer);
     if (composer) composer.hidden = !composerOpen;
     renderLatex(next);
+    scheduleLayout();
     return true;
   }
   function openPanel(rootKey, annotationId = "") {
@@ -520,6 +567,7 @@ export function createAnnotationView({
     hideSelectionTools,
     closePanel,
     renderPanel,
+    refreshCounts,
     refreshAnnotation,
     openPanel,
     markTarget,

@@ -30,6 +30,10 @@ export function createThoughtsFeatureController(options = {}) {
     resetSession() {
       return controller?.resetSession();
     },
+    /** 完整性来自已挂载的实际控制器；模块未加载时不得宣称根完整。 @since unreleased */
+    isAnnotationRootLoaded(id) {
+      return controller?.isAnnotationRootLoaded(id) || false;
+    },
     patchTarget(target) {
       return controller?.patchTarget(target) || false;
     },

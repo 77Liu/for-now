@@ -315,11 +315,13 @@ const thoughtController = createThoughtsFeatureController({
     window: thoughtWindow
   },
 });
+assert.equal(thoughtController.isAnnotationRootLoaded("root-new"), false, "公开loader未加载时不声称批注完整");
 await thoughtController.mount({
   root: thoughtRoot,
   route: { view: "thoughts", query: {} },
   signal: new AbortController().signal
 });
+assert.equal(thoughtController.isAnnotationRootLoaded("root-new"), true, "公开loader透传已加载完整快照证明");
 const clickAnswer = () => rootListeners.get("click")({
   target: { closest: selector => selector === "button" ? thoughtButton : null }
 });

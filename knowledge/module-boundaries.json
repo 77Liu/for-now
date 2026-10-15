@@ -1375,7 +1375,8 @@
       "root": "public/frontend/features/annotations",
       "publicEntry": "public/frontend/features/annotations/index.mjs",
       "allowedDependencies": [
-        "frontend.ai-task-status"
+        "frontend.ai-task-status",
+        "frontend.annotation-counts"
       ],
       "owns": {
         "data": [
@@ -1885,7 +1886,8 @@
         "frontend.media",
         "frontend.time",
         "frontend.feature.thoughts-model",
-        "frontend.ai-task-status"
+        "frontend.ai-task-status",
+        "frontend.annotation-counts"
       ],
       "owns": {
         "data": [
@@ -3054,6 +3056,23 @@
       },
       "tests": [
         "scripts/frontend-thoughts-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.annotation-counts",
+      "type": "shared",
+      "root": "public/frontend/shared/annotation-counts.mts",
+      "publicEntry": "public/frontend/shared/annotation-counts.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "stateless confirmed annotation projection and loaded/unknown count labels"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-annotations-feature-regression.mjs"
       ],
       "status": "active"
     }

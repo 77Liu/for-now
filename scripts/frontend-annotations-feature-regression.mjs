@@ -50,6 +50,7 @@ class FakeElement {
     this._textContent = String(value);
     this.document.writes += 1;
   }
+  setAttribute(name, value) { this[name] = String(value); }
   querySelector(selector) {
     if (this.name === "panel" && selector === "header h2") {
       return this.document.heading;
@@ -287,3 +288,32 @@ assert.ok(cancelledFrames.length > 0, "session reset must cancel pending layout 
 assert.equal(secondDispose(), false);
 
 console.log("Frontend annotations feature checks passed: repeat mount cleanup, session reset and late-account response isolation.");
+
+// F6确认集合统一投影：回复、AI对话、标记与漂流分开，摘要和缺失数组不冒称0。
+{
+  const { projectAnnotationCounts, annotationCountLabel } = await import("../public/frontend/features/annotations/index.mjs");
+  const root = {
+    annotations: [
+      { id: "thread", kind: "comment", version: 1, targetKey: "question:r", replies: [{ id: "reply" }, { id: "reply" }, { id: "reply2" }], shenji: [{ id: "ai" }] },
+      { id: "thread", kind: "comment", version: 1, targetKey: "question:r", replies: [{ id: "reply" }, { id: "reply2" }], shenji: [{ id: "ai" }] },
+      { id: "mark1", kind: "highlight" }, { id: "mark2", kind: "emphasis" }
+    ],
+    annotationDrift: [{ id: "drift", kind: "comment", replies: [{ id: "old-reply" }] }]
+  };
+  const counts = projectAnnotationCounts(root);
+  assert.equal(counts.threadCount, 1);
+  assert.equal(counts.replyCount, 2);
+  assert.equal(counts.assistantCount, 1);
+  assert.equal(counts.markCount, 2);
+  assert.equal(counts.driftCount, 1);
+  assert.equal(root.annotations.length, 4, "纯投影不代替ACK接入修改事实数组");
+  assert.match(annotationCountLabel(counts), /1条批注 · 2条回复 · 1条AI回复 · 2条标记 · 1条漂流/);
+  for (const value of [null, {}, { annotations: [] }, { ...root, blockCount: 0 }]) {
+    const unknown = projectAnnotationCounts(value);
+    assert.equal(unknown.loaded, false); assert.equal(unknown.threadCount, null);
+    assert.equal(annotationCountLabel(unknown), "批注未完整加载");
+  }
+  assert.equal(projectAnnotationCounts(root, { complete: false }).replyCount, null);
+  assert.equal(projectAnnotationCounts({ annotations: [], annotationDrift: [] }).threadCount, 0);
+  assert.equal(projectAnnotationCounts(root, { targetKey: "another" }).threadCount, 0);
+}

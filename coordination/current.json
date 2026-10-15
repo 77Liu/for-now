@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 372,
-  "updated_at": "2026-10-15T22:16:43.157Z",
+  "revision": 375,
+  "updated_at": "2026-10-15T22:44:41.641Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "IN_PROGRESS",
-    "phase": "F7追问批注阅读状态保持"
+    "phase": "F6批注入口与计数一致"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "391f97",
-      "source": "F4实现1f70ee经主控独审正常合入，tree一致且develop思绪专项通过；保留feat引用。"
+      "commit": "bcdcd7",
+      "source": "F7实现21bac8主控独审后正常合入，tree一致且develop思绪专项通过；原feat保留。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -55,43 +55,43 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-F7-thought-reading-state",
+      "id": "v0516-F6-annotation-counts",
       "owner": "主开发Agent",
       "mode": "implementation",
-      "branch": "feat/v0.5.16-thought-reading-state",
-      "baseline": "391f97",
+      "branch": "feat/v0.5.16-annotation-counts",
+      "baseline": "bcdcd7",
       "status": "READY_FOR_INTEGRATION",
       "allowed_write_set": [
-        "public/frontend/features/thoughts/** (F7实际开合/表单/锚点/焦点及生命周期消费者，复用F4端口)",
-        "public/frontend/shared/thought-page-window.mts (仅K5现有阅读状态端口扩展，不另建scroll缓存)",
-        "public/frontend/features/annotations/** (仅目标更新消费者必要接线，不做F6计数或F8选区)",
-        "public/frontend/app/runtime/collaboration-runtime.mjs / page-descriptors-insights.mjs (仅F7目标patch及当前路由/账户生命周期实际桥接)",
-        "scripts/** (直接受影响既有思绪/追问/批注/路由专项与实际DOM验收，不新增重复测试入口)",
-        "现有TS/构建/模块边界 (仅新增必要TS源的准确接线，不改依赖或默认配置)",
-        "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md (4.1事实与现有回执引用)",
-        "docs/audits/engineering-2026-10-14.md (仅84行失效源码行号链接修正，历史审计事实原样保留)"
+        "public/frontend/features/annotations/** (同一已确认可见批注投影、面板/行定位/入口，保留原权限/读写/恢复)",
+        "public/frontend/features/thoughts/presentation.mjs / controller.mjs / operations.mjs / model.mjs / index.mjs (仅F6批注主入口及同一计数公开消费者)",
+        "public/frontend/shared/** (仅确有真实双消费者需要的F6 TS投影，不新增状态平台/第二数据源)",
+        "public/frontend/app/runtime/collaboration-runtime.mjs / page-descriptors-insights.mjs (仅计数投影/完整性实际端口必要桥接，不改kernel)",
+        "scripts/** (直接受影响既有annotations/thoughts/collaboration/route专项与实际DOM验收)",
+        "tsconfig.frontend.json / knowledge/module-boundaries.json / 现有构建入口 (仅必要TS准确接线，无新依赖)",
+        "docs/technical-proposals/F6-批注入口与计数一致-技术方案.md (必要契约澄清、4.1事实及原回执引用)",
+        "public/frontend/features/thoughts/loader.mjs (仅透传已有实际controller的isAnnotationRootLoaded，未加载false；不改加载生命周期)"
       ],
       "forbidden_write_set": [
         "coordination/**",
         ".trae/**",
         "Git/远程/生产/付费操作",
-        "新工作树或额外Agent",
-        "F6/F8/F9客户端实现、schema/依赖/通用状态平台",
-        "重写历史事件/归档/审计结论"
+        "新工作树/额外Agent",
+        "F8选区手势、F9客户端调度或F7另一套阅读状态",
+        "后端/schema/依赖/默认配置/通用状态平台 (若真实闭包必须先说明)"
       ],
-      "shared_file_owner": "主开发唯一实现与必要文档写者；主控唯一控制面/Git维护者；唯一工作目录串行。",
-      "integration_order": "F4已集成；本片独审接入后才选届时develop派发F6→F8，后续回保留F9分支。",
-      "acceptance_ref": "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md",
+      "shared_file_owner": "主开发唯一实现/必要文档写者；主控唯一控制面及Git维护者；一个工作目录串行。",
+      "integration_order": "F7已接入；F6独审后选届时develop做F8，再回原F9分支接收届时develop续客户端。",
+      "acceptance_ref": "docs/technical-proposals/F6-批注入口与计数一致-技术方案.md",
       "contracts": [
-        "先沿真实render/ACK/sync/patch/全页消费者自查与复现，不能用方案风险冒称线上根因。",
-        "同账户根/追问稳定ID的展开、显式收起、草稿/selection及焦点保留；后台更新不代替用户意图。",
-        "复用F4唯一窗口/位置归属，interactionRevision及route/session generation保护迟到恢复；不建第二份滚动存储。",
-        "局部patch与全页重绘同一语义，保留原音频生命周期；删除目标或页淘汰不能复活旧对象。",
-        "阅读状态限于当前页窗口；离页/退出失效，跨账户旧RAF/焦点/响应不得污染。",
-        "不提前做F6计数/F8原生选区/F9调度；必要公共契约越界先说明真实链路。",
-        "新增源码TS、中文头及必要公共JSDoc，产物隔离忽略；只补真实行为专项。"
+        "先沿现有root.annotations/annotationDrift、nested回复、targetKey→header/panel/line导航真实消费者核对与复现，不凭命名判重复。",
+        "已确认可见批注集合为事实；线程、回复、highlight/emphasis、漂流项含义明确，不混加为同一个总数。",
+        "批准方案只保留一个主要入口，行定位只导航不重复总数；面板已有恢复交互保留，同一对象所有展示从同一公开投影派生。",
+        "F4未加载完整根/批注不等于零或不存在；完整性/unknown明确传递，不能通过假设空数组制造一致。",
+        "ACK/同步/重复/删除按稳定ID收敛；待发送数量不伪称已确认数量，权限隔离不变。",
+        "F7显式收起/草稿/selection/焦点/锚点及旧帧规则必须保持；F8原生选区本片不实现。",
+        "新增源码TS/中文头/必要JSDoc，生成物隔离忽略；仅受影响行为验证，未验移动/性能如实标注。"
       ],
-      "handoff": "实现后先自查完整生产/转换/接入/真实消费者，再必要专项与实际DOM；固定源码六位指纹与artifacts/local/v0516-f7-acceptance-current.json后暂停交主控独审，不自行Git。"
+      "handoff": "实现后先自查完整产生/接入/投影/真实入口消费，再必要专项与真实DOM；固定六位指纹、原方案4.1及artifacts/local/v0516-f6-acceptance-current.json后暂停交主控独审，不自行Git。"
     }
   ],
   "candidate": null,
@@ -125,7 +125,7 @@
     }
   },
   "blockers": [],
-  "next_action": "主控正常提交并合入F7、保留feat，执行受影响develop检查；再从届时最新develop确定F6批注入口/计数基线。",
+  "next_action": "主控将F6固定实现提交并正常合入develop，核对tree及必要集成专项后，才从届时最新develop启动F8。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -347,9 +347,11 @@
         "kind": "source_manifest",
         "branch": "feat/v0.5.16-thought-reading-state",
         "base_commit": "391f97",
-        "receipt": "artifacts/local/v0516-f7-acceptance-current.json"
+        "receipt": "artifacts/local/v0516-f7-acceptance-current.json",
+        "commit": "21bac8",
+        "integration_commit": "bcdcd7"
       },
-      "conclusion": "8文件独立全链审查及主控实际Chrome阅读/批注/ACK与F4深页1px补证通过，允许本地功能切片接入；旧失效链接门已通过。",
+      "conclusion": "8文件完整契约独审及主控真实Chrome补证后正常合入develop，tree一致、集成思绪专项通过；F4深页1px及旧链接工程门已有效关闭。",
       "limitations": [
         "旧帧用例早期一次断言差异未归因，原FAIL/UNKNOWN保留；当前固定指纹独立同路径通过，组合门继续核对。",
         "仅隔离JSON桌面；iOS、整版PG有状态、全站分位与生产观察未验；不是整版发布GO。"
@@ -357,6 +359,24 @@
       "refs": [
         "artifacts/local/v0516-f7-acceptance-current.json",
         "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-F6-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-annotation-counts",
+        "base_commit": "bcdcd7",
+        "receipt": "artifacts/local/v0516-f6-acceptance-current.json"
+      },
+      "conclusion": "主控亲读15文件及实际生产者/公开loader/存储返回/真实消费者；独立Chrome思绪回复删除、375px无溢出、完整capture计数及阅读状态通过，允许本地功能接入。",
+      "limitations": [
+        "原生iOS、真实鉴权多账户、整版PG有状态及全站P75未验；非整版发布GO。",
+        "裁切analysis保持unknown，未新增后端完整读取协议。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F6-批注入口与计数一致-技术方案.md",
+        "artifacts/local/v0516-f6-acceptance-current.json"
       ]
     }
   ],
