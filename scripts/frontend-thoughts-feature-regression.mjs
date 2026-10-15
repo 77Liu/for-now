@@ -399,7 +399,7 @@ console.log(
   const { THOUGHT_PAGING } = await import("../public/generated/thought-pagination-config.mjs");
   let route = { view: "thoughts", kind: "page", query: {} }, life = {}, owner = "a";
   let state = { thoughts: [{ id: "first" }], thoughtPage: { kind: "list", nextCursor: "edge-a", prevCursor: null } };
-  const deferred = [];
+  const deferred = [], writeDeferred = [];
   const status = { isConnected: true, textContent: "" };
   const fakeDocument = { querySelectorAll: () => [], querySelector: selector => selector === "#thought-pagination-status" ? status : null, activeElement: null };
   const fakeWindow = Object.defineProperty({}, "sessionStorage", { get() { throw new Error("storage unavailable"); } });
@@ -407,7 +407,7 @@ console.log(
   fakeDocument.querySelector = selector => selector === "#all-thoughts" ? root : selector === "#thought-pagination-status" ? status : null;
   const controller = createThoughtsFeatureController({
     data: { getSnapshot: () => state, getThoughtPaging: () => ({ ...THOUGHT_PAGING, enabled: true }), getAccountId: () => owner, getSessionSerial: () => 1,
-      isRouteDataReady: () => true, isFullRouteStateLoaded: () => false, request() {}, requestBlob() {}, requestHeadStatus() {}, refresh() {}, applyPendingProjection() {},
+      isRouteDataReady: () => true, isFullRouteStateLoaded: () => false, request: async () => new Promise(resolve => writeDeferred.push(resolve)), requestBlob() {}, requestHeadStatus() {}, refresh() {}, applyPendingProjection() {},
       requestV1: async (_url, options) => new Promise(resolve => deferred.push({ resolve, signal: options.signal })) },
     navigation: { currentRoute: () => route, replaceQuery: query => { route = { ...route, query }; }, openDetail() {}, backToList() {}, showUnavailable() {}, clearResult() {} },
     media: { resetEditor() {}, persistDraft() {}, submitDraft() {}, completeDraft() {}, rollbackDraft() {}, uncertainSubmission() {}, contentImagesMarkup: () => "", hasDraftItems: () => false },
@@ -439,6 +439,20 @@ console.log(
   deferred[2].resolve({ data: [{ id: "wrong-owner" }], meta: { nextCursor: null, prevCursor: "c" } });
   await tick();
   assert.equal(state.thoughts.some(item => item.id === "wrong-owner"), false);
+  state.thoughts = [{ id: "edit-root", type: "question", content: "saved", followUps: [{ id: "edit-follow", question: "old", answer: "", version: 1 }] }];
+  const submitButton = { disabled: false, isConnected: true };
+  const form = {
+    id: "", dataset: { rootId: "edit-root", followupEdit: "edit-follow", version: "1" },
+    elements: { question: { value: "new" }, answer: { value: "" } },
+    matches: () => true, closest: () => null,
+    querySelector: () => submitButton
+  };
+  listeners.get("submit")({ target: form, preventDefault() {} });
+  assert.equal(writeDeferred.length, 1);
+  owner = "switched-again";
+  writeDeferred[0]({ id: "edit-follow", question: "new", answer: "", version: 2 });
+  await tick();
+  assert.equal(state.thoughts[0].followUps[0].question, "old", "旧账户的追问ACK不能进入新账户快照");
   await assert.doesNotReject(() => controller.resetSession());
 }
 
@@ -470,4 +484,25 @@ console.log(
   assert.equal(state.thoughts[0].preview.content, "我的回答");
   assert.deepEqual(state.thoughts[0].tags, ["root", "child"]);
   assert.equal(state.thoughtPage.window.generation, 1, "restoring the same already stale window is not a new generation");
+}
+
+// F7同一阅读恢复批次：真实用户意图/账户/路由变化撤销迟到帧，程序恢复不自行增长意图。
+{
+  const { createThoughtReadingState } = await import("../public/generated/thought-page-window.mjs");
+  let scope = "owner-a:session-1:detail-a";
+  const reading = createThoughtReadingState(() => scope);
+  const first = reading.beginRender();
+  assert.equal(reading.isCurrent(first), true);
+  reading.interact();
+  assert.equal(reading.isCurrent(first), false);
+  const second = reading.beginRender();
+  assert.equal(reading.isCurrent(second), true);
+  reading.beginRender();
+  assert.equal(reading.isCurrent(second), false);
+  const beforeAccountSwitch = reading.capture();
+  scope = "owner-b:session-2:detail-a";
+  assert.equal(reading.isCurrent(beforeAccountSwitch), false);
+  const beforeLeaving = reading.capture();
+  reading.invalidate();
+  assert.equal(reading.isCurrent(beforeLeaving), false);
 }

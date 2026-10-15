@@ -1,5 +1,5 @@
 /**
- * 思绪相邻分页窗口及只含位置的账户检查点。
+ * 思绪相邻分页窗口、位置检查点与当前页面阅读恢复资格。
  * 建立时间：2026-10-16
  * 状态：active
  * 边界：不保存完整历史或正文副本；请求归属及页面生命周期由调用者复验。
@@ -157,5 +157,35 @@ export function summarizeThoughtWindowItems(
         truncated: preview.text.length > limits.userPreviewLimit || (!blocks.length && previousPreview?.truncated === true)
       } : null
     };
+  });
+}
+
+/**
+ * 当前思绪页面的恢复资格，不保存第二份窗口、正文或滚动位置。
+ * 调用者在真实用户输入时推进意图代数，在重绘开始时替换恢复批次。
+ * @since unreleased
+ */
+export function createThoughtReadingState(getScope: () => string) {
+  let interactionRevision = 0;
+  let renderRevision = 0;
+  const capture = () => ({ scope: getScope(), interactionRevision, renderRevision });
+  return Object.freeze({
+    capture,
+    beginRender() {
+      renderRevision += 1;
+      return capture();
+    },
+    interact() {
+      interactionRevision += 1;
+    },
+    invalidate() {
+      renderRevision += 1;
+      interactionRevision += 1;
+    },
+    isCurrent(token: ReturnType<typeof capture>) {
+      return token.scope === getScope()
+        && token.interactionRevision === interactionRevision
+        && token.renderRevision === renderRevision;
+    }
   });
 }

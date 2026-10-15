@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 369,
-  "updated_at": "2026-10-15T21:54:42.344Z",
+  "revision": 372,
+  "updated_at": "2026-10-15T22:16:43.157Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "IN_PROGRESS",
-    "phase": "F4思绪完整游标分页"
+    "phase": "F7追问批注阅读状态保持"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "208149",
-      "source": "F9服务端实现ee44fe独审后正常合入；tree一致、develop同步专项通过；包含F3注册初始化返修。"
+      "commit": "391f97",
+      "source": "F4实现1f70ee经主控独审正常合入，tree一致且develop思绪专项通过；保留feat引用。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -55,45 +55,43 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-F4-thought-pagination",
+      "id": "v0516-F7-thought-reading-state",
       "owner": "主开发Agent",
       "mode": "implementation",
-      "branch": "feat/v0.5.16-thought-pagination",
-      "baseline": "208149",
+      "branch": "feat/v0.5.16-thought-reading-state",
+      "baseline": "391f97",
       "status": "READY_FOR_INTEGRATION",
       "allowed_write_set": [
-        "src/modules/thoughts/** / src/http/thoughts.mjs (现有领域双向tuple游标与公开消费者)",
-        "src/app/startup-projections.mjs / src/http/startup.mjs (游标单页与有限旧page兼容、错误语义)",
-        "public/frontend/features/thoughts/** / public/frontend/page-catalog/** / public/frontend/app/runtime/data-runtime.mjs (仅F4窗口/路由/ticket/锚点/失效必要接线)",
-        "共享分页常量、现有配置入口与TS构建/模块边界 (仅方案单一来源20/5/256/10及开关默认关闭，双端真实消费者)",
-        "scripts/** (直接受影响既有领域/HTTP/路由/前端专项和真实DOM/浏览器验收)",
-        "public/frontend/pages/index.mjs (仅既有restoreVer取消端口及位置写入在途导航/已提交检查；保留其他视图原默认行为)",
-        "public/frontend/app/runtime/page-descriptors-insights.mjs (仅F4新分页/阅读位置真实端口转接)",
-        "scripts/page-router-lifecycle-regression.mjs / scripts/url-history-regression.mjs (仅上述真实路由交错及现有兼容消费者)",
-        "public/frontend/app/runtime/record-events.mjs (仅thought create ACK复用同一有界mutation helper后沿用原publish；不改其他表单/错误/草稿)"
+        "public/frontend/features/thoughts/** (F7实际开合/表单/锚点/焦点及生命周期消费者，复用F4端口)",
+        "public/frontend/shared/thought-page-window.mts (仅K5现有阅读状态端口扩展，不另建scroll缓存)",
+        "public/frontend/features/annotations/** (仅目标更新消费者必要接线，不做F6计数或F8选区)",
+        "public/frontend/app/runtime/collaboration-runtime.mjs / page-descriptors-insights.mjs (仅F7目标patch及当前路由/账户生命周期实际桥接)",
+        "scripts/** (直接受影响既有思绪/追问/批注/路由专项与实际DOM验收，不新增重复测试入口)",
+        "现有TS/构建/模块边界 (仅新增必要TS源的准确接线，不改依赖或默认配置)",
+        "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md (4.1事实与现有回执引用)",
+        "docs/audits/engineering-2026-10-14.md (仅84行失效源码行号链接修正，历史审计事实原样保留)"
       ],
       "forbidden_write_set": [
         "coordination/**",
         ".trae/**",
-        "F7阅读展开/批注、F6计数、F8移动选区、F9客户端调度实现",
-        "F3-B/C/schema/依赖/通用状态平台",
-        "Git/远程/生产/付费操作"
+        "Git/远程/生产/付费操作",
+        "新工作树或额外Agent",
+        "F6/F8/F9客户端实现、schema/依赖/通用状态平台",
+        "重写历史事件/归档/审计结论"
       ],
-      "shared_file_owner": "主开发唯一实现/配置/验证写者；主控唯一控制面和Git维护者；不新开工作树。",
-      "integration_order": "F9server已接入；本片独审接入后F7→F6→F8，再回保留F9分支接收届时develop继续客户端。",
-      "acceptance_ref": "docs/technical-proposals/F4-思绪完整游标分页-技术方案.md",
+      "shared_file_owner": "主开发唯一实现与必要文档写者；主控唯一控制面/Git维护者；唯一工作目录串行。",
+      "integration_order": "F4已集成；本片独审接入后才选届时develop派发F6→F8，后续回保留F9分支。",
+      "acceptance_ref": "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md",
       "contracts": [
-        "沿原v3账户+q/tag/sort scope与tuple排序，新增prev；opaque cursor前端不解码，非法/冲突page输入明确400。",
-        "静态121/1001历史全部可达且无重复遗漏；20/页、最多5页100摘要，DOM与保留缓存有界，不能只删一处100上限。",
-        "旧page1..5有限兼容并有真实继续游标；page>5不偷偷截断，cursor+page冲突拒绝；prev首请求无边界拒绝。",
-        "响应绑定owner/session/route/generation/request，旧finally不清新ticket，失败保留已有连续窗口。相关同步变更真实失效，不混不同快照或把全量同步结果无限留进窗口。",
-        "URL刷新/前后退/详情返回单页重取与锚点恢复，checkpoint最多10个、只位置、按当前账户隔离；淘汰只在窗口边缘。",
-        "共享配置单一来源，新增源码TS/中文文件头/公共JSDoc，生成物隔离忽略；客户端默认关闭，缺prev能力不静默造成无法回退。",
-        "F4单页重建后以已确认checkpoint锚点恢复为准，复用router.restoreVer取消过时绝对scroll恢复；不得双入口争抢，不改变其他视图默认恢复。",
-        "位置replaceQuery(apply:false)不得把在途未提交路由当当前稳定位置回写；新增端口/可选保护须由F4消费者明确使用，旧调用保持兼容。",
-        "待同步与ACK摘要复用既有用户结论/初步想法真实语义；不得把AI或discarded内容标为用户事实；全量正文仍归持久队列及编辑草稿。"
+        "先沿真实render/ACK/sync/patch/全页消费者自查与复现，不能用方案风险冒称线上根因。",
+        "同账户根/追问稳定ID的展开、显式收起、草稿/selection及焦点保留；后台更新不代替用户意图。",
+        "复用F4唯一窗口/位置归属，interactionRevision及route/session generation保护迟到恢复；不建第二份滚动存储。",
+        "局部patch与全页重绘同一语义，保留原音频生命周期；删除目标或页淘汰不能复活旧对象。",
+        "阅读状态限于当前页窗口；离页/退出失效，跨账户旧RAF/焦点/响应不得污染。",
+        "不提前做F6计数/F8原生选区/F9调度；必要公共契约越界先说明真实链路。",
+        "新增源码TS、中文头及必要公共JSDoc，产物隔离忽略；只补真实行为专项。"
       ],
-      "handoff": "完成实现后自查完整生产/转换/HTTP/路由/窗口/同步消费者，必要验证与真实DOM/浏览器边界记录artifacts/local/v0516-f4-acceptance-current.json，固定六位源码摘要后暂停交独审，不自行Git。"
+      "handoff": "实现后先自查完整生产/转换/接入/真实消费者，再必要专项与实际DOM；固定源码六位指纹与artifacts/local/v0516-f7-acceptance-current.json后暂停交主控独审，不自行Git。"
     }
   ],
   "candidate": null,
@@ -126,18 +124,8 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [
-    {
-      "id": "v0516-existing-document-link",
-      "status": "OPEN",
-      "description": "check:links失败：旧工程审计84行指向concurrency/index.mjs#L1-L32，目标现不足32行；不是F4运行故障，最终版本工程门前需修正引用。",
-      "evidence": [
-        "artifacts/local/v0516-f4-acceptance-current.json",
-        "docs/audits/engineering-2026-10-14.md"
-      ]
-    }
-  ],
-  "next_action": "主控按真实原子切片提交F4并正常合入develop，执行受影响集成检查；随后才选定最新develop派发F7。",
+  "blockers": [],
+  "next_action": "主控正常提交并合入F7、保留feat，执行受影响develop检查；再从届时最新develop确定F6批注入口/计数基线。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -339,16 +327,36 @@
         "kind": "source_manifest",
         "branch": "feat/v0.5.16-thought-pagination",
         "base_commit": "208149",
-        "receipt": "artifacts/local/v0516-f4-acceptance-current.json"
+        "receipt": "artifacts/local/v0516-f4-acceptance-current.json",
+        "commit": "1f70ee",
+        "integration_commit": "391f97"
       },
-      "conclusion": "28文件实际契约独审通过，真实1001双向有界遍历证据及主控独立Chrome详情/离线/ACK闭环通过，允许本地功能切片接入。",
+      "conclusion": "28文件完整契约独审后正常合入develop，tree一致及集成思绪专项通过；1001静态双向/有界DOM和主控独立详情/离线/ACK实际闭环。",
       "limitations": [
         "THOUGHT_PAGING_ENABLED默认0，生产未启用。",
-        "iOS/真机、全站性能与3.7完整观测及有状态全局门未完成；旧链接工程失败独立保留。"
+        "iOS/真机、全站性能、3.7完整观测及有状态全局门未完成。"
       ],
       "refs": [
         "artifacts/local/v0516-f4-acceptance-current.json",
         "docs/technical-proposals/F4-思绪完整游标分页-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-F7-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-thought-reading-state",
+        "base_commit": "391f97",
+        "receipt": "artifacts/local/v0516-f7-acceptance-current.json"
+      },
+      "conclusion": "8文件独立全链审查及主控实际Chrome阅读/批注/ACK与F4深页1px补证通过，允许本地功能切片接入；旧失效链接门已通过。",
+      "limitations": [
+        "旧帧用例早期一次断言差异未归因，原FAIL/UNKNOWN保留；当前固定指纹独立同路径通过，组合门继续核对。",
+        "仅隔离JSON桌面；iOS、整版PG有状态、全站分位与生产观察未验；不是整版发布GO。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f7-acceptance-current.json",
+        "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md"
       ]
     }
   ],
