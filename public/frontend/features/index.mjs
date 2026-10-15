@@ -55,6 +55,7 @@ export {
   createOnboardingV2Controller,
   mergeOnboardingV2Conflict,
   onboardingV2ConflictRows,
+  onboardingV2DiscardPatch,
   onboardingV2DraftFromState,
   onboardingV2PendingResolution,
   onboardingV2PatchFromDraft

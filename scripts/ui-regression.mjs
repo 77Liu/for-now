@@ -466,6 +466,7 @@ const mockFetch = `
   window.__failLocalModeTimeout = false;
   window.__localHydrateRequests = [];
   window.__apiRequests = [];
+  window.__onboardingV2PatchPayloads = [];
   window.__keepsakeObservers = [];
   window.IntersectionObserver = class {
     constructor(callback, options) { this.callback = callback; this.options = options; window.__keepsakeObservers.push(this); }
@@ -833,6 +834,7 @@ const mockFetch = `
       const headers=init.headers||{},expected=Number(String(headers["if-match"]||"").replaceAll('"',"")),current=Number(window.__onboardingV2.session.revision)+1;
       if(expected!==current)return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"五问会话已更新",code:"ONBOARDING_SESSION_CONFLICT",details:{currentRevision:window.__onboardingV2.session.revision,currentEtag:'"'+current+'"',currentSession:window.__onboardingV2.session}},meta:{traceId:"ui-onboarding"}}),{status:409,headers:{"content-type":"application/json"}}));
       const payload=JSON.parse(init.body||"{}"),now=new Date().toISOString(),session=window.__onboardingV2.session,answers={...session.answers};
+      window.__onboardingV2PatchPayloads.push(structuredClone(payload));
       for(const [questionId,answer]of Object.entries(payload.answers||{})){
         if(answer===null){delete answers[questionId];continue}
         const previous=answers[questionId],content=Object.hasOwn(answer,"rawText")?{rawText:answer.rawText}:{structuredValue:answer.structuredValue||[]};
@@ -4237,6 +4239,21 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content")?.textContent.includes("原文已经足够")`),true);
   await evaluate(`document.querySelector('[data-onboarding-action="review"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector(".onboarding-v2-review")&&!document.querySelector('[data-onboarding-action="complete"]').disabled`),true);
+  const onboardingAnswerBeforeDiscard=await evaluate(`window.__onboardingV2.session.answers.currentContext.rawText`);
+  await evaluate(`document.querySelector('[data-onboarding-action="edit"][data-step="q1"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-onboarding-answer="currentContext"]')&&!document.querySelector('[data-onboarding-action="discard"]').disabled`),true);
+  assert.equal(await evaluate(`document.querySelector('[data-onboarding-action="discard"]').textContent.trim()`),"放弃本次且不保存");
+  await evaluate(`(()=>{const input=document.querySelector('[data-onboarding-answer="currentContext"]');input.value="本设备不应保存的当前草稿";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
+  assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-onboarding-v2-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:onboarding-v2");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.answers?.currentContext?.rawText==="本设备不应保存的当前草稿")}})`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="discard"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#onboarding-workspace").hidden&&window.__onboardingV2.session.status==="skipped"`),true);
+  assert.deepEqual(await evaluate(`({payload:window.__onboardingV2PatchPayloads.at(-1),answer:window.__onboardingV2.session.answers.currentContext.rawText})`),{
+    payload:{selectedFlow:"v2",status:"skipped",step:"firstAction"},
+    answer:onboardingAnswerBeforeDiscard
+  });
+  assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-onboarding-v2-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:onboarding-v2");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result===undefined)}})`),true);
+  await cdp.send("Page.reload",{ignoreCache:true});
+  assert.equal(await waitUntil(`document.documentElement?.dataset.runtimeReady==="1"&&document.querySelector("#today-date-label")?.textContent.length>0&&document.querySelector("#onboarding-workspace")?.hidden===true`),true);
   assert.equal(await evaluate(`window.__onboardingSaves`),0);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),request=transaction.objectStore("drafts").put({key:"user-1:capture",owner:"user-1",id:"capture",uploadRequestId:"restored-upload",items:[{blob:new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),name:"restored.png",type:"image/png",lastModified:1}]});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),blob=new Blob([new Uint8Array([1,2,3,4])],{type:"audio/mp4"}),request=transaction.objectStore("drafts").put({key:"user-1:capture-audio",owner:"user-1",id:"capture-audio",audio:{blob,mimeType:"audio/mp4",bytes:blob.size,durationMs:1250,uploadRequestId:"restored-audio",uploadedPath:"",lastError:"LEGACY_AUDIO_PRIVATE_DETAIL"}});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);

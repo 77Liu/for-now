@@ -1554,6 +1554,7 @@ body:has(#view-today.active #onboarding-workspace:not([hidden])) .home-v02-conte
 .onboarding-v2-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:31px}
 .onboarding-v2-actions button{min-height:48px;border-radius:6px;padding-inline:20px}.onboarding-v2-actions .primary-button{background:var(--onboarding-moss)}.onboarding-v2-actions .primary-button:hover{background:var(--onboarding-moss-dark)}
 .onboarding-v2-actions .quiet-button{border-color:#cbd8d2;background:#f1f6f3;color:var(--onboarding-moss)}
+.onboarding-v2-actions .onboarding-v2-discard-action{color:#8b4f48}
 .onboarding-v2-actions>span{color:#7d8983;font-size:.74rem}
 .onboarding-v2-review{margin-top:24px;border-top:1px solid #d8e0dc}
 .onboarding-v2-review article{padding:18px 0;border-bottom:1px solid #d8e0dc}

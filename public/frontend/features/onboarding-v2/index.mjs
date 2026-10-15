@@ -135,6 +135,14 @@ export function onboardingV2PatchFromDraft(draft, {
   return patch;
 }
 
+export function onboardingV2DiscardPatch() {
+  return {
+    selectedFlow: "v2",
+    status: "skipped",
+    step: "firstAction"
+  };
+}
+
 function answerText(id, draft) {
   if (id === "collaboration") {
     const collaboration = draft?.collaboration || defaultCollaboration();
@@ -295,8 +303,9 @@ function reviewMarkup(draft, { extracting = false } = {}) {
       <button class="primary-button" type="button" data-onboarding-action="complete">按原文开始使用</button>
       <button class="quiet-button" type="button" data-onboarding-action="extract" ${hasAnswer && !extracting ? "" : "disabled"}>${extracting ? "正在整理…" : "整理成可确认的候选"}</button>
       <button class="subtle-action" type="button" data-onboarding-action="back">返回修改</button>
+      <button class="subtle-action onboarding-v2-discard-action" type="button" data-onboarding-action="discard">放弃本次且不保存</button>
     </div>
-    <p class="onboarding-v2-help">不会自动创建目标、任务、习惯或提醒。之后仍可回看和修改。</p>`;
+    <p class="onboarding-v2-help">不会自动创建目标、任务、习惯或提醒。放弃本次只删除此设备尚未同步的草稿，不覆盖已有回答或历史记录。</p>`;
 }
 
 function candidatesMarkup(task, userModel, error = "") {
@@ -689,23 +698,44 @@ export function createOnboardingV2Controller({
     draft.localDirty = true;
   }
 
-  async function sendPatch(patch, { hide = false, firstAction = false } = {}) {
+  async function sendPatch(patch, {
+    hide = false,
+    firstAction = false,
+    discard = false,
+    retryOnConflict = false
+  } = {}) {
     if (saving || !serverState) return false;
     saving = true;
     render();
     try {
-      const result = await requestV1("/api/v1/onboarding-v2/session", {
-        method: "PATCH",
-        headers: {
-          "if-match": `"${resourceVersion(serverState)}"`,
-          "idempotency-key": newId()
-        },
-        body: JSON.stringify(patch)
-      }, {
-        resource: "onboarding-v2:onboarding-v2",
-        domains: ["onboardingV2"],
-        recoverCommitted: true
-      });
+      let result = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          result = await requestV1("/api/v1/onboarding-v2/session", {
+            method: "PATCH",
+            headers: {
+              "if-match": `"${resourceVersion(serverState)}"`,
+              "idempotency-key": newId()
+            },
+            body: JSON.stringify(patch)
+          }, {
+            resource: "onboarding-v2:onboarding-v2",
+            domains: ["onboardingV2"],
+            recoverCommitted: true
+          });
+          break;
+        } catch (error) {
+          const canRetry = retryOnConflict
+            && attempt === 0
+            && error?.code === "ONBOARDING_SESSION_CONFLICT"
+            && error.details?.currentSession;
+          if (!canRetry) throw error;
+          setServerState({
+            ...serverState,
+            session: clone(error.details.currentSession)
+          });
+        }
+      }
       setServerState(result.data);
       draft = onboardingV2DraftFromState(result.data, { owner: owner() });
       await clearLocal();
@@ -724,6 +754,10 @@ export function createOnboardingV2Controller({
       return true;
     } catch (error) {
       if (error?.code === "ONBOARDING_SESSION_CONFLICT" && error.details?.currentSession) {
+        if (discard) {
+          status("会话刚刚再次更新，请重试“放弃本次且不保存”");
+          return false;
+        }
         serverState = {
           ...serverState,
           session: clone(error.details.currentSession),
@@ -738,15 +772,30 @@ export function createOnboardingV2Controller({
         await persist();
         status("两端内容有差异，请逐项选择");
       } else if (error?.syncStatus === "pending") {
-        draft.pendingSync = true;
-        draft.localDirty = true;
-        await persist();
-        status(localStatus());
-        if (hide) dismissed = true;
-        if (firstAction) {
-          showFirstAction = true;
-          forceVisible = true;
-          uiStep = "firstAction";
+        if (discard) {
+          draft = {
+            ...onboardingV2DraftFromState(serverState, { owner: owner() }),
+            status: "skipped",
+            step: "firstAction",
+            pendingSync: true,
+            discardPending: true
+          };
+          dismissed = true;
+          forceVisible = false;
+          showFirstAction = false;
+          await persist();
+          status("本次草稿已删除 · 放弃状态等待同步");
+        } else {
+          draft.pendingSync = true;
+          draft.localDirty = true;
+          await persist();
+          status(localStatus());
+          if (hide) dismissed = true;
+          if (firstAction) {
+            showFirstAction = true;
+            forceVisible = true;
+            uiStep = "firstAction";
+          }
         }
       } else {
         status(`暂未同步：${error.message}`);
@@ -786,6 +835,16 @@ export function createOnboardingV2Controller({
       full
     });
     return sendPatch(patch, { hide, firstAction });
+  }
+
+  async function discardCurrent() {
+    const discarded = await sendPatch(onboardingV2DiscardPatch(), {
+      hide: true,
+      discard: true,
+      retryOnConflict: true
+    });
+    if (discarded) status("本次未保存 · 已有回答和记录未更改");
+    return discarded;
   }
 
   function renderSteps() {
@@ -856,8 +915,9 @@ export function createOnboardingV2Controller({
         <button class="subtle-action" type="button" data-onboarding-action="back">上一步</button>
         <button class="primary-button" type="button" data-onboarding-action="next">${index === 4 ? "回看我的回答" : "下一步"}</button>
         <button class="subtle-action" type="button" data-onboarding-action="skip">暂不回答</button>
+        <button class="subtle-action onboarding-v2-discard-action" type="button" data-onboarding-action="discard">放弃本次且不保存</button>
       </div>
-      <p class="onboarding-v2-help">不会把留空解释成你的性格或态度。无需填写完整才可使用。</p>`;
+      <p class="onboarding-v2-help">不会把留空解释成你的性格或态度。放弃本次不会覆盖已有回答或历史记录，之后也不会再自动弹出。</p>`;
   }
 
   function renderContent() {
@@ -871,7 +931,7 @@ export function createOnboardingV2Controller({
         <p class="onboarding-v2-lead">五个生活问题由你本人回答，用来建立核心用户模型；不会从历史记录推断。每题都可以跳过，之后再慢慢补充。</p>
         <div class="onboarding-v2-actions">
           <button class="primary-button" type="button" data-onboarding-action="start">${resumable ? "继续上次填写" : "开始了解"}</button>
-          <button class="quiet-button" type="button" data-onboarding-action="use">先用起来</button>
+          <button class="quiet-button" type="button" data-onboarding-action="discard">先用起来</button>
           ${legacy?.status === "pending" ? `<button class="subtle-action" type="button" data-onboarding-action="legacy">${legacy.answerCount ? "继续旧版问卷" : "填写旧版价值问卷"}</button>` : ""}
         </div>
         <p class="onboarding-v2-help">输入先保存在当前账户的此设备空间；同步失败也不会清空原文。</p>
@@ -880,7 +940,8 @@ export function createOnboardingV2Controller({
     if (uiStep === "resume") {
       return `<span class="eyebrow">已暂停</span><h1>先把这一点留下。</h1>
         <p class="onboarding-v2-lead">稍后可以从第 ${Math.max(1, QUESTION_STEPS.indexOf(draft.step) + 1)} 问继续，不必重新填写。</p>
-        <div class="onboarding-v2-actions"><button class="primary-button" type="button" data-onboarding-action="resume">继续填写</button><button class="quiet-button" type="button" data-onboarding-action="use">先用起来</button></div>`;
+        <div class="onboarding-v2-actions"><button class="primary-button" type="button" data-onboarding-action="resume">继续填写</button><button class="quiet-button onboarding-v2-discard-action" type="button" data-onboarding-action="discard">放弃本次且不保存</button></div>
+        <p class="onboarding-v2-help">放弃后会删除此设备尚未同步的本次草稿，不覆盖已有回答或历史记录，之后也不会再自动弹出。</p>`;
     }
     if (QUESTION_STEPS.includes(uiStep)) return renderQuestion();
     if (uiStep === "review") return reviewMarkup(draft, {
@@ -899,7 +960,12 @@ export function createOnboardingV2Controller({
       return;
     }
     const terminal = ["completed", "skipped"].includes(serverState.session?.status);
-    const visible = legacyMode || showFirstAction || forceVisible || Boolean(draft.localDirty || draft.pendingSync) || (!dismissed && !terminal);
+    const discardPending = draft.discardPending === true;
+    const visible = legacyMode
+      || showFirstAction
+      || forceVisible
+      || Boolean((draft.localDirty || draft.pendingSync) && !discardPending)
+      || (!dismissed && !terminal && !discardPending);
     root.hidden = !visible;
     if (!visible) return;
     query("#onboarding-v2-shell").hidden = legacyMode;
@@ -942,7 +1008,7 @@ export function createOnboardingV2Controller({
       const next = QUESTION_STEPS.includes(draft.step) || draft.step === "review" ? draft.step : "q1";
       return saveCurrent(next, { status: "draft" });
     }
-    if (action === "use") return saveCurrent("firstAction", { status: "skipped", full: true, hide: true });
+    if (action === "discard") return discardCurrent();
     if (action === "next") {
       const index = QUESTION_STEPS.indexOf(uiStep);
       return saveCurrent(index === 4 ? "review" : QUESTION_STEPS[index + 1]);
