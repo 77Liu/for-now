@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 320,
-  "updated_at": "2026-10-14T15:41:09.693Z",
+  "revision": 321,
+  "updated_at": "2026-10-15T03:41:07.359Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -19,8 +19,8 @@
   },
   "iteration": {
     "id": "v0.5.15",
-    "status": "VALIDATING",
-    "phase": "release级测试审计发现3处旧断言/夹具漂移及1处系统默认录音标题被误作用户来源；已返修，等待新提交与重新冻结"
+    "status": "READY_WAIT_OWNER",
+    "phase": "最终本地候选a99c146已完成五问放弃能力、短引用smoke修正、release级与新鲜状态门；等待本版发布决定"
   },
   "scope": {
     "description": "上下文选材与短引用、业务短ID、增量摘要和内部预算可恢复性；仅以下8条的本版新增行为，不重做既有已发布内容",
@@ -133,7 +133,7 @@
       "owner": "主开发",
       "thread_id": "01a11afe-73d2-7013-91d5-cd473c4d7115",
       "status": "HANDOFF_COMPLETE",
-      "base_commit": "41d866",
+      "base_commit": "a99c14",
       "branch": "feat/v0.5.15-context-reliability",
       "write_set": [
         "src/app/{task-context,prompt-context,ai-task-targets,answer-citations,content/background,runtime-foundation,record-compression-context,record-compressions,background-ai,ai-budget-runtime}.mjs及其真实调用方",
@@ -158,41 +158,46 @@
         "status": "FINAL_CANDIDATE_VALIDATED",
         "object": {
           "kind": "git_commit",
-          "commit": "41d866"
+          "commit": "a99c14"
         },
-        "conclusion": "41d8667新鲜四账户102任务状态门PASS；真实合成候选提取、重要性评分和短引用回答PASS；累计已知费用¥0.07908511536。",
+        "conclusion": "五问放弃仅提交终态并删除本地草稿；服务器旧回答保留，刷新不再弹。最终smoke 17/17、release级、PG16.14和新鲜四账户103任务状态门PASS。",
         "limitations": [
+          "真实模型付费证据沿用未变业务链的41d8667验收，a99c146未重复付费调用",
           "未授权push/tag/Release/部署或生产测试",
-          "长期98%与设备验收不外推通过"
+          "长期98%与完整设备验收不外推通过"
         ]
       },
-      "current_slice": "本地验证完成，等待Owner发布决定"
+      "current_slice": "本地候选验证完成，等待Owner发布决定"
     }
   ],
   "candidate": {
     "version": "v0.5.15",
     "object": {
       "kind": "git_commit",
-      "commit": "41d866"
+      "commit": "a99c14"
     },
-    "status": "RELEASE_GATE_REWORK_PENDING_FREEZE",
+    "status": "LOCAL_VALIDATED_WAIT_RELEASE_AUTHORIZATION",
     "evidence": [
       "npm:check",
-      "npm:test:importance",
-      "npm:test:personalized-ai-model-gate",
-      "npm:test:user-model",
-      "reports/local/v0515-compression-loop-current.json",
+      "npm:test",
+      "npm:test:onboarding-v2",
+      "npm:test:journeys:smoke",
+      "artifacts/user-journeys/2026-10-15T03-15-44-615Z.json",
+      "npm:test:journeys:release",
+      "artifacts/user-journeys/2026-10-15T03-18-04-678Z.json",
+      "npm:test:mobile",
+      "reports/local/v0515-startup-gate-a99c146.json",
+      "reports/local/v0515-startup-snapshot-a99c146.json",
       "reports/local/v0515-paid-acceptance-current.json",
       "reports/local/v0515-real-ai-current.json",
       "reports/local/v0515-real-claim-current.json",
-      "reports/local/v0515-startup-gate-current.json",
-      "reports/local/v0515-startup-snapshot-current.json",
       "reports/release-v0.5.15-2026-10-14.md"
     ],
     "limitations": [
-      "41d8667之后存在测试契约修正与task-context运行时返修，原候选不再是最终验证对象",
-      "release级旅程已运行至冻结回放源校验，需提交后刷新候选tree再重跑",
-      "未授权部署或其他生产写入"
+      "真实模型付费闭环绑定41d8667；其后未修改模型提供商、候选提取或重要性业务链，最终候选未重复付费调用",
+      "未授权本版本远程发布、生产测试或部署",
+      "V0.5.14线上单次模拟提交→回答验证仍受当前线上未完成引导阻断；本功能尚未部署，不能用本地能力冒充线上已解除",
+      "长期98%与完整设备验收不外推通过"
     ]
   },
   "authorization": {
@@ -232,26 +237,8 @@
       "expiry_mode": "until_revoked"
     }
   },
-  "blockers": [
-    {
-      "id": "v0515-release-gate-rework",
-      "status": "confirmed",
-      "object": {
-        "kind": "working_tree",
-        "base_commit": "41d866"
-      },
-      "reason": "核心/Release套件暴露日期精度、压缩通知、OpenAPI聚合夹具漂移，以及系统默认录音标题进入用户来源的真实缺陷；工作树修复尚未提交和重冻结",
-      "evidence": [
-        "npm:test",
-        "npm:test:journeys:release",
-        "scripts/regression.mjs",
-        "scripts/runtime-infrastructure-regression.mjs",
-        "scripts/library-regression.mjs",
-        "src/app/task-context.mjs"
-      ]
-    }
-  ],
-  "next_action": "审查并提交测试契约修正与默认录音标题来源边界，刷新develop候选/冻结回放源；重跑check、核心回归、task-context、release旅程和新候选有状态门。",
+  "blockers": [],
+  "next_action": "本地候选a99c146已完成当前授权范围验收；等待Owner是否授权v0.5.15 push/tag/Gitee Release/部署与生产观察。线上单次模拟提交→回答验证在本功能部署前仍不执行，不扩大为其他生产操作。",
   "runtime": {
     "version": "v0.5.14",
     "sha": "a4d2ec",
@@ -479,6 +466,27 @@
         "reports/local/v0515-real-ai-current.json",
         "reports/local/v0515-paid-acceptance-current.json",
         "git_commit:41d8667"
+      ]
+    },
+    {
+      "id": "v0515-onboarding-discard-final-candidate-validation",
+      "object": {
+        "kind": "git_commit",
+        "commit": "a99c14"
+      },
+      "conclusion": "新增“放弃本次且不保存”：PATCH仅含selectedFlow/status/step，不发送本地answers/collaboration；服务端旧回答及其他记录保持，本地IndexedDB草稿删除，刷新后终态不再自动弹出。并发冲突使用最新会话重试同一无内容补丁。最终smoke 17/17、release级、PG稳定套件和新鲜生产快照隔离状态门通过。",
+      "limitations": [
+        "功能尚未部署到V0.5.14生产环境",
+        "真实模型付费闭环未因本次前端能力重复调用"
+      ],
+      "refs": [
+        "git_commit:80be6a3",
+        "git_commit:a99c146",
+        "artifacts/user-journeys/2026-10-15T03-15-44-615Z.json",
+        "artifacts/user-journeys/2026-10-15T03-18-04-678Z.json",
+        "reports/local/v0515-startup-gate-a99c146.json",
+        "reports/local/v0515-startup-snapshot-a99c146.json",
+        "reports/release-v0.5.15-2026-10-14.md"
       ]
     }
   ],
