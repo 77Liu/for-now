@@ -228,6 +228,7 @@ export function createThoughtsFeatureController({
     const summary = closest(event, ".chain-summary");
     if (summary) {
       event.preventDefault();
+      operations.capturePosition();
       navigation.openDetail(summary.closest("[data-chain-id]")?.dataset.chainId);
       return;
     }
@@ -254,6 +255,11 @@ export function createThoughtsFeatureController({
       await operations.removeFollowUp(button);
     } else if (button.dataset.followupAnswer) {
       await operations.answerFollowUp(button);
+    } else if (button.id === "thought-load-previous") {
+      await operations.loadPrevious();
+    } else if (button.id === "thought-refresh-window") {
+      operations.resetPaging();
+      await data.refresh("thoughts");
     } else if (button.id === "thought-load-more") {
       await operations.loadMore();
     } else if (button.id === "thought-create-toggle"
@@ -261,15 +267,16 @@ export function createThoughtsFeatureController({
       crossDomain.openComposer(button);
     } else if (button.dataset.thoughtSort) {
       navigation.replaceQuery({
+        cursor: null, direction: null, page: null,
         sort: button.dataset.thoughtSort === "created" ? "created" : null
       });
     } else if (button.dataset.tagFilter != null) {
       navigation.replaceQuery({
         tag: button.dataset.tagFilter === "all" ? null : button.dataset.tagFilter,
-        page: null
+        page: null, cursor: null, direction: null
       });
     } else if (button.dataset.contentAction === "clear-thought-filter") {
-      navigation.replaceQuery({ tag: null, page: null });
+      navigation.replaceQuery({ tag: null, page: null, cursor: null, direction: null });
     } else if (button.dataset.contentAction === "dismiss-route-result") {
       navigation.clearResult();
     } else if (button.dataset.openComments) {
@@ -328,7 +335,7 @@ export function createThoughtsFeatureController({
       searchTimer = 0;
       const route = navigation.currentRoute();
       if (route.view === "thoughts" && thoughtView.query() !== (route.query?.q || "")) {
-        navigation.replaceQuery({ q: thoughtView.query() || null, page: null });
+        navigation.replaceQuery({ q: thoughtView.query() || null, page: null, cursor: null, direction: null });
       }
     }, 250);
   }
@@ -357,6 +364,7 @@ export function createThoughtsFeatureController({
   const unmount = async () => {
     const current = activation;
     if (!current) return false;
+    operations.resetPaging();
     activation = null;
     current.unlink();
     platform.clearTimer(searchTimer);
@@ -392,6 +400,7 @@ export function createThoughtsFeatureController({
         throw abortFailure();
       }
       activation = current;
+      operations.beginPagingRoute();
       thoughtView.mount(context.root, context.route, context.route?.result);
       const listen = (target, type, listener, options) => {
         target?.addEventListener?.(type, listener, options);
@@ -422,6 +431,8 @@ export function createThoughtsFeatureController({
       listen(blockModal, "change", handleChange);
       listen(blockModal, "input", persistBlockDraft);
       listen(blockModal, "change", persistBlockDraft);
+      for (const event of ["wheel", "touchstart", "pointerdown", "keydown"]) listen(window, event, () => operations.cancelPositionRestore(), { passive: true });
+      listen(window, "scroll", () => operations.capturePosition(), { passive: true });
       listen(window, "resize", () => platform.requestFrame(() => thoughtView.syncOverflow()));
       const abort = () => {
         if (activation === current) void unmount();
@@ -434,7 +445,9 @@ export function createThoughtsFeatureController({
         context.signal?.removeEventListener("abort", abort);
       };
       delegate.render({ snapshot: data.getSnapshot(), route: context.route });
+      operations.synchronizePaging();
       thoughtView.render();
+      operations.synchronizePaging();
       return () => activation === current ? unmount() : false;
     },
     render(context = {}) {
@@ -445,6 +458,7 @@ export function createThoughtsFeatureController({
         : new Set(typeof context.changedDomains === "string"
           ? [context.changedDomains]
           : context.changedDomains);
+      operations.synchronizePaging();
       const rendered = changed === null || changed.has("thoughts") || changed.has("speech") || changed.has("aiTasks")
         ? thoughtView.render(context)
         : false;
@@ -452,6 +466,7 @@ export function createThoughtsFeatureController({
     },
     unmount,
     async resetSession() {
+      operations.resetPaging({ logout: true });
       session = {};
       generation += 1;
       const failures = [];

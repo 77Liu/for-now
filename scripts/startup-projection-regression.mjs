@@ -588,3 +588,20 @@ assert.deepEqual(responses.at(-1), { status: 400, message: "页面标识无效",
 assert.equal(await http.handleV1({ method: "POST" }, {}, new URL("http://local/api/v1/startup"), v1), false);
 
 console.log(`Startup projection checks passed: today ${todayBytes} B, review ${reviewBytes} B; bounded DTOs, field exclusion and route isolation.`);
+
+// F4：旧前缀保留各页真实边界，超过兼容范围/定位冲突明确拒绝。
+{
+  const rows = Array.from({ length: 121 }, (_, index) => ({ id: `f4-route-${String(index).padStart(3, "0")}`, type: "question", content: "摘要", occurredAt: "2026-10-01" }));
+  const prefix = routeStateProjection({ thoughts: rows }, { view: "thoughts", query: { page: "5" }, cursorScope: "owner" });
+  assert.equal(prefix.thoughts.length, 100);
+  assert.equal(prefix.thoughtPage.pages.length, 5);
+  assert.ok(prefix.thoughtPage.nextId);
+  const { thoughtChainListPage } = await import("../src/modules/thoughts/index.mjs");
+  prefix.thoughtPage.pages.forEach((page, index) => {
+    assert.deepEqual(thoughtChainListPage(rows, { afterId: page.requestId, cursorScope: "owner" }).items.map(i => i.id), prefix.thoughts.slice(index * 20, index * 20 + 20).map(i => i.id));
+  });
+  for (const query of ["page=6", "page=0", "page=1&cursor=x", "direction=prev", "direction=other"]) {
+    await http.handleV1({ method: "GET" }, {}, new URL(`http://local/api/v1/route-state?view=thoughts&${query}`), v1);
+    assert.equal(responses.at(-1).status, 400, query);
+  }
+}

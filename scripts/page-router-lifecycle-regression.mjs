@@ -532,3 +532,24 @@ assert.deepEqual(failureEvents.at(-1), ["today", "leave failed"]);
 assert.equal(failureRouter.currentRoute().view, "today");
 
 console.log("Page router lifecycle regression passed.");
+
+// F4：位置写入不能抢占尚在enter中的详情提交；锚点接管后旧绝对恢复失效。
+{
+  const target = new EventTargetFixture(), gate = deferred();
+  const localLocation = { pathname: "/now/thoughts", search: "", hash: "" }, writes = [], positions = [];
+  const write = (state, _title, url) => { const next = new URL(url, "https://test"); localLocation.pathname = next.pathname; localLocation.search = next.search; localHistory.state = state; writes.push(url); };
+  const localHistory = { state: null, pushState: write, replaceState: write };
+  const r = createPageRouter({ query: () => null, queryAll: () => [], location: localLocation, history: localHistory, eventTarget: target, basePath: "/now", requestFrame, cancelFrame, setTimer, clearTimer, scrollTo: value => positions.push(value) });
+  const dispose = r.start({ leave() {}, enter: route => route.kind === "detail" ? gate.promise : undefined });
+  const navigation = r.openDetail("thought-chain", "chain"); await flush();
+  const before = writes.length;
+  target.dispatch("scroll"); runFrames();
+  assert.equal(r.replaceQuery({ cursor: "stale-position" }, { apply: false, onlyCommitted: true }), false);
+  assert.equal(writes.length, before);
+  gate.resolve(); await navigation;
+  assert.equal(localLocation.pathname, "/now/thoughts/chain");
+  r.restoreCurrentScroll({ x: 0, y: 999 }); r.cancelScrollRestoration();
+  runFrames(); runFrames(); runTimers();
+  assert.equal(positions.some(value => value.top === 999), false);
+  dispose();
+}

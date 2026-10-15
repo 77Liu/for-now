@@ -1,3 +1,4 @@
+import { THOUGHT_PAGING } from "../../../.build/typescript/backend/shared/thought-pagination/index.mjs";
 import crypto from "node:crypto";
 import { cleanAttachmentPaths } from "../../shared/attachments/index.mjs";
 import {
@@ -8,9 +9,9 @@ import { stripThoughtAnswerLead } from "./prompts.mjs";
 export { thoughtTask, thoughtPromptSystem, stripThoughtAnswerLead, thoughtPersonalContext, thoughtChainContext, thoughtDraftInput, thoughtStarterPrompt } from "./prompts.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
-const CHAIN_LIST_LIMIT = 20;
-const QUESTION_PREVIEW_LIMIT = 600;
-const USER_PREVIEW_LIMIT = 400;
+const CHAIN_LIST_LIMIT = THOUGHT_PAGING.pageSize;
+const QUESTION_PREVIEW_LIMIT = THOUGHT_PAGING.questionPreviewLimit;
+const USER_PREVIEW_LIMIT = THOUGHT_PAGING.userPreviewLimit;
 const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const isAiAnswer = item => (
   item?.authorType === "ai"
@@ -183,10 +184,15 @@ export function thoughtChainDetail(thoughts, id) {
   } : null;
 }
 
+/**
+ * 在同一账户与筛选scope下按稳定tuple双向读取摘要；prev保持既有展示排序。
+ * 空页以原游标保留反向恢复边界；每次读取是实时列表，不构成跨请求冻结快照。
+ */
 export function thoughtChainListPage(thoughts, {
   limit = CHAIN_LIST_LIMIT,
   maxLimit = CHAIN_LIST_LIMIT,
   afterId = "",
+  direction = "next",
   query = "",
   tag = "",
   sort = "occurred",
@@ -225,21 +231,23 @@ export function thoughtChainListPage(thoughts, {
       chainSortTuple(right, normalizedSort)
     ));
   const cursor = parseChainCursor(afterId, filters);
-  if (cursor === false || (afterId && !matches.length)) return { invalidCursor: true };
-  const nextIndex = cursor
-    ? matches.findIndex(root => (
-      compareChainTuples(chainSortTuple(root, normalizedSort), cursor) > 0
-    ))
-    : 0;
-  const start = cursor && nextIndex < 0 ? matches.length : nextIndex;
+  if (cursor === false) return { invalidCursor: true };
+  if (!["next", "prev"].includes(direction) || (direction === "prev" && !cursor)) return { invalidQuery: true };
   const pageLimit = Number.isSafeInteger(limit)
     ? Math.min(Math.max(CHAIN_LIST_LIMIT, Number(maxLimit) || 0), Math.max(1, limit))
     : CHAIN_LIST_LIMIT;
-  const selected = matches.slice(start, start + pageLimit);
-  const hasMore = start + selected.length < matches.length;
+  const candidates = cursor ? matches.filter(root => {
+    const comparison = compareChainTuples(chainSortTuple(root, normalizedSort), cursor);
+    return direction === "prev" ? comparison < 0 : comparison > 0;
+  }) : matches;
+  const selected = direction === "prev" ? candidates.slice(-pageLimit) : candidates.slice(0, pageLimit);
+  const first = selected[0], last = selected.at(-1);
+  const newer = first ? matches.some(root => compareChainTuples(chainSortTuple(root, normalizedSort), chainSortTuple(first, normalizedSort)) < 0) : direction === "next" && matches.length > 0;
+  const older = last ? matches.some(root => compareChainTuples(chainSortTuple(root, normalizedSort), chainSortTuple(last, normalizedSort)) > 0) : direction === "prev" && matches.length > 0;
   return {
     items: selected.map(root => thoughtChainSummary(root, blocksByRoot.get(root.id) || [])),
-    nextId: hasMore ? chainCursor(selected.at(-1), filters) : "",
+    nextId: older ? (last ? chainCursor(last, filters) : afterId) : "",
+    prevId: newer ? (first ? chainCursor(first, filters) : afterId) : "",
     tags: availableTags
   };
 }
@@ -577,11 +585,12 @@ export function createThoughtService({
       return thoughtTaskResult((await repository.read()).thoughts, task);
     },
 
-    async listChains({ limit = CHAIN_LIST_LIMIT, afterId = "", query = "", tag = "", sort = "occurred" } = {}) {
+    async listChains({ limit = CHAIN_LIST_LIMIT, afterId = "", direction = "next", query = "", tag = "", sort = "occurred" } = {}) {
       const store = await repository.read();
       return thoughtChainListPage(store.thoughts, {
         limit,
         afterId,
+        direction,
         query,
         tag,
         sort,

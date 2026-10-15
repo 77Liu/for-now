@@ -1,3 +1,4 @@
+import { THOUGHT_PAGING } from "../../.build/typescript/backend/shared/thought-pagination/index.mjs";
 import { thoughtChainDetail, thoughtChainListPage } from "../modules/thoughts/index.mjs";
 import { normalizeOnboardingV2 } from "../modules/onboarding/index.mjs";
 
@@ -616,7 +617,9 @@ export function routeStateProjection(state, {
   if (view === "daily") return { ...common, dailyRecords: clone(list(state?.dailyRecords)) };
   if (view === "journals") return { ...common, journals: clone(list(state?.journals)), journalDraft: clone(state?.journalDraft || null) };
   if (view === "thoughts") {
-    const pageNumber = Math.min(5, Math.max(1, Math.floor(Number(query?.page) || 1)));
+    const pageNumber = query?.page == null ? 1 : Number(query.page);
+    if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > THOUGHT_PAGING.maxPages) throw Object.assign(new Error("旧页码不支持，请从游标入口继续"), { statusCode: 400, code: "LEGACY_PAGE_UNSUPPORTED" });
+    if ((query?.cursor || query?.direction) && query?.page != null) throw Object.assign(new Error("游标和旧页码不能同时使用"), { statusCode: 400, code: "INVALID_QUERY" });
     if (resourceId) {
       const detail = thoughtChainDetail(state?.thoughts, resourceId);
       const { blocks = [], ...root } = detail || {};
@@ -628,25 +631,41 @@ export function routeStateProjection(state, {
       };
     }
     const page = thoughtChainListPage(state?.thoughts, {
-      limit: 20 * pageNumber,
-      maxLimit: 100,
+      limit: THOUGHT_PAGING.pageSize * pageNumber,
+      maxLimit: THOUGHT_PAGING.pageSize * THOUGHT_PAGING.maxPages,
+      afterId: query?.thoughtAfterId || "",
+      direction: query?.direction || "next",
       query: query?.q || "",
       tag: query?.tag || "",
       sort: query?.sort,
       cursorScope
     });
+    const pages = [];
+    let requestId = "";
+    for (let index = 0; !query?.cursor && !query?.direction && index < pageNumber; index += 1) {
+      const part = thoughtChainListPage(state?.thoughts, { limit: THOUGHT_PAGING.pageSize, afterId: requestId, query: query?.q || "", tag: query?.tag || "", sort: query?.sort, cursorScope });
+      pages.push({ requestId, nextId: part.nextId, prevId: part.prevId, count: part.items.length });
+      if (!part.nextId) break;
+      requestId = part.nextId;
+    }
     return {
       ...common,
       thoughts: page.items,
       speech: clone(state?.speech),
       thoughtPage: {
         kind: "list",
-        nextId: pageNumber < 5 ? page.nextId : "",
+        nextId: page.nextId,
+        prevId: page.prevId,
+        invalidCursor: Boolean(page.invalidCursor),
+        invalidQuery: Boolean(page.invalidQuery),
+        requestCursor: query?.cursor || "",
+        direction: query?.direction || "next",
         tags: page.tags,
         query: text(query?.q),
         tag: text(query?.tag),
         sort: query?.sort === "created" ? "created" : "occurred",
-        page: pageNumber
+        page: pageNumber,
+        pages: query?.cursor || query?.direction ? undefined : pages
       }
     };
   }
