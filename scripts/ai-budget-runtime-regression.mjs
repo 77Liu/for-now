@@ -1,3 +1,5 @@
+import { createAiBudgetService, createExecutionControl, createDispatchAttempt } from "../src/modules/ai/index.mjs";
+import { createAtomicRepository } from "./fixtures/atomic-json-repository.mjs";
 import assert from "node:assert/strict";
 import {
   createAiBudgetRuntime,
@@ -360,5 +362,51 @@ failedReleaseBudget.releaseTask = async () => { throw new Error("release failed"
 await assert.rejects(createAiBudgetRuntime({ budget: failedReleaseBudget }).executeTask(plan("quota-release-failed"), async () => {
   throw Object.assign(new Error("quota before IO"), { code: "AI_DAILY_CALL_LIMIT" });
 }), error => { assert.ok(error instanceof AggregateError); assert.equal(error.budgetAdmissionRejected, undefined); return true; });
+
+// F5使用真实预算消费者，分别确认start已持久化/未发、证明失败与崩溃恢复，不能用空白账本模拟通过。
+{
+  const make = () => {
+    const repository = createAtomicRepository({}); let sequence = 0;
+    const budget = createAiBudgetService({ repository, now: () => "2026-10-16T01:00:00.000Z", createId: () => `f5-${++sequence}` });
+    return { budget, repository };
+  };
+  const plan = taskId => ({ accountId: "f5-account", taskId, stages: [{ id: "text", provider: "deepseek", service: "chat-completions", scene: "thoughtAnswer", costKnown: true, estimatedCostCny: 0.1 }] });
+  for (const proofFails of [false, true]) {
+    const { budget } = make(); const controller = new AbortController();
+    const control = createExecutionControl({ signal: controller.signal, timeoutMs: 1000 });
+    let proofSnapshot, callbacks = 0;
+    const guardedBudget = { ...budget,
+      startStage: async input => { const value = await budget.startStage(input); controller.abort(); return value; },
+      markStageNotInvoked: async (...args) => { if (proofFails) throw new Error("proof persistence failed"); const value = await budget.markStageNotInvoked(...args); proofSnapshot = await budget.read(); return value; }
+    };
+    const runtime = createAiBudgetRuntime({ budget: guardedBudget });
+    await assert.rejects(runtime.executeTask(plan(`cancel-${proofFails}`), execution => execution.runStage("text", () => { callbacks++; }, { control, dispatchGuard: () => control.throwIfStopped() }), { control }), error => error.code === "AI_TASK_CANCELLED" && (!proofFails || error instanceof AggregateError && error.cleanupFailed));
+    control.dispose(); assert.equal(callbacks, 0);
+    const after = await budget.read(); assert.equal(after.reservations.length, 0);
+    assert.equal(after.days[0].knownCostMicros, proofFails ? 100000 : 0);
+    if (!proofFails) { const stage = proofSnapshot.reservations[0].stages[0]; assert.ok(stage.startedAt); assert.equal(stage.dispatchState, "not_invoked"); assert.ok(stage.noIoAt); }
+  }
+  {
+    const { budget } = make(); const reserved = await budget.reserveTask(plan("proof-recovery"));
+    const attempt = createDispatchAttempt(); const id = reserved.reservation.id;
+    await budget.startStage({ reservationId: id, stageId: "text", dispatchAttemptId: attempt.id });
+    await assert.rejects(budget.markStageNotInvoked({ reservationId: id, stageId: "text", dispatchAttemptId: attempt.id }, {}), { code: "AI_BUDGET_PROOF_INVALID" });
+    attempt.close(); const capability = attempt.proof(id, "text", "cancelled");
+    const proof = { reservationId: id, stageId: "text", dispatchAttemptId: attempt.id };
+    await budget.markStageNotInvoked(proof, capability); assert.equal((await budget.markStageNotInvoked(proof, capability)).duplicate, true);
+    const recovery = await createAiBudgetRuntime({ budget }).recover(); assert.deepEqual(recovery.released, [id]);
+    assert.equal((await budget.read()).days[0].knownCostMicros, 0);
+    assert.equal((await budget.markStageNotInvoked(proof, capability)).duplicate, true);
+    assert.equal((await createAiBudgetRuntime({ budget }).recover()).scanned, 0);
+  }
+  {
+    const { budget } = make(); const reserved = await budget.reserveTask(plan("legacy-unknown"));
+    await budget.startStage({ reservationId: reserved.reservation.id, stageId: "text" });
+    const recovery = await createAiBudgetRuntime({ budget }).recover(); assert.equal(recovery.settled.length, 1);
+    assert.equal((await budget.read()).days[0].knownCostMicros, 100000, "legacy or unknown start must remain conservative");
+    const invoked = createDispatchAttempt(); invoked.invoke(() => {}, () => {}); invoked.close();
+    assert.throws(() => invoked.proof("reservation", "stage", "cancelled"), /不能证明未调用/);
+  }
+}
 
 console.log("AI budget runtime regression passed: peak estimates, execution lifecycle, retries, actual usage costs, settlement safety and startup recovery.");

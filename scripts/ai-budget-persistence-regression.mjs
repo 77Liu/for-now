@@ -1,3 +1,4 @@
+import { createAiBudgetRuntime } from "../src/app/index.mjs";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -7,7 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import {
   AI_BUDGET_POLICY,
-  createAiBudgetService
+  createAiBudgetService, createDispatchAttempt
 } from "../src/modules/ai/index.mjs";
 import {
   AI_BUDGET_DOCUMENT_FILE,
@@ -189,6 +190,22 @@ try {
   const restartedState = JSON.parse(restarted.stdout);
   assert.equal(restartedState.reservations.length, 1);
   assert.equal(restartedState.reservations[0].accountId, state.reservations[0].accountId);
+
+  // F5证明经过原子JSON、独立进程读取和新runtime恢复，不能仅在内存中有效。
+  const proofRoot = path.join(root, "proof");
+  const proofRepository = createAiBudgetRepository({ dataRoot: proofRoot });
+  const proofService = service(proofRepository, "proof");
+  const pending = await proofService.reserveTask({ accountId: "f5-account", taskId: "f5-json-proof", stages: [stage("text")] });
+  const dispatch = createDispatchAttempt(); const reservationId = pending.reservation.id;
+  await proofService.startStage({ reservationId, stageId: "text", dispatchAttemptId: dispatch.id });
+  dispatch.close(); await proofService.markStageNotInvoked({ reservationId, stageId: "text", dispatchAttemptId: dispatch.id }, dispatch.proof(reservationId, "text", "cancelled"));
+  const proofRestart = await run(process.execPath, [import.meta.filename, RESTART_PROBE, proofRoot], { timeout: 10000 });
+  const persisted = JSON.parse(proofRestart.stdout).reservations[0].stages[0];
+  assert.equal(persisted.dispatchState, "not_invoked"); assert.ok(persisted.startedAt && persisted.noIoAt); assert.equal(persisted.dispatchAttemptId, dispatch.id);
+  const proofRecovery = await createAiBudgetRuntime({ budget: service(createAiBudgetRepository({ dataRoot: proofRoot }), "recover-proof") }).recover();
+  assert.deepEqual(proofRecovery.released, [reservationId]);
+  const proofAfter = await proofService.read(); assert.equal(proofAfter.days[0].knownCostMicros, 0);
+  assert.ok(proofAfter.events.some(event => event.type === "ai.budget.reservation_released" && event.stages[0].dispatchState === "not_invoked"));
 
   const corrupt = "{CORRUPT_AI_BUDGET_KEEP_ME";
   await fs.writeFile(file, corrupt, { mode: 0o600 });

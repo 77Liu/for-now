@@ -308,6 +308,7 @@ export async function createRuntimeFoundation({
     auditChanges,
     logEvent,
     deepSeekApiUrl,
+    aiQueue: appConfig.aiQueue,
     aiQps,
     aiConcurrency,
     userDailyCallLimit: aiDailyCalls,

@@ -24,6 +24,22 @@ export function recordCompressionSlotQueueAllowance(slot, availableCalls) {
   return slot === "morning" ? Math.max(0, availableCalls - 1) : availableCalls;
 }
 
+/** 解析文本AI队列技术上限；默认值仅维护于本配置入口，重启生效。
+ * @since unreleased
+ */
+export function loadAiQueueConfig(env = process.env) {
+  const defaults = { maxOutstanding: 64, maxOutstandingPerAccount: 8, maxPendingPerGate: 64, maxQueueWaitMs: 30000, overloadRetryAfterMs: 5000 };
+  if (env.AI_QUEUE_ENABLED !== undefined && !["0", "1"].includes(env.AI_QUEUE_ENABLED)) throw new Error("AI_QUEUE_ENABLED must be 0 or 1");
+  const values = Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => {
+    const name = `AI_QUEUE_${key.replace(/[A-Z]/g, letter => `_${letter}`).toUpperCase()}`;
+    const value = env[name] === undefined || env[name] === "" ? fallback : Number(env[name]);
+    if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
+    return [key, value];
+  }));
+  if (values.maxOutstandingPerAccount > values.maxOutstanding) throw new Error("AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT must not exceed global outstanding");
+  return Object.freeze({ enabled: env.AI_QUEUE_ENABLED === "1", ...values });
+}
+
 export function loadAttachmentConfig(env = process.env) {
   return Object.freeze({
     mode: env.ATTACHMENT_STORAGE || "local",
@@ -154,6 +170,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     internalBudgets: readInternalBudgets(env),
     authAdmission: loadAuthAdmissionConfig(env),
     accountRecovery: loadAccountRecoveryConfig(env),
+    aiQueue: loadAiQueueConfig(env),
     dataDir: path.resolve(rootDir, env.DATA_DIR || "data"),
     port: Number(env.PORT || 4173),
     version: env.APP_VERSION || "development",

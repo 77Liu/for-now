@@ -259,6 +259,12 @@ export function createAccountRuntimeState({ config, getContext, defaultAccount =
       if (auditCalls.has(callId)) throw problem("ACCOUNT_AUDIT_ID_REUSED");
       auditCalls.set(callId, accountId());
     },
+    /** 仅移除同账户已登记且运行时确认未派发的审计身份；不写usage或授予任何业务能力。
+     * @since unreleased
+     */
+    endUninvokedAuditCall(callId: string) {
+      if (auditCalls.get(callId) === accountId()) auditCalls.delete(callId);
+    },
     /** 仅结算此前登记的同账户调用；损坏账本保留待对账，不允许创建或修改业务内容。
      * @since unreleased
      */
