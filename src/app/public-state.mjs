@@ -45,6 +45,11 @@ export function storeForUser(store, user, isOwner) {
   return isOwner(user) ? visible : withoutOwnerMetadata(visible);
 }
 
+/**
+ * 创建完整或按域读取的公共状态投影，不修改传入仓库。
+ * 普通字段与原仓库派生结果分别裁剪Owner资料；派生计数仍基于原仓库，
+ * 按域调用须由调用方提供syncProjectionFields声明的完整依赖。
+ */
 export function createPublicStateProjection({
   getUser,
   isOwner,
@@ -71,7 +76,9 @@ export function createPublicStateProjection({
     const domains = syncDomains === null ? null : new Set(syncDomains);
     const wants = domain => domains === null || domains.has(domain);
     const insights = domains === null || syncNeedsInsights(domains);
+    const owner = isOwner(user);
     const {
+      commercialization: _commercialization,
       trash,
       attachmentCleanup: _attachmentCleanup,
       speechCache: _speechCache,
@@ -80,11 +87,12 @@ export function createPublicStateProjection({
       evidenceSources: _evidenceSources,
       evidencePermissions: _evidencePermissions,
       perceptionEvents: _perceptionEvents,
-      ...visible
-    } = storeForUser(store, user, isOwner);
+      ...publicFields
+    } = store;
+    // 不会输出的内部集合无需递归复制；原有可见字段只裁剪一次。
+    const visible = owner ? publicFields : withoutOwnerMetadata(publicFields);
     const ownerId = safeText(user?.id, 100) || "local";
-    const state = {
-      ...visible,
+    const projected = {
       ...(wants("captures") ? { captures: visible.captures.map(publicCapture) } : {}),
       ...(wants("keepsakes") ? { keepsakes: visible.keepsakes.map(publicKeepsake) } : {}),
       ...(wants("aiTasks") || wants("notifications") ? {
@@ -92,7 +100,9 @@ export function createPublicStateProjection({
         notificationUnread: notificationUnread(store.notifications)
       } : {}),
       ...(insights ? { clusters: deriveThoughtClusters(store), insights: deriveStateInsights(store, { currentDate: today() }) } : {}),
-      ...(wants("trash") ? { trashCount: trash.length } : {}),
+      ...(wants("trash") ? {
+        trashCount: owner ? trash.length : withoutOwnerMetadata(trash).length
+      } : {}),
       ...(wants("speechCache") ? { speech: {
         configured: speechProvider.configured,
         defaultVoice: speechProvider.defaultVoice,
@@ -106,7 +116,11 @@ export function createPublicStateProjection({
       } } : {}),
       vision: { configured: visionProvider.configured }
     };
-    return isOwner(user) ? state : withoutOwnerMetadata(state);
+    // 原始仓库派生的统计、任务和语音仍走权限裁剪，不改变其计数来源。
+    return {
+      ...visible,
+      ...(owner ? projected : withoutOwnerMetadata(projected))
+    };
   };
   project.syncProjectionFields = syncProjectionFields;
   return project;
