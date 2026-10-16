@@ -222,6 +222,43 @@ assert.equal(Object.hasOwn(memberState, "evidenceSources"), false);
 assert.equal(Object.hasOwn(memberState, "evidencePermissions"), false);
 assert.equal(Object.hasOwn(memberState, "perceptionEvents"), false);
 assert.deepEqual(memberState.speech.assets, [], "speech assets must be account-bound");
+// 权限裁剪先后必须保留原始派生计数，同时剥离派生条目中的Owner资料。
+const privateRoot = {
+  ...store.thoughts[0], id: "private-root", resourceType: "userClaim"
+};
+const referenceFixture = {
+  providedReferences: [
+    { citationId: "private-reference", resourceType: "onboardingV2" },
+    { citationId: "visible-reference", resourceType: "thought" }
+  ],
+  contextReceipt: { referenceRequest: { providedCount: 7 } },
+  sourceIds: ["userClaim:hidden", "modelUnknown:hidden", "thought:question"],
+  userModel: { readiness: { ready: true }, claims: [{ private: true }], unknowns: [] }
+};
+const edgeStore = {
+  ...store,
+  thoughts: [{ ...store.thoughts[0], ...referenceFixture }, privateRoot],
+  trash: [...store.trash, privateRoot],
+  projectionExtension: { ...referenceFixture, nested: { ...referenceFixture } },
+  ...referenceFixture
+};
+const edgeMember = projectPublicState(edgeStore);
+const edgeOwner = projectPublicState(edgeStore, { id: "owner", role: "owner" });
+assert.equal(edgeMember.clusters[0].count, 2, "raw derived count must not use filtered Store");
+assert.equal(edgeMember.insights.weekly.rootCount30, 2);
+assert.equal(edgeMember.clusters[0].items.length, 1);
+assert.equal(edgeMember.trashCount, 2, "member trash count retains prior filtered semantics");
+assert.equal(edgeOwner.trashCount, 3);
+for (const result of [edgeMember, edgeMember.projectionExtension, edgeMember.projectionExtension.nested,
+  edgeMember.thoughts[0], edgeMember.clusters[0].items[0]]) {
+  assert.equal(result.providedReferenceCount, 7);
+  assert.deepEqual(result.providedReferences.map(item => item.citationId), ["visible-reference"]);
+  assert.deepEqual(result.sourceIds, ["thought:question"]);
+  assert.deepEqual(result.userModel, { readiness: { ready: true }, claims: [], unknowns: [] });
+}
+assert.equal(edgeOwner.providedReferences.length, 2);
+assert.equal(Object.hasOwn(edgeOwner, "providedReferenceCount"), false);
+
 assert.deepEqual(store, snapshot, "public projection must not modify Store");
 
 assert.throws(

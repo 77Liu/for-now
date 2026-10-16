@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 396,
-  "updated_at": "2026-10-16T00:59:33.472Z",
+  "revision": 401,
+  "updated_at": "2026-10-16T01:18:48.247Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "IN_PROGRESS",
-    "phase": "F3-A真实内部域读取闭包返修"
+    "phase": "F9提示遮挡与投影优化接入"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "512dbb",
-      "source": "两文件完整账户文档快照修复de4c67正常合入；本地独审和真实PG文档往返通过，整版新快照待验。"
+      "commit": "c46225",
+      "source": "854c55三文件内部域只读A修复正常合入，主控独审与原真实PG/公共投影必要门通过；新候选性能/完整快照门待复验。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -55,48 +55,48 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-F3A-internal-domain-projection",
+      "id": "v0516-F9-toast-public-projection",
       "owner": "主开发Agent",
-      "mode": "implementation",
-      "branch": "feat/v0.5.16-postgres-narrow-reads",
-      "baseline": "512dbb",
-      "status": "REVIEWED_LOCAL_GO",
+      "mode": "integration",
+      "branch": "feat/v0.5.16-sync-latency",
+      "baseline": "c46225",
+      "status": "REVIEWED_GO",
       "allowed_write_set": [
-        "src/app/sync-projection.mts (实际perception生产域到真实消费闭包)",
-        "scripts/postgres-runtime-checks.mjs (原窄读等价检查补真实producer必要不变量)",
-        "docs/technical-proposals/F3-PostgreSQL增量读写演进-技术方案.md (原开发明细限定A与证据)"
+        "public/frontend/styles/application.css (原被动toast规则的指针命中行为)",
+        "src/app/public-state.mjs (原协议内消除重复隐私裁剪/不必要装配，不改变实际输出)",
+        "scripts/public-state-regression.mjs (既有真实投影等价/权限必要不变量)",
+        "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md (原4.1本片事实及限制)"
       ],
       "forbidden_write_set": [
-        "其他业务/写入策略/HTTP协议/默认配置/schema/依赖/构建源码",
+        "其他业务/协议/写入策略/配置/schema/依赖/构建源码",
         "F3-B/C",
         "coordination/**",
         ".trae/**",
         "Git/远程/生产/付费",
         "新agent/工作树"
       ],
-      "shared_file_owner": "原主开发唯一三文件实现者；主控唯一控制面、Git与接入审查者。",
-      "integration_order": "原F3 feat正常快进最新develop512dbb后修复；先自查真实producer/normalize/publicState/HTTP消费者和必要等价/PG检查，再主控独审接入；不预称500ms达标。",
-      "acceptance_ref": "docs/technical-proposals/F3-PostgreSQL增量读写演进-技术方案.md",
+      "shared_file_owner": "主开发唯一四文件实现者；主控独审、控制面与Git。",
+      "integration_order": "原F9正常快进develop c46225后同一切片修复；先读原公共投影/owner裁剪和真实toast消费者，再自查受影响验证，主控独审后接入；保持原SLOFAIL待实际复验。",
       "contracts": [
-        "captures实际observe产生evidencePermissions/perceptionEvents；这些正式内部域不得仅因未列举导致全读。",
-        "真实所需字段闭包完整，元数据/事件/原始正文/权限不得删改；未知域仍按同RR全读回退，旧完整响应不变。",
-        "沿真实normalize与publicState/HTTP等价核账户隔离及隐私，不能忽略实际变化缩日志/让部分数据冒充完整。",
-        "仅阶段A修复，不修改整账户写策略或引入新投影协议。"
+        "toast为textContent/role=status/aria-live被动提示，无按钮/点击动作；显示和无障碍播报保留，禁止拦住下层真实操作。",
+        "投影不得改旧HTTP结构、完整性、owner/member可见性、providedReferenceCount/sourceIds、真实派生统计或已有副作用；不能省略实际消费数据制造小响应。",
+        "raw derive与裁剪顺序如影响计数/引用必须保持等价；不以对裁剪后store重新统计造成差异，不新增缓存/新传输协议。",
+        "仅在实际调用没有必要时减少递归/装配；先沿真实消费者审查，验证确认结论。"
       ]
     }
   ],
   "candidate": {
     "status": "STATEFUL_GLOBAL_PASS_PERFORMANCE_FAIL",
     "branch": "develop",
-    "sha": "512dbb",
-    "tree": "ef3875",
+    "sha": "c46225",
+    "tree": "3f89c9",
     "release_frozen": false,
     "test_matrix_ref": "knowledge/test-impact-matrix.md",
     "quality_gate": {
       "slice_implementation_review": "pass_local",
       "fresh_production_state_startup": "pass_local_complete_snapshot",
       "combined_profile_startup": "pass_local_complete_snapshot",
-      "representative_performance": "fail_local_production_shape_small_sample",
+      "representative_performance": "fail_local_production_shape_after_read_repair",
       "real_device_performance": "partial"
     }
   },
@@ -133,14 +133,16 @@
     {
       "id": "v0516-F9-production-shape-latency",
       "status": "CONFIRMED_LOCAL_THRESHOLD_FAIL",
-      "reason": "新完整生产形态、真实PG/鉴权/两Chrome前台小轮18保存：按钮反馈13–26ms，但对端DOM P75约615–1128ms，多族ACK超过500ms；移动追问编辑器准备超时未归因。不能用合成空库小样本声称达标。",
+      "reason": "整体同步SLO仍FAIL；移动追问toast遮挡局部修复经独审关闭。真实新思绪CPU诊断显示摘要输入重复装配为主要热点之一，待最小契约保真优化。",
       "refs": [
-        "/tmp/v0516-f9-representative-small-valid.log",
-        "/tmp/v0516-f9-representative-small-valid-original.json"
+        "/tmp/v0516-f9-read-closure-small.log",
+        "/tmp/v0516-f9-read-closure-small-browser.log",
+        "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "/tmp/v0516-f9-mobile-preparation-browser.log"
       ]
     }
   ],
-  "next_action": "三文件内部域A修复已完成主控真实链路独审及必要PG证据核对；正常提交/merge develop后固定新候选、重采完整生产快照，复验组合门和代表族性能。原性能FAIL仍阻碍发布。",
+  "next_action": "主控四文件独立审查通过，正常提交并合入develop；继续只读定位摘要上下文装配热点，再裁定最小写集。SLO仍FAIL，当前无发布授权。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -439,38 +441,73 @@
       "id": "v0516-stateful-global-gate",
       "object": {
         "kind": "Git_commit_and_snapshot",
-        "commit": "512dbb",
-        "tree": "ef3875",
-        "snapshot": "659f23"
+        "commit": "c46225",
+        "tree": "3f89c9",
+        "snapshot": "be35d1"
       },
-      "conclusion": "完整4账户实际settings/usage新快照；默认及六开关组合均实际启动、readyz、同库重启、116任务状态等价、鉴权读写保存及通知读取通过；provider/outbound/media尝试均0。",
+      "conclusion": "新候选完整4账户settings/usage快照，默认及六开关组合实际启动、readyz、同库重启、116任务状态及核心保存读回/任务通知读取通过；禁止副作用尝试均0。",
       "limitations": [
         "仅本机PostgreSQL16.14，真实provider/通知/媒体副作用封闭；不证明真实provider鉴权。",
         "代表性操作族P75完整分组、Safari/PWA/真机及生产同规格负载未完成；不是整版发布GO。"
       ],
       "refs": [
         "artifacts/local/v0516-global-acceptance-current.json",
-        "/tmp/v0516-complete-startup-default.log",
-        "/tmp/v0516-complete-startup-v0516-combined.log"
+        "/tmp/v0516-read-closure-startup-default.log",
+        "/tmp/v0516-read-closure-startup-v0516-combined.log"
       ]
     },
     {
       "id": "v0516-F9-production-shape-performance",
       "object": {
         "kind": "Git_commit_and_snapshot",
-        "commit": "512dbb",
-        "tree": "ef3875",
-        "snapshot": "659f23"
+        "commit": "c46225",
+        "tree": "3f89c9",
+        "snapshot": "be35d1"
       },
-      "conclusion": "18实际保存样本，按钮反馈P75约13–26ms；各已测族对端DOM约615–1128ms，多族ACK超过500ms，当前延迟目标FAIL。",
+      "conclusion": "新候选19个有效保存，按钮反馈P75约13–32ms，部分跨端结果约596–1047ms，SLO仍FAIL；最小内部域修复不足以达整体目标。",
       "limitations": [
-        "每组仅3样本；不是全族正式分位，移动追问未有样本，入口准备超时待归因。",
-        "journal对端DOM位于视口外，不等于可见；Chrome移动仿真不等于iOS/真机。",
-        "禁止副作用尝试均0，真实本地音频输入校验6次；原启动门拦纯文本校验的夹具失败另保留。"
+        "每组1或3样本，不是完整分组P75；原移动追问准备超时后续已定位被动toast遮挡，并由当前四文件工作区修复证据关闭。",
+        "journal对端DOM不在视口，不等于可见；Chrome移动仿真不等于iOS/真机。",
+        "禁止副作用尝试0，本地音频校验6次；旧失败及阶段诊断保留原回执。"
       ],
       "refs": [
-        "/tmp/v0516-f9-representative-small-valid.log",
-        "/tmp/v0516-f9-representative-small-valid-original.json"
+        "/tmp/v0516-f9-read-closure-small.log",
+        "/tmp/v0516-f9-read-closure-small-browser.log",
+        "artifacts/local/v0516-f9-server-acceptance-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F3A-internal-domain-repair",
+      "object": {
+        "kind": "source_manifest",
+        "commit": "854c55",
+        "integration_commit": "c46225",
+        "receipt": "artifacts/local/v0516-f3a-acceptance-current.json"
+      },
+      "conclusion": "主控独立核真实perception生产链、同RR字段闭包、正式normalizers、公共输出/隐私；三文件指纹匹配，PG既有全入口及公共投影/工程检查通过，正常合入。",
+      "limitations": [
+        "仅只读A；整账户写与HTTP全域体积不变，旧真实生产形态SLOFAIL待新候选复验。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f3a-acceptance-current.json",
+        "/tmp/v0516-f3a-internal-domains-pg.log"
+      ]
+    },
+    {
+      "id": "v0516-F9-toast-projection-review",
+      "object": {
+        "kind": "source_manifest",
+        "base_commit": "c46225",
+        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json"
+      },
+      "conclusion": "四文件实际差分、真实隐私/派生消费者、84项等价及真实移动端连续追问证据通过主控独审；被动toast遮挡已关闭。",
+      "limitations": [
+        "仅局部实现GO；完整新候选启动门及整体P75尚未通过。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "/tmp/v0516-f9-toast-repair-browser.log",
+        "/tmp/v0516-f9-projection-equivalence-final.log"
       ]
     }
   ],
