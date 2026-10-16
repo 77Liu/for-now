@@ -1663,6 +1663,9 @@ body:has(#view-today.active #onboarding-workspace:not([hidden])) .home-v02-conte
   .thought-block-content-frame{--thought-block-collapsed-height:320px}
 }
 
+/* 日记是页面内长表单；移动端页脚沿文档流滚动，避免复用弹层sticky后被底部导航覆盖。 */
+@media(max-width:760px){#journal-form>.record-form-footer{position:static}}
+
 /* Mobile browser and standalone-mode viewport hardening. */
 html{min-height:100%;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{min-height:100vh;min-height:100dvh}

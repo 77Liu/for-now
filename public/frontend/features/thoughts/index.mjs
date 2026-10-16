@@ -1,3 +1,3 @@
 export { createThoughtsFeatureController } from "./loader.mjs";
 
-export { reconcileThoughtWindowMutation } from "./model.mjs";
+export { reconcileThoughtWindowMutation, applyThoughtWindowSync, applyThoughtDetailSync } from "./model.mjs";

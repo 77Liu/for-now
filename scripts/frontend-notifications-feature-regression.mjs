@@ -542,3 +542,45 @@ for (const name of Object.keys(ports())) {
 }
 
 console.log("Frontend notifications feature checks passed.");
+
+// F9 data-runtime真实适配：signal透传、metrics await后的同账户新会话不可回写。
+{
+  const { rotateSession } = await import('../public/frontend/session/index.mjs');
+  const gate = deferred();
+  const health = { status: 'idle', lastPullMs: 0 };
+  const runtime = { currentUser: { id: 'owner-a' }, syncHealth: health };
+  let ports, receivedSignal, published = 0;
+  const data = createDataRuntime({
+    runtime,
+    apiClient: { request: async (_url, options) => { receivedSignal = options.signal; return { data: { cursor: 0, changes: [] } }; } },
+    syncStore: {}, createRequestCoordinator: () => ({ metrics: async () => gate.promise }),
+    createRefreshCoordinator: () => ({}), createIncrementalSync: value => { ports = value; return {}; },
+    $: () => ({}), getActionsCoordinator: () => ({}), renderStateChart() {}, renderHomeMood() {},
+    reconcileActiveThoughtRoute() {}, clearRouteLoadFailure() {}, renderVisibleRoute() {}, renderRouteLoadFailure() {},
+    syncBackgroundTaskResults: async () => {}, ensureBackgroundResultsController: () => ({}), backgroundResultsRetryLimit: 3
+  });
+  runtime.runtimeFeatureRegistry = { notifyState() { published += 1; } };
+  const controller = new AbortController();
+  await ports.request('/api/v1/sync?waitMs=1500', { signal: controller.signal });
+  assert.equal(receivedSignal, controller.signal);
+  const updating = data.updateSyncHealth({ type: 'pull', owner: 'owner-a', durationMs: 20 });
+  rotateSession();
+  gate.resolve({ durable: true, pending: 0, conflicts: 0, failed: 0, enqueueToAckP95Ms: 0 });
+  await updating;
+  assert.equal(runtime.syncHealth, health);
+  assert.equal(published, 0, 'same owner new session rejects old metrics consumer');
+}
+
+// 同账户未rotate但本次恢复已结束：通知真实异步消费者不接入旧列表。
+{
+  const response = deferred();
+  const runtime = { currentUser: { id: 'same-owner' } }, snapshot = { aiTasks: [], notifications: [] };
+  let current = true;
+  const notifications = createNotificationRuntime({ runtime, getSnapshot: () => snapshot, getSessionSerial: () => 1,
+    request: async () => response.promise, syncResults: async () => {}, setUnreadDot() {}, retryLimit: 3, isPendingTask: () => false });
+  const reading = notifications.readNotificationSnapshot(false, { isCurrent: () => current });
+  current = false; response.resolve({ items: [{ id: 'old-lifecycle', status: 'succeeded' }], unread: 1 });
+  assert.equal(await reading, false);
+  assert.deepEqual(snapshot, { aiTasks: [], notifications: [] });
+  assert.notEqual(runtime.notificationsLoadState, 'ready');
+}

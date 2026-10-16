@@ -18,18 +18,23 @@ export function publishDomains(domains, options = {}) {
 }
 
 // Requests can overlap; only the newest response commits, carrying all pending domains.
+/** 可选options.isCurrent自unreleased起限定本次消费；guard只传给afterReplace，不进入渲染选项。 */
 export function createRefreshCoordinator({ session, requestState, afterReplace = async () => {} }) {
   let serial = 0, pending = new Set(), pendingOptions = {};
   return {
     reset() { serial += 1; pending.clear(); pendingOptions = {}; },
     async refresh(domains, options = {}) {
+      const { isCurrent: consumerCurrent = () => true, ...renderOnlyOptions } = options;
+      if (!consumerCurrent()) return false;
       for (const domain of Array.isArray(domains) ? domains : [domains]) pending.add(domain);
-      if (options.chainId) pendingOptions = { ...pendingOptions, ...options };
+      if (renderOnlyOptions.chainId) pendingOptions = { ...pendingOptions, ...renderOnlyOptions };
       const requestSerial = ++serial, ticket = session.capture(), next = await requestState();
-      if (requestSerial !== serial || !session.isCurrent(ticket)) return false;
+      const current = () => requestSerial === serial && session.isCurrent(ticket) && consumerCurrent();
+      if (!current()) return false;
       replaceState(next);
-      await afterReplace();
-      if (requestSerial !== serial || !session.isCurrent(ticket)) return false;
+      if (!current()) return false;
+      await afterReplace({ isCurrent: current });
+      if (!current()) return false;
       const wanted = new Set(pending), renderOptions = pendingOptions;
       pending.clear();
       pendingOptions = {};

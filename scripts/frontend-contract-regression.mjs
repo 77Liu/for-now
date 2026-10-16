@@ -223,3 +223,29 @@ assert.equal(currentTranscription.changed, true);
 assert.equal(currentTranscription.value.captures[0].transcription.rawText, "当前原音结果");
 
 console.log("Frontend contracts passed: base path, errors, optional endpoints, session cancellation, delayed body/blob rejection, SSE chunks/termination, refresh domain coalescing and account reset.");
+
+// F9本次生命周期guard深入实际replace/afterReplace，不混入渲染选项。
+{
+  resetState();
+  const response = deferred();
+  let current = true, restored = 0;
+  const coordinator = createRefreshCoordinator({ session: sessionScope, requestState: () => response.promise,
+    afterReplace: async () => { restored += 1; } });
+  const updating = coordinator.refresh('captures', { isCurrent: () => current, chainId: 'root' });
+  current = false; response.resolve({ captures: ['old lifecycle'] });
+  assert.equal(await updating, false);
+  assert.deepEqual(state.captures, []);
+  assert.equal(restored, 0);
+  const pending = deferred(); let canApply = true, publishedOptions;
+  const stop = subscribeState((_state, _domains, options) => { publishedOptions = options; });
+  const valid = createRefreshCoordinator({ session: sessionScope, requestState: async () => ({ captures: [] }),
+    afterReplace: async consumer => { await pending.promise; if (consumer.isCurrent()) state.captures.push('old queued projection'); } });
+  const restoring = valid.refresh('captures', { isCurrent: () => canApply, chainId: 'root' });
+  await Promise.resolve(); canApply = false; pending.resolve();
+  assert.equal(await restoring, false);
+  assert.deepEqual(state.captures, []);
+  canApply = true;
+  assert.equal(await valid.refresh('captures', { isCurrent: () => true, chainId: 'new-root' }), true);
+  assert.equal(Object.hasOwn(publishedOptions, 'isCurrent'), false);
+  stop();
+}

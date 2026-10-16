@@ -1,4 +1,4 @@
-import { summarizeThoughtWindowItems } from "../../../generated/thought-page-window.mjs";
+import { summarizeThoughtWindowItems, reconcileThoughtSyncWindow, reconcileThoughtDetailSync } from "../../../generated/thought-page-window.mjs";
 import { plainPreview } from "../../content/index.mjs";
 import { eventDate, eventTimestamp } from "../../time/index.mjs";
 import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
@@ -189,3 +189,12 @@ export function reconcileThoughtWindowMutation(snapshot, route, enabled, limits)
   snapshot.thoughts = summarizeThoughtWindowItems(snapshot.thoughts || [], limits, (blocks, previous) => thoughtListPreview(blocks, blocks.length ? null : previous));
   return true;
 }
+
+/** 权威完整thought域经同一有界摘要/用户预览端口接入，不保留完整子项或另建阅读状态。 @since unreleased */
+export function applyThoughtWindowSync(snapshot, incoming, route, limits, canEvict, changes = []) {
+  return reconcileThoughtSyncWindow(snapshot, incoming, route, limits,
+    (blocks, previous) => thoughtListPreview(blocks, blocks.length ? null : previous), canEvict, changes);
+}
+
+/** 单条详情复用同一稳定ID/版本接入边界，完整域缺失不复活目标。 @since unreleased */
+export const applyThoughtDetailSync = (current, incoming, rootId) => reconcileThoughtDetailSync(current, incoming, rootId);

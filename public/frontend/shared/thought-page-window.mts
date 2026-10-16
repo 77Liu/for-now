@@ -128,23 +128,38 @@ export function summarizeThoughtWindowItems(
   selectPreview: (blocks: Summary[], previous: unknown) => { kind: string; text: string } | null
 ) {
   const seen = new Set<string>();
+  const children = new Map<string, Summary[]>();
+  for (const item of items) {
+    if (typeof item.relatedTo !== "string") continue;
+    const blocks = children.get(item.relatedTo) || [];
+    blocks.push(item);
+    children.set(item.relatedTo, blocks);
+  }
   return items.filter(item => {
     if (item.type !== "question" || seen.has(item.id)) return false;
     seen.add(item.id);
     return true;
   }).slice(0, limits.pageSize * limits.maxPages).map(item => {
-    const {
-      attachmentPaths, remarks: _remarks, followUps: _followUps,
-      modelDraft: _modelDraft, modelReasoning: _modelReasoning,
-      reasoningContent: _reasoning, ...root
-    } = item;
-    const blocks = items.filter(child => child.relatedTo === item.id);
+    const attachmentPaths = item.attachmentPaths;
+    const blocks = children.get(item.id) || [];
     const preview = selectPreview(blocks, item.preview);
     const content = String(item.content || "");
     const previousPreview = item.preview as { truncated?: boolean } | null;
     const tags = [...new Set([...(Array.isArray(item.tags) ? item.tags : []), ...blocks.flatMap(block => Array.isArray(block.tags) ? block.tags : [])])].slice(0, 8);
     return {
-      ...root,
+      id: item.id,
+      type: "question",
+      version: item.version,
+      occurredAt: item.occurredAt || null,
+      occurredOn: item.occurredOn || null,
+      createdAt: item.createdAt || null,
+      updatedAt: item.updatedAt || null,
+      disposition: item.disposition || "kept",
+      ...(item.clientRequestId ? { clientRequestId: item.clientRequestId } : {}),
+      ...(item._sync ? { _sync: item._sync } : {}),
+      ...(item.sourceRef && typeof item.sourceRef === "object" ? {
+        sourceRef: Object.fromEntries(Object.entries(item.sourceRef).filter(([key]) => ["type", "id", "version"].includes(key)))
+      } : {}),
       tags,
       content: content.slice(0, limits.questionPreviewLimit),
       contentTruncated: Boolean(item.contentTruncated) || content.length > limits.questionPreviewLimit,
@@ -187,5 +202,105 @@ export function createThoughtReadingState(getScope: () => string) {
         && token.interactionRevision === interactionRevision
         && token.renderRevision === renderRevision;
     }
+  });
+}
+
+/**
+ * 完整权威thought域只收敛当前摘要窗口；新增根依据真实create变化，旧cursor拓扑失效后禁止续页。
+ * 原页成员仅保留定位凭据，新根不伪造服务端opaque cursor；淘汰资格由当前真实DOM阅读者判断。
+ * @since unreleased
+ */
+export function reconcileThoughtSyncWindow(
+  snapshot: { thoughts?: Summary[]; thoughtPage?: { window?: ThoughtWindow; sort?: string; stale?: boolean; requestCursor?: string; prevCursor?: string } },
+  incoming: Summary[], route: { query?: Record<string, string> },
+  limits: Limits & { questionPreviewLimit: number; userPreviewLimit: number },
+  selectPreview: (blocks: Summary[], previous: unknown) => { kind: string; text: string } | null,
+  canEvict: (id: string) => boolean = () => false,
+  changes: { domain?: string; resourceId?: string; changeType?: string }[] = []
+) {
+  const page = snapshot.thoughtPage, window = page?.window;
+  if (!window || !page || !Array.isArray(incoming)) return false;
+  const roots = new Map(incoming.filter(item => item.type === "question").map(item => [item.id, item]));
+  const known = new Set((snapshot.thoughts || []).filter(item => item.type === "question").map(item => item.id));
+  const createdRoots = new Set(changes.filter(change => change.domain === "thoughts" && change.changeType === "create"
+    && change.resourceId && roots.has(change.resourceId)).map(change => change.resourceId));
+  const wanted = new Set([...known, ...[...createdRoots].slice(0, limits.pageSize * limits.maxPages)]);
+  const selected = incoming.filter(item => wanted.has(item.id) || typeof item.relatedTo === "string" && wanted.has(item.relatedTo));
+  const summaries = summarizeThoughtWindowItems(selected, { ...limits, maxPages: Math.max(limits.maxPages, Math.ceil(wanted.size / limits.pageSize)) }, selectPreview);
+  const byId = new Map(summaries.map(item => [item.id, item]));
+  const existing = (snapshot.thoughts || []).filter(item => item.type === "question");
+  let changed = false, topologyChanged = false;
+  const items = existing.flatMap(item => {
+    // 未确认本地编辑属于原队列/ACK结算，旧同步不能先闪回正文再重放。
+    if (item._sync) return [item];
+    const saved = byId.get(item.id);
+    if (!saved) {
+      if (item._sync) return [item];
+      changed = true; topologyChanged = true; return [];
+    }
+    if (Number(item.version || 0) > Number(saved.version || 0)) return [item];
+    if (JSON.stringify(item) === JSON.stringify(saved)) return [item];
+    changed = true;
+    const key = (route?.query?.sort || page.sort) === "created" ? "createdAt" : "occurredAt";
+    if (String(item[key] || item.createdAt || "") !== String(saved[key] || saved.createdAt || "")) topologyChanged = true;
+    return [saved];
+  });
+  const firstPage = window.pages[0];
+  const headProven = firstPage ? !firstPage.requestCursor && !firstPage.prevCursor
+    : Object.hasOwn(page, "requestCursor") && !page.requestCursor
+      && Object.hasOwn(page, "prevCursor") && !page.prevCursor && !route?.query?.cursor;
+  const newestEdge = headProven && !route?.query?.q && !route?.query?.tag;
+  const tuple = (item: Summary) => [(route?.query?.sort || page.sort) === "created" ? item.createdAt || item.occurredAt || "" : item.occurredAt || item.createdAt || "", item.createdAt || "", item.id];
+  const compare = (left: Summary, right: Summary) => {
+    const a = tuple(left), b = tuple(right);
+    return String(b[0]).localeCompare(String(a[0])) || String(b[1]).localeCompare(String(a[1])) || String(b[2]).localeCompare(String(a[2]));
+  };
+  const capacity = limits.pageSize * limits.maxPages;
+  if (newestEdge) {
+    const edge = existing[0];
+    const additions = summaries.filter(item => createdRoots.has(item.id) && !known.has(item.id) && (!edge || compare(item, edge) < 0)).sort(compare);
+    for (const addition of additions.slice(0, capacity)) {
+      if (items.length >= capacity) {
+        const last = items.at(-1);
+        if (!last || !canEvict(last.id)) break;
+        items.pop();
+      }
+      items.push(addition); changed = true; topologyChanged = true;
+    }
+  }
+  // 窗口外根的普通更新也可能改变日期或筛选资格；完整权威域只能证明其存在，不能猜旧排序。
+  const outsideRootUpdated = changes.some(change => change.domain === "thoughts" && change.changeType === "update"
+    && change.resourceId && roots.has(change.resourceId) && !known.has(change.resourceId));
+  if ([...createdRoots].some(id => !known.has(id!)) || outsideRootUpdated
+    || changes.some(change => change.domain === "thoughts" && change.changeType === "reorder")) topologyChanged = true;
+  if (newestEdge && topologyChanged) items.sort(compare);
+  if (topologyChanged && !window.stale) { window.stale = true; window.generation += 1; }
+  if (topologyChanged) page.stale = true;
+  if (changed) {
+    snapshot.thoughts = items;
+    const retained = new Map(items.map(item => [item.id, item]));
+    for (const member of window.pages) member.items = member.items.flatMap(item => {
+      const current = retained.get(item.id);
+      return current ? [current] : [];
+    });
+  }
+  return changed || topologyChanged;
+}
+
+/**
+ * 当前单条详情按稳定ID/版本接入完整同步域；已经接入的较新根与未确认编辑不被旧在途读取回退。
+ * 权威缺失仍按完整域删除，未持久化表单由原阅读/草稿端口负责。
+ * @since unreleased
+ */
+export function reconcileThoughtDetailSync(current: Summary[], incoming: Summary[], rootId: string): Summary[] {
+  const belongs = (item: Summary) => item.id === rootId || item.relatedTo === rootId;
+  const previous = current.filter(belongs), next = incoming.filter(belongs);
+  const oldRoot = previous.find(item => item.id === rootId), newRoot = next.find(item => item.id === rootId);
+  if (newRoot && oldRoot && !Object.hasOwn(oldRoot, "blockCount")
+    && (oldRoot._sync || Number(oldRoot.version || 0) > Number(newRoot.version || 0))) return previous;
+  const byId = new Map(previous.map(item => [item.id, item]));
+  return next.map(item => {
+    const old = byId.get(item.id);
+    return old && !Object.hasOwn(old, "blockCount") && (old._sync || Number(old.version || 0) > Number(item.version || 0)) ? old : item;
   });
 }

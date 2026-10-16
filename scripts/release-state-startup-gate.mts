@@ -1921,7 +1921,21 @@ async function initializeGateDatabase(root: string, pgState: Awaited<ReturnType<
   }
 }
 
-function installGateEnvironment(tempRoot: string, urls: { data: string; auth: string; budget: string }, port: number, counts: Record<string, number>) {
+type LocalGateProfile = "default" | "v0516-combined";
+const combinedProfileEnvironment = Object.freeze({
+  ACCOUNT_RECOVERY_ENABLED: "1",
+  PG_SYNC_READ_MODE: "metadata",
+  PG_SYNC_ACCOUNT_ALLOWLIST: "*",
+  AI_QUEUE_ENABLED: "1",
+  SYNC_ACCOUNT_WAKE_ENABLED: "1",
+  THOUGHT_PAGING_ENABLED: "1",
+  INCREMENTAL_SYNC_ENABLED: "1"
+});
+function localProfileEnvironment(profile: LocalGateProfile) {
+  return profile === "v0516-combined" ? combinedProfileEnvironment : {};
+}
+
+function installGateEnvironment(tempRoot: string, urls: { data: string; auth: string; budget: string }, port: number, counts: Record<string, number>, profile: LocalGateProfile = "default") {
   const previous = { ...process.env };
   const previousFetch = globalThis.fetch;
   const safeSystemKeys = ["PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "TZ", "DYLD_LIBRARY_PATH"];
@@ -1943,7 +1957,8 @@ function installGateEnvironment(tempRoot: string, urls: { data: string; auth: st
     FEISHU_ALERT_WEBHOOK: "",
     FEISHU_ALERT_SECRET: "",
     DEEPSEEK_API_KEY: "",
-    ATTACHMENT_STORAGE: "local"
+    ATTACHMENT_STORAGE: "local",
+    ...localProfileEnvironment(profile)
   });
   globalThis.fetch = async (input, init) => {
     const target = new URL(input instanceof Request ? input.url : input.toString());
@@ -2004,15 +2019,35 @@ async function readLocalTaskStates(root: string, url: string, accountIds: string
   }
 }
 
+
+async function readGateConfiguration(root: string) {
+    const configModule = await importFromRoot<{ loadAppConfig(input: { rootDir: string }): {
+      accountRecovery: { enabled: boolean }; pgIo: { syncReadMode: string; accountAllowlist: string[] };
+      aiQueue: { enabled: boolean }; syncAccountWakeEnabled: boolean;
+      features: { thoughtPaging: { enabled: boolean }; incrementalSync: boolean }
+    } }>(root, "src/config/index.mjs");
+    const parsed = configModule.loadAppConfig({ rootDir: root });
+    return {
+      accountRecoveryEnabled: parsed.accountRecovery.enabled,
+      pgSyncReadMode: parsed.pgIo.syncReadMode,
+      pgSyncAccountAllowlist: parsed.pgIo.accountAllowlist,
+      aiQueueEnabled: parsed.aiQueue.enabled,
+      syncAccountWakeEnabled: parsed.syncAccountWakeEnabled,
+      thoughtPagingEnabled: parsed.features.thoughtPaging.enabled,
+      incrementalSyncEnabled: parsed.features.incrementalSync
+    };
+}
+
 async function startRuntime(
   root: string,
   tempRoot: string,
   urls: { data: string; auth: string; budget: string },
   port: number,
   gate: StartupGatePort,
-  cleanupFailures: string[]
+  cleanupFailures: string[],
+  profile: LocalGateProfile = "default"
 ) {
-  const restoreEnvironment = installGateEnvironment(tempRoot, urls, port, gate.counts);
+  const restoreEnvironment = installGateEnvironment(tempRoot, urls, port, gate.counts, profile);
   let runtime: { start(): Promise<{ port: number }>; ready(): Promise<void>; stop(): Promise<void> } | null = null;
   try {
     const moduleName = pathToFileURL(path.join(root, "src/app/server-runtime.mjs")).href;
@@ -2024,12 +2059,18 @@ async function startRuntime(
       processRef: process,
       startupGate: gate
     });
+    const effectiveConfiguration = await readGateConfiguration(root);
+    if (profile === "v0516-combined" && (!effectiveConfiguration.accountRecoveryEnabled
+      || effectiveConfiguration.pgSyncReadMode !== "metadata" || !effectiveConfiguration.pgSyncAccountAllowlist.includes("*")
+      || !effectiveConfiguration.aiQueueEnabled || !effectiveConfiguration.syncAccountWakeEnabled || !effectiveConfiguration.thoughtPagingEnabled)) {
+      fail("Combined profile did not reach the application's unique configuration parser");
+    }
     const started = await runtime.start();
     await runtime.ready();
     const baseUrl = `http://127.0.0.1:${started.port}`;
     const ready = await fetch(`${baseUrl}/readyz`);
     if (!ready.ok) fail(`Isolated runtime readyz failed (${ready.status})`);
-    return { runtime, baseUrl, restoreEnvironment };
+    return { runtime, baseUrl, restoreEnvironment, profile, effectiveConfiguration };
   } catch (error) {
     if (runtime) {
       try {
@@ -2132,7 +2173,7 @@ function createStartupEffectObserver(
   };
 }
 
-async function verify(root: string, snapshotFile: string) {
+async function verify(root: string, snapshotFile: string, profile: LocalGateProfile = "default") {
   const snapshotValue = await loadSnapshot(root, snapshotFile);
   const snapshotProvesEmptyCleanupQueue = await snapshotHasNoPendingAttachmentCleanup(root, snapshotValue);
   const timeBaseline = snapshotValue.timeBaseline as InspectionClock;
@@ -2224,7 +2265,7 @@ async function verify(root: string, snapshotFile: string) {
     };
     phase = "first runtime startup";
     const firstResumeCallsBeforeStart = gateCounts.emptyCleanupResumeCalls;
-    const first = await startRuntime(root, tempRoot, urls, testPort, gate, cleanupFailures);
+    const first = await startRuntime(root, tempRoot, urls, testPort, gate, cleanupFailures, profile);
     runtimeInstance = first.runtime;
     restoreRuntimeEnvironment = first.restoreEnvironment;
     const firstResumeCalls = gateCounts.emptyCleanupResumeCalls - firstResumeCallsBeforeStart;
@@ -2240,7 +2281,7 @@ async function verify(root: string, snapshotFile: string) {
     const secondPort = await freeTcpPort();
     phase = "same-database runtime restart";
     const secondResumeCallsBeforeStart = gateCounts.emptyCleanupResumeCalls;
-    const second = await startRuntime(root, tempRoot, urls, secondPort, gate, cleanupFailures);
+    const second = await startRuntime(root, tempRoot, urls, secondPort, gate, cleanupFailures, profile);
     runtimeInstance = second.runtime;
     restoreRuntimeEnvironment = second.restoreEnvironment;
     const secondResumeCalls = gateCounts.emptyCleanupResumeCalls - secondResumeCallsBeforeStart;
@@ -2295,6 +2336,8 @@ async function verify(root: string, snapshotFile: string) {
     }
     passReceipt = {
       status: "PASS",
+      profile,
+      effectiveConfiguration: { first: first.effectiveConfiguration, restart: second.effectiveConfiguration },
       candidateSha: snapshotValue.candidateSha,
       candidateTree: snapshotValue.candidateTree,
       snapshotSha256: snapshotValue.snapshotSha256,
@@ -2342,6 +2385,22 @@ async function verify(root: string, snapshotFile: string) {
 }
 
 async function selfTest(root: string) {
+  for (const profile of ["default", "v0516-combined"] as const) {
+    const restore = installGateEnvironment(os.tmpdir(), {
+      data: "postgresql://localhost:1/gate_data", auth: "postgresql://localhost:1/gate_auth", budget: "postgresql://localhost:1/gate_budget"
+    }, 1, {}, profile);
+    try {
+      const effective = await readGateConfiguration(root);
+      const combined = profile === "v0516-combined";
+      if (effective.accountRecoveryEnabled !== combined || effective.aiQueueEnabled !== combined
+        || effective.syncAccountWakeEnabled !== combined || effective.thoughtPagingEnabled !== combined
+        || !effective.incrementalSyncEnabled || effective.pgSyncReadMode !== (combined ? "metadata" : "legacy")
+        || effective.pgSyncAccountAllowlist.join(",") !== (combined ? "*" : "")) {
+        fail("Local gate profile lost a flag at the unique configuration parser");
+      }
+      process.stdout.write(JSON.stringify({ localGateProfile: profile, effectiveConfiguration: effective }) + "\n");
+    } finally { restore(); }
+  }
   const counts: Record<string, number> = {};
   const fixtureClock = createInspectionClock("2026-10-12T00:00:00.000Z", "Asia/Shanghai");
   const runtime = await createClosedInspector(root, "synthetic-account", counts, fixtureClock);
@@ -3595,8 +3654,12 @@ if (command === "--self-test") {
 } else if (command === "verify") {
   const snapshotFile = process.argv[3];
   if (!snapshotFile) fail("verify requires a sanitized snapshot file path");
-  await verify(root, snapshotFile);
+  const profileArgument = process.argv[4] || "--profile=default";
+  if (!["--profile=default", "--profile=v0516-combined"].includes(profileArgument) || process.argv.length > 5) {
+    fail("verify accepts only --profile=default or --profile=v0516-combined");
+  }
+  await verify(root, snapshotFile, profileArgument.slice("--profile=".length) as LocalGateProfile);
 } else {
-  process.stderr.write("Usage: release-state-startup-gate.mjs --self-test | snapshot <output-file> | verify <snapshot-file>\n");
+  process.stderr.write("Usage: release-state-startup-gate.mjs --self-test | snapshot <output-file> | verify <snapshot-file> [--profile=default|v0516-combined]\n");
   process.exitCode = 2;
 }
