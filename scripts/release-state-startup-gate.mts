@@ -42,7 +42,12 @@ type StoreMapping = {
   lifecycles: JsonRecord[];
   idempotency: JsonRecord[];
 };
+type AccountDocuments = { settings: JsonRecord; usage: JsonRecord; costPlan: JsonRecord | null };
 type PersistenceApi = {
+  readAccountDocument(client: PgClient, accountId: string, name: string, fallback?: null): Promise<JsonRecord | null>;
+  writeAccountDocument(client: PgClient, accountId: string, name: string, value: JsonRecord): Promise<void>;
+  mapAccountDocument(accountId: string, name: string, value: JsonRecord): JsonRecord;
+  rebuildAccountDocument(mapping: JsonRecord): JsonRecord;
   readAuthDocument(client: PgClient): Promise<{ users?: JsonRecord[] } | null>;
   mapStoreObjects(accountId: string, store: JsonRecord): StoreMapping;
   readPostgresStoreObjects(client: PgClient, accountId: string): Promise<StoreMapping>;
@@ -1642,16 +1647,138 @@ async function createSanitizedAccount(
   };
 }
 
+// 账户文档不能套用正文字符串脱敏：模型、场景、状态与账本数值均为真实消费者契约。
+const DOCUMENT_TECHNICAL_STRINGS = new Set([
+  "provider", "service", "action", "model", "modelReturned", "effort", "tier", "scene", "status",
+  "pricingPeriod", "responseFormat", "finishReason", "modality", "unitType", "designVersion"
+]);
+const DOCUMENT_PRIVATE_STRINGS = new Set(["assistantName", "defaultVoice", "errorCode", "costSource"]);
+const DOCUMENT_IDS = new Set(["id", "callId", "callGroupId", "traceId", "providerRequestId", "accountId", "userId", "taskId", "operationId"]);
+const USAGE_NUMERIC_FIELDS = new Set(["version", "durationMs", "httpStatus", "attempt", "maxAttempts", "maxTokens", "imageCount", "imageBytes", "width", "height", "historyMessageCount", "requestChars", "responseChars", "reasoningChars", "units", "costCny"]);
+const USAGE_NUMERIC_GROUPS = new Set(["tokens", "costsUsd", "costsCny", "ratesUsdPerMillion", "ratesCnyPerMillion", "rawUsage"]);
+
+function validateDocumentPresence(documents: AccountDocuments) {
+  if (!documents || typeof documents !== "object" || Array.isArray(documents)) fail("Snapshot account documents are missing");
+  for (const name of ["settings", "usage"] as const) {
+    const value = documents[name];
+    if (!value || typeof value !== "object" || Array.isArray(value)) fail(`Snapshot required ${name} document is missing or invalid`);
+  }
+  if (!Object.hasOwn(documents, "costPlan") || documents.costPlan !== null && (typeof documents.costPlan !== "object" || Array.isArray(documents.costPlan))) fail("Snapshot optional costPlan presence is not explicit");
+}
+
+function redactAccountDocument(value: unknown, name: string, key: Buffer, parts: string[] = []): unknown {
+  const field = parts.at(-1) || "";
+  const location = [name, ...parts].join(".");
+  if (name === "usage" && (USAGE_NUMERIC_FIELDS.has(field) || parts.slice(0, -1).some(part => USAGE_NUMERIC_GROUPS.has(part)) && (value === null || typeof value !== "object")) && typeof value !== "number") fail(`Invalid account ledger numeric type at ${location}`);
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || name !== "settings" && value < 0) fail(`Invalid account document numeric value at ${location}`);
+    return value;
+  }
+  if (typeof value === "string") {
+    if (!value) return value;
+    if (field === "apiKey" && name === "settings" && parts.length === 1) return "startup-gate-inert-key";
+    if (DOCUMENT_IDS.has(field)) return identityToken(key, "id", value);
+    if (field === "errorCategory") return ["cancelled", "timeout", "empty_response", "length_limit", "content_filter", "incomplete_stream", "invalid_stream", "provider_http", "network", "unknown"].includes(value) ? value : "private_value";
+    if (field === "retryReason") return value === "empty_response_without_thinking" ? value : "private_value";
+    if (DOCUMENT_PRIVATE_STRINGS.has(field)) return `private_${field === "assistantName" ? "name" : "value"}`;
+    if (STRUCTURAL_TIME_KEYS.has(field) || field === "trackingStartedAt") {
+      if (!Number.isFinite(Date.parse(value))) fail(`Invalid account document time at ${location}`);
+      return value;
+    }
+    const technicalLocation = name === "settings" || parts.length === 3 &&
+      (name === "usage" && parts[0] === "entries" || name === "costPlan" && parts[0] === "scenarios");
+    const imageType = name === "usage" && parts.length === 4 && parts[0] === "entries" && parts[2] === "imageTypes";
+    if (technicalLocation && DOCUMENT_TECHNICAL_STRINGS.has(field) || imageType
+      || name === "settings" && ["scenarios", "sceneEfforts", "responseStyles"].includes(parts[0])) {
+      if (!/^[A-Za-z0-9_.:/+ -]{1,160}$/u.test(value) || /(?:https?:|bearer|password|secret|api[_-]?key)/iu.test(value)) fail(`Unsafe technical account document string at ${location}`);
+      return value;
+    }
+    fail(`Unclassified account document string at ${location}`);
+  }
+  if (Array.isArray(value)) return value.map((item, index) => redactAccountDocument(item, name, key, [...parts, String(index)]));
+  if (!value || typeof value !== "object") fail(`Invalid account document value at ${location}`);
+  const result: JsonRecord = {};
+  for (const [child, item] of Object.entries(value)) {
+    if (["__proto__", "constructor", "prototype"].includes(child)) fail(`Unsafe account document property at ${location}`);
+    if (!/^[A-Za-z0-9_-]+$/u.test(child)) fail(`Unclassified account document property at ${location}`);
+    if (/(?:password|secret|credential|authorization|access.?token|refresh.?token|endpoint|headers?|base.?url|api.?key)/iu.test(child)
+      && !(name === "settings" && !parts.length && child === "apiKey")) fail(`Unclassified credential/config field at ${location}.${child}`);
+    result[child] = redactAccountDocument(item, name, key, [...parts, child]);
+  }
+  return result;
+}
+
+function assertDocumentNumbers(before: unknown, after: unknown, location: string) {
+  if (typeof before === "number") {
+    if (!Number.isFinite(before) || before < 0 || before !== after) fail(`Account document normalization changes numeric value at ${location}`);
+  } else if (before && typeof before === "object") {
+    for (const [field, value] of Object.entries(before)) {
+      // 版本迁移是既有消费者职责，不将合法旧版本号误判为账本损坏。
+      if (field !== "version") assertDocumentNumbers(value, (after as JsonRecord | undefined)?.[field], `${location}.${field}`);
+    }
+  }
+}
+
+// 模板只来自真实normalizeLlmSettings默认结构；缺省字段保留旧迁移，未知扩展不得作为技术键原样泄露。
+function assertSettingsStructure(source: JsonRecord, template: JsonRecord, location = "settings") {
+  for (const [field, value] of Object.entries(source)) {
+    if (!Object.hasOwn(template, field)) fail(`Unknown settings field at ${location}.${field}`);
+    const expected = template[field];
+    if (expected && typeof expected === "object" && !Array.isArray(expected)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) fail(`Invalid settings structure at ${location}.${field}`);
+      assertSettingsStructure(value as JsonRecord, expected as JsonRecord, `${location}.${field}`);
+    } else if (typeof value !== typeof expected || Array.isArray(value)) fail(`Invalid settings value type at ${location}.${field}`);
+  }
+}
+
+async function sanitizeAccountDocuments(root: string, accountId: string, source: AccountDocuments, key: Buffer, clock: InspectionClock): Promise<AccountDocuments> {
+  validateDocumentPresence(source);
+  const persistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
+  const normalization = await importFromRoot<{ normalizePersistedDocument(value: JsonRecord, normalizer: (value: JsonRecord) => JsonRecord): JsonRecord }>(root, "src/shared/persistence/normalization.mjs");
+  const ai = await importFromRoot<{
+    normalizeLlmSettings(value: JsonRecord): JsonRecord;
+    normalizeAiUsage(value: JsonRecord): JsonRecord;
+    normalizeAiCostPlan(value: JsonRecord, settings: JsonRecord, usage: JsonRecord, options: JsonRecord): JsonRecord;
+  }>(root, "src/modules/ai/index.mjs");
+  const settingsTemplate = { ...ai.normalizeLlmSettings({}), model: "", effort: "" };
+  assertSettingsStructure(source.settings, settingsTemplate);
+  const output: AccountDocuments = { settings: {}, usage: {}, costPlan: null };
+  const normalize = (name: string, value: JsonRecord) => normalization.normalizePersistedDocument(value,
+    item => name === "settings" ? ai.normalizeLlmSettings(item) : name === "usage" ? ai.normalizeAiUsage(item)
+      : ai.normalizeAiCostPlan(item, source.settings, source.usage, { date: localDateAt(clock), cnyPerUsd: item.cnyPerUsd }));
+  for (const name of ["settings", "usage", "costPlan"] as const) {
+    const original = source[name];
+    if (original === null) continue;
+    if (Object.hasOwn(original, "version") && (!Number.isSafeInteger(original.version) || Number(original.version) < 1)) fail(`Invalid ${name} document version`);
+    const mapping = persistence.mapAccountDocument(accountId, name, original);
+    if (persistence.canonicalJson(persistence.rebuildAccountDocument(mapping)) !== persistence.canonicalJson(original)) fail(`Source ${name} document is not lossless`);
+    const normalized = normalize(name, original);
+    // 账本/预算数量不得被归零或截断；设置参数则沿正式normalizer保留合法旧版迁移与速率范围。
+    if (name !== "settings") assertDocumentNumbers(original, normalized, name);
+    const redacted = redactAccountDocument(original, name, key) as JsonRecord;
+    const redactedNormalized = normalize(name, redacted);
+    const expected = redactAccountDocument(normalized, name, key);
+    if (persistence.canonicalJson(expected) !== persistence.canonicalJson(redactedNormalized)) fail(`Account ${name} normalized semantics changed during redaction`);
+    const safeMapping = persistence.mapAccountDocument(identityToken(key, "id", accountId), name, redacted);
+    if (persistence.canonicalJson(persistence.rebuildAccountDocument(safeMapping)) !== persistence.canonicalJson(redacted)) fail(`Sanitized ${name} document is not lossless`);
+    output[name] = redacted;
+  }
+  return output;
+}
+
 type SourceAccountSlice = {
   accountId: string;
   mapping: StoreMapping;
   inventory: JsonRecord[];
+  documents: AccountDocuments;
   revision: number;
 };
 
 /** 源事务只做一致性读取；关闭连接后才允许在进程内脱敏、重建及运行消费者。 */
 async function readSourceAccountSlices(client: PgClient, accountIds: string[],
-  readMapping: PersistenceApi["readPostgresStoreObjects"]): Promise<{
+  readMapping: PersistenceApi["readPostgresStoreObjects"],
+  readDocument: PersistenceApi["readAccountDocument"]): Promise<{
     serverVersion: string; transactionSnapshot: string; slices: SourceAccountSlice[];
   }> {
   const slices: SourceAccountSlice[] = [];
@@ -1663,11 +1790,15 @@ async function readSourceAccountSlices(client: PgClient, accountIds: string[],
       const account = (await client.query("SELECT revision FROM for_now.accounts WHERE account_id = $1", [accountId])).rows[0];
       if (!account) fail("Auth account has no business account row; snapshot is inconsistent");
       const mapping = await readMapping(client, accountId);
+      const settings = await readDocument(client, accountId, "settings", null);
+      const usage = await readDocument(client, accountId, "usage", null);
+      const costPlan = await readDocument(client, accountId, "costPlan", null);
+      if (!settings || !usage) fail("Source required account document is missing (settings/usage)");
       const inventory = (await client.query(`
         SELECT path, storage, object_key AS "objectKey", bytes::float8 AS bytes, sha256, state
         FROM for_now.attachment_inventory WHERE account_id = $1 ORDER BY path
       `, [accountId])).rows;
-      slices.push({ accountId, mapping, inventory, revision: Number(account.revision) });
+      slices.push({ accountId, mapping, inventory, documents: { settings, usage, costPlan }, revision: Number(account.revision) });
     }
     await client.query("COMMIT");
     return { serverVersion: String(database.version || ""), transactionSnapshot: String(database.snapshot || ""), slices };
@@ -1694,16 +1825,17 @@ async function snapshot(root: string, outputFile: string) {
   const sourcePersistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
   const client = await pgClient(sourceDataUrl);
   const { serverVersion, transactionSnapshot, slices } = await readSourceAccountSlices(
-    client, firstAccountIds, sourcePersistence.readPostgresStoreObjects
+    client, firstAccountIds, sourcePersistence.readPostgresStoreObjects, sourcePersistence.readAccountDocument
   );
   // 原切片只留进程内存。昂贵的本机检查不占生产只读事务或源连接。
   const redactionKey = randomBytes(32);
   const accounts: JsonRecord[] = [];
   for (const source of slices) {
-    accounts.push(await createSanitizedAccount(
+    const account = await createSanitizedAccount(
       root, source.accountId, source.mapping, source.inventory, source.revision,
       redactionKey, new Map<string, string>(), timeBaseline
-    ));
+    );
+    accounts.push({ ...account, documents: await sanitizeAccountDocuments(root, source.accountId, source.documents, redactionKey, timeBaseline) });
   }
   const finalAccountIds = await readSourceAccountIds(root, sourceAuthUrl);
   if (JSON.stringify(firstAccountIds) !== JSON.stringify(finalAccountIds)) {
@@ -1712,7 +1844,7 @@ async function snapshot(root: string, outputFile: string) {
   const outputPersistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
   const manifest = {
     format: "release-state-startup-gate-snapshot",
-    schemaVersion: 1,
+    schemaVersion: 2,
     capturedAt: timeBaseline.capturedAt,
     timeBaseline,
     candidateSha: candidateSha.toLowerCase(),
@@ -1732,7 +1864,7 @@ async function snapshot(root: string, outputFile: string) {
 async function loadSnapshot(root: string, file: string): Promise<JsonRecord> {
   const persistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
   const snapshotValue = JSON.parse(await fs.readFile(file, "utf8")) as JsonRecord;
-  if (snapshotValue.format !== "release-state-startup-gate-snapshot" || snapshotValue.schemaVersion !== 1) {
+  if (snapshotValue.format !== "release-state-startup-gate-snapshot" || ![1, 2].includes(Number(snapshotValue.schemaVersion))) {
     fail("Unsupported startup gate snapshot format");
   }
   const expectedHash = String(snapshotValue.snapshotSha256 || "");
@@ -1877,6 +2009,16 @@ async function initializeGateDatabase(root: string, pgState: Awaited<ReturnType<
         await importClient.query("SELECT set_config('app.account_id', $1, true)", [account.accountId]);
         await importClient.query("INSERT INTO for_now.accounts (account_id) VALUES ($1)", [account.accountId]);
         await persistence.writeStoreObjects(importClient, account.mapping as StoreMapping);
+        if (snapshotValue.schemaVersion === 2) {
+          const documents = account.documents as AccountDocuments;
+          validateDocumentPresence(documents);
+          for (const [name, value] of Object.entries(documents)) {
+            if (value === null && name === "costPlan") continue;
+            await persistence.writeAccountDocument(importClient, String(account.accountId), name, value as JsonRecord);
+            const restored = await persistence.readAccountDocument(importClient, String(account.accountId), name, null);
+            if (persistence.canonicalJson(restored) !== persistence.canonicalJson(value)) fail(`Imported ${name} document readback mismatch`);
+          }
+        }
         for (const item of (account.attachmentInventory as JsonRecord[] || [])) {
           await importClient.query(`
             INSERT INTO for_now.attachment_inventory(account_id,path,storage,object_key,bytes,sha256,state)
@@ -2175,6 +2317,7 @@ function createStartupEffectObserver(
 
 async function verify(root: string, snapshotFile: string, profile: LocalGateProfile = "default") {
   const snapshotValue = await loadSnapshot(root, snapshotFile);
+  if (profile === "v0516-combined" && snapshotValue.schemaVersion !== 2) fail("Combined startup gate requires schema2 real account documents; schema1 is historical and incomplete");
   const snapshotProvesEmptyCleanupQueue = await snapshotHasNoPendingAttachmentCleanup(root, snapshotValue);
   const timeBaseline = snapshotValue.timeBaseline as InspectionClock;
   if (!timeBaseline?.capturedAt || !timeBaseline.timezone || snapshotValue.capturedAt !== timeBaseline.capturedAt) {
@@ -2343,6 +2486,13 @@ async function verify(root: string, snapshotFile: string, profile: LocalGateProf
       snapshotSha256: snapshotValue.snapshotSha256,
       pgVersion: (await execFile(path.join(pgState.binDirectory, "postgres"), ["--version"])).stdout.trim(),
       accounts: (snapshotValue.accounts as JsonRecord[]).length,
+      accountDocumentCoverage: snapshotValue.schemaVersion === 2 ? {
+        source: "same-repeatable-read-production-documents",
+        required: ["settings", "usage"],
+        optionalCostPlanPresent: (snapshotValue.accounts as JsonRecord[]).filter(account => (account.documents as AccountDocuments).costPlan !== null).length,
+        replacements: ["nonempty API credentials replaced by inert local token", "private display/voice/free diagnostic text replaced; fixed state and ledger numbers preserved"],
+        boundary: "No live provider authentication or outbound call is validated"
+      } : { source: "historical-schema1-business-store-only", limitation: "settings/usage were not captured" },
       taskCount: firstStates.length,
       heldDispatches: gateCounts.dispatchHeld,
       forbiddenEffects: { provider: gateCounts.provider, outbound: gateCounts.outbound, media: gateCounts.media },
@@ -3569,6 +3719,49 @@ async function selfTest(root: string) {
   expectOnboardingFailure(() => assertCaptureAudioSemantics(captureAudioStore, corruptedAudio,
     redactCaptureAudio(captureAudioStore).context, captureApi, app.normalizeStore,
     persistedNormalization.normalizePersistedDocument, persistence.canonicalJson), "capture audio consumer changed");
+  // 真实账户文档契约：使用正式normalizer生成字段齐全的基线，再检查脱敏不改变数值/引用/固定取值。
+  const aiDocuments = await importFromRoot<{
+    normalizeLlmSettings(value: JsonRecord): JsonRecord;
+    normalizeAiUsage(value: JsonRecord): JsonRecord;
+    normalizeAiCostPlan(value: JsonRecord, settings: JsonRecord, usage: JsonRecord, options: JsonRecord): JsonRecord;
+  }>(root, "src/modules/ai/index.mjs");
+  const realSettings = aiDocuments.normalizeLlmSettings({ apiKey: "private-source-key-never-save", assistantName: "私人名称", speech: { defaultVoice: "private-voice-id" } });
+  const realUsage = aiDocuments.normalizeAiUsage({ trackingStartedAt: fixtureClock.capturedAt, entries: [
+    { id: "private-call-1", callId: "private-call-1", callGroupId: "private-group", traceId: "private-trace", createdAt: fixtureClock.capturedAt,
+      provider: "deepseek", model: "deepseek-flash", scene: "recordCompression", status: "success", costCny: 0.0123, costKnown: true,
+      tokens: { input: 120, cacheHit: 20, output: 30 }, costsCny: { input: 0.001, total: 0.0123 }, imageTypes: ["image/jpeg"],
+      rawUsage: { prompt_tokens: 120, completion_tokens_details: { reasoning_tokens: 10 } }, costSource: "private invoice source" },
+    { id: "private-call-2", callId: "private-call-2", callGroupId: "private-group", traceId: "private-trace", createdAt: fixtureClock.capturedAt,
+      provider: "volcengine", model: "asr-model", service: "speech", scene: "captureAsr", status: "failed", errorCategory: "network", retryReason: "empty_response_without_thinking", errorCode: "private-provider-detail", costCny: 0.003, units: 57 }
+  ] });
+  const realCost = aiDocuments.normalizeAiCostPlan({}, realSettings, realUsage, { date: localDateAt(fixtureClock), cnyPerUsd: 7.2 });
+  const rawDocuments: AccountDocuments = { settings: realSettings, usage: realUsage, costPlan: realCost };
+  const safeDocuments = await sanitizeAccountDocuments(root, "synthetic-account", rawDocuments, hmacKey, fixtureClock);
+  const safeEntries = safeDocuments.usage.entries as JsonRecord[];
+  if (safeDocuments.settings.apiKey !== "startup-gate-inert-key"
+    || (safeDocuments.settings.speech as JsonRecord).generationRate !== (realSettings.speech as JsonRecord).generationRate || safeEntries.length !== 2
+    || safeEntries[0].callGroupId !== safeEntries[1].callGroupId || safeEntries[0].traceId !== safeEntries[1].traceId
+    || safeEntries[1].errorCategory !== "network" || safeEntries[1].retryReason !== "empty_response_without_thinking"
+    || safeEntries[0].id !== safeEntries[0].callId || safeEntries[0].costCny !== 0.0123
+    || persistence.canonicalJson(safeEntries[0].tokens) !== persistence.canonicalJson((realUsage.entries as JsonRecord[])[0].tokens)
+    || JSON.stringify(safeDocuments).includes("private-")) fail("Account document redaction leaked private fields or changed ledger/identity semantics");
+  const absentOptional = await sanitizeAccountDocuments(root, "synthetic-account", { settings: realSettings, usage: realUsage, costPlan: null }, hmacKey, fixtureClock);
+  if (absentOptional.costPlan !== null) fail("Absent optional costPlan was replaced with defaults");
+  for (const bad of [
+    { ...rawDocuments, settings: null },
+    { ...rawDocuments, usage: { ...realUsage, entries: [{ ...(realUsage.entries as JsonRecord[])[0], costCny: "invalid" }] } },
+    { ...rawDocuments, usage: { ...realUsage, entries: [{ ...(realUsage.entries as JsonRecord[])[0], createdAt: "invalid" }] } },
+    { ...rawDocuments, settings: { ...realSettings, headers: { authorization: "secret" } } },
+    { ...rawDocuments, settings: { ...realSettings, scenarios: { ...(realSettings.scenarios as JsonRecord), privateCustomField: "private-secret" } } },
+    { ...rawDocuments, settings: { ...realSettings, sceneEfforts: [] } },
+    { ...rawDocuments, settings: { ...realSettings, responseStyles: { ...(realSettings.responseStyles as JsonRecord), privateCustomField: "private-secret" } } }
+  ]) {
+    let rejected = false;
+    try { await sanitizeAccountDocuments(root, "synthetic-account", bad as unknown as AccountDocuments, hmacKey, fixtureClock); }
+    catch { rejected = true; }
+    if (!rejected) fail("Invalid/missing/secret-extension account document was accepted");
+  }
+
   // 四账号只读源事务须先完整读取、COMMIT并等待end，再进行本机处理。
   const fixtureAccountIds = ["slice-a", "slice-b", "slice-c", "slice-d"];
   const makeSourceClient = (failQuery = "") => {
@@ -3608,10 +3801,16 @@ async function selfTest(root: string) {
       trace.push(`mapping:${accountId}`);
       return persistence.mapStoreObjects(accountId, { captures: [] });
     };
-    return { client, readMapping, trace, isClosed: () => closed };
+    const readDocument: PersistenceApi["readAccountDocument"] = async (activeClient, accountId, name) => {
+      if (activeClient !== client || selected !== accountId || closed) fail("Source document read crossed RLS identity or closed connection");
+      trace.push(`document:${accountId}:${name}`);
+      if (failQuery === name) throw new Error("Synthetic source document read failed");
+      return name === "settings" ? { version: 13 } : name === "usage" ? { version: 1, entries: [] } : null;
+    };
+    return { client, readMapping, readDocument, trace, isClosed: () => closed };
   };
   const sourceFixture = makeSourceClient();
-  const collected = await readSourceAccountSlices(sourceFixture.client, fixtureAccountIds, sourceFixture.readMapping);
+  const collected = await readSourceAccountSlices(sourceFixture.client, fixtureAccountIds, sourceFixture.readMapping, sourceFixture.readDocument);
   if (!sourceFixture.isClosed() || collected.slices.length !== 4 || collected.serverVersion !== "16.15"
     || collected.transactionSnapshot !== "1:2:" || collected.slices.some((slice, index) => (
       slice.accountId !== fixtureAccountIds[index] || slice.revision !== 7
@@ -3626,13 +3825,14 @@ async function selfTest(root: string) {
   if (commitIndex < 0 || closeIndex <= commitIndex
     || sourceFixture.trace.slice(commitIndex + 1, closeIndex).length
     || sourceFixture.trace.slice(0, commitIndex).filter(step => step.startsWith("inventory:")).length !== 4
+    || sourceFixture.trace.slice(0, commitIndex).filter(step => step.startsWith("document:")).length !== 12
     || sourceFixture.trace.slice(0, closeIndex).some(step => step.startsWith("local-sanitize:"))) {
     fail("Source read/COMMIT/close/local processing order changed");
   }
-  for (const failQuery of ["inventory", "COMMIT"]) {
+  for (const failQuery of ["inventory", "settings", "usage", "COMMIT"]) {
     const rejected = makeSourceClient(failQuery);
     let failed = false;
-    try { await readSourceAccountSlices(rejected.client, fixtureAccountIds, rejected.readMapping); }
+    try { await readSourceAccountSlices(rejected.client, fixtureAccountIds, rejected.readMapping, rejected.readDocument); }
     catch (error) {
       if (!(error instanceof Error) || !error.message.startsWith("Synthetic source")) throw error;
       failed = true;
@@ -3640,6 +3840,16 @@ async function selfTest(root: string) {
     if (!failed || !rejected.isClosed() || rejected.trace.at(-1) !== "end-complete"
       || !rejected.trace.includes("ROLLBACK")) fail("Failed source read or commit did not rollback and close before returning failure");
   }
+  const missingDocumentSource = makeSourceClient();
+  let missingDocumentRejected = false;
+  try {
+    await readSourceAccountSlices(missingDocumentSource.client, fixtureAccountIds, missingDocumentSource.readMapping,
+      async (...args) => args[2] === "settings" ? null : missingDocumentSource.readDocument(...args));
+  } catch (error) {
+    missingDocumentRejected = error instanceof Error && error.message.includes("required account document is missing");
+  }
+  if (!missingDocumentRejected || !missingDocumentSource.isClosed() || !missingDocumentSource.trace.includes("ROLLBACK")) fail("Missing source document did not fail closed and release the source connection");
+  process.stdout.write("Account document checks passed: actual map/rebuild/normalize, private credential replacement, preserved ledger/controlled states/negative TTS rate, explicit missing documents and shared READ ONLY source lifetime.\n");
   process.stdout.write("Startup gate synthetic checks passed: construction is inert, task classifications survive redaction, and media/dispatch effects are blocked.\n");
 }
 
