@@ -566,6 +566,7 @@ incremental.stop();
 const queuedLongPoll = deferred();
 const queuedPullRequests = [];
 const queuedSnapshots = [];
+const queuedSignals = [];
 const queuedChannelListeners = new Set();
 const queuedDocumentTarget = { ...eventTarget, listeners: new Map(), visibilityState: "visible" };
 let queuedPollTimer = null;
@@ -595,7 +596,8 @@ const queuedImmediatePull = createIncrementalSync({
     return 1;
   },
   clearTimer: () => {},
-  request: async url => {
+  request: async (url, options) => {
+    queuedSignals.push(options.signal);
     queuedPullRequests.push(url);
     const parsed = new URL(url, "https://local.invalid");
     if (Number(parsed.searchParams.get("waitMs")) > 0) return queuedLongPoll.promise;
@@ -624,13 +626,14 @@ for (const listener of queuedChannelListeners) {
 }
 queuedDocumentTarget.listeners.get("visibilitychange")();
 await flush();
-assert.equal(queuedPullRequests.length, 3, "signals during a long poll must wait for the in-flight request");
+assert.equal(queuedPullRequests.length, 4, "active signals must cancel the obsolete wait and start an immediate GET before it returns");
 queuedLongPoll.resolve({ data: { cursor: 1, changes: [], snapshot: {} } });
 await inFlightPoll;
 await flush();
 await flush();
-assert.equal(queuedPullRequests.length, 4, "multiple immediate signals must coalesce into one follow-up pull");
+assert.equal(queuedPullRequests.length, 4, "same-turn signals coalesce and the obsolete late response cannot add another pull");
 assert.equal(new URL(queuedPullRequests[3], "https://local.invalid").searchParams.get("waitMs"), "0");
+assert.equal(queuedSignals[2].aborted, true, "obsolete waiting GET receives real transport cancellation");
 assert.equal(queuedImmediatePull.cursor(), 2);
 assert.equal(queuedSnapshots.length, 1);
 queuedImmediatePull.stop();
@@ -862,6 +865,219 @@ await retryTimer();
 assert.equal(retryResumes, 1, "scheduled recovery must retry pending writes before pulling");
 assert.equal(retryPulls, 2);
 retrying.stop();
+
+// F9真实队列存储命名空间：保留账户ID，旧空间未发请求不能在新空间派发。
+{
+  const store = createMemorySyncStore();
+  let workspace = "cold:round1", scope = "session1";
+  const sent = [];
+  const queue = createRequestCoordinator({ store, getWorkspace: () => workspace, getScope: () => scope,
+    send: async (url, options) => {
+      sent.push({ workspace, url, body: options.body });
+      throw Object.assign(new Error("offline"), { status: 503 });
+    }
+  });
+  await assert.rejects(queue.request({ owner: "same-account", url: "/api/v1/captures", options: { method: "POST", body: "cold-only" } }), /offline/);
+  const coldRows = await queue.list("same-account");
+  assert.equal(coldRows[0].owner, "same-account");
+  assert.equal(coldRows[0].body, "cold-only");
+  const oldPending = (await queue.metrics("same-account")).pending;
+  workspace = "simulation:round2"; scope = "session2";
+  assert.deepEqual(await queue.resume("same-account", { force: true }), []);
+  assert.equal((await queue.metrics("same-account")).pending, 0);
+  assert.equal(sent.length, 1, "switching workspace must not replay the other workspace pending write");
+  await queue.clear("same-account");
+  workspace = "cold:round1"; scope = "session3";
+  assert.equal((await queue.metrics("same-account")).pending, oldPending, "clearing another workspace must not delete the old durable row");
+  assert.equal((await queue.list("same-account"))[0].owner, "same-account");
+  assert.deepEqual(await store.list("same-account"), [], "workspace rows do not overwrite legacy unscoped queue keys");
+}
+// 消费者await后自行使用同一ticket；stop撤GET且旧apply不能前移游标/状态。
+{
+  let scope = "session-a", workspace = "cold:1", signalController = new AbortController();
+  let gate = deferred(), applied = 0, receivedContext;
+  const timers = [], signals = [];
+  const loop = createIncrementalSync({
+    coordinator: { resume: async () => [], subscribe: () => () => {} },
+    storage: null, locks: null, windowTarget: null, documentTarget: null,
+    channel: { publish() {}, subscribe: () => () => {} },
+    getScope: () => scope, getWorkspace: () => workspace, getSignal: () => signalController.signal,
+    setTimer: (callback, delay) => { timers.push({ callback, delay }); return timers.length; }, clearTimer() {},
+    request: async (_url, options) => { signals.push(options.signal); return { data: { cursor: 2, changes: [{}], snapshot: { captures: [] } } }; },
+    applySnapshot: async (_snapshot, _changes, context) => { receivedContext = context; await gate.promise; if (context.isCurrent()) applied += 1; }
+  });
+  const starting = loop.start("same-account");
+  await flush();
+  assert.equal(receivedContext.isCurrent(), true);
+  scope = "session-b"; workspace = "simulation:2"; signalController.abort();
+  gate.resolve();
+  assert.equal(await starting, false);
+  assert.equal(signals[0].aborted, true);
+  assert.equal(applied, 0);
+  assert.equal(loop.cursor(), 0);
+}
+// 成功续接不再多等1500ms；失败有界指数退避，无响应的旧GET不阻塞stop。
+{
+  const scheduled = [], signals = [];
+  let fail = false, requests = 0;
+  const loop = createIncrementalSync({
+    coordinator: { resume: async () => [], subscribe: () => () => {} },
+    storage: null, locks: null, windowTarget: null, documentTarget: null,
+    channel: { publish() {}, subscribe: () => () => {} },
+    setTimer: (callback, delay) => { scheduled.push({ callback, delay }); return scheduled.length; }, clearTimer() {},
+    request: async (_url, options) => { signals.push(options.signal); requests += 1; if (fail) throw Object.assign(new Error("unavailable"), { status: 503 }); return { data: { cursor: 1, changes: [], snapshot: {} } }; },
+    applySnapshot: async () => {}
+  });
+  await loop.start("account-a");
+  assert.equal(scheduled.at(-1).delay, 0);
+  fail = true;
+  await scheduled.at(-1).callback();
+  assert.equal(scheduled.at(-1).delay, 1500);
+  await scheduled.at(-1).callback();
+  assert.equal(scheduled.at(-1).delay, 3000);
+  for (let i = 0; i < 8; i += 1) await scheduled.at(-1).callback();
+  assert.equal(scheduled.at(-1).delay, 60000);
+  loop.stop();
+  assert.ok(requests > 2);
+}
+
+// 明确未应用与坏恢复游标均不前移，并经同一受限退避恢复。
+for (const kind of ["apply-false", "bad-recovery-cursor"]) {
+  const scheduled = [];
+  const loop = createIncrementalSync({
+    coordinator: { resume: async () => [], subscribe: () => () => {} }, storage: null, locks: null,
+    windowTarget: null, documentTarget: null, channel: { publish() {}, subscribe: () => () => {} },
+    setTimer: (callback, delay) => { scheduled.push({ callback, delay }); return scheduled.length; }, clearTimer() {},
+    request: async () => {
+      if (kind === "bad-recovery-cursor") throw Object.assign(new Error("expired"), { code: "SYNC_CURSOR_EXPIRED", details: { currentCursor: "invalid" } });
+      return { data: { cursor: 3, changes: [{}], snapshot: { captures: [] } } };
+    },
+    applySnapshot: async () => false, resnapshot: async () => undefined
+  });
+  await assert.rejects(loop.start("account-a"), kind === "apply-false" ? /尚未应用/ : /游标无效/);
+  assert.equal(loop.cursor(), 0);
+  assert.equal(scheduled.at(-1).delay, 1500);
+  loop.stop();
+}
+// 持久ACK写成功但存储await尚未返回时换会话：保留事实，不向新UI发旧通知。
+{
+  const base = createMemorySyncStore(), held = deferred(), entered = deferred();
+  let scope = "session-a";
+  const queue = createRequestCoordinator({
+    store: { ...base, put: async row => {
+      const saved = await base.put(row);
+      if (row.status === "committed") { entered.resolve(); await held.promise; }
+      return saved;
+    } }, getScope: () => scope,
+    send: async () => ({ data: { id: "saved" } })
+  });
+  const events = [];
+  queue.subscribe(record => events.push(record.status));
+  const delivery = queue.request({ owner: "account-a", url: "/api/v1/captures", options: { method: "POST", body: "{}" } });
+  await entered.promise;
+  scope = "session-b"; held.resolve();
+  await delivery;
+  assert.equal(events.includes("committed"), false);
+  assert.equal((await queue.list("account-a"))[0].status, "committed");
+}
+
+// 旧pending写尚无终态时，远端读取必须独立继续，不等待resume完成。
+{
+  const writing = deferred(), scheduled = [];
+  let resumes = 0, reads = 0;
+  const loop = createIncrementalSync({
+    coordinator: { resume: async () => { resumes += 1; return writing.promise; }, subscribe: () => () => {} },
+    storage: null, locks: null, windowTarget: null, documentTarget: null,
+    channel: { publish() {}, subscribe: () => () => {} },
+    setTimer: (callback, delay) => { scheduled.push({ callback, delay }); return scheduled.length; }, clearTimer() {},
+    request: async () => { reads += 1; return { data: { cursor: reads, changes: [], snapshot: {} } }; },
+    applySnapshot: async () => {}
+  });
+  const starting = loop.start("account-a");
+  await flush();
+  assert.ok(resumes > 0);
+  const before = reads;
+  const ticking = scheduled.at(-1).callback();
+  await flush();
+  assert.ok(reads > before, "只读请求不被旧未知写阻塞");
+  writing.resolve([]);
+  await starting; await ticking;
+  loop.stop();
+}
+// 缺重读端口/终态恢复明确false均拒绝伪造游标或成功状态。
+for (const kind of ["missing-resnapshot", "terminal-false"]) {
+  const scheduled = [];
+  const loop = createIncrementalSync({
+    coordinator: { resume: async () => kind === "terminal-false" ? [{ status: "rejected", reason: Object.assign(new Error("conflict"), { syncStatus: "conflict" }) }] : [], subscribe: () => () => {} },
+    storage: null, locks: null, windowTarget: null, documentTarget: null,
+    channel: { publish() {}, subscribe: () => () => {} },
+    setTimer: (callback, delay) => { scheduled.push({ callback, delay }); return scheduled.length; }, clearTimer() {},
+    request: async () => { throw Object.assign(new Error("expired"), { code: "SYNC_CURSOR_EXPIRED", details: { currentCursor: 9 } }); },
+    applySnapshot: async () => {}, ...(kind === "terminal-false" ? { resnapshot: async () => false } : {})
+  });
+  await assert.rejects(loop.start("account-a", { incremental: kind !== "terminal-false" }), kind === "missing-resnapshot" ? /缺少重读端口/ : /尚未应用/);
+  assert.equal(loop.cursor(), 0);
+  loop.stop();
+}
+
+// 主控rev383真实复现：完整恢复不能被held旧增量在恢复后覆盖；恢复期间广播不得另发GET。
+{
+  const oldRead = deferred(), fullRead = deferred(), startedRecovery = deferred();
+  const listeners = new Set();
+  let armed = false, stage = "initial", reads = 0;
+  const loop = createIncrementalSync({
+    coordinator: { resume: async () => armed ? [{ status: "rejected", reason: Object.assign(new Error("failed"), { syncStatus: "failed" }) }] : [], subscribe: () => () => {} },
+    storage: null, locks: null, windowTarget: null, documentTarget: null,
+    channel: { publish() {}, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
+    setTimer: () => 1, clearTimer() {},
+    request: async () => { reads += 1; if (armed && stage === "initial") return oldRead.promise; return { data: { cursor: 3, changes: [], snapshot: {} } }; },
+    applySnapshot: async (_snapshot, _changes, context) => { if (context.isCurrent()) stage = "late-incremental"; },
+    resnapshot: async context => { stage = "full-recovery"; startedRecovery.resolve(); await fullRead.promise; assert.equal(context.isCurrent(), true); }
+  });
+  await loop.start("account-a");
+  armed = true;
+  const draining = loop.drain();
+  await startedRecovery.promise;
+  const before = reads;
+  for (const listener of listeners) listener({ type: "committed", owner: "account-a" });
+  await flush();
+  assert.equal(reads, before, "恢复屏障期间新广播不能并入另一个GET");
+  oldRead.resolve({ data: { cursor: 9, changes: [{}], snapshot: { captures: [] } } });
+  await flush();
+  assert.equal(stage, "full-recovery");
+  fullRead.resolve(); await draining;
+  assert.equal(stage, "full-recovery");
+  assert.ok(reads > before, "完整恢复结束后再续接真实游标读取");
+  loop.stop();
+}
+
+// 完整恢复promise存活到真实I/O结束，hidden取消read ticket不能提前拆屏障。
+{
+  const full = deferred(), entered = deferred();
+  const document = { ...eventTarget, listeners: new Map(), visibilityState: "visible" };
+  const scheduled = [];
+  let reads = 0, state = "initial";
+  const loop = createIncrementalSync({
+    coordinator: { resume: async () => [], subscribe: () => () => {} },
+    storage: null, locks: null, windowTarget: null, documentTarget: document,
+    channel: { publish() {}, subscribe: () => () => {} },
+    setTimer: (callback, delay) => { scheduled.push({ callback, delay }); return scheduled.length; }, clearTimer() {},
+    request: async () => { reads += 1; if (reads === 1) throw Object.assign(new Error("expired"), { code: "SYNC_CURSOR_EXPIRED", details: { currentCursor: 1 } }); return { data: { cursor: 2, changes: [{}], snapshot: { captures: [] } } }; },
+    applySnapshot: async (_snapshot, _changes, context) => { if (context.isCurrent()) state = "new-incremental"; },
+    // 真实refresh消费者只依会话，模拟旧read取消后仍会完成的完整读取。
+    resnapshot: async () => { entered.resolve(); await full.promise; state = "old-full-refresh"; }
+  });
+  const starting = loop.start("account-a");
+  await entered.promise;
+  document.visibilityState = "hidden"; document.listeners.get("visibilitychange")();
+  document.visibilityState = "visible"; document.listeners.get("visibilitychange")();
+  await flush();
+  assert.equal(reads, 1, "隐藏/恢复前台不能越过仍存活的完整读取屏障");
+  full.resolve(); await starting;
+  await scheduled.at(-1).callback();
+  assert.equal(state, "new-incremental");
+  loop.stop();
+}
 
 let speechSyncFixture = null;
 let speechProjectionCalls = 0;

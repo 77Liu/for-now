@@ -1,5 +1,5 @@
 import { THOUGHT_PAGING } from "../../../generated/thought-pagination-config.mjs";
-import { reconcileThoughtWindowMutation } from "../../features/thoughts/index.mjs";
+import { reconcileThoughtWindowMutation, applyThoughtWindowSync, applyThoughtDetailSync } from "../../features/thoughts/index.mjs";
 import { createNotificationRuntime } from "../../../generated/app/runtime/notification-runtime.mjs";
 import { BUSINESS_ID_BYTES, encodeBusinessId, isBusinessId } from "../../../generated/business-identifiers.mjs";
 import { sessionScope, sessionSerial } from "../../session/index.mjs";
@@ -27,14 +27,22 @@ export function createDataRuntime({
   ensureBackgroundResultsController,
   backgroundResultsRetryLimit
 } = {}) {
-const requestCoordinator=createRequestCoordinator({store:syncStore,send:(url,options)=>request(url,options)});
+// 真实publicControl提供mode/switchedAt；snapshotAt/loadedScopes不是工作区身份。
+const syncWorkspace=()=>runtime.localTestConfig?.enabled
+  ?JSON.stringify([runtime.localTestConfig.mode,runtime.localTestConfig.switchedAt||""]):"";
+const syncScope=()=>String(sessionSerial);
+function captureDataScope(){
+  const owner=runtime.currentUser?.id,session=sessionSerial,workspace=syncWorkspace();
+  return{owner,session,workspace,isCurrent:()=>owner===runtime.currentUser?.id&&session===sessionSerial&&workspace===syncWorkspace()}
+}
+const requestCoordinator=createRequestCoordinator({store:syncStore,send:(url,options)=>request(url,options),getWorkspace:syncWorkspace,getScope:syncScope});
 const refreshCoordinator=createRefreshCoordinator({
   session:sessionScope,
   requestState:async()=>{
     const route=runtime.pageRouter?.currentRoute(),key=routeDataKey(route),snapshot=await requestRouteState(route);
     return key===routeDataKey(runtime.pageRouter?.currentRoute())?{...state,...snapshot}:state
   },
-  afterReplace:()=>restorePendingProjections()
+  afterReplace:consumer=>restorePendingProjections(consumer)
 });
 function setAnswerStatus(id,message,kind="working"){
   document.querySelectorAll(`[data-answer-chain="${CSS.escape(id)}"]`).forEach(button=>{
@@ -173,6 +181,7 @@ function settlePendingProjection(projection,operationId,data){
 }
 async function requestV1(url,options={},coordination={}){
   const method=String(options.method||"GET").toUpperCase();
+  const consumer=captureDataScope();
   let result,operationId="";
   if(["GET","HEAD"].includes(method))result=await request(url,options);
   else{
@@ -187,8 +196,9 @@ async function requestV1(url,options={},coordination={}){
         allocateBusinessId:true,
         provisionalId:isBusinessId(coordination.projection?.temporaryId)?coordination.projection.temporaryId:"",
         owner:runtime.currentUser?.id,url,options,domains:syncDomainsFor(url),...coordination,
-        onQueued:record=>{operationId=record.operationId;return onQueued?.(record)}
+        onQueued:record=>{operationId=record.operationId;if(consumer.isCurrent())return onQueued?.(record)}
       });
+      if(!consumer.isCurrent())throw new DOMException("数据作用域已变化","AbortError");
       settlePendingProjection(coordination.projection,operationId,result?.data);
       if(coordination.projection?.kind==="thought.chain.delete"){
         const id=coordination.projection.id,previousLength=(state.thoughts||[]).length;
@@ -197,13 +207,14 @@ async function requestV1(url,options={},coordination={}){
         reconcileActiveThoughtRoute()
       }
     }catch(error){
-      if(["failed","conflict"].includes(error?.syncStatus)){
+      if(consumer.isCurrent()&&["failed","conflict"].includes(error?.syncStatus)){
         if(typeof coordination.restoreProjection==="function")await coordination.restoreProjection(snapshot,operationId,error);
         else restorePendingProjection(snapshot,operationId)
       }
       throw error
     }
   }
+  if(!consumer.isCurrent())throw new DOMException("数据作用域已变化","AbortError");
   if(!result||result.error)throw new Error(result?.error?.message||"接口返回异常");
   return{data:result.data,meta:result.meta||{}}
 }
@@ -357,32 +368,42 @@ function applyPendingProjection(record){
   if(projection.kind==="action.command")return getActionsCoordinator().applyPendingRecord(record);
   return false
 }
-async function restorePendingProjections(){
-  const owner=runtime.currentUser?.id,session=sessionSerial;if(!owner)return 0;
+async function restorePendingProjections(recovery=null){
+  const consumer=captureDataScope(),owner=consumer.owner;
+  const current=()=>consumer.isCurrent()&&(!recovery||recovery.isCurrent());
+  if(!owner||!current())return 0;
   const records=await requestCoordinator.list(owner,["pending","sending"]);
-  if(owner!==runtime.currentUser?.id||session!==sessionSerial)return 0;
+  if(!current())return 0;
   let restored=0;
   for(const record of records){
-    if(owner!==runtime.currentUser?.id||session!==sessionSerial)return restored;
+    if(!current())return restored;
     if(applyPendingProjection(record))restored+=1
   }
   const route=runtime.pageRouter?.currentRoute();
   if(runtime.routeLoadFailureKey&&routeDataKey(route)===runtime.routeLoadFailureKey)renderRouteLoadFailure(route);
   return restored
 }
-async function applyIncrementalSnapshot(snapshot,changes){
+async function applyIncrementalSnapshot(snapshot,changes,consumer=captureDataScope()){
+  if(!consumer.isCurrent())return false;
   let incoming = snapshot, thoughtWindowInvalidated = false;
   if (runtime.featureFlags?.thoughtPaging?.enabled && Object.hasOwn(snapshot || {}, "thoughts")) {
     const { thoughts: _fullThoughts, ...other } = snapshot;
     const route = runtime.pageRouter?.currentRoute();
     if (route?.view === "thoughts" && route.kind !== "detail" && state.thoughtPage?.kind === "list") {
-      const window = state.thoughtPage.window;
-      if (window) { window.stale = true; window.generation += 1; }
-      state.thoughtPage.stale = true;
-      incoming = other; thoughtWindowInvalidated = true;
+      thoughtWindowInvalidated = applyThoughtWindowSync(state, snapshot.thoughts, route, THOUGHT_PAGING, id => {
+        const card = document.querySelector(`#all-thoughts [data-chain-id="${CSS.escape(id)}"]`);
+        if (runtime.annotationsController?.isActiveRoot?.(`thought:${id}`)) return false;
+        if (!card) return true;
+        if (card.contains(document.activeElement)) return false;
+        const selection = document.getSelection();
+        if (selection && !selection.isCollapsed && (card.contains(selection.anchorNode) || card.contains(selection.focusNode))) return false;
+        const rect = card.getBoundingClientRect();
+        return rect.bottom <= 0 || rect.top >= window.innerHeight;
+      }, changes);
+      incoming = other;
     } else if (route?.view === "thoughts" && route.kind === "detail") {
       const rootId = route.resourceId;
-      incoming = { ...other, thoughts: snapshot.thoughts.filter(item => item.id === rootId || item.relatedTo === rootId) };
+      incoming = { ...other, thoughts: applyThoughtDetailSync(state.thoughts || [], snapshot.thoughts, rootId) };
     } else incoming = other;
   }
   const domains=mergeStateSnapshot(incoming);
@@ -391,13 +412,18 @@ async function applyIncrementalSnapshot(snapshot,changes){
   if(thoughtWindowInvalidated || domains.has("thoughtPage"))rendered.add("thoughts");
   if(domains.has("clusters")||domains.has("insights"))rendered.add("review");
   if(rendered.size)publishDomains(rendered);
-  await restorePendingProjections();
-  return changes.length
+  if(!consumer.isCurrent())return false;
+  await restorePendingProjections(consumer);
+  return consumer.isCurrent()?changes.length:false
 }
 async function updateSyncHealth(event){
-  if(!runtime.currentUser?.id)return;
+  const consumer=captureDataScope();
+  if(!consumer.owner||event.owner&&event.owner!==consumer.owner
+    ||event.workspace!=null&&event.workspace!==consumer.workspace
+    ||event.scope!=null&&event.scope!==syncScope())return;
   if(event.type==="operation")getActionsCoordinator().applyOperationStatus(event);
-  const metrics=await requestCoordinator.metrics(runtime.currentUser.id);
+  const metrics=await requestCoordinator.metrics(consumer.owner);
+  if(!consumer.isCurrent())return;
   const oldest=metrics.oldestPendingAt?Math.max(0,Date.now()-new Date(metrics.oldestPendingAt).getTime()):0;
   runtime.syncHealth={
     status:event.type==="disabled"?"disabled":metrics.conflicts?"conflict":event.type==="error"||metrics.failed?"error":metrics.pending?"pending":metrics.durable?"synced":"degraded",
@@ -413,11 +439,19 @@ async function updateSyncHealth(event){
 }
 runtime.syncController=createIncrementalSync({
   coordinator:requestCoordinator,
-  request:url=>requestV1(url),
+  request:(url,options)=>requestV1(url,options),
+  getScope:syncScope,
+  getWorkspace:syncWorkspace,
+  getSignal:()=>sessionScope.capture().signal,
   applySnapshot:applyIncrementalSnapshot,
-  resnapshot:async()=>{
-    await refreshState(["checkins","dailyRecords","captures","journals","thoughts","chat","review","books","keepsakes","quotes","notifications","onboardingV2","feedback"]);
-    await getActionsCoordinator().load()
+  resnapshot:async consumer=>{
+    if(!consumer.isCurrent())return false;
+    const applied=await refreshState(["checkins","dailyRecords","captures","journals","thoughts","chat","review","books","keepsakes","quotes","notifications","onboardingV2","feedback"],{isCurrent:consumer.isCurrent});
+    if(!consumer.isCurrent())return false;
+    if(applied===false)throw new Error("同步重读尚未应用");
+    const actionsApplied=await getActionsCoordinator().load({isCurrent:consumer.isCurrent});
+    if(actionsApplied===false&&consumer.isCurrent())throw new Error("行动同步重读尚未应用");
+    return consumer.isCurrent()
   },
   onStatus:event=>void updateSyncHealth(event)
 });
@@ -456,7 +490,8 @@ const refreshState=async(domains,options={})=>{
   if(others.length&&(await refreshCoordinator.refresh(others,{...options,patchOnly:options.patchOnly===true}))===false)return false;
   // 通知任务有独立HTTP读取；当前路由快照成功不代表通知读取成功。
   // 结果接入由显式恢复或轮询完成，此处不重复同步同一结果。
-  return readNotificationSnapshot(false)
+  if(options.isCurrent&&!options.isCurrent())return false;
+  return readNotificationSnapshot(false,{isCurrent:options.isCurrent})
 };
 const resolvePersonalizedTask=createPersonalizedTaskRuntime({
   runtime,

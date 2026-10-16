@@ -1164,7 +1164,9 @@
       "publicEntry": "public/frontend/sync/index.mjs",
       "allowedDependencies": [
         "shared.business-identifiers",
-        "frontend.business-id-remap"
+        "frontend.business-id-remap",
+        "frontend.incremental-sync",
+        "frontend.workspace-sync-store"
       ],
       "owns": {
         "data": [
@@ -3091,6 +3093,40 @@
       },
       "tests": [
         "scripts/frontend-annotations-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.incremental-sync",
+      "type": "shared",
+      "root": "public/frontend/shared/incremental-sync.mts",
+      "publicEntry": "public/frontend/shared/incremental-sync.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "当前账户/工作区增量读取取消、游标应用和有界前台续接"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/sync-coordinator-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.workspace-sync-store",
+      "type": "shared",
+      "root": "public/frontend/shared/workspace-sync-store.mts",
+      "publicEntry": "public/frontend/shared/workspace-sync-store.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "固定工作区的本机持久队列命名空间，公开账户身份保持不变"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/sync-coordinator-regression.mjs"
       ],
       "status": "active"
     }

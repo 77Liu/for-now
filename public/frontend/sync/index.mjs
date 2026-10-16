@@ -1,3 +1,5 @@
+import { workspaceSyncStore } from "../../generated/workspace-sync-store.mjs";
+import { createScopedIncrementalSync } from "../../generated/incremental-sync.mjs";
 import { BUSINESS_ID_BYTES, encodeBusinessId, isBusinessCreationPath, isBusinessId } from "../../generated/business-identifiers.mjs";
 import { remapBusinessReferences, remapBusinessUrl } from "../../generated/business-id-remap.mjs";
 
@@ -273,19 +275,57 @@ export function createIndexedDbSyncStore({
   };
 }
 
-export function createRequestCoordinator({
+/**
+ * 持久写入协调入口；可选getWorkspace/getScope自unreleased起隔离测试空间及会话异步归属。
+ * 对外owner和业务映射保持真实账户，旧无工作区存储与调用保持兼容。
+ */
+export function createRequestCoordinator(options) {
+  const getWorkspace = options.getWorkspace || (() => "");
+  const instances = new Map(), listeners = new Set();
+  const current = () => {
+    const workspace = getWorkspace();
+    if (!instances.has(workspace)) {
+      const instance = createWorkspaceRequestCoordinator({ ...options,
+        store: workspaceSyncStore(options.store, workspace),
+        send: (url, requestOptions) => {
+          if (workspace !== getWorkspace()) throw Object.assign(new Error("工作区已变化"), { name: "AbortError" });
+          return options.send(url, requestOptions);
+        }
+      });
+      instance.subscribe(record => {
+        if (workspace !== getWorkspace()) return;
+        for (const listener of listeners) listener({ ...record, ...(workspace ? { workspace } : {}) });
+      });
+      instances.clear();
+      instances.set(workspace, instance);
+    }
+    return instances.get(workspace);
+  };
+  return {
+    request: input => current().request(input),
+    resume: (...args) => current().resume(...args),
+    list: (...args) => current().list(...args),
+    metrics: (...args) => current().metrics(...args),
+    prune: (...args) => current().prune(...args),
+    clear: (...args) => current().clear(...args),
+    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
+  };
+}
+
+function createWorkspaceRequestCoordinator({
   store,
   send,
   createId = () => crypto.randomUUID(),
   now = () => new Date().toISOString(),
-  resourceKey = defaultResourceKey
+  resourceKey = defaultResourceKey,
+  getScope = () => ""
 }) {
   if (!store || typeof send !== "function") throw new Error("同步协调器缺少存储或发送实现");
   const tails = new Map();
   const deliveries = new Map();
   const generations = new Map();
   const subscribers = new Set();
-  const generation = owner => generations.get(owner) || 0;
+  const generation = owner => `${generations.get(owner) || 0}:${getScope()}`;
   const elapsed = (from, to) => {
     const start = new Date(from || "").getTime(), end = new Date(to || "").getTime();
     return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : 0;
@@ -302,6 +342,7 @@ export function createRequestCoordinator({
     if (generation(record.owner) !== expectedGeneration) return null;
     const next = { ...record, ...changes, updatedAt: now() };
     await store.put(next);
+    if (generation(record.owner) !== expectedGeneration) return null;
     notify(next);
     return next;
   };
@@ -323,6 +364,7 @@ export function createRequestCoordinator({
       body: Object.hasOwn(record, "body") ? record.body : ""
     });
     headers["x-client-operation-fingerprint"] = fingerprint;
+    if (generation(record.owner) !== expectedGeneration) return null;
     const normalized = {
       operationId,
       fingerprint,
@@ -399,19 +441,22 @@ export function createRequestCoordinator({
         }
         if (!saved) throw new Error("业务映射原子保存冲突，请重试");
       } else await store.put(committed);
+      if (generation(current.owner) !== expectedGeneration) return result;
       notify(committed);
       await pruneRecords(current.owner);
     }
     return result;
   };
-  const recoverCommitted = async current => {
+  const recoverCommitted = async (current, expectedGeneration) => {
     if (!current.recoverCommitted || !current.fingerprint) return null;
     try {
+      if (generation(current.owner) !== expectedGeneration) throw Object.assign(new Error("同步作用域已变化"), { name: "AbortError" });
       const query = new URLSearchParams({ fingerprint: current.fingerprint });
       const result = await send(`/api/v1/sync/operations/${encodeURIComponent(current.operationId)}?${query}`, {
         method: "GET",
         headers: { accept: "application/json" }
       });
+      if (generation(current.owner) !== expectedGeneration) throw Object.assign(new Error("同步作用域已变化"), { name: "AbortError" });
       if (result?.data?.status !== "committed") return null;
       return {
         data: null,
@@ -423,11 +468,12 @@ export function createRequestCoordinator({
         }
       };
     } catch (error) {
-      if (error?.code === "OPERATION_ID_REUSED") throw error;
+      if (error?.code === "OPERATION_ID_REUSED" || error?.name === "AbortError") throw error;
       return null;
     }
   };
   const deliver = async (record, expectedGeneration) => {
+    if (generation(record.owner) !== expectedGeneration) throw Object.assign(new Error("同步作用域已变化"), { name: "AbortError" });
     const pending = await store.list(record.owner, ["pending", "sending"]);
     const mappings = store.readMappings ? await store.readMappings(record.owner) : [];
     for (const dependency of record.dependsOn || []) {
@@ -452,9 +498,11 @@ export function createRequestCoordinator({
     }, expectedGeneration);
     if (!current) throw Object.assign(new Error("账户同步队列已清理"), { name: "AbortError" });
     try {
+      if (generation(current.owner) !== expectedGeneration) throw Object.assign(new Error("同步作用域已变化"), { name: "AbortError" });
       const result = await send(current.url, replayOptions(current));
       return await commit(current, result, startedAt, expectedGeneration);
     } catch (error) {
+      if (generation(current.owner) !== expectedGeneration) throw error;
       if (error?.code === "INVALID_OPERATION_FINGERPRINT"
         && Number(current.fingerprintRetryCount || 0) < 1) {
         current = await normalizeOperationFingerprint(current, expectedGeneration, {
@@ -462,6 +510,7 @@ export function createRequestCoordinator({
         });
         if (!current) throw Object.assign(new Error("账户同步队列已清理"), { name: "AbortError" });
         try {
+          if (generation(current.owner) !== expectedGeneration) throw Object.assign(new Error("同步作用域已变化"), { name: "AbortError" });
           const result = await send(current.url, replayOptions(current));
           return await commit(current, result, startedAt, expectedGeneration);
         } catch (retryError) {
@@ -472,7 +521,7 @@ export function createRequestCoordinator({
       let terminalError = error;
       if (mayHaveCommitted) {
         try {
-          const recovered = await recoverCommitted(current);
+          const recovered = await recoverCommitted(current, expectedGeneration);
           if (recovered) return await commit(current, recovered, startedAt, expectedGeneration, true);
         } catch (recoveryError) {
           terminalError = recoveryError;
@@ -529,7 +578,7 @@ export function createRequestCoordinator({
       onQueued = () => {}
     }) {
       if (!owner) throw new Error("写请求缺少账户标识");
-      const expectedGeneration = generation(owner);
+      const expectedGeneration = generation(owner), expectedScope = getScope();
       const method = String(options.method || "POST").toUpperCase();
       const headers = lowerCaseHeaders(options.headers);
       headers["content-type"] ||= "application/json";
@@ -584,7 +633,7 @@ export function createRequestCoordinator({
         await onQueued(clone(record));
       } catch {}
       if (generation(owner) !== expectedGeneration) {
-        await store.clear(owner);
+        if (expectedScope === getScope()) await store.clear(owner);
         throw Object.assign(new Error("账户同步队列已清理"), { name: "AbortError" });
       }
       return schedule(record, expectedGeneration);
@@ -634,9 +683,10 @@ export function createRequestCoordinator({
       return pruneRecords(owner, { keepCommitted });
     },
     async clear(owner) {
-      generations.set(owner, generation(owner) + 1);
+      generations.set(owner, (generations.get(owner) || 0) + 1);
+      const expectedGeneration = generation(owner);
       await store.clear(owner);
-      notify({ owner, status: "cleared", domains: [] });
+      if (generation(owner) === expectedGeneration) notify({ owner, status: "cleared", domains: [] });
     }
   };
 }
@@ -668,211 +718,7 @@ export function createSyncChannel({
   };
 }
 
-export function createIncrementalSync({
-  coordinator,
-  request,
-  applySnapshot,
-  resnapshot,
-  storage = globalThis.localStorage,
-  channel = createSyncChannel(),
-  locks = globalThis.navigator?.locks,
-  windowTarget = globalThis.window,
-  documentTarget = globalThis.document,
-  pollMs = 1500,
-  setTimer = globalThis.setTimeout,
-  clearTimer = globalThis.clearTimeout,
-  now = () => Date.now(),
-  onStatus = () => {}
-}) {
-  if (!coordinator || typeof request !== "function" || typeof applySnapshot !== "function") {
-    throw new TypeError("增量同步缺少协调器、请求或快照应用器");
-  }
-  let owner = "";
-  let cursor = null;
-  let timer = null;
-  let pulling = null;
-  let immediatePullQueued = false;
-  let stopped = true;
-  let pullEnabled = true;
-  let lifecycle = 0;
-  let unsubscribeChannel = () => {};
-  let unsubscribeCoordinator = () => {};
-  const active = (expectedOwner, expectedLifecycle) => (
-    !stopped && owner === expectedOwner && lifecycle === expectedLifecycle
-  );
-  const cursorKey = value => `cike-sync-cursor:${value}`;
-  const storeCursor = (value, { reset = false } = {}) => {
-    const next = Math.max(0, Number(value) || 0);
-    cursor = reset ? next : Math.max(cursor || 0, next);
-    try {
-      storage?.setItem(cursorKey(owner), String(cursor));
-    } catch {}
-  };
-  const readCursor = value => {
-    try {
-      const parsed = Number(storage?.getItem(cursorKey(value)) || 0);
-      return Number.isSafeInteger(parsed) && parsed >= 0 && storage?.getItem(cursorKey(value)) != null
-        ? parsed
-        : null;
-    } catch {
-      return 0;
-    }
-  };
-  const visible = () => !documentTarget || documentTarget.visibilityState !== "hidden";
-  const schedulePoll = delay => {
-    if (stopped || timer != null) return;
-    timer = setTimer(async () => {
-      timer = null;
-      if (visible()) await drain({ wait: true }).catch(() => {});
-      schedulePoll(pollMs);
-    }, delay);
-  };
-  const withDrainLock = (lockOwner, operation) => {
-    if (!locks?.request) return operation();
-    return locks.request(`cike-sync-drain:${lockOwner}`, { ifAvailable: true }, lock => (
-      lock ? operation() : []
-    ));
-  };
-  const pull = ({ wait = false } = {}) => {
-    if (!owner || stopped || !pullEnabled) return Promise.resolve(false);
-    if (pulling) {
-      if (!wait) immediatePullQueued = true;
-      return pulling;
-    }
-    const expectedOwner = owner;
-    const expectedLifecycle = lifecycle;
-    const startedAt = now();
-    const execution = (async () => {
-      try {
-        const query = new URLSearchParams({ waitMs: String(wait ? Math.min(1500, pollMs) : 0) });
-        if (cursor != null) query.set("cursor", String(cursor));
-        const result = await request(`/api/v1/sync?${query}`);
-        if (!active(expectedOwner, expectedLifecycle)) return false;
-        const payload = result?.data || result;
-        if (!payload || !Number.isSafeInteger(payload.cursor)) throw new Error("同步响应无效");
-        if (payload.changes?.length) await applySnapshot(payload.snapshot || {}, payload.changes);
-        if (!active(expectedOwner, expectedLifecycle)) return false;
-        storeCursor(payload.cursor);
-        onStatus({
-          type: "pull",
-          owner: expectedOwner,
-          cursor,
-          changes: payload.changes?.length || 0,
-          durationMs: now() - startedAt
-        });
-        return Boolean(payload.changes?.length);
-      } catch (error) {
-        if (!active(expectedOwner, expectedLifecycle)) return false;
-        if (["SYNC_CURSOR_EXPIRED", "SYNC_RESNAPSHOT_REQUIRED", "SYNC_CURSOR_AHEAD"].includes(error?.code)) {
-          await resnapshot?.();
-          if (!active(expectedOwner, expectedLifecycle)) return false;
-          storeCursor(error.details?.currentCursor || 0, { reset: true });
-          onStatus({ type: "resnapshot", owner: expectedOwner, cursor, code: error.code, durationMs: now() - startedAt });
-          return true;
-        }
-        onStatus({ type: "error", owner: expectedOwner, cursor, code: error?.code || "", durationMs: now() - startedAt });
-        throw error;
-      } finally {
-        if (pulling === execution) {
-          pulling = null;
-          const followImmediately = immediatePullQueued && active(expectedOwner, expectedLifecycle);
-          immediatePullQueued = false;
-          if (followImmediately) void pull().catch(() => {});
-        }
-      }
-    })();
-    pulling = execution;
-    return execution;
-  };
-  const drain = async ({ forceRetry = false, wait = false } = {}) => {
-    if (!owner || stopped) return [];
-    const expectedOwner = owner;
-    const expectedLifecycle = lifecycle;
-    const result = await withDrainLock(expectedOwner, () => coordinator.resume(expectedOwner, { force: forceRetry }));
-    if (!active(expectedOwner, expectedLifecycle)) return [];
-    const terminalFailure = result.some(item => item.status === "rejected"
-      && ["failed", "conflict"].includes(item.reason?.syncStatus));
-    if (result.some(item => item.status === "fulfilled") || terminalFailure) {
-      await resnapshot?.();
-      if (!active(expectedOwner, expectedLifecycle)) return [];
-    }
-    if (pullEnabled) await pull({ wait });
-    else onStatus({ type: "disabled", owner: expectedOwner, cursor });
-    return result;
-  };
-  const onOnline = () => void drain({ forceRetry: true }).catch(() => {});
-  const onPageShow = () => void drain().catch(() => {});
-  const onVisibility = () => {
-    if (visible()) void drain().catch(() => {});
-  };
-
-  return {
-    async start(nextOwner, { incremental = true } = {}) {
-      this.stop();
-      owner = String(nextOwner || "");
-      if (!owner) return false;
-      cursor = readCursor(owner);
-      pullEnabled = Boolean(incremental);
-      stopped = false;
-      const expectedOwner = owner;
-      const expectedLifecycle = lifecycle;
-      unsubscribeChannel = channel.subscribe(message => {
-        if (pullEnabled && message?.owner === owner && message?.type === "committed") void pull().catch(() => {});
-      });
-      unsubscribeCoordinator = coordinator.subscribe(record => {
-        if (record.owner !== owner) return;
-        onStatus({
-          type: "operation",
-          owner,
-          operationId: record.operationId || record.id || "",
-          status: record.status,
-          domains: record.domains || [],
-          ageMs: record.createdAt ? Math.max(0, now() - new Date(record.createdAt).getTime()) : 0
-        });
-        if (pullEnabled && record.status === "committed") {
-          channel.publish({
-            type: "committed",
-            owner,
-            operationId: record.operationId,
-            domains: record.domains || []
-          });
-          void pull().catch(() => {});
-        }
-      });
-      windowTarget?.addEventListener?.("online", onOnline);
-      windowTarget?.addEventListener?.("pageshow", onPageShow);
-      documentTarget?.addEventListener?.("visibilitychange", onVisibility);
-      try {
-        if (pullEnabled) await pull();
-        if (!active(expectedOwner, expectedLifecycle)) return false;
-        await drain();
-        if (!active(expectedOwner, expectedLifecycle)) return false;
-        await coordinator.prune?.(owner);
-        return true;
-      } finally {
-        if (active(expectedOwner, expectedLifecycle) && pullEnabled) schedulePoll(pollMs);
-      }
-    },
-    stop() {
-      lifecycle += 1;
-      stopped = true;
-      if (timer != null) clearTimer(timer);
-      timer = null;
-      pulling = null;
-      immediatePullQueued = false;
-      pullEnabled = true;
-      unsubscribeChannel();
-      unsubscribeCoordinator();
-      unsubscribeChannel = () => {};
-      unsubscribeCoordinator = () => {};
-      windowTarget?.removeEventListener?.("online", onOnline);
-      windowTarget?.removeEventListener?.("pageshow", onPageShow);
-      documentTarget?.removeEventListener?.("visibilitychange", onVisibility);
-      owner = "";
-      cursor = null;
-    },
-    pull,
-    drain,
-    cursor: () => cursor || 0
-  };
+/** 增量同步公开入口；可选作用域/取消端口自unreleased起由有界TS实现提供。 */
+export function createIncrementalSync(options = {}) {
+  return createScopedIncrementalSync({ ...options, channel: options.channel ?? createSyncChannel() });
 }

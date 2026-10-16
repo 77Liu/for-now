@@ -85,6 +85,11 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   renderOnboarding();renderVisibleRoute();if(!reconcileActiveThoughtRoute())runtime.pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();scheduleNotificationPoll();
   if(visibleShell&&onboardingPending){revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell")}
   if(opening&&onboardingPending){await afterVisibleShellPaint();if(owner!==runtime.currentUser?.id||session!==runtime.sessionSerial)return false;await opening.ready()}
+  // 设置页切换工作区只重载数据，application sync port不会再次start；在新配置接入后恢复。
+  if(runtime.applicationLifecycleReady){
+    await runtime.syncController?.start(owner,{incremental:runtime.featureFlags.incrementalSync});
+    if(owner!==runtime.currentUser?.id||session!==runtime.sessionSerial)return false;
+  }
   markStartup("stableHome");publishStartupTiming();return true
 }
 function setAuthTab(tab){
@@ -95,6 +100,7 @@ function setAuthTab(tab){
 }
 function setAuthBusy(value){runtime.authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
+  runtime.syncController?.stop();
   runtime.activeAnswerTaskId=++runtime.answerTaskSerial;runtime.healthFeatureController?.invalidateSession();clearTimeout(runtime.notificationTimer);
   runtime.backgroundResultsController?.resetSession();runtime.backgroundResultsLoadErrorReported=false;runtime.backgroundResultsRetryAttempts=0;refreshCoordinator.reset();
 }

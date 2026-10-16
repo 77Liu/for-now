@@ -510,3 +510,64 @@ console.log(
   reading.invalidate();
   assert.equal(reading.isCurrent(beforeLeaving), false);
 }
+
+// F9完整同步域经公开有界端口更新列表，不驻留批注/追问/模型正文。
+{
+  const { applyThoughtWindowSync } = await import('../public/frontend/features/thoughts/index.mjs');
+  const limits = { pageSize: 20, maxPages: 5, maxCheckpoints: 10, questionPreviewLimit: 600, userPreviewLimit: 600 };
+  const roots = Array.from({ length: 100 }, (_, i) => ({ id: `sync-${i}`, type: 'question', content: `原问题${i}`, createdAt: new Date(Date.UTC(2026, 9, 20, 0, 0, 100 - i)).toISOString(), version: 1, tags: [], blockCount: 0 }));
+  const createSnapshot = (deep = false) => ({ thoughts: structuredClone(roots), thoughtPage: { kind: 'list', sort: 'created', window: { generation: 0, stale: false, ownerKey: 'owner', routeKey: 'route', pages: Array.from({ length: 5 }, (_, i) => ({ requestCursor: i || deep ? `opaque-${i}` : '', prevCursor: i || deep ? 'opaque-prev' : '', nextCursor: 'opaque-next', direction: 'next', items: structuredClone(roots.slice(i * 20, i * 20 + 20)) })) } } });
+  const addition = { id: 'new-sync', type: 'question', content: '新问题'.repeat(600), createdAt: '2026-10-21T00:00:00.000Z', version: 1, tags: [], annotations: [{ text: '不得驻留批注正文' }], annotationDrift: [{ text: '不得驻留漂流' }], followUps: [{ answer: '不得驻留追问全文' }], modelDraft: '不得驻留模型草稿', modelReasoning: '不得驻留推理' };
+  const incoming = [...structuredClone(roots), addition, { id: 'ai-block', relatedTo: addition.id, type: 'answer', authorType: 'ai', content: 'AI不得冒充我的结论' }, { id: 'user-idea', relatedTo: addition.id, type: 'idea', authorType: 'user', content: '真实用户想法' }];
+  const changes = [{ domain: 'thoughts', resourceId: addition.id, changeType: 'create' }];
+  const protectedSnapshot = createSnapshot();
+  applyThoughtWindowSync(protectedSnapshot, incoming, { query: { sort: 'created' } }, limits, () => false, changes);
+  assert.equal(protectedSnapshot.thoughts.length, 100);
+  assert.equal(protectedSnapshot.thoughts.some(item => item.id === addition.id), false, '阅读目标不可为了新根被强制淘汰');
+  assert.equal(protectedSnapshot.thoughtPage.window.pages.length, 5);
+  const current = createSnapshot();
+  applyThoughtWindowSync(current, incoming, { query: { sort: 'created' } }, limits, () => true, changes);
+  assert.equal(current.thoughts.length, 100);
+  const summary = current.thoughts[0];
+  assert.equal(summary.id, addition.id);
+  assert.equal(summary.content.length, 600);
+  assert.equal(summary.preview.kind, 'idea');
+  for (const key of ['annotations', 'annotationDrift', 'followUps', 'modelDraft', 'modelReasoning', 'attachmentPaths']) assert.equal(Object.hasOwn(summary, key), false, key);
+  assert.equal(current.thoughtPage.stale, true);
+  assert.equal(current.thoughtPage.window.pages.length, 5, '旧定位凭据仍保留，但stale禁止继续旧cursor');
+  const pending = createSnapshot();
+  pending.thoughts[0]._sync = { status: 'sending', operationId: 'pending-edit' };
+  pending.thoughts[0].content = '正在编辑的新原文';
+  applyThoughtWindowSync(pending, incoming, { query: { sort: 'created' } }, limits, () => false, changes);
+  assert.equal(pending.thoughts.find(item => item.id === 'sync-0').content, '正在编辑的新原文', '旧同步不得先覆盖pending再重放');
+  const locallyChangedHead = createSnapshot();
+  locallyChangedHead.thoughtPage.window.pages = [];
+  locallyChangedHead.thoughtPage.requestCursor = '';
+  locallyChangedHead.thoughtPage.prevCursor = '';
+  applyThoughtWindowSync(locallyChangedHead, incoming, { query: { sort: 'created' } }, limits, () => true, changes);
+  assert.equal(locallyChangedHead.thoughts[0].id, addition.id, '本地变更后仍依据真实页头凭据接入新根');
+  const outsideUpdate = createSnapshot(true);
+  const movedOutside = { ...addition, id: 'outside-updated', occurredAt: '2027-01-01T00:00:00.000Z' };
+  applyThoughtWindowSync(outsideUpdate, [...incoming, movedOutside], { query: { cursor: 'opaque-deep' } }, limits, () => false, [{ domain: 'thoughts', resourceId: movedOutside.id, changeType: 'update' }]);
+  assert.equal(outsideUpdate.thoughtPage.stale, true, '窗口外根update可能移入范围，必须停止旧游标');
+  assert.equal(outsideUpdate.thoughts.some(item => item.id === movedOutside.id), false, '不能猜排序插入深页');
+  const deep = createSnapshot(true);
+  applyThoughtWindowSync(deep, incoming, { query: { sort: 'created', cursor: 'opaque-deep' } }, limits, () => true, changes);
+  assert.equal(deep.thoughts.some(item => item.id === addition.id), false, '深窗口不擅自插入新根');
+  assert.equal(deep.thoughtPage.stale, true);
+  const updated = incoming.filter(item => item.id !== 'sync-2').map(item => item.id === 'sync-1' ? { ...item, version: 2, content: '权威更新', annotations: [{ text: '不驻留' }] } : item);
+  applyThoughtWindowSync(deep, updated, { query: { sort: 'created', cursor: 'opaque-deep' } }, limits, () => false, [{ domain: 'thoughts', resourceId: 'sync-1', changeType: 'update' }]);
+  assert.equal(deep.thoughts.find(item => item.id === 'sync-1').content, '权威更新');
+  assert.equal(deep.thoughts.some(item => item.id === 'sync-2'), false, '只在完整权威域明确缺失时移除已加载对象');
+}
+
+// 在途增量不能把已读较新详情/未确认编辑回退，完整域权威删除仍有效。
+{
+  const { applyThoughtDetailSync } = await import('../public/frontend/features/thoughts/index.mjs');
+  const current = [{ id: 'r', type: 'question', version: 3, content: '新正文' }, { id: 'b', relatedTo: 'r', type: 'idea', version: 2, content: '新想法' }];
+  const old = [{ id: 'r', type: 'question', version: 2, content: '旧正文' }];
+  assert.deepEqual(applyThoughtDetailSync(current, old, 'r'), current);
+  assert.deepEqual(applyThoughtDetailSync(current, [], 'r'), []);
+  const summary = [{ id: 'r', type: 'question', version: 3, blockCount: 0, content: '摘要' }];
+  assert.equal(applyThoughtDetailSync(summary, current, 'r')[0].content, '新正文');
+}
