@@ -536,19 +536,24 @@ function historicalSupplementContextFrom(store, options) {
   };
 }
 
+// 预筛与最终选择共享封装/窗口条件；仅来源哈希依赖实际输入构建。
+function matchesReadySummary(summary, localDate, timezone, windowKey) {
+  return summary?.status === "ready"
+    && isRecordCompressionRecordEnvelope(summary, { ready: true })
+    && [RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION, RECORD_SLOT_OUTPUT_SCHEMA_VERSION].includes(summary?.schemaVersion)
+    && summary?.promptVersion === RECORD_COMPRESSION_PROMPT_VERSION
+    && summary?.localDate === localDate
+    && summary?.timezone === timezone
+    && (summary.windowKey || "") === windowKey
+    && summary?.invalidatedAt == null;
+}
+
 function eligibleReadySummary(store, localDate, timezone, input) {
   if (input.window.windowKey && Date.parse(input.window.endExclusive) > Date.parse(input.window.asOf)) return null;
   return list(store.recordCompressions)
     .filter(summary => (
-      summary?.status === "ready"
-      && isRecordCompressionRecordEnvelope(summary, { ready: true })
-      && [RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION, RECORD_SLOT_OUTPUT_SCHEMA_VERSION].includes(summary?.schemaVersion)
-      && summary?.promptVersion === RECORD_COMPRESSION_PROMPT_VERSION
-      && summary?.localDate === localDate
-      && summary?.timezone === timezone
-      && (summary.windowKey || "") === (input.window.windowKey || "")
-      && summary?.sourceManifestHash === input.sourceManifestHash
-      && summary?.invalidatedAt == null
+      matchesReadySummary(summary, localDate, timezone, input.window.windowKey || "")
+      && summary.sourceManifestHash === input.sourceManifestHash
     ))
     .sort((left, right) => (
       String(right.generatedAt || "").localeCompare(String(left.generatedAt || ""))
@@ -557,17 +562,22 @@ function eligibleReadySummary(store, localDate, timezone, input) {
 }
 
 function readyInputsForDate(store, options) {
+  const hasCandidate = windowKey => list(store.recordCompressions).some(summary => (
+    matchesReadySummary(summary, options.localDate, options.timezone, windowKey)
+  ));
   const incremental = [];
   if (options.timezone === DEFAULT_RECORD_TIMEZONE) {
     for (const slot of ["morning", "evening"]) {
       const window = recordCompressionWindow(options.localDate, slot);
       if (Date.parse(window.endExclusive) > Date.parse(options.asOf)) continue;
+      if (!hasCandidate(window.windowKey)) continue;
       const input = inputForDate(store, { ...options, windowKey: window.windowKey });
       const summary = input && eligibleReadySummary(store, options.localDate, options.timezone, input);
       if (summary) incremental.push({ input, summary });
     }
   }
   if (incremental.length) return incremental;
+  if (!hasCandidate(options.windowKey || "")) return [];
   const input = inputForDate(store, options);
   const summary = input && eligibleReadySummary(store, options.localDate, options.timezone, input);
   return summary ? [{ input, summary }] : [];
