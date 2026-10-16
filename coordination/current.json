@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 386,
-  "updated_at": "2026-10-16T00:10:31.510Z",
+  "revision": 390,
+  "updated_at": "2026-10-16T00:31:58.686Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "IN_PROGRESS",
-    "phase": "F9客户端同步与交互延迟"
+    "phase": "整版快照契约修复接入与重新验证"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "817ede",
-      "source": "F8实现12479d经19文件独立全链审查、主控真实双账户与Chrome/原生证据后正常合入，tree一致且develop批注专项通过。原F9分支已正常接收此develop为d069e9，tree与develop一致，未重放旧stash。"
+      "commit": "c215f7",
+      "source": "F9实现d1979f正常合入；tree42809b与feat一致，develop思绪专项通过；本版功能切片均已接入，不代表完整性能或发布门通过。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -55,53 +55,48 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-F9-client-latency",
+      "id": "v0516-F9-startup-document-contract",
       "owner": "主开发Agent",
       "mode": "implementation",
       "branch": "feat/v0.5.16-sync-latency",
-      "baseline": "817ede",
-      "prepared_branch_head": "d069e9",
-      "status": "READY_FOR_INTEGRATION",
+      "baseline": "c215f7",
+      "status": "REVIEWED_LOCAL_GO",
       "allowed_write_set": [
-        "public/frontend/sync/** / public/frontend/shared/** (仅F9真实调度/有界生命周期与当前作用域TS端口，不建第二事实源)",
-        "public/frontend/api/** / public/frontend/app/runtime/data-runtime.mjs / session-runtime.mjs (真实AbortSignal、账户/session/工作区归属、局部接入与状态观察；不改kernel)",
-        "public/frontend/app/runtime/collaboration-runtime.mjs / page-descriptors-insights.mjs / global-events.mjs / 既有受影响feature公开入口 (仅量测确认的按钮受理或局部同步消费者；保留F4/F6/F7/F8，不借机全站重构)",
-        "scripts/** (直接受影响既有sync/API/lifecycle专项、实际浏览器与隔离PG分段性能；临时测量脚本在临时目录)",
-        "scripts/release-state-startup-gate.mts / tsconfig.release-state-startup-gate.json (现有隔离启动门增加明确本地组合profile及实际生效配置证据，不放开外发/生产目的地，不新增门禁平台)",
-        "tsconfig.frontend.json / knowledge/module-boundaries.json / 必要既有构建接线 (仅新增真实TS模块；无依赖/默认生产开关改变)",
-        "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md / docs/versions/v0.5.16/README.md (原方案4.1及旧设计授权描述校正，仅引用当前控制面，不另存进度副本)",
-        "public/frontend/features/thoughts/model.mjs / index.mjs / 必要controller/view/loader接线及public/frontend/shared/thought-page-window.mts (仅同步完整thought域到现有有界窗口的摘要/删除及最新边缘更新；不重写分页或另存完整历史)",
-        "public/frontend/state/index.mjs / public/frontend/app/runtime/notification-runtime.mts (仅现有refresh及通知读取端口接受可选isCurrent并在实际replace/接入前后复验；旧调用兼容，不改其他共享状态职责)",
-        "public/frontend/styles/application.css (仅mobile #journal-form>.record-form-footer与底部固定导航的避让；捕念modal/footer与全局导航不变)"
+        "scripts/release-state-startup-gate.mts (同一RR来源采集、账户文档定向脱敏、真实消费者校验、隔离导入/读回及必要原selfTest)",
+        "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md (仅原4.1新增实际契约/证据边界)"
       ],
       "forbidden_write_set": [
-        "coordination/**",
-        ".trae/**",
-        "Git/远程/生产/付费操作",
-        "新工作树/额外Agent",
-        "持久化schema/写入策略/依赖/生产默认配置/kernel",
-        "无实测依据的全站按钮/状态重构，另建滚动/选区/事实状态源；后端已验切片修改须先说明真实缺陷"
+        "F2/运行时/仓储/规范化业务源码、配置/schema/依赖变更",
+        "coordination/**、.trae/**、Git/生产/远程/付费操作",
+        "新agent或工作树"
       ],
-      "shared_file_owner": "主开发唯一串行实现者；主控唯一控制面/Git/生产只读快照维护者，单一工作目录。",
-      "integration_order": "原F9分支正常接收最新develop后续客户端；完成自查、专项及实际性能交主控独审，再固定整版候选进入新生产快照/隔离PG组合门。",
-      "acceptance_ref": "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md",
+      "shared_file_owner": "原主开发唯一两文件实现者；主控负责来源采集、独审、控制面和Git。",
+      "integration_order": "同原feat连续返修，固定候选自查/必要selfTest后主控独审接入develop；新候选需重新采集完整生产快照再验。",
+      "acceptance_ref": "knowledge/test-impact-matrix.md",
       "contracts": [
-        "先读实际request→API signal→sync pull/drain→applySnapshot/resnapshot→state/DOM消费者，保留K1资格/K3游标事实/K4提交提示，不复刻后端契约。",
-        "主动刷新取消过时长GET，不排在旧等待后；成功前台长轮询立即续接，失败有界退避、隐藏与stop清理，不能引入热循环或重复写重试。",
-        "owner/session/workspace/generation在请求及异步消费者内部复验；旧回调不能更新新账户状态/health。cursor只在当前快照应用成功后前移，工作区切换有明确归属。",
-        "ACK/广播仅按已确认域与稳定ID接入；避免每次自身提交全域resnapshot，保留F4窗口、F7展开/新输入/ACK结算、F6计数与F8真实Range。未知写结果保留原幂等ID和核对路径，不假同步成功。",
-        "量测按钮事件→有效可见反馈、持久ACK、跨前台可见分别报告。实际隔离应用/PG与桌面/模拟移动按操作族分组P75目标500ms，保留慢/失败样本与环境限制；8次handler基线不能冒充全站达标。",
-        "现启动门installGateEnvironment清除本版开关，默认门不证明启用组合。用原门明确本地profile启用F2/F3-A/F5/F9/F4并回执真实配置；默认profile继续可验证，保留隔离/外发阻断与原状态契约，不改生产defaults。",
-        "已有预算/压缩/provider有效证据不无依据重做，无真实模型需求则不调用；新源码TS/中文头/JSDoc，产物忽略。",
-        "不要重放stash9a5232；已接入的server实现保持，必要真实缺陷先报。已有feat、恢复引用及.trae保留。",
-        "coordinator离线队列/映射存储可新增可选getWorkspace端口，绑定真实localTestConfig enabled/mode/switchedAt；业务record.owner和HTTP账户仍是真实user.id。存储命名空间、generation/tails/delivery键、atomic映射、resume/metrics/subscribe/clear必须同一捕获workspace，旧在途不能写新空间。sessionSerial仅运行ticket不得成为持久命名空间。默认非工作区/旧调用保留既有key，不能自动把无来源旧记录迁移或派发进新的测试工作区；旧材料保留，无法确定归属如实限制。",
-        "完整thought域同步不能仅标stale就声称可见达标：复用F4唯一window.pages与领域预览selector，当前窗口ID按权威完整域更新/删除；仅真实最新边缘在不驱逐可见锚点/草稿/选区且符合容量时纳新根。深窗口不插无关新根；排序/范围变更置stale禁止错误续页，opaque cursor只沿服务端。明确选择必要摘要字段，不把完整正文、followUps、annotations/model内容藏在spread中长期驻留。只用真实完整thought域判删除，partial/未载入不能当不存在。性能证据区分DOM接入与实际可见反馈，不能用仅stale提示或后台DOM冒充新内容可见；保持现有阅读意图。",
-        "完整恢复消费者使用同一生命周期ticket，refreshCoordinator与独立通知读取在写入真实state之前复验可选isCurrent；afterReplace前后保留原serial/session检查。函数型guard不进入renderOptions、持久队列或HTTP；旧无guard调用兼容。屏障以生命周期而非单次GET票据存活，不被hidden撤GET拆除。"
-      ],
-      "handoff": "完整自查后固定源码六位manifest、原F9唯一回执与4.1，交接实际结果/原失败/未验范围并停写；主控独立审查，禁止自行Git。"
+        "真实settings/usage在现有READONLY RR同账户上下文读取；costPlan仅按真实存在性，缺失必需文档或损坏拒绝，不填整份默认值。",
+        "沿实际map/rebuild/normalize核原文与脱敏后可消费结构；不normalize覆盖坏账，不删除异常放宽预期。",
+        "仅凭据和隐私文字不可逆替换；固定取值、必要格式、引用、状态及账本数值保持。凭据占位只证明结构/有配置分支，不证明provider鉴权；原外发封闭保留。",
+        "隔离导入用现有writeAccountDocument及实际读回/映射校验；旧快照保持可读，缺文档不能声称combined通过。",
+        "不新增平台或报告链；原selfTest仅覆盖真实账户文档往返/语义/密钥不泄漏/缺失损坏拒绝等必要不变量。先读实际消费者与已有fixture再实现。"
+      ]
     }
   ],
-  "candidate": null,
+  "candidate": {
+    "status": "REWORK_GATE_DOCUMENT_CONTRACT",
+    "branch": "develop",
+    "sha": "c215f7",
+    "tree": "42809b",
+    "release_frozen": false,
+    "test_matrix_ref": "knowledge/test-impact-matrix.md",
+    "quality_gate": {
+      "slice_implementation_review": "pass_local",
+      "fresh_production_state_startup": "pass_default",
+      "combined_profile_startup": "fail_ACCOUNT_RECOVERY_NOT_READY",
+      "representative_performance": "partial",
+      "real_device_performance": "partial"
+    }
+  },
   "authorization": {
     "source": "Owner 2026-10-16明确：通过现有方案，请按照项目规则开始开发。既有每版本必要付费API共用4元授权保留，超额申请。",
     "allowed_actions": [
@@ -131,8 +126,18 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [],
-  "next_action": "主控按规则提交已审F9并正常合入develop、保留全部分支引用；固定整版候选后采集新生产状态快照执行隔离PG默认与组合全局门。分组性能与真实设备缺口保持partial，不push/tag/Release/上线。",
+  "blockers": [
+    {
+      "id": "v0516-combined-account-recovery",
+      "status": "CONFIRMED_GATE_IMPORT_GAP",
+      "reason": "同候选安全诊断确认4账户均在validate阶段因ACCOUNT_DOCUMENT_INVALID隔离；主控/主开发独立审查发现快照采集与导入漏settings/usage。F2正确拒绝不完整材料，不能以默认文档替代真实账户文档或放宽校验。",
+      "refs": [
+        "artifacts/local/v0516-global-acceptance-current.json",
+        "/tmp/v0516-startup-combined.log"
+      ]
+    }
+  ],
+  "next_action": "两文件快照门契约修复经主控完整链路独审通过；正常提交并合入develop后固定新候选，采集完整schema2生产快照，再验default/combined实际全局门。旧失败与性能partial保留。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -414,9 +419,11 @@
         "kind": "source_manifest",
         "branch": "feat/v0.5.16-sync-latency",
         "base_commit": "d069e9",
-        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json"
+        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "commit": "d1979f",
+        "integration_commit": "c215f7"
       },
-      "conclusion": "主控亲读22文件及真实HTTP/PG投影、队列存储、异步消费和UI全链，独立Chrome选区/真实账户及恢复竞态通过，指纹与差分吻合；仅本地功能接入GO，性能partial。",
+      "conclusion": "已审F9实现d1979f正常合入develop c215f7，tree42809b一致且develop思绪专项通过；性能及整版快照门仍partial/pending。",
       "limitations": [
         "整版新生产快照default/combined隔离PG门尚未执行。",
         "每族每设备完整P75及真实移动设备未验；小样本不证明500ms目标，日记对端屏外渲染不等于可见。"
@@ -424,6 +431,24 @@
       "refs": [
         "artifacts/local/v0516-f9-server-acceptance-current.json",
         "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-global-fresh-state-gates",
+      "object": {
+        "kind": "Git_commit_and_tree_with_snapshot",
+        "commit": "c215f7",
+        "tree": "42809b",
+        "snapshot_path": "artifacts/local/v0516-startup-snapshot-current.json",
+        "snapshot_hash": "31717a"
+      },
+      "conclusion": "默认门PASS与组合FAIL保留；同候选诊断确认4账户ACCOUNT_DOCUMENT_INVALID，根因为验收快照/导入漏必需账户文档，原F9 gate返修。",
+      "limitations": [
+        "组合失败根因未知，未关闭。",
+        "完整分组性能与真实设备验收仍partial。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-global-acceptance-current.json"
       ]
     }
   ],
