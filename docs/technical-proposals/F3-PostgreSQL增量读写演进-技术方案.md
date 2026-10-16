@@ -571,6 +571,10 @@ R1—R5 是各阶段硬门槛；性能候选收益以真实 PG 量测裁决。B 
 
 注册初始化返修：F9真实新账户网络验证发现，PG注册事务原先直接映射空store，首次业务写之前缺少同步元数据。回到原F3分支接收最新develop `4ec189`，在provision生产者以既有helper初始化完整元数据副本，保持同一认证事务及读取严格校验。真实PG16.14中F2关闭，两新账户首次同步及应用停启后均返回200/cursor0，调用方不变与SQL回滚无残留通过。主控独立核对生产、SQL映射、重建、窄读及HTTP消费者后批准本地接入；原失败保留，回执 `artifacts/local/v0516-f3a-provision-current.json`。暂停中的F9尚未验收。
 
+内部生产域返修（2026-10-16）：基于 `develop` 的 `512dbb`，真实生产形态性能验证发现新捕念通过 perception-aware 仓储同时写入 `captures`、`evidencePermissions`、`perceptionEvents`；后两者未列入阶段A读取声明，触发保守全读。本次仅声明两类正式内部集合：按其真实权限/事件normalizer读取与校验，保留同步元数据和实际变化；公共投影沿原实现剥离内部正文，未知域仍在同一repeatable-read快照完整回退。没有改变HTTP响应契约、账户写入模型、schema或B/C范围。
+
+既有真实PG16.14检查补入 `createCaptureRecords` → `createPerceptionAwareRepository` → 正式perception生产者及metadata的闭环，旧full与metadata响应完全等价。新捕念闭包读取对照为7→4个SELECT、1117→147返回行、1,452,462→890,181查询返回JSON字节；单独权限变更为7→4个SELECT、1120→9行、1,455,288→97,837字节。数字包括RLS绑定/metadata，只是同一合成验收数据集的查询量，不是新生产形态延迟或500ms达标证据。内部集合原值及游标变化保留、HTTP不泄露内部字段，另一账户权限/事件为空、未知域和合法旧格式仍完整回退。实际PG全入口、公共状态专项、后端构建与边界检查通过，原F3唯一回执 `artifacts/local/v0516-f3a-acceptance-current.json` 的 `internalDomainRepair` 绑定本片三文件与日志。原18样本SLO失败保持；接入后由主控复验代表族，不以本片窄读证明整版达标。
+
 ## 4.2 测试方案（必填）
 
 以下为计划，未执行真实 PG 性能验证。复用现有 PG 映射、集成、幂等账本和压缩回滚脚本，并增加阶段针对性断言。
