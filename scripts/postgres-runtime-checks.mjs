@@ -13,7 +13,8 @@ import {
   canonicalJson, discoverJsonBundle, applyPostgresBundle,
   exportPostgresDirectory, readPostgresBundle, storeContentSha256
 } from "../src/shared/persistence/index.mjs";
-import { createEmptyStore, createStoreNormalizer, createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep, userModelCoreReadiness } from "../src/app/index.mjs";
+import { createEmptyStore, createStoreNormalizer, createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep, userModelCoreReadiness, createPerceptionAwareRepository, createPerceptionRuntime } from "../src/app/index.mjs";
+import { createCaptureRecords } from "../src/modules/captures/index.mjs";
 import { evidenceSourceKey } from "../src/modules/user-model/index.mjs";
 import { onboardingV2Schema } from "../src/modules/onboarding/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
@@ -372,6 +373,54 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
           if (domain === "speechCache") assert.equal(narrow.result.data.snapshot.speech.assets.length, 1, "real current source must produce a nonempty asset");
           metrics[domain] = { legacy: legacy.trace, metadata: narrow.trace };
         }
+        // 真实业务生产链会同时新增捕念、权限和感知事件；这不是未知扩展，不能退回六表全读。
+        const perception = createPerceptionRuntime({ getAccountId: () => "sync-a", now: syncNow });
+        const noPerceptionTask = () => { throw new Error("Default learning-disabled source must not dispatch an AI task"); };
+        const awareRepository = createPerceptionAwareRepository({
+          repository: syncLegacy, perception, createTask: noPerceptionTask, scheduleTask: noPerceptionTask
+        });
+        const captures = createCaptureRecords({
+          repository: {
+            read: async () => (await awareRepository.read()).captures,
+            update: mutate => awareRepository.update(store => mutate(store.captures, store.trash, store))
+          },
+          reanchorAnnotations: () => {}, now: syncNow, createId: () => "sync-perception-capture"
+        });
+        const perceptionCursor = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+        const created = await captures.create({ content: "仅当前账户保存的感知来源正文", occurredAt: syncNow() });
+        assert.equal(created.value.id, "sync-perception-capture");
+        const perceptionLegacy = await measure(() => executeSync(syncLegacy, perceptionCursor));
+        const perceptionNarrow = await measure(() => executeSync(syncNarrow, perceptionCursor));
+        assert.deepEqual(perceptionNarrow.result, perceptionLegacy.result);
+        assert.deepEqual(new Set(perceptionNarrow.result.data.changes.map(change => change.domain)), new Set(["captures", "evidencePermissions", "perceptionEvents"]));
+        assert.ok(perceptionNarrow.result.data.snapshot.captures.some(item => item.id === created.value.id));
+        const internalProjection = await syncNarrow.readSyncChanges({ cursor: perceptionCursor, fieldsForDomains: project.syncProjectionFields });
+        const actualStore = await syncLegacy.read();
+        assert.deepEqual(internalProjection.document.evidencePermissions, actualStore.evidencePermissions);
+        assert.deepEqual(internalProjection.document.perceptionEvents, actualStore.perceptionEvents);
+        for (const field of ["evidencePermissions", "perceptionEvents"]) {
+          assert.ok(internalProjection.document[field].length > 0);
+          assert.equal(Object.hasOwn(perceptionNarrow.result.data.snapshot, field), false, "内部集合不得泄露进公共同步snapshot");
+        }
+        assert.ok(perceptionNarrow.trace.some(row => /store_objects.*ANY\(\$2::text\[\]\)/s.test(row.sql)));
+        assert.ok(perceptionNarrow.trace.every(row => !/for_now\.(?:store_relations|store_attachment_refs|resource_lifecycle|idempotency_ledger)\b/.test(row.sql)), "真实感知生产域只按闭包读，不能六表回退");
+        metrics.perceptionCapture = { legacy: perceptionLegacy.trace, metadata: perceptionNarrow.trace };
+
+        // 只改真实权限也保留事件与游标；原公共输出仍为空，不能把内部正文直接发送给客户端。
+        const privateCursor = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+        const sourceRef = actualStore.perceptionEvents.find(item => item.sourceRef.resourceId === created.value.id).sourceRef;
+        await syncLegacy.update(store => perception.observeInStore(store, {
+          sourceRef, contextAllowed: false, learningAllowed: false, eventKind: "permission_changed"
+        }, noPerceptionTask));
+        const privateLegacy = await measure(() => executeSync(syncLegacy, privateCursor));
+        const privateNarrow = await measure(() => executeSync(syncNarrow, privateCursor));
+        assert.deepEqual(privateNarrow.result, privateLegacy.result);
+        assert.ok(privateNarrow.result.data.changes.length > 0);
+        assert.ok(privateNarrow.result.data.changes.every(change => ["evidencePermissions", "perceptionEvents"].includes(change.domain)));
+        assert.deepEqual(privateNarrow.result.data.snapshot, {});
+        assert.ok(privateNarrow.trace.every(row => !/for_now\.(?:store_relations|store_attachment_refs|resource_lifecycle|idempotency_ledger)\b/.test(row.sql)));
+        metrics.perceptionPermissionOnly = { legacy: privateLegacy.trace, metadata: privateNarrow.trace };
+
         // metadata之后发生另一个连接的提交，仍只能读到原repeatable-read快照。
         const before = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
         await syncLegacy.update(store => { store.notifications[0].status = "failed"; });
@@ -391,6 +440,9 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       await account("sync-b", async () => {
         assert.equal((await syncNarrow.readSyncChanges({ cursor: 0, fieldsForDomains: project.syncProjectionFields })).metadata.sync.cursor, 0);
         assert.equal(await syncNarrow.readOperationReceipt("unknown-operation"), undefined);
+        const otherAccountStore = await syncLegacy.read();
+        assert.deepEqual(otherAccountStore.evidencePermissions, [], "sync-a权限不能通过另一账户RLS读取");
+        assert.deepEqual(otherAccountStore.perceptionEvents, [], "sync-a感知事件不能通过另一账户RLS读取");
       });
       // 显式破坏/丢失同步metadata必须报告账户故障，不能变空元数据。
       const originalMetadata = (await database.query("SELECT payload FROM for_now.store_fields WHERE account_id='sync-a' AND field='_persistence'")).rows[0].payload;
