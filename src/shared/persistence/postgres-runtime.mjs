@@ -11,6 +11,23 @@ import {
   readAiUsageDaySummary,
   recordAiUsageAttempt
 } from "../../../.build/typescript/backend/shared/persistence/ai-usage-repository.mjs";
+import {
+  changeAuthPassword,
+  countAuthUsers,
+  deleteAuthSession,
+  findAuthAuthentication,
+  findAuthCredential,
+  findAuthCredentialById,
+  findAuthUserById,
+  findFirstAuthOwner,
+  insertAuthRegistration,
+  issueAuthSessionIfCurrent,
+  listAuthUsersPage,
+  listAuthorizedAuthUsersPage,
+  updateAuthRecordTimezone,
+  updateAuthRole,
+  updateAuthUsername
+} from "../../../.build/typescript/backend/shared/persistence/postgres-auth.mjs";
 import pg from "pg";
 import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "./store-mapping.mjs";
 import { clearStoreObjects, readPostgresStoreObjects, storeSqlMapping, writeStoreObjects } from "./postgres-objects.mjs";
@@ -209,7 +226,9 @@ export async function createPostgresRuntime({
         if (requireMigration && !(await client.query("SELECT 1 FROM for_now_auth.migration_state WHERE id = 'bundle'")).rowCount) {
           throw invalid("Existing JSON data requires a verified full migration before PostgreSQL startup");
         }
-        if (authRequired === false && (await readAuthDocument(client))?.users.length) {
+        if (authRequired === false && (await client.query(
+          "SELECT 1 FROM for_now_auth.users LIMIT 1"
+        )).rowCount) {
           throw invalid("Migrated identities require AUTH_REQUIRED=1");
         }
         if (!readOnly) {
@@ -586,39 +605,112 @@ export async function createPostgresRuntime({
       } catch (error) { onAccountFailure(error); throw error; } finally { client.release(); }
     }
   };
-  const auth = {
-    read: async () => {
-      const client = await connect(authPool);
-      try { return await transaction(client, () => readAuthDocument(client), true) || { version: 1, users: [], sessions: [] }; }
-      catch (error) { onAccountFailure(error); throw error; }
-      finally { client.release(); }
-    },
-    update: async mutator => {
-      const client = await connect(authPool);
-      try {
-        return await transaction(client, async () => {
-          await client.query("SELECT pg_advisory_xact_lock(hashtextextended('for-now-bundle', 0))");
-          const document = await readAuthDocument(client) || { version: 1, users: [], sessions: [] };
-          const provisions = [];
-          const result = await authContext.run({ provisions }, () => mutator(document));
-          await writeAuthDocument(client, document);
-          for (const { id, business, documents } of provisions) {
-            await client.query("SELECT for_now_auth.provision_account($1, $2::jsonb, $3::jsonb)", [id, JSON.stringify(business), JSON.stringify(documents)]);
-          }
-          return result;
-        });
-      } catch (error) { onAccountFailure(error); throw error; } finally { client.release(); }
-    },
-    provision: (id, store, values) => {
-      const current = authContext.getStore();
-      if (!current) throw invalid("Provisioning requires a registration transaction");
-      // 注册必须一次写入完整同步元数据；兼容无 trash 的合法旧格式，且不修改调用方。
-      const document = preparePersistenceDocument(structuredClone(store), undefined, { force: true });
-      current.provisions.push({
-        id, business: storeSqlMapping(mapStoreObjects(id, document)),
-        documents: Object.entries(values).map(([name, value]) => documentSqlMapping(mapAccountDocument(id, name, value)))
-      });
+  const authRead = async operation => {
+    const client = await connect(authPool);
+    try { return await transaction(client, () => operation(client), true); }
+    catch (error) { onAccountFailure(error); throw error; }
+    finally { client.release(); }
+  };
+  const authWrite = async operation => {
+    const client = await connect(authPool);
+    try { return await transaction(client, () => operation(client)); }
+    catch (error) { onAccountFailure(error); throw error; }
+    finally { client.release(); }
+  };
+  const executeProvisions = async (client, provisions) => {
+    for (const { id, business, documents } of provisions) {
+      await client.query(
+        "SELECT for_now_auth.provision_account($1, $2::jsonb, $3::jsonb)",
+        [id, JSON.stringify(business), JSON.stringify(documents)]
+      );
     }
+  };
+  const provision = (id, store, values) => {
+    const current = authContext.getStore();
+    if (!current) throw invalid("Provisioning requires a registration transaction");
+    // 注册必须一次写入完整同步元数据；兼容无 trash 的合法旧格式，且不修改调用方。
+    const document = preparePersistenceDocument(structuredClone(store), undefined, { force: true });
+    current.provisions.push({
+      id, business: storeSqlMapping(mapStoreObjects(id, document)),
+      documents: Object.entries(values).map(([name, value]) => documentSqlMapping(mapAccountDocument(id, name, value)))
+    });
+  };
+  const rowAuth = {
+    findCredentialByUsernameKey: key => authRead(client => findAuthCredential(client, key)),
+    findCredentialByUserId: id => authRead(client => findAuthCredentialById(client, id)),
+    findAuthenticationByTokenHash: hash => authRead(client => findAuthAuthentication(client, hash)),
+    findUserById: id => authRead(client => findAuthUserById(client, id)),
+    findFirstOwner: () => authRead(client => findFirstAuthOwner(client)),
+    countUsers: () => authRead(client => countAuthUsers(client)),
+    scanUsersPage: query => authRead(client => listAuthUsersPage(client, query.limit, query.after)),
+    listUsersPage: query => authRead(client => listAuthorizedAuthUsersPage(
+      client, query.tokenHash, query.limit, query.after, query.nowMs
+    )),
+    register: command => authWrite(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('for-now-auth-bootstrap', 0))");
+      const first = await countAuthUsers(client) === 0;
+      const user = { ...command.user, role: first ? "owner" : "user" };
+      const session = { ...command.session, userId: user.id, sessionVersion: user.sessionVersion };
+      await insertAuthRegistration(client, user, session);
+      const provisions = [];
+      const rollbackStorage = await authContext.run(
+        { provisions },
+        () => command.initialize(user, first)
+      );
+      await executeProvisions(client, provisions);
+      return { user, session, rollbackStorage };
+    }),
+    issueSessionIfCredentialCurrent: command => authWrite(async client => {
+      const user = await issueAuthSessionIfCurrent(client, command.snapshot, command.session);
+      return user ? { user, session: command.session } : null;
+    }),
+    setRole: command => authWrite(client => updateAuthRole(
+      client, command.tokenHash, command.userId, command.role,
+      command.updatedAt, command.nowMs
+    )),
+    rename: command => authWrite(client => updateAuthUsername(
+      client, command.tokenHash, command.username, command.usernameKey,
+      command.updatedAt, command.nowMs
+    )),
+    setRecordTimezone: command => authWrite(client => updateAuthRecordTimezone(
+      client, command.tokenHash, command.recordTimezone,
+      command.updatedAt, command.nowMs
+    )),
+    changePasswordAndRevokeSessions: command => authWrite(client => changeAuthPassword(
+      client, command.tokenHash, command.snapshot, command.passwordHash,
+      command.updatedAt, command.nowMs
+    )),
+    deleteSession: tokenHash => authWrite(client => deleteAuthSession(client, tokenHash)),
+    verify: () => authRead(async client => {
+      const [user, session] = await Promise.all([
+        client.query(`
+          SELECT id FROM for_now_auth.users
+          WHERE password_hash !~ '^scrypt\\$[A-Za-z0-9+/]{22}==\\$[A-Za-z0-9+/]{86}==$'
+          LIMIT 1
+        `),
+        client.query(`
+          SELECT token_hash FROM for_now_auth.sessions
+          WHERE token_hash !~ '^[a-f0-9]{64}$'
+          LIMIT 1
+        `)
+      ]);
+      return { valid: !user.rowCount && !session.rowCount };
+    })
+  };
+  const auth = {
+    read: () => authRead(client => readAuthDocument(client))
+      .then(value => value || { version: 1, users: [], sessions: [] }),
+    update: mutator => authWrite(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('for-now-bundle', 0))");
+      const document = await readAuthDocument(client) || { version: 1, users: [], sessions: [] };
+      const provisions = [];
+      const result = await authContext.run({ provisions }, () => mutator(document));
+      await writeAuthDocument(client, document);
+      await executeProvisions(client, provisions);
+      return result;
+    }),
+    provision,
+    row: rowAuth
   };
   const attachments = {
     lock: operation => withAccountLock(() => operation()),

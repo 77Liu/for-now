@@ -17,6 +17,7 @@ import {
   createHttpApplication,
   SERVER_ROUTE_IDS
 } from "../src/http/index.mjs";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const expectedRouteIds = [
@@ -475,22 +476,43 @@ assert.deepEqual(
 
 // F9真实装配：关闭保留原有界截止，开启按JSON提交唤醒；仅本机无鉴权空实例，不调用模型。
 {
-  const keys = ["DATA_DIR", "PORT", "AUTH_REQUIRED", "APP_BASE_PATH", "PERSISTENCE_BACKEND", "ACCOUNT_RECOVERY_ENABLED", "SYNC_ACCOUNT_WAKE_ENABLED"];
+  const keys = ["DATA_DIR", "PORT", "AUTH_REQUIRED", "AUTH_QUERY_MODE", "INVITE_CODE_HASH", "APP_BASE_PATH", "PERSISTENCE_BACKEND", "ACCOUNT_RECOVERY_ENABLED", "SYNC_ACCOUNT_WAKE_ENABLED"];
   const before = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   const samples = [];
   try {
+    const rejectedDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-auth-required-"));
+    Object.assign(process.env, {
+      DATA_DIR: rejectedDirectory,
+      PORT: "0",
+      AUTH_REQUIRED: "0",
+      AUTH_QUERY_MODE: "document",
+      INVITE_CODE_HASH: "",
+      APP_BASE_PATH: "/",
+      PERSISTENCE_BACKEND: "json",
+      ACCOUNT_RECOVERY_ENABLED: "0"
+    });
+    const rejectedRuntime = createServerRuntime({
+      rootUrl: pathToFileURL(path.join(ROOT, "server.mjs")).href
+    });
+    await assert.rejects(
+      rejectedRuntime.start(),
+      /AUTH_REQUIRED=0 no longer starts a business application/
+    );
+    await fs.rm(rejectedDirectory, { recursive: true, force: true });
     for (const enabled of ["0", "1"]) {
       const directory = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-f9-runtime-"));
-      Object.assign(process.env, { DATA_DIR: directory, PORT: "0", AUTH_REQUIRED: "0", APP_BASE_PATH: "/", PERSISTENCE_BACKEND: "json", ACCOUNT_RECOVERY_ENABLED: "0", SYNC_ACCOUNT_WAKE_ENABLED: enabled });
+      const authFixture = await installAuthenticatedJsonRuntime(directory);
+      Object.assign(process.env, { ...authFixture.env, DATA_DIR: directory, PORT: "0", APP_BASE_PATH: "/", PERSISTENCE_BACKEND: "json", ACCOUNT_RECOVERY_ENABLED: "0", SYNC_ACCOUNT_WAKE_ENABLED: enabled });
       const processRef = new EventEmitter(); processRef.exit = code => { throw new Error(`unexpected exit ${code}`); };
       const runtime = createServerRuntime({ rootUrl: pathToFileURL(path.join(ROOT, "server.mjs")).href, processRef });
       try {
         const started = await runtime.start(), base = `http://127.0.0.1:${started.port}`;
-        const initial = await (await fetch(base + "/api/v1/sync")).json();
+        const headers = { cookie: authFixture.cookie };
+        const initial = await (await fetch(base + "/api/v1/sync", { headers })).json();
         const startedAt = performance.now();
-        const polling = fetch(base + `/api/v1/sync?cursor=${initial.data.cursor}&waitMs=400`);
+        const polling = fetch(base + `/api/v1/sync?cursor=${initial.data.cursor}&waitMs=400`, { headers });
         await new Promise(resolve => setTimeout(resolve, 50));
-        const write = await fetch(base + "/api/captures", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "F9本机等待对照" }) });
+        const write = await fetch(base + "/api/captures", { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ content: "F9本机等待对照" }) });
         assert.equal(write.status, 201, await write.text());
         const result = await (await polling).json(), elapsed = performance.now() - startedAt;
         assert.ok(result.data.cursor > initial.data.cursor);

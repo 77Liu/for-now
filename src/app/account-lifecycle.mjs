@@ -46,6 +46,7 @@ export function createAccountLifecycle({
   keepsakeMediaWorkflows,
   localTestRuntime = null,
   readUsers = null,
+  readUsersPage = null,
   accountRuntime = null,
   validateCurrentStorage = async () => {}
 }) {
@@ -160,6 +161,7 @@ export function createAccountLifecycle({
   async function recoverAtStartup(options = {}) {
     const startupLocalTestRuntime = options.localTestRuntime ?? localTestRuntime;
     const startupReadUsers = options.readUsers ?? readUsers;
+    const startupReadUsersPage = options.readUsersPage ?? readUsersPage;
     let localTestInitialized = false;
     accountRuntime?.beginScan();
 
@@ -176,14 +178,26 @@ export function createAccountLifecycle({
 
     await ensurePrivateDirectory(usersDir);
     if (!authRequired) { accountRuntime?.completeScan(); return; }
-    if (typeof startupReadUsers !== "function") {
-      throw new TypeError("Authenticated startup requires readUsers");
+    if (typeof startupReadUsersPage === "function") {
+      let after = null;
+      do {
+        const page = await startupReadUsersPage({ limit: 100, after });
+        if (!Array.isArray(page?.users)) {
+          throw new TypeError("readUsersPage must return a users array");
+        }
+        for (const user of page.users) accountRuntime?.register(user.id);
+        for (const user of page.users) await recoverUser(user);
+        after = page.next || null;
+      } while (after);
+    } else {
+      if (typeof startupReadUsers !== "function") {
+        throw new TypeError("Authenticated startup requires readUsersPage");
+      }
+      const users = await startupReadUsers();
+      if (!Array.isArray(users)) throw new TypeError("readUsers must return an array");
+      for (const user of users) accountRuntime?.register(user.id);
+      for (const user of users) await recoverUser(user);
     }
-
-    const users = await startupReadUsers();
-    if (!Array.isArray(users)) throw new TypeError("readUsers must return an array");
-    for (const user of users) accountRuntime?.register(user.id);
-    for (const user of users) await recoverUser(user);
     accountRuntime?.completeScan();
   }
 

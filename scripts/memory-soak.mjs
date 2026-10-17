@@ -8,6 +8,7 @@ import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const MIB = 1024 * 1024;
@@ -186,6 +187,7 @@ async function execute() {
   const appPort = await freePort(), providerPort = await freePort();
   const base = `http://127.0.0.1:${appPort}`;
   const serviceToken = "local-memory-soak-service-token-00000001";
+  const authFixture = await installAuthenticatedJsonRuntime(directory);
   let providerCalls = 0, providerActive = 0, providerPeak = 0, child = null;
   const provider = http.createServer(async (request, response) => {
     for await (const chunk of request) void chunk;
@@ -206,7 +208,11 @@ async function execute() {
   const requestJson = async (pathname, { method = "GET", headers = {}, body, statuses = [200] } = {}) => {
     const response = await fetch(`${base}${pathname}`, {
       method,
-      headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers },
+      headers: {
+        cookie: authFixture.cookie,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...headers
+      },
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
     });
     if (!statuses.includes(response.status)) {
@@ -253,8 +259,7 @@ async function execute() {
           PERSISTENCE_BACKEND: "json",
           ATTACHMENT_STORAGE: "local",
           UPSTREAM_ORIGIN: "",
-          AUTH_REQUIRED: "0",
-          INVITE_CODE_HASH: "",
+          ...authFixture.env,
           APP_BASE_PATH: "",
           DATA_DIR: directory,
           PORT: String(appPort),

@@ -23,6 +23,7 @@ export const ACCOUNT_SELECTORS = Object.freeze({
   roleStatus: "#account-role-status",
   roleSave: "[data-account-role-save]",
   retryRoles: '[data-content-action="retry-account-users"]',
+  moreRoles: '[data-content-action="load-more-account-users"]',
   logout: "#logout-button-account"
 });
 
@@ -81,6 +82,7 @@ export function renderAccountIdentity(root, user) {
 export function renderAccountRoles(root, {
   users = [],
   loadState = "idle",
+  nextCursor = "",
   currentUserId = "",
   statusMessage = ""
 } = {}) {
@@ -102,7 +104,7 @@ export function renderAccountRoles(root, {
     });
   } else {
     list.innerHTML = users.length
-      ? users.map(user => `<article class="account-role-row" data-account-user="${escapeMarkup(user.id)}"><div><strong>${escapeMarkup(user.username)}</strong><small>${user.id === currentUserId ? "当前账户 · " : ""}${user.role === "owner" ? "Owner" : "普通用户"}</small></div><select data-account-role="${escapeMarkup(user.id)}" aria-label="${escapeMarkup(`${user.username} 的角色`)}"><option value="user" ${user.role === "user" ? "selected" : ""}>普通用户</option><option value="owner" ${user.role === "owner" ? "selected" : ""}>Owner</option></select><button class="quiet-button" type="button" data-account-role-save="${escapeMarkup(user.id)}">保存</button></article>`).join("")
+      ? `${users.map(user => `<article class="account-role-row" data-account-user="${escapeMarkup(user.id)}"><div><strong>${escapeMarkup(user.username)}</strong><small>${user.id === currentUserId ? "当前账户 · " : ""}${user.role === "owner" ? "Owner" : "普通用户"}</small></div><select data-account-role="${escapeMarkup(user.id)}" aria-label="${escapeMarkup(`${user.username} 的角色`)}"><option value="user" ${user.role === "user" ? "selected" : ""}>普通用户</option><option value="owner" ${user.role === "owner" ? "selected" : ""}>Owner</option></select><button class="quiet-button" type="button" data-account-role-save="${escapeMarkup(user.id)}">保存</button></article>`).join("")}${nextCursor ? `<button class="quiet-button content-state-action" type="button" data-content-action="load-more-account-users" ${loadState === "loading-more" ? "disabled" : ""}>${loadState === "loading-more" ? "正在读取…" : "加载更多"}</button>` : ""}`
       : contentState({
         title: "还没有可管理的账户",
         body: "新账户注册后会显示在这里。"

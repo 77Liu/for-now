@@ -60,6 +60,11 @@ export async function createRuntimeFoundation({
       || "development"
   );
   const appConfig = loadAppConfig({ rootDir });
+  if (!appConfig.authRequired && !appConfig.localTestMode) {
+    throw new Error(
+      "AUTH_REQUIRED=0 no longer starts a business application; use authenticated isolated PostgreSQL or LOCAL_TEST_MODE"
+    );
+  }
   installPromptCatalog(await loadPromptCatalog({
     rootDir,
     requestedVersion: appConfig.promptCatalogVersion,
@@ -446,9 +451,25 @@ export async function createRuntimeFoundation({
         const context = { ...(requestStorage.getStore() || {}) };
         setImmediate(() => requestStorage.run(context, callback));
       }),
-      listAccountIds: async () => authRequired
-        ? (await accountAccess.readAuth()).users.filter(user => !accountRuntime.enabled || accountRuntime.state(user.id)?.status === "ready").map(user => user.id)
-        : ["local"],
+      listAccountIds: async () => {
+        if (!authRequired) return ["local"];
+        const ids = [];
+        let after = null;
+        do {
+          const page = await accountAccess.authService.scanUsersPage({
+            limit: 100,
+            after
+          });
+          ids.push(...page.users
+            .filter(user => (
+              !accountRuntime.enabled
+              || accountRuntime.state(user.id)?.status === "ready"
+            ))
+            .map(user => user.id));
+          after = page.next;
+        } while (after);
+        return ids;
+      },
       runWithAccount: (accountId, operation) => {
         accountRuntime.assertReady(accountId);
         const user = { id: accountId };

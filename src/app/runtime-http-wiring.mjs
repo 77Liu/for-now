@@ -205,8 +205,19 @@ export function createRuntimeHttpWiring({
     sendJson,
     bodyJson,
     userDataDir,
-    readAuth
+    authService
   } = access;
+  const readUsers = async () => {
+    if (!appConfig.authRequired) return [{ id: "local" }];
+    const users = [];
+    let after = null;
+    do {
+      const page = await authService.scanUsersPage({ limit: 100, after });
+      users.push(...page.users);
+      after = page.next;
+    } while (after);
+    return users;
+  };
   const platformHttp = createRuntimePlatformHttp({
     appConfig,
     httpLimits,
@@ -328,9 +339,7 @@ export function createRuntimeHttpWiring({
       || (parts.hour === "18" && parts.minute === "05");
     if (!due) return { skipped: "outside-slot" };
     return runRecordCompressionSlot(slotKey, () => observeRecordCompressionScan(async () => {
-      const users = appConfig.authRequired
-        ? (await readAuth()).users
-        : [{ id: "local" }];
+      const users = await readUsers();
       const eligibleUsers = (Array.isArray(users) ? users : []).filter(user => !accountRuntime?.enabled || accountRuntime.state(user.id)?.status === "ready");
       const globalDay = `${parts.year}-${parts.month}-${parts.day}`;
       const compressionBudgetState = typeof readRecordCompressionBudget === "function"
@@ -590,9 +599,7 @@ export function createRuntimeHttpWiring({
   });
 
   async function runPeriodicAnalyses() {
-    const users = appConfig.authRequired
-      ? (await readAuth()).users
-      : [{ id: "local" }];
+    const users = await readUsers();
     for (const user of users) {
       if (accountRuntime?.enabled && accountRuntime.state(user.id)?.status !== "ready") continue;
       const run = async () => { await ensureAuditLogs(); await maybeRunPeriodicAnalysis(); };

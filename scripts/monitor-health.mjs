@@ -372,7 +372,9 @@ async function postgresUsageDocuments(connectionString, { databaseEnabled, day }
   await client.connect();
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    const users = (await client.query("SELECT id FROM for_now_auth.users ORDER BY position")).rows;
+    const users = (await client.query(
+      "SELECT id FROM for_now_auth.users ORDER BY created_at, id"
+    )).rows;
     const accountIds = users.length ? users.map(user => user.id) : ["local"];
     const entries = [];
     for (const accountId of accountIds) {

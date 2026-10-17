@@ -430,6 +430,24 @@ TC-01 至 TC-12 必须通过；`auth_full_document_fallback_total=0`、无认证
 
 ## 4.1 开发明细（必填；评审时留空，开发结束后填写）
 
+实现日期：2026-10-18。实现基线：阶段 1 提交 `1bf34d` 之后的阶段 2 本地候选；尚未形成阶段提交、未部署、未启用生产 row 模式。
+
+|实现项|代码落点与结果|验证证据|
+|---|---|---|
+|RC-02 身份端口|`auth-repository.mjs` 提供 document/row 同一显式端口；service 不再消费模糊 `read/update`，row 错误无文档或 JSON fallback|认证并发、角色与账户生命周期专项通过|
+|精准 SQL 与短事务|新增 `postgres-auth.mts`；用户名、token、userId、首 Owner、count 和 keyset page 均为目标查询；普通 token 与列表不投影密码 hash；登录与改密复验完整凭据身份|PostgreSQL 16.14 全链通过；`F1_AUTH_ROW_METRICS={"scale":100000,"tracedStatements":4,"pageRows":200}`，username/token 执行计划使用索引|
+|认证 schema|migration registry 新增 `auth-row-v1`；提升 role、sessionVersion、时区和时间列，users/sessions position 改为 nullable 并清空在线值|schema repeat、旧 bundle 导入/导出、独立库恢复及 position 空值断言通过|
+|命令与审计|注册、签发、角色、改名、时区、改密和退出只写目标行；角色命令串行保护最后 Owner；改密更新一行并删除目标用户全部 session；审计由提交事件携带目标行|锁外 KDF、凭据竞争、提交失败、全会话撤销及原子注册回滚通过|
+|账户分页与消费者|HTTP 支持默认 50、最大 100 的 opaque cursor；账户页提供“加载更多”；启动恢复、周期任务、附件扫描、平台快照和共享 Owner 配置均改为精准或有界分批读取|前端账户设置专项、服务生命周期、平台快照和 10 万账户双页无重复断言通过|
+|运行边界|普通业务应用拒绝 `AUTH_REQUIRED=0`；`LOCAL_TEST_MODE` 显式固定 document/隔离 JSON；README 与 `启动.command` 同步新入口|普通无认证启动拒绝、local-test 全专项、主回归通过|
+|隔离评估工具|新增 `restore:auth-evaluation`：默认 dry-run，要求脱敏 manifest、账户上限、零生产 session、回环 PG 和 env-only 测试凭据|评估快照 manifest、边界、session 剥离、目标映射与源 hash 专项通过|
+
+验证限制：
+
+- `AUTH_QUERY_MODE` 仍默认 `document`，本轮证明 row 制品和隔离 PostgreSQL 行为，不代表生产已放量。
+- 未执行生产 PostgreSQL 延迟、共享 NAT 压力、移动端或生产观察；固定毫秒目标继续保留为发布阶段 partial。
+- Volcengine 服务专项在当前 macOS 被既有 `sharp` 原生模块 Team ID 签名错误阻断，未改写为通过；该失败发生在业务断言前，与认证 SQL 结论分开保留。
+
 ## 4.2 测试方案（必填）
 
 |用例编号 / 对应需求|环境与前置条件|输入 / 操作 / 故障注入|预期输出 / 持久化 / 用户行为|监控与通过标准|

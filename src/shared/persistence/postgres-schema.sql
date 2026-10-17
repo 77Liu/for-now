@@ -355,6 +355,84 @@ CREATE TABLE IF NOT EXISTS for_now_auth.sessions (
   payload jsonb NOT NULL
 );
 CREATE INDEX IF NOT EXISTS auth_sessions_user_idx ON for_now_auth.sessions(user_id);
+
+-- migration:auth-row-v1
+ALTER TABLE for_now_auth.users ADD COLUMN IF NOT EXISTS role text;
+ALTER TABLE for_now_auth.users ADD COLUMN IF NOT EXISTS session_version integer;
+ALTER TABLE for_now_auth.users ADD COLUMN IF NOT EXISTS record_timezone text;
+ALTER TABLE for_now_auth.users ADD COLUMN IF NOT EXISTS created_at timestamptz;
+ALTER TABLE for_now_auth.users ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+UPDATE for_now_auth.users
+SET role = CASE
+      WHEN payload->>'role' IN ('user', 'owner') THEN payload->>'role'
+      WHEN position = 0 THEN 'owner'
+      ELSE 'user'
+    END,
+    session_version = CASE
+      WHEN payload->>'sessionVersion' ~ '^[1-9][0-9]*$'
+        THEN (payload->>'sessionVersion')::integer
+      ELSE 1
+    END,
+    record_timezone = COALESCE(NULLIF(payload->>'recordTimezone', ''), 'Asia/Shanghai'),
+    created_at = COALESCE(NULLIF(payload->>'createdAt', '')::timestamptz, to_timestamp(0)),
+    updated_at = NULLIF(payload->>'updatedAt', '')::timestamptz
+WHERE role IS NULL
+   OR session_version IS NULL
+   OR record_timezone IS NULL
+   OR created_at IS NULL;
+ALTER TABLE for_now_auth.users ALTER COLUMN role SET NOT NULL;
+ALTER TABLE for_now_auth.users ALTER COLUMN session_version SET NOT NULL;
+ALTER TABLE for_now_auth.users ALTER COLUMN record_timezone SET NOT NULL;
+ALTER TABLE for_now_auth.users ALTER COLUMN created_at SET NOT NULL;
+ALTER TABLE for_now_auth.users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE for_now_auth.users
+  ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'owner'));
+ALTER TABLE for_now_auth.users DROP CONSTRAINT IF EXISTS users_session_version_check;
+ALTER TABLE for_now_auth.users
+  ADD CONSTRAINT users_session_version_check CHECK (session_version > 0);
+
+ALTER TABLE for_now_auth.sessions ADD COLUMN IF NOT EXISTS session_version integer;
+ALTER TABLE for_now_auth.sessions ADD COLUMN IF NOT EXISTS created_at timestamptz;
+ALTER TABLE for_now_auth.sessions ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+UPDATE for_now_auth.sessions session
+SET session_version = COALESCE(
+      CASE
+        WHEN session.payload->>'sessionVersion' ~ '^[1-9][0-9]*$'
+          THEN (session.payload->>'sessionVersion')::integer
+        ELSE NULL
+      END,
+      users.session_version
+    ),
+    created_at = COALESCE(NULLIF(session.payload->>'createdAt', '')::timestamptz, to_timestamp(0)),
+    expires_at = NULLIF(session.payload->>'expiresAt', '')::timestamptz
+FROM for_now_auth.users users
+WHERE users.id = session.user_id
+  AND (
+    session.session_version IS NULL
+    OR session.created_at IS NULL
+    OR session.expires_at IS NULL
+  );
+ALTER TABLE for_now_auth.sessions ALTER COLUMN session_version SET NOT NULL;
+ALTER TABLE for_now_auth.sessions ALTER COLUMN created_at SET NOT NULL;
+ALTER TABLE for_now_auth.sessions ALTER COLUMN expires_at SET NOT NULL;
+ALTER TABLE for_now_auth.sessions DROP CONSTRAINT IF EXISTS sessions_session_version_check;
+ALTER TABLE for_now_auth.sessions
+  ADD CONSTRAINT sessions_session_version_check CHECK (session_version > 0);
+
+ALTER TABLE for_now_auth.users DROP CONSTRAINT IF EXISTS users_position_key;
+ALTER TABLE for_now_auth.users ALTER COLUMN position DROP NOT NULL;
+ALTER TABLE for_now_auth.sessions DROP CONSTRAINT IF EXISTS sessions_position_key;
+ALTER TABLE for_now_auth.sessions ALTER COLUMN position DROP NOT NULL;
+UPDATE for_now_auth.users SET position = NULL WHERE position IS NOT NULL;
+UPDATE for_now_auth.sessions SET position = NULL WHERE position IS NOT NULL;
+CREATE INDEX IF NOT EXISTS auth_users_page_idx
+  ON for_now_auth.users(created_at, id);
+CREATE INDEX IF NOT EXISTS auth_users_role_page_idx
+  ON for_now_auth.users(role, created_at, id);
+CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx
+  ON for_now_auth.sessions(expires_at, token_hash);
+CREATE INDEX IF NOT EXISTS auth_sessions_user_created_idx
+  ON for_now_auth.sessions(user_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS for_now_auth.migration_state (
   id text PRIMARY KEY CHECK (id = 'bundle'),
   source_sha256 text NOT NULL,

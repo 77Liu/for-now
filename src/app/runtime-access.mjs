@@ -199,7 +199,7 @@ export async function createRuntimeAccess({
     proxyToUpstream
   });
 
-  let readAuth;
+  let readAuth, scanAuthUsers;
   const adminHttp = createAdminHttp({
     serviceTokenHash: appConfig.platform.serviceTokenHash,
     buildSnapshot: buildAdminSnapshot,
@@ -216,7 +216,8 @@ export async function createRuntimeAccess({
       }),
       backupStatusFile: appConfig.platform.backupStatusFile,
       dailyCallLimit: appConfig.limits.aiDailyCalls,
-      readAuthData: postgresRuntime ? () => readAuth() : null,
+      readAuthData: null,
+      readAuthPage: postgresRuntime ? query => scanAuthUsers(query) : null,
       readAccountData: postgresRuntime
         ? account => requestStorage.run({
             ...(requestStorage.getStore() || {}),
@@ -247,35 +248,23 @@ export async function createRuntimeAccess({
     sendJson
   });
 
-  const auditAuthChanges = async (before, after) => {
-    // 认证事务已提交；角色/会话撤销只唤醒重新鉴权，不把提示当作权限事实。
-    const revoked = new Set();
-    for (const user of before?.users || []) {
-      const next = (after?.users || []).find(item => item.id === user.id);
-      if (!next || next.role !== user.role || next.sessionVersion !== user.sessionVersion) revoked.add(user.id);
+  const auditAuthChange = async event => {
+    // 提交事件直接携带目标行；提示失败不回滚或重判数据库权限事实。
+    for (const id of event.revokedUserIds || (
+      event.type === "session-deleted" ? [event.userId] : []
+    )) {
+      try { syncNotifier?.invalidateAccount(id); } catch {}
     }
-    const sessions = new Set((after?.sessions || []).map(session => session.tokenHash));
-    for (const session of before?.sessions || []) if (!sessions.has(session.tokenHash)) revoked.add(session.userId);
-    for (const id of revoked) { try { syncNotifier?.invalidateAccount(id); } catch {} }
-
-    if (accountRuntime?.enabled) {
-      const prior = new Set((before?.users || []).map(user => user.id));
-      for (const user of after?.users || []) if (!prior.has(user.id)) await accountLifecycle.registerCommittedUser(user);
+    if (event.type === "registered" && accountRuntime?.enabled) {
+      await accountLifecycle.registerCommittedUser(event.user);
     }
+    const before = event.beforeUser ? { users: [event.beforeUser] } : { users: [] };
+    const afterUser = event.afterUser
+      || (event.type === "registered" ? event.user : null);
+    const after = afterUser ? { users: [afterUser] } : { users: [] };
+    if (!event.beforeUser && !afterUser) return;
     const current = requestStorage.getStore() || {};
-    let actor = current.user || null;
-    if (!actor) {
-      const priorUsers = new Set((before?.users || []).map(user => user.id));
-      actor = (after?.users || []).find(user => !priorUsers.has(user.id)) || null;
-    }
-    if (!actor) {
-      const priorSessions = new Set(
-        (before?.sessions || []).map(session => session.tokenHash)
-      );
-      const session = (after?.sessions || [])
-        .find(item => !priorSessions.has(item.tokenHash));
-      actor = (after?.users || []).find(user => user.id === session?.userId) || null;
-    }
+    const actor = current.user || afterUser;
     if (!actor) return auditChanges(before, after);
     return requestStorage.run(
       { ...current, user: actor, dataDir: userDataDir(actor) },
@@ -284,10 +273,12 @@ export async function createRuntimeAccess({
   };
   const authRepository = createAuthRepository({
     runtime: postgresRuntime,
+    queryMode: appConfig.auth.queryMode,
+    normalizeDocument: normalizeAuthDocument,
     file: authFile,
     readDocument: readStoredJson,
     writeDocument: writeJsonAtomic,
-    onCommit: auditAuthChanges,
+    onCommitted: auditAuthChange,
     // 旧根目录数据仍允许首个Owner导入；已有账户目录则不能证明是全新实例。
     canInitialize: async () => {
       try { return (await fs.readdir(usersDir)).length === 0; }
@@ -300,7 +291,7 @@ export async function createRuntimeAccess({
       });
     }
   });
-  readAuth = () => authRepository.read();
+  readAuth = () => authRepository.readDocument();
   const authService = createAuthService({
     repository: authRepository,
     authAdmission: appConfig.authAdmission,
@@ -308,7 +299,18 @@ export async function createRuntimeAccess({
     inviteCodeHash,
     initializeUserStorage
   });
+  scanAuthUsers = query => authService.scanUsersPage(query);
   const probeAuth = async () => {
+    if (authRepository.mode === "row") {
+      const result = await authService.verify();
+      if (!result?.valid) {
+        throw Object.assign(
+          new Error("认证持久化数据无效，原数据已保留"),
+          { code: "AUTH_STORAGE_INVALID" }
+        );
+      }
+      return result;
+    }
     const raw = await readAuth();
     const invalid = () => { throw Object.assign(new Error("认证持久化数据无效，原文件已保留"), { code: "AUTH_STORAGE_INVALID" }); };
     mapAuthDocument(normalizeAuthDocument(raw));
@@ -341,7 +343,7 @@ export async function createRuntimeAccess({
     const context = requestStorage.getStore() || {};
     const userSettings = await readLlmSettings();
     if (!authRequired || isOwner(context.user)) return userSettings;
-    const owner = (await readAuth()).users.find(isOwner);
+    const owner = await authService.findFirstOwner();
     if (!owner) return userSettings;
     const ownerSettings = await aiRuntime.readSharedSettings({ accountId: owner.id, file: path.join(userDataDir(owner), "llm-settings.json") });
     return normalizeLlmSettings({
@@ -364,8 +366,8 @@ export async function createRuntimeAccess({
     localTestHttp,
     proxyToUpstream,
     adminHttp,
-    readAuth,
     probeAuth,
+    authService,
     requestAuthentication,
     authApi
   };

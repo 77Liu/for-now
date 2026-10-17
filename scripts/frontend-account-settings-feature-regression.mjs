@@ -585,6 +585,7 @@ function createSettingsHarness(overrides = {}) {
   const authCalls = [];
   const resets = [];
   const toasts = [];
+  const listCalls = [];
   let logouts = 0;
   const controller = createAccountFeatureController({
     auth: {
@@ -602,12 +603,21 @@ function createSettingsHarness(overrides = {}) {
       reset: message => resets.push(message),
       logout: () => { logouts += 1; }
     },
-    request: async () => ({
-      users: [
-        { id: "owner-a", username: "Owner A", role: "owner" },
-        { id: "user-b", username: "User B", role: "user" }
-      ]
-    }),
+    request: async path => {
+      listCalls.push(path);
+      return path.includes("cursor=next-page")
+        ? {
+            users: [{ id: "user-c", username: "User C", role: "user" }],
+            nextCursor: null
+          }
+        : {
+            users: [
+              { id: "owner-a", username: "Owner A", role: "owner" },
+              { id: "user-b", username: "User B", role: "user" }
+            ],
+            nextCursor: "next-page"
+          };
+    },
     currentUser: { get: () => user, set: next => { user = next; } },
     hasCapability: capability => capability === "account-roles",
     showToast: message => toasts.push(message),
@@ -616,6 +626,17 @@ function createSettingsHarness(overrides = {}) {
   const fixture = createAccountRoot();
   controller.mount({ root: fixture.root });
   await waitFor(() => /User B/.test(fixture.roleList.innerHTML), "owner role list did not load");
+  assert.equal(listCalls[0], "/api/auth/users?limit=50");
+  assert.match(fixture.roleList.innerHTML, /加载更多/);
+  const moreButton = element({
+    tagName: "BUTTON",
+    dataset: { contentAction: "load-more-account-users" }
+  });
+  moreButton.root = fixture.root;
+  fixture.root.dispatch("click", moreButton);
+  await waitFor(() => /User C/.test(fixture.roleList.innerHTML), "next account page did not load");
+  assert.match(listCalls[1], /cursor=next-page/);
+  assert.doesNotMatch(fixture.roleList.innerHTML, /加载更多/);
 
   fixture.username.value = "Owner 新名";
   fixture.root.dispatch("submit", fixture.usernameForm);

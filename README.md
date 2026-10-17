@@ -4,7 +4,7 @@
 
 ## 启动
 
-Node.js 20+；首次 `npm ci`，随后运行 `./启动.command`，默认本地入口为 <http://127.0.0.1:4173/>。隔离功能验收使用 `npm run start:local-test`，具体地址以启动输出为准。
+Node.js 20+；首次运行 `npm ci`。账户模式需配置 `AUTH_REQUIRED=1`、内测码摘要和对应持久化环境后运行 `./启动.command`，默认入口为 <http://127.0.0.1:4173/>。隔离功能验收使用 `npm run start:local-test`，具体地址以启动输出为准；普通无认证业务模式已退役。
 
 生产入口：<https://77liu.top/now/>。部署与恢复操作见 `deploy/README.md`；这里不保存生产版本副本。
 

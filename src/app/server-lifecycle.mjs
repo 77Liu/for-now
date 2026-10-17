@@ -12,7 +12,9 @@ export function createServerLifecycle({
   accountRuntime = null,
   probeDependencies = async () => {},
   localTestRuntime,
-  readAuth,
+  readAuth = null,
+  scanUsersPage = null,
+  verifyAuth = null,
   runPeriodicAnalyses,
   runRecordCompressionScheduler,
   runSpeechCacheSweep,
@@ -30,6 +32,18 @@ export function createServerLifecycle({
   let startedSuccessfully = false;
   let fatalExitStarted = false;
   let removeGlobalFailureListener = () => {};
+  const readUserPage = scanUsersPage || (async ({ limit, after }) => {
+    const users = (await readAuth()).users || [];
+    const start = after ? users.findIndex(user => user.id === after.id) + 1 : 0;
+    const selected = users.slice(start, start + limit);
+    const more = start + selected.length < users.length;
+    const tail = more ? selected.at(-1) : null;
+    return {
+      users: selected,
+      next: tail ? { createdAt: String(tail.createdAt || ""), id: tail.id } : null
+    };
+  });
+  const verifyIdentity = verifyAuth || readAuth || (async () => ({ valid: true }));
 
   const schedule = (callback, delay, repeat = false) => {
     const timer = repeat
@@ -47,7 +61,7 @@ export function createServerLifecycle({
     if (accountRuntime?.enabled) {
       schedule(() => void (async () => {
         await probeDependencies();
-        await readAuth();
+        await verifyIdentity();
       })().catch(error => { accountRuntime.failGlobal(error); periodicFailure(error); }), appConfig.accountRecovery.dependencyProbeMs, true);
     }
     if (!appConfig.localTestMode && appConfig.periodicAnalysisEnabled) {
@@ -162,7 +176,7 @@ export function createServerLifecycle({
       if (!accountRuntime?.enabled) {
       await accountLifecycle.recoverAtStartup({
         localTestRuntime,
-        readUsers: async () => (await readAuth()).users
+        readUsersPage: readUserPage
       });
       }
       installSignalHandlers();
@@ -183,7 +197,7 @@ export function createServerLifecycle({
       if (accountRuntime?.enabled) {
       await accountLifecycle.recoverAtStartup({
         localTestRuntime,
-        readUsers: async () => (await readAuth()).users
+        readUsersPage: readUserPage
       });
       }
       if (accountRuntime?.enabled && !accountRuntime.health().dependenciesHealthy) throw Object.assign(new Error("共享依赖在启动期间失效"), { code: "ACCOUNT_DEPENDENCIES_UNAVAILABLE" });

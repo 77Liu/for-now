@@ -25,6 +25,7 @@ export function createHttpApplication({
   accountRuntime = null,
   accountLifecycle = null,
   readAuth = null,
+  findAuthUserById = null,
   bodyJson = null,
   logEvent,
   sendJson,
@@ -167,7 +168,9 @@ export function createHttpApplication({
         if (recoveryRoute[2] && req.method === "POST") {
           const input = await bodyJson(req);
           if (typeof input?.bootId !== "string" || !Number.isSafeInteger(input.expectedEpoch)) return sendRequestError(400, "恢复请求参数无效", "ACCOUNT_RECOVERY_INPUT_INVALID");
-          const target = (await readAuth()).users.find(item => item.id === id);
+          const target = findAuthUserById
+            ? await findAuthUserById(id)
+            : (await readAuth()).users.find(item => item.id === id);
           if (!target) return sendRequestError(404, "账户不存在", "ACCOUNT_RUNTIME_NOT_FOUND");
           const result = accountLifecycle.retryUser(target, input);
           return apiV1.success(res, 202, { attemptId: result.attemptId, epoch: result.epoch, status: result.status });

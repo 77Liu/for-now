@@ -8,6 +8,7 @@ import {
   normalizeAuthDocument,
   publicUser
 } from "../src/modules/auth/index.mjs";
+import { createDocumentAuthPort } from "../src/shared/persistence/index.mjs";
 
 const passwordHash = password => {
   const salt = Buffer.alloc(16, 11);
@@ -70,7 +71,10 @@ const repository = memoryRepository({
   ]
 });
 const service = createAuthService({
-  repository,
+  repository: createDocumentAuthPort({
+    source: repository,
+    normalizeDocument: normalizeAuthDocument
+  }),
   initializeUserStorage: async () => {},
   authRequired: true,
   inviteCodeHash: crypto.createHash("sha256").update("invite").digest("hex")
@@ -127,7 +131,10 @@ assert.equal((await service.authenticate(legacyOwnerToken)).user.role, "owner");
 
 const emptyRepository = memoryRepository({ version: 1, users: [], sessions: [] });
 const emptyService = createAuthService({
-  repository: emptyRepository,
+  repository: createDocumentAuthPort({
+    source: emptyRepository,
+    normalizeDocument: normalizeAuthDocument
+  }),
   initializeUserStorage: async () => {},
   authRequired: true,
   inviteCodeHash: crypto.createHash("sha256").update("invite").digest("hex")

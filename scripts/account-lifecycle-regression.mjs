@@ -6,7 +6,11 @@ import os from "node:os";
 import path from "node:path";
 import { createAccountLifecycle } from "../src/app/index.mjs";
 import { createAccountRuntimeState } from "../.build/typescript/backend/app/account-runtime-state.mjs";
-import { createAuthService } from "../src/modules/auth/index.mjs";
+import {
+  createAuthService,
+  normalizeAuthDocument
+} from "../src/modules/auth/index.mjs";
+import { createDocumentAuthPort } from "../src/shared/persistence/index.mjs";
 
 const RECOVERY_ORDER = [
   "store",
@@ -286,14 +290,17 @@ function harness({
     authRequired: true,
     inviteCodeHash: crypto.createHash("sha256").update(invitation).digest("hex"),
     initializeUserStorage: registration.lifecycle.initializeUserStorage,
-    repository: {
+    repository: createDocumentAuthPort({
+      normalizeDocument: normalizeAuthDocument,
+      source: {
       read: async () => ({ version: 1, users: [], sessions: [] }),
       update: async mutator => {
         const auth = { version: 1, users: [], sessions: [] };
         await mutator(auth);
         throw Object.assign(new Error("auth write failed"), { code: "WRITE_FAILED" });
       }
-    }
+      }
+    })
   });
   await assert.rejects(
     service.register({
@@ -315,7 +322,9 @@ function harness({
     authRequired: true,
     inviteCodeHash: crypto.createHash("sha256").update(invitation).digest("hex"),
     initializeUserStorage: registration.lifecycle.initializeUserStorage,
-    repository: {
+    repository: createDocumentAuthPort({
+      normalizeDocument: normalizeAuthDocument,
+      source: {
       read: async () => structuredClone(persisted),
       update: async mutator => {
         const auth = structuredClone(persisted);
@@ -323,7 +332,8 @@ function harness({
         persisted = structuredClone(auth);
         throw Object.assign(new Error("post-commit audit failed"), { code: "AUDIT_FAILED" });
       }
-    }
+      }
+    })
   });
   await assert.rejects(
     service.register({

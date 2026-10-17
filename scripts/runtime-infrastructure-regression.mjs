@@ -27,6 +27,11 @@ assert.equal(defaults.port, 4173);
 assert.equal(defaults.version, "development");
 assert.equal(defaults.promptCatalogVersion, "");
 assert.equal(defaults.persistenceBackend, "json");
+assert.deepEqual(defaults.auth, { queryMode: "document", required: false });
+assert.equal(config({
+  PERSISTENCE_BACKEND: "postgres",
+  AUTH_QUERY_MODE: "row"
+}).auth.queryMode, "row");
 assert.equal(defaults.aiQueue.enabled, false);
 assert.ok(Object.isFrozen(defaults.aiQueue));
 assert.throws(() => config({ AI_QUEUE_ENABLED: "1", AI_QUEUE_MAX_OUTSTANDING: "1", AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT: "2" }), /must not exceed/);
@@ -184,8 +189,11 @@ assert.equal(config({
 }).speechCacheSweepEnabled, false);
 for (const env of [
   { AUTH_REQUIRED: "1" }, { PERSISTENCE_BACKEND: "invalid" },
+  { AUTH_QUERY_MODE: "invalid" },
+  { AUTH_QUERY_MODE: "row" },
   { LOCAL_TEST_MODE: "1", NODE_ENV: "production" },
   { LOCAL_TEST_MODE: "1", INVITE_CODE_HASH: "a".repeat(64) },
+  { LOCAL_TEST_MODE: "1", AUTH_QUERY_MODE: "row" },
   { LOCAL_TEST_MODE: "1", ATTACHMENT_STORAGE: "oss" },
   { PERSISTENCE_BACKEND: "postgres", LOCAL_TEST_MODE: "1" },
   { PERSISTENCE_BACKEND: "postgres", UPSTREAM_ORIGIN: "http://localhost" }

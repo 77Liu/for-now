@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 424,
-  "updated_at": "2026-10-17T18:51:27.601Z",
+  "revision": 430,
+  "updated_at": "2026-10-17T22:03:00.931Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段 1/11：AI 请求原子行审计出口通过，准备本地提交"
+    "phase": "阶段 2/11：新 F1 认证精准查询出口通过，准备本地提交"
   },
   "scope": {
     "description": "v0.5.16 共 11 项有效需求，严格串行：AI 原子审计 → 新 F1 → F2 → F5 → 新 F3 → 新 F4 → F7 → F6 → F8 → AI 推理可见性 → 新 F9；当前仅阶段 1 可开发。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
-      "commit": "a7ea41",
-      "source": "Owner 于 2026-10-18 明确要求遵循已评审方案开始并持续开发；规则和方案基线已形成本地提交。"
+      "commit": "1bf34d",
+      "source": "阶段 1 AI 原子行审计经本地出口审查后提交；提交树 ca53f41，未夹带既有 F9 与前序 knowledge 差分。"
     },
     "inputs": [
       "docs/technical-proposals/V0516-跨需求共用底座与串行开发-技术方案.md",
@@ -56,52 +56,49 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-ai-atomic-audit",
+      "id": "v0516-auth-precise-queries",
       "owner": "主开发Agent",
       "mode": "integration",
       "branch": "feat/v0.5.16-sync-latency",
-      "baseline": "a7ea41",
+      "baseline": "1bf34d",
       "status": "REVIEWED_GO",
       "allowed_write_set": [
-        "src/modules/ai/**（审计端口、调用硬门及必要类型迁移）",
-        "src/app/ai-runtime.mjs（repository 与兼容投影装配）",
-        "src/shared/persistence/ai-audit-repository.mts",
-        "src/shared/persistence/ai-usage-repository.mts",
-        "src/shared/persistence/migrations/registry.mts",
-        "src/shared/persistence/postgres-schema.sql（本阶段 schema 唯一写者）",
-        "scripts/ai-audit-*、scripts/migrate-ai-audit.mts、scripts/migrate-ai-usage.mts（阶段专项）",
-        "package.json、相关 tsconfig（仅必要构建与测试入口）",
-        "docs/technical-proposals/reczz28ORRaxSCBn-应新规修订AI请求原子行审计-技术方案.md（仅开发明细与真实证据）",
+        "src/modules/auth/index.mjs（AccountIdentityPort 消费、锁外 KDF 与条件命令）",
+        "src/shared/persistence/auth-repository.mjs、postgres-auth.mts（document/row 适配与精准 SQL）",
+        "src/shared/persistence/postgres-runtime.mjs、postgres-documents.mjs、document-mapping.mjs、index.mjs（认证仓储装配及离线文档兼容）",
+        "src/shared/persistence/postgres-schema.sql、migrations/registry.mts（本阶段 schema 唯一写者；认证列提升与 position 退场）",
+        "src/config/index.mjs、src/app/runtime-access.mjs（AUTH_QUERY_MODE、无认证普通运行时退役与身份端口装配）",
+        "src/app/runtime-foundation.mjs、runtime-http-wiring.mjs、server-lifecycle.mjs、server-runtime.mjs、account-lifecycle.mjs（有界账户遍历与恢复消费者）",
+        "src/http/auth.mjs、src/http/application.mjs、admin-snapshot.mjs（分页、精准目标账户与平台快照有界消费）",
+        "public/frontend/features/account-settings/account-controller.mjs、presentation.mjs（Owner 账户分页消费）",
+        "scripts/restore-sanitized-evaluation-snapshot.mts、相关 tsconfig/package 入口（隔离 PG 脱敏快照恢复）",
+        "scripts/auth-*、postgres-*、document-migration-regression.mjs、runtime-infrastructure-regression.mjs、account-lifecycle-regression.mjs、server-runtime-regression.mjs、frontend-account-settings-feature-regression.mjs、monitor-health.mjs 及直接受影响专项",
+        "deploy/for-now.env.example（认证查询模式配置声明）",
+        "docs/technical-proposals/reczz28ORRaxPAap-应新规修订F1认证精准查询-技术方案.md（仅开发明细与真实证据）",
         "coordination/**（仅主控通过唯一更新入口）",
-        "src/config/index.mjs、src/app/runtime-foundation.mjs（AI_AUDIT_DB_ENABLED 装配）",
-        "src/app/content/background.mjs、src/app/user-model.mjs、src/app/perception.mjs、src/shared/ai-context/importance-runtime.mts（完整审计与实际 trigger）",
-        "src/app/record-compressions.mjs、src/modules/statistics/index.mjs、src/modules/ai/costs.mjs（有界 usage 读取消费者）",
-        "src/shared/persistence/postgres-runtime.mjs、postgres-migration.mjs、postgres-export.mjs、postgres-bundle.mjs、index.mjs（窄仓储接入、迁移登记与备份恢复）",
-        "deploy/for-now.env.example、deploy/deploy-preview.sh（新开关声明与预览边界）",
-        "scripts/*ai-audit*、scripts/ai-domain-regression.mjs、scripts/ai-provider-regression.mjs、scripts/ai-runtime-regression.mjs、scripts/observability-regression.mjs、scripts/postgres-runtime-checks.mjs、scripts/postgres-integration.mjs、scripts/persistence-regression.mjs、scripts/runtime-infrastructure-regression.mjs（阶段专项与受影响回归）",
-        "src/app/ai-task-targets.mjs、src/app/thought-workflows.mjs、src/app/capture-journal-workflows.mjs、src/app/review-chat-workflows.mjs（仅真实 triggerType 传递）",
-        "scripts/importance-scoring-regression.mts、scripts/user-model-extraction-regression.mjs、相关 workflow 回归（仅审计契约断言）",
-        "scripts/monitor-health.mjs、scripts/monitor-regression.mjs（PostgreSQL usage 小行监控消费者）",
-        "knowledge/observability.md（PostgreSQL usage 事实源、历史迁移命令与已知边界）",
-        "scripts/regression.mjs（仅 AI 审计 schema v4 端到端断言）"
+        "README.md、启动.command（普通无认证启动退场后的入口说明与明确配置门）",
+        "scripts/local-test-preview.mjs（显式固定 document 认证模式，防止 row 环境变量泄漏）",
+        "src/shared/testing/authenticated-runtime.mts（普通无认证退役后的合成账户测试夹具）"
       ],
       "forbidden_write_set": [
-        "阶段 2 至 11 的业务实现、migration 与运行时开关",
-        "工作区既有 F9 未提交源码差分，除非与阶段 1 真实冲突并先停报",
+        "阶段 3 至 11 的业务实现、migration 与运行时开关",
+        "src/http/sync.mjs、scripts/sync-coordinator-regression.mjs、public/frontend/app/runtime/home-runtime.mjs、public/frontend/app/runtime/kernel.mjs 既有未提交差分",
+        "knowledge/development-release-checklist.md、knowledge/privacy-notice.md、knowledge/prompt-architecture.md 既有未提交差分",
         ".trae/**",
         "远程 push、tag、Release、Preview、生产部署与生产业务写入"
       ],
-      "shared_file_owner": "主开发是阶段 1 AI 与 audit/usage schema 唯一写者；控制面仍由主控经唯一入口维护。",
-      "integration_order": "先 RC-01 migration 登记与 schema，再 repository，再 AI runtime dispatch hard gate 与 NDJSON 兼容投影，最后迁移/权限/回归；全部通过后才解锁新 F1。",
+      "shared_file_owner": "主开发是阶段 2 认证、schema、配置和账户分页的唯一写者；控制面仍由主控经唯一入口维护。",
+      "integration_order": "先 auth-row schema/registry 与 typed SQL，再 document/row 端口和 service，随后运行时有界消费者、HTTP/前端分页及隔离快照工具，最后专项与真实 PostgreSQL 出口门；通过前不进入 F2。",
       "contracts": [
-        "每次真实 provider attempt 使用唯一 callId 且仅一行；重试使用新 callId、同 callGroupId。",
-        "beginAttempt 提交失败时 provider 调用必须为 0；终态写失败不得触发 provider 重试。",
-        "SP、UP、history、参数、回答、reasoning、错误、usage、费用快照与 invocation contract 保存在同一审计行。",
-        "usage 账本按 callId 记录级写，并只更新有限聚合行；禁止账户 document 全读、清写或完整重写。",
-        "数据库启用后是唯一事实源；v0.5.x NDJSON 仅在对应 DB 成功后 best effort 投影，失败不改变 dispatch 或数据库事实。",
-        "新增或实质修改函数遵循少于 100 行软目标；抽象与防御必须对应实际使用方或已知失败边界。"
+        "普通认证按 username_key、token_hash 或 user id 精准查询；PG 错误不得回退完整认证文档或 JSON。",
+        "KDF 与失败延时在事务外；签发和改密在短事务内复验完整凭据身份。",
+        "改密只更新目标用户并删除该用户全部会话；角色变化保持最后 Owner 与会话世代语义。",
+        "Owner 列表默认 50、最大 100，按 created_at/id keyset 分页；后台账户遍历也必须有界分批。",
+        "普通 AUTH_REQUIRED=0 业务运行时拒绝启动；LOCAL_TEST_MODE 保持非生产、上游认证和 JSON 隔离边界。",
+        "users/sessions 在线写不维护连续 position；旧文档导出在边界按稳定键临时投影连续顺序。",
+        "新增或实质修改函数遵循少于 100 行软目标；防御与抽象必须对应实际消费者或已知失败。"
       ],
-      "result": "AI 原子行审计、记录级 usage、v0.5.x DB 后兼容投影、历史迁移、监控及备份恢复已实现并完成本地出口验证；允许形成阶段 1 本地提交，不代表发布 GO。"
+      "result": "F1 精准认证查询、目标行命令、认证 position 退场、Owner 分页、普通无认证模式退役和隔离快照恢复已实现；PostgreSQL 16.14、10 万账户索引/分页、主回归、工程门、部署与受影响专项通过，允许形成阶段 2 本地提交，不代表发布 GO。"
     }
   ],
   "candidate": null,
@@ -135,7 +132,7 @@
     }
   },
   "blockers": [],
-  "next_action": "仅提交阶段 1 已审写集并核对提交树；提交成功后通过唯一入口登记实际 commit、关闭阶段 1 并激活阶段 2 新 F1。",
+  "next_action": "仅暂存并提交阶段 2 已审写集，排除既有 F9、knowledge 与 .trae 差分；核对提交树后通过唯一入口登记实际 commit、关闭阶段 2 并进入阶段 3 F2 只读准备。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -568,9 +565,11 @@
         "kind": "source_manifest",
         "branch": "feat/v0.5.16-sync-latency",
         "baseline": "a7ea41",
-        "requirement_id": "reczz28ORRaxSCBn"
+        "requirement_id": "reczz28ORRaxSCBn",
+        "commit": "1bf34d",
+        "tree": "ca53f4"
       },
-      "conclusion": "TC-01 至 TC-14 的本地实现证据闭合：begin 失败 provider=0、真实尝试单行、完整 invocation contract、usage 记录级写、兼容投影顺序、脱敏幂等迁移、RLS、监控与独立库恢复通过；PostgreSQL 16.14 全门和项目总回归通过。",
+      "conclusion": "阶段 1 经主控独立审查与全部出口门通过后形成提交 1bf34d3（tree ca53f41）；AI 原子行审计、记录级 usage、迁移、RLS、监控及独立库恢复已接入当前分支，允许进入阶段 2 只读准备。",
       "limitations": [
         "AI_AUDIT_DB_ENABLED 默认仍为0；未部署、未写生产、未执行真实付费 provider 调用。",
         "本结论是阶段研发出口 GO，不是版本发布 GO；v0.5.x NDJSON 兼容保留至 v0.6.0 正式上线。",
@@ -584,6 +583,35 @@
         "npm test",
         "npm run test:deploy",
         "npm run test:deploy:preview"
+      ]
+    },
+    {
+      "id": "v0516-stage2-auth-precise-verification",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-sync-latency",
+        "baseline": "1bf34d",
+        "requirement_id": "reczz28ORRaxPAap"
+      },
+      "conclusion": "TC-01 至 TC-12 的本地实现证据闭合：row 模式只按 username/token/userId 或有界 keyset 页查询，普通鉴权和列表不投影密码 hash；KDF 锁外、完整凭据复验、目标改密与全会话撤销、10 万账户索引计划、position 空值及旧导出 round-trip、无认证启动拒绝、LOCAL_TEST_MODE 与隔离快照恢复均通过。",
+      "limitations": [
+        "AUTH_QUERY_MODE 默认仍为 document；未部署、未生产放量或写入生产。",
+        "生产同规格 PostgreSQL 延迟、共享 NAT、移动端与正式观察未执行，性能结论仅限本机隔离 PostgreSQL 16.14。",
+        "Volcengine 服务专项被当前 macOS sharp 原生模块 Team ID 签名错误阻断于业务断言前；不影响本地替身认证/PG结论，也未改写为通过。"
+      ],
+      "refs": [
+        "docs/technical-proposals/reczz28ORRaxPAap-应新规修订F1认证精准查询-技术方案.md#41-开发明细必填评审时留空开发结束后填写",
+        "npm run test:postgres:stable",
+        "npm test",
+        "npm run check",
+        "npm run test:deploy",
+        "npm run test:deploy:preview",
+        "npm run test:observability",
+        "npm run test:boundaries",
+        "npm run test:url-history",
+        "npm run test:server-runtime",
+        "npm run test:local-mode",
+        "npm run test:auth-evaluation"
       ]
     }
   ],

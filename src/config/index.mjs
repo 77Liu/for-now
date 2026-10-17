@@ -95,6 +95,18 @@ export function loadAuthAdmissionConfig(env = process.env) {
   })));
 }
 
+/**
+ * Parses the authentication storage mode without enabling request-level fallback.
+ * @since unreleased
+ */
+export function loadAuthStorageConfig(env = process.env) {
+  const queryMode = String(env.AUTH_QUERY_MODE || "document").trim();
+  if (!["document", "row"].includes(queryMode)) {
+    throw new Error("AUTH_QUERY_MODE must be document or row");
+  }
+  return Object.freeze({ queryMode });
+}
+
 /** 解析启动时账户恢复参数；隔离开关不允许在运行中旁路资格。
  * @since unreleased
  */
@@ -136,6 +148,16 @@ export function loadAppConfig({ rootDir, env = process.env }) {
   const localTestMode = env.LOCAL_TEST_MODE === "1";
   if (localTestMode && env.NODE_ENV === "production") throw new Error("LOCAL_TEST_MODE cannot run with NODE_ENV=production");
   if (localTestMode && authRequired) throw new Error("LOCAL_TEST_MODE uses upstream authentication and cannot enable local AUTH_REQUIRED");
+  const auth = Object.freeze({
+    ...loadAuthStorageConfig(env),
+    required: authRequired
+  });
+  if (auth.queryMode === "row" && persistenceBackend !== "postgres") {
+    throw new Error("AUTH_QUERY_MODE=row requires PERSISTENCE_BACKEND=postgres");
+  }
+  if (localTestMode && auth.queryMode !== "document") {
+    throw new Error("LOCAL_TEST_MODE does not use PostgreSQL row authentication");
+  }
   const attachments = loadAttachmentConfig({
     ...env,
     OSS_MOCK_DIR: env.OSS_MOCK_DIR ? path.resolve(rootDir, env.OSS_MOCK_DIR) : ""
@@ -203,7 +225,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     databaseUrl: env.DATABASE_URL,
     authDatabaseUrl: env.AUTH_DATABASE_URL,
     aiBudgetDatabaseUrl: env.AI_BUDGET_DATABASE_URL,
-    inviteCodeHash, authRequired,
+    inviteCodeHash, authRequired, auth,
     cookieSecure: env.COOKIE_SECURE === "1",
     localTestMode,
     localTestMainUserId: String(env.LOCAL_TEST_MAIN_USER_ID || "").trim(),

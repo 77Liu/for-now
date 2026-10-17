@@ -198,12 +198,24 @@ export async function buildAdminSnapshot({
   backupStatusFile = "",
   dailyCallLimit = 200,
   readAuthData = null,
+  readAuthPage = null,
   readAccountData = null
 }) {
   const generatedAt = new Date().toISOString();
   const auth = readAuthData
     ? await readAuthData()
     : await readJson(path.join(dataDir, "auth.json"), { users: [], sessions: [] });
+  const accountUsers = [];
+  if (readAuthPage) {
+    let after = null;
+    do {
+      const page = await readAuthPage({ limit: 100, after });
+      accountUsers.push(...page.users);
+      after = page.next;
+    } while (after);
+  } else {
+    accountUsers.push(...(Array.isArray(auth.users) ? auth.users : []));
+  }
   const systemLogs = await readSystemLogs(dataDir, 2);
   const recentRequestLogs = systemLogs.filter(item => item.event === "request.completed");
   const users = [];
@@ -216,7 +228,7 @@ export async function buildAdminSnapshot({
   let userLogObjects = 0;
   let queuedTasks = 0;
 
-  for (const account of Array.isArray(auth.users) ? auth.users : []) {
+  for (const account of accountUsers) {
     const userDir = path.join(dataDir, "users", account.id);
     const accountData = readAccountData ? await readAccountData(account) : null;
     const [store, usage, localAttachments, logs] = await Promise.all([
@@ -234,7 +246,12 @@ export async function buildAdminSnapshot({
       ...items.map(item => localDateKey(item.occurredAt || item.createdAt)),
       ...recentEntries.map(item => localDateKey(item.createdAt))
     ].filter(value => value && value >= localDateKey(last30)));
-    const sessionDates = (auth.sessions || []).filter(item => item.userId === account.id).map(item => item.createdAt);
+    const sessionDates = [
+      ...(auth.sessions || [])
+        .filter(item => item.userId === account.id)
+        .map(item => item.createdAt),
+      account.lastSessionAt
+    ].filter(Boolean);
     const activityDates = [
       account.createdAt,
       ...sessionDates,

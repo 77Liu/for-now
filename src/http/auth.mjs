@@ -52,7 +52,11 @@ export function createAuthHttp({ service, sendJson, bodyJson, authRequired, base
       try {
         if (req.method === "GET") {
           if (url.pathname === "/api/auth/users") {
-            return sendJson(res, 200, { users: await service.listUsers(requestToken(req)) });
+            const page = await service.listUsers(requestToken(req), {
+              cursor: url.searchParams.get("cursor") || "",
+              limit: url.searchParams.get("limit") || undefined
+            });
+            return sendJson(res, 200, page);
           }
           const result = await service.me(requestToken(req));
           return sendJson(res, result.authenticated ? 200 : 401, result);

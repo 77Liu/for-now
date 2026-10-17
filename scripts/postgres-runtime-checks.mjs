@@ -65,6 +65,95 @@ const syntheticPng = (width = 128, height = 96) => {
   ]);
 };
 
+async function runAuthRowChecks({ database, runtime, app, request, ownerCookie }) {
+  const scale = 100_000;
+  const ownerToken = decodeURIComponent(ownerCookie.split("=").slice(1).join("="));
+  const ownerTokenHash = crypto.createHash("sha256").update(ownerToken).digest("hex");
+  const passwordHash = (await database.query(
+    "SELECT password_hash FROM for_now_auth.users WHERE role = 'owner' ORDER BY created_at,id LIMIT 1"
+  )).rows[0].password_hash;
+  await database.query(`
+    INSERT INTO for_now_auth.users (
+      id, username, username_key, password_hash, role, session_version,
+      record_timezone, created_at, payload, position
+    )
+    SELECT
+      'f1-scale-' || lpad(value::text, 6, '0'),
+      'scale-' || lpad(value::text, 6, '0'),
+      'scale-' || lpad(value::text, 6, '0'),
+      $1, 'user', 1, 'Asia/Shanghai',
+      '2026-10-18T00:00:00.000Z'::timestamptz,
+      '{}'::jsonb, NULL
+    FROM generate_series(1, $2::int) value
+  `, [passwordHash, scale]);
+  await database.query("ANALYZE for_now_auth.users");
+  const originalQuery = pg.Client.prototype.query;
+  const trace = [];
+  pg.Client.prototype.query = function (...args) {
+    const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+    if (String(sql || "").includes("for_now_auth.")) trace.push(String(sql));
+    return originalQuery.apply(this, args);
+  };
+  try {
+    assert.equal(
+      (await runtime.auth.row.findCredentialByUsernameKey("scale-099999")).id,
+      "f1-scale-099999"
+    );
+    assert.equal(
+      (await runtime.auth.row.findAuthenticationByTokenHash(ownerTokenHash)).user.role,
+      "owner"
+    );
+    assert.equal((await runtime.auth.row.listUsersPage({
+      tokenHash: ownerTokenHash,
+      limit: 2,
+      after: null,
+      nowMs: Date.now()
+    })).users.length, 2);
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  assert.ok(trace.some(sql => /WHERE username_key = \$1/.test(sql)));
+  assert.ok(trace.some(sql => /WHERE s\.token_hash = \$1/.test(sql)));
+  assert.ok(trace
+    .filter(sql => /WHERE s\.token_hash = \$1|ORDER BY users\.created_at/.test(sql))
+    .every(sql => !/password_hash/.test(sql)));
+  assert.ok(trace.every(sql => !/SELECT[\\s\\S]+FROM for_now_auth\.users\\s*$/m.test(sql)));
+  const first = await request(app.base, "/api/auth/users?limit=100", {
+    cookie: ownerCookie
+  });
+  const second = await request(
+    app.base,
+    `/api/auth/users?limit=100&cursor=${encodeURIComponent(first.body.nextCursor)}`,
+    { cookie: ownerCookie }
+  );
+  assert.equal(first.status, 200);
+  assert.equal(first.body.users.length, 100);
+  assert.equal(second.body.users.length, 100);
+  assert.ok(first.body.nextCursor && second.body.nextCursor);
+  assert.equal(new Set([
+    ...first.body.users.map(user => user.id),
+    ...second.body.users.map(user => user.id)
+  ]).size, 200);
+  const plans = await Promise.all([
+    database.query(`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+      SELECT id FROM for_now_auth.users WHERE username_key = 'scale-099999'
+    `),
+    database.query(`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+      SELECT user_id FROM for_now_auth.sessions WHERE token_hash = $1
+    `, [ownerTokenHash])
+  ]);
+  assert.ok(plans.every(result => /Index Scan/.test(JSON.stringify(result.rows[0]))));
+  assert.equal((await database.query(`
+    SELECT count(*)::int AS count
+    FROM for_now_auth.users
+    WHERE position IS NOT NULL
+  `)).rows[0].count, 0);
+  await database.query("DELETE FROM for_now_auth.users WHERE id LIKE 'f1-scale-%'");
+  return { scale, tracedStatements: trace.length, pageRows: 200 };
+}
+
 export async function runRuntimeChecks({ admin, connect, temporary, password, port, freePort }) {
   await admin.query("CREATE DATABASE runtime_test");
   const database = await connect("postgres", "runtime_test");
@@ -148,7 +237,8 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
         AI_AUDIT_DB_ENABLED: backend === "postgres" ? "1" : "0",
-        AUTH_REQUIRED: "1", INVITE_CODE_HASH: crypto.createHash("sha256").update("runtime-invite").digest("hex"),
+        AUTH_REQUIRED: "1", AUTH_QUERY_MODE: backend === "postgres" ? "row" : "document",
+        INVITE_CODE_HASH: crypto.createHash("sha256").update("runtime-invite").digest("hex"),
         APP_BASE_PATH: "/now", PORT: String(appPort), LOCAL_TEST_MODE: "", UPSTREAM_ORIGIN: "",
         ATTACHMENT_STORAGE: "local", DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}`,
         PLATFORM_SERVICE_TOKEN_HASH: crypto.createHash("sha256").update(platformToken).digest("hex")
@@ -665,6 +755,14 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     app = await startApp();
     const afterRestart = await initialSync();
     console.log("F3A_PROVISION_INITIAL_SYNC " + JSON.stringify({ recoveryEnabled: false, beforeRestart, afterRestart }));
+    const authRowMetrics = await runAuthRowChecks({
+      database,
+      runtime,
+      app,
+      request,
+      ownerCookie: cookie
+    });
+    console.log("F1_AUTH_ROW_METRICS " + JSON.stringify(authRowMetrics));
     // 真实网络+认证PG长轮询断连，不应占着读事务或阻碍后续同步。
     const disconnectCursor = (await request(app.base, "/api/v1/sync", { cookie })).body.data.cursor;
     const disconnect = new AbortController();

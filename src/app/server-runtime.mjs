@@ -62,7 +62,7 @@ export function createServerRuntime({
       try {
       const access = await createRuntimeAccess(foundation);
       Object.assign(accountAccess, {
-        readAuth: access.readAuth,
+        authService: access.authService,
         userDataDir: access.userDataDir
       });
       const wiring = createRuntimeHttpWiring({
@@ -80,7 +80,7 @@ export function createServerRuntime({
         postgresRuntime: foundation.persistence.postgresRuntime,
         accountRuntime: foundation.accountRuntime,
         accountLifecycle: access.accountLifecycle,
-        readAuth: access.readAuth,
+        findAuthUserById: access.authService.findUserById,
         bodyJson: access.bodyJson,
         logEvent: foundation.observability.logEvent,
         sendJson: access.sendJson,
@@ -104,7 +104,8 @@ export function createServerRuntime({
         accountLifecycle: access.accountLifecycle,
         accountRuntime: foundation.accountRuntime,
         localTestRuntime: access.localTestRuntime,
-        readAuth: access.readAuth,
+        scanUsersPage: access.authService.scanUsersPage,
+        verifyAuth: access.authService.verify,
         probeDependencies: async () => {
           await foundation.persistence.postgresRuntime?.ready();
           await foundation.aiRuntime.validateGlobalBudget();

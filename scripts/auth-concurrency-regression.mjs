@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { loadAuthAdmissionConfig } from "../src/config/index.mjs";
 import { createAuthAdmission } from "../.build/typescript/backend/modules/auth/admission.mjs";
-import { createAuthService } from "../src/modules/auth/index.mjs";
+import {
+  createAuthService,
+  normalizeAuthDocument
+} from "../src/modules/auth/index.mjs";
+import { createDocumentAuthPort } from "../src/shared/persistence/index.mjs";
 
 const passwordHash = password => {
   const salt = Buffer.alloc(16, 7);
@@ -43,7 +47,10 @@ const baseAuth = () => ({
   sessions: []
 });
 const serviceFor = repository => createAuthService({
-  repository,
+  repository: createDocumentAuthPort({
+    source: repository,
+    normalizeDocument: normalizeAuthDocument
+  }),
   initializeUserStorage: async () => {},
   authRequired: true,
   inviteCodeHash: crypto.createHash("sha256").update("invite").digest("hex")

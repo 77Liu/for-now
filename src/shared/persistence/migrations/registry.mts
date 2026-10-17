@@ -24,6 +24,12 @@ export const POSTGRES_SCHEMA_COMPONENTS: readonly MigrationDescriptor[] = Object
     order: 20,
     ownerRequirementId: "reczz28ORRaxSCBn",
     marker: "migration:ai-audit-v1"
+  }),
+  Object.freeze({
+    id: "auth-row-v1",
+    order: 30,
+    ownerRequirementId: "reczz28ORRaxPAap",
+    marker: "migration:auth-row-v1"
   })
 ]);
 

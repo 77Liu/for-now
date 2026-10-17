@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const CHROME = resolveHeadlessBrowser();
@@ -60,7 +61,7 @@ class Cdp {
   }
 }
 
-function isolatedEnvironment(dataDir, port) {
+function isolatedEnvironment(dataDir, port, authEnv) {
   const blocked = /^(?:DATABASE_URL|AUTH_DATABASE_URL|PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL|APP_URL|UPSTREAM_ORIGIN)$/;
   const provider = /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/;
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !blocked.test(key) && !provider.test(key)));
@@ -70,8 +71,7 @@ function isolatedEnvironment(dataDir, port) {
     DATA_DIR: dataDir,
     PORT: String(port),
     APP_BASE_PATH: "/now",
-    AUTH_REQUIRED: "0",
-    INVITE_CODE_HASH: "",
+    ...authEnv,
     PERSISTENCE_BACKEND: "json",
     ATTACHMENT_STORAGE: "local",
     PERIODIC_ANALYSIS_ENABLED: "0",
@@ -114,10 +114,19 @@ const appPort = await freePort();
 const debugPort = await freePort();
 const origin = `http://127.0.0.1:${appPort}`;
 const base = `${origin}/now`;
+const authFixture = await installAuthenticatedJsonRuntime(dataDir);
+const systemFetch = globalThis.fetch;
+globalThis.fetch = (input, init = {}) => {
+  const target = String(input instanceof Request ? input.url : input);
+  if (!target.startsWith(base)) return systemFetch(input, init);
+  const headers = new Headers(init.headers);
+  if (!headers.has("cookie")) headers.set("cookie", authFixture.cookie);
+  return systemFetch(input, { ...init, headers });
+};
 let stderr = "";
 const server = spawn(process.execPath, ["server.mjs"], {
   cwd: ROOT,
-  env: isolatedEnvironment(dataDir, appPort),
+  env: isolatedEnvironment(dataDir, appPort, authFixture.env),
   stdio: ["ignore", "ignore", "pipe"]
 });
 server.stderr.on("data", chunk => { stderr += chunk; });
@@ -168,6 +177,12 @@ try {
   ], { stdio: "ignore" });
   cdp = new Cdp(await debuggerUrl(debugPort));
   await cdp.send("Page.enable");
+  await cdp.send("Network.enable");
+  await cdp.send("Network.setCookie", {
+    name: "for_now_session",
+    value: authFixture.token,
+    url: `${base}/`
+  });
   await cdp.send("Runtime.enable");
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
 
@@ -315,6 +330,7 @@ try {
 
   console.log("URL/history regression passed: direct and legacy routes, query replacement, detail history, source-aware return, scroll restoration, and deleted-object fallback.");
 } finally {
+  globalThis.fetch = systemFetch;
   cdp?.socket.close();
   chrome?.kill("SIGKILL");
   server.kill("SIGTERM");
