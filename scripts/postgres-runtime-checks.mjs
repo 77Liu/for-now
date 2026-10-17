@@ -227,13 +227,20 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     res.end(JSON.stringify({ choices: [{ message: { content, reasoning_content: "隔离模型思考" }, finish_reason: "stop" }], usage: { prompt_tokens: 2, completion_tokens: 2 } }));
   });
   await new Promise(resolve => provider.listen(0, "127.0.0.1", resolve));
-  const startApp = async (db = "runtime_test", directory = dataDir, backend = "postgres") => {
+  const startApp = async (
+    db = "runtime_test",
+    directory = dataDir,
+    backend = "postgres",
+    { accountRecoveryEnabled = false } = {}
+  ) => {
     const appPort = await freePort();
     const child = spawn(process.execPath, ["server.mjs"], {
       cwd: path.resolve(import.meta.dirname, ".."),
       env: {
         ...process.env, NODE_ENV: "test", PERSISTENCE_BACKEND: backend, DATA_DIR: directory,
-        PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*", ACCOUNT_RECOVERY_ENABLED: "0", SYNC_ACCOUNT_WAKE_ENABLED: "1",
+        PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*",
+        ACCOUNT_RECOVERY_ENABLED: accountRecoveryEnabled ? "1" : "0",
+        SYNC_ACCOUNT_WAKE_ENABLED: "1",
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
         AI_AUDIT_DB_ENABLED: backend === "postgres" ? "1" : "0",
@@ -752,9 +759,28 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     };
     const beforeRestart = await initialSync();
     await stop(app.child);
-    app = await startApp();
+    app = await startApp("runtime_test", dataDir, "postgres", {
+      accountRecoveryEnabled: true
+    });
+    const recoveryReady = await request(app.base, "/readyz");
+    assert.equal(recoveryReady.status, 200, JSON.stringify(recoveryReady.body));
+    assert.deepEqual(recoveryReady.body.counts, {
+      total: 2,
+      ready: 2,
+      quarantined: 0,
+      recovering: 0
+    });
+    assert.equal(recoveryReady.body.dependenciesHealthy, true);
     const afterRestart = await initialSync();
-    console.log("F3A_PROVISION_INITIAL_SYNC " + JSON.stringify({ recoveryEnabled: false, beforeRestart, afterRestart }));
+    console.log("F2_AUTH_ROW_RECOVERY " + JSON.stringify({
+      recoveryEnabled: true,
+      counts: recoveryReady.body.counts
+    }));
+    console.log("F3A_PROVISION_INITIAL_SYNC " + JSON.stringify({
+      recoveryEnabled: true,
+      beforeRestart,
+      afterRestart
+    }));
     const authRowMetrics = await runAuthRowChecks({
       database,
       runtime,

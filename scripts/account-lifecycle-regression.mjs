@@ -32,6 +32,7 @@ function harness({
   postgresRuntime = null,
   localTestRuntime = null,
   readUsers = null,
+  readUsersPage = null,
   failAt = () => false,
   recoveryConfig = null
 }) {
@@ -67,6 +68,7 @@ function harness({
     keepsakeMediaWorkflows: { resume: operation("keepsake-media") },
     localTestRuntime,
     readUsers,
+    readUsersPage,
     accountRuntime: registry,
     validateCurrentStorage: recoveryConfig ? operation("validate") : async () => {}
   });
@@ -350,6 +352,59 @@ function harness({
 
 // 新隔离路径显式开启；未知故障仍全局失败，只有带账户证据的坏数据可隔离。
 const recoveryConfig = { enabled: true, concurrency: 1, accountDeadlineMs: 1000, retryCooldownMs: 1 };
+{
+  const pageCalls = [];
+  const cursor = { createdAt: "2026-10-18T00:00:01.000Z", id: "b" };
+  const current = harness({
+    name: "isolated-paged-accounts",
+    authRequired: true,
+    recoveryConfig,
+    readUsersPage: async query => {
+      pageCalls.push(structuredClone(query));
+      return query.after
+        ? {
+            users: [
+              { id: "c", createdAt: "2026-10-18T00:00:02.000Z" },
+              { id: "d", createdAt: "2026-10-18T00:00:03.000Z" }
+            ],
+            next: null
+          }
+        : {
+            users: [
+              { id: "a", createdAt: "2026-10-18T00:00:00.000Z" },
+              { id: "b", createdAt: cursor.createdAt }
+            ],
+            next: cursor
+          };
+    },
+    failAt: (step, context) => step === "validate" && context.user.id === "b"
+      ? Object.assign(new Error("local data invalid"), {
+          recoveryScope: "account",
+          accountId: "b",
+          reasonCode: "ACCOUNT_JSON_INVALID"
+        })
+      : false
+  });
+  await current.lifecycle.recoverAtStartup();
+  assert.deepEqual(pageCalls, [
+    { limit: 100, after: null },
+    { limit: 100, after: cursor }
+  ]);
+  assert.deepEqual(
+    Object.fromEntries(["a", "b", "c", "d"].map(id => [
+      id,
+      current.registry.state(id).status
+    ])),
+    { a: "ready", b: "quarantined", c: "ready", d: "ready" }
+  );
+  assert.deepEqual(current.registry.health().counts, {
+    total: 4,
+    ready: 3,
+    quarantined: 1,
+    recovering: 0
+  });
+}
+
 {
   const current = harness({ name: "isolated-abc", authRequired: true, recoveryConfig,
     failAt: (step, context) => step === "validate" && context.user.id === "b"
