@@ -34,9 +34,13 @@ if(name==='scp' && process.env.TRANSFER_SCENARIO==='scp-failure') process.exit(1
   await fs.symlink(shim, path.join(dir, "bin/ssh"));
   await fs.symlink(shim, path.join(dir, "bin/scp"));
   const attempt = "1".repeat(32);
-  const run = scenario => spawnSync("/bin/bash", [path.join(dir, "deploy/deploy-with-media.sh"), commit, attempt], {
+  const run = (scenario, branch = "release/v0.5.16") => spawnSync("/bin/bash", [path.join(dir, "deploy/deploy-with-media.sh"), commit, attempt, branch], {
     cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${dir}/bin:${process.env.PATH}`, TRANSFER_LOG: log, TRANSFER_SCENARIO: scenario }
   });
+  for (const branch of ["", "feat/not-a-release", "release/bad'ref", "release/../invalid"]) {
+    assert.equal(run("invalid", branch).status, 1);
+    assert.equal(await fs.access(log).then(() => true, () => false), false, "invalid candidate branch must stop before SSH");
+  }
   assert.equal(run("success").status, 0);
   const calls = (await fs.readFile(log, "utf8")).trim().split("\n").map(line => JSON.parse(line));
   assert.equal(calls.filter(c => c.name === "scp").length, 2);
@@ -54,6 +58,7 @@ if(name==='scp' && process.env.TRANSFER_SCENARIO==='scp-failure') process.exit(1
   }
   const execution = calls.find(c => c.name === "ssh" && c.args.at(-1).includes("DEPLOY_EXPECTED_COMMIT="));
   assert.ok(execution.args.at(-1).includes(`DEPLOY_EXPECTED_COMMIT='${commit}'`));
+  assert.ok(execution.args.at(-1).includes("DEPLOY_BRANCH='release/v0.5.16'"), "release branch must reach the installed deployer without main promotion");
   assert.match(execution.args.at(-1), /sha256sum -c SHA256SUMS && test/);
   assert.ok(execution.args.at(-1).includes(`RELEASE_ATTEMPT_ID='${attempt}'`));
   assert.ok(execution.args.at(-1).includes(`RELEASE_CANDIDATE_SHA='${commit}'`));

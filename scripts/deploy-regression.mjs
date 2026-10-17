@@ -55,7 +55,7 @@ const certificateFiles = [
   "/etc/letsencrypt/live/77liu.top/privkey.pem"
 ];
 try {
-  for (const scenario of ["success", "restart", "health", "nginx", "dependencies", "same_commit_dependencies", "exploration", "exploration_branch", "checkpoint_branch", "postgres_incompatible", "postgres_preflight", "stale_same_commit", "candidate_mismatch", "baseline_mismatch", "first_install_health", "invalidate_build", "invalidate_before_switch", "new_decision_after_switch", "media_success", "media_health", "media_invalid", "media_missing_candidate", "media_wrong_commit", "media_invalidate_before_apply", "media_invalidate_after_apply", "media_new_decision_after_switch"]) {
+  for (const scenario of ["success", "restart", "health", "nginx", "dependencies", "same_commit_dependencies", "exploration", "exploration_branch", "checkpoint_branch", "missing_branch", "branch_moved", "postgres_incompatible", "postgres_preflight", "stale_same_commit", "candidate_mismatch", "baseline_mismatch", "first_install_health", "invalidate_build", "invalidate_before_switch", "new_decision_after_switch", "media_success", "media_health", "media_invalid", "media_missing_candidate", "media_wrong_commit", "media_invalidate_before_apply", "media_invalidate_after_apply", "media_new_decision_after_switch"]) {
     const media = scenario.startsWith("media_");
     const mediaEnv = media ? "ATTACHMENT_STORAGE=oss\nALIBABA_CLOUD_ECS_RAM_ROLE=ForNowEcsBackupRole\n" : "";
     const backendEnv = ["postgres_incompatible", "postgres_preflight"].includes(scenario)
@@ -152,7 +152,11 @@ if(["new_decision_after_switch","media_new_decision_after_switch"].includes(scen
 if(name==="sudo"){const r=spawnSync(args[2],args.slice(3),{env:process.env,stdio:"inherit"});process.exit(r.status??1)}
 if(name==="runuser"){const split=args.indexOf("--"),r=spawnSync(args[split+1],args.slice(split+2),{env:process.env,stdio:"inherit"});process.exit(r.status??1)}
 if(name==="id")console.log("0");
-if(name==="git"&&args.includes("rev-parse"))console.log("${commit}");
+if(name==="git"&&args.includes("rev-parse")){
+ const ref=args.at(-1);
+ // main deliberately differs: success must resolve the explicit release candidate.
+ console.log(ref==="refs/heads/main^{commit}"||scenario==="branch_moved"?"${baselineCommit}":"${commit}");
+}
 if(name==="git"&&args.includes("archive")){const r=spawnSync("/usr/bin/tar",["-cf","-","-C",path.join(dir,"archive"),"."],{stdio:["ignore","inherit","inherit"]});process.exit(r.status??1)}
 if(name==="npm"&&["dependencies","same_commit_dependencies"].includes(scenario))process.exit(1);
 if(name==="node"&&args[0]==="--check"&&!fs.existsSync(args[1]))process.exit(1);
@@ -194,6 +198,7 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
         PATH: `${bin}:/usr/bin:/bin`,
         DEPLOY_FIXTURE: dir,
         DEPLOY_SCENARIO: scenario,
+        DEPLOY_BRANCH: scenario === "missing_branch" ? "" : "release/v0.5.16",
         RELEASE_ATTEMPT_ID: approval.attemptId,
         RELEASE_CANDIDATE_SHA: approval.candidateSha,
         ...(scenario === "exploration_branch" ? { DEPLOY_BRANCH: "explore/nightly-p3-20260928" } : {}),
@@ -204,7 +209,8 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
       encoding: "utf8", timeout: 180000
     });
     if (scenario === "exploration") assert.match(result.stderr, /Production release contains local exploration assets/);
-    if (["exploration_branch", "checkpoint_branch"].includes(scenario)) assert.match(result.stderr, /Non-release branches cannot be used/);
+    if (["exploration_branch", "checkpoint_branch", "missing_branch"].includes(scenario)) assert.match(result.stderr, /Non-release branches cannot be used/);
+    if (scenario === "branch_moved") assert.match(result.stderr, /Fetched commit differs from approved candidate/);
     if (scenario === "postgres_incompatible") assert.match(result.stderr, /PostgreSQL deployment requires a database-capable candidate and rollback release/);
     if (scenario === "postgres_preflight") {
       const commands = await fs.readFile(path.join(dir, "commands.log"), "utf8");
@@ -218,6 +224,8 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
     else assert.equal(active, scenario === "first_install_health" ? null : previous);
     if (succeeded) {
       const commands = await fs.readFile(path.join(dir, "commands.log"), "utf8");
+      assert.match(commands, /rev-parse --verify refs\/heads\/release\/v0\.5\.16\^\{commit\}/);
+      assert.doesNotMatch(commands, /rev-parse.*refs\/heads\/main/);
       assert.equal((await fs.stat(base)).mode & 0o777, 0o755);
       assert.equal((await fs.stat(path.join(base, "releases"))).mode & 0o777, 0o755);
       assert.equal((await fs.stat(active)).mode & 0o777, 0o755);
@@ -286,7 +294,7 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
     }
     if (succeeded) {
       const npmCountBeforeReuse = (await fs.readFile(path.join(dir, "commands.log"), "utf8")).match(/^npm /gm)?.length || 0;
-      const runAgain = nonce => spawnSync("/bin/bash", [scriptFile], { env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, DEPLOY_FIXTURE: dir, DEPLOY_SCENARIO: scenario,
+      const runAgain = nonce => spawnSync("/bin/bash", [scriptFile], { env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, DEPLOY_FIXTURE: dir, DEPLOY_SCENARIO: scenario, DEPLOY_BRANCH: "release/v0.5.16",
         RELEASE_ATTEMPT_ID: nonce.attemptId, RELEASE_CANDIDATE_SHA: nonce.candidateSha }, encoding: "utf8", timeout: 180000 });
       const stale = runAgain(approval);
       assert.equal(stale.status, 1); assert.match(stale.stderr, /RELEASE_FENCE_REJECTED/);

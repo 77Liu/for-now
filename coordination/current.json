@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 404,
-  "updated_at": "2026-10-16T02:28:14.644Z",
+  "revision": 415,
+  "updated_at": "2026-10-17T09:36:12.027Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -13,18 +13,18 @@
     "effective_date": "2026-10-16",
     "source": "PROJECT_RULES.md及现有唯一正文；发布SOP v1.5补齐main回流后确定下一版起点"
   },
-  "work_mode": "IMPLEMENTATION",
+  "work_mode": "OWNER_INVESTIGATION",
   "iteration": {
     "id": "v0.5.16",
-    "status": "IN_PROGRESS",
-    "phase": "F9后端任务准备热点收敛"
+    "status": "PAUSED",
+    "phase": "Owner介入SQL与同步架构调查，开发停止"
   },
   "scope": {
     "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
     "baseline": {
       "branch": "develop",
-      "commit": "c48e39",
-      "source": "F9被动toast及等价公共投影329d66正常合入；集成公共投影专项通过。"
+      "commit": "5cec49",
+      "source": "主控三文件独审通过，摘要候选预筛5d6d59正常合入；集成趋势上下文专项通过。"
     },
     "inputs": [
       "docs/technical-proposals/评审索引.md",
@@ -55,51 +55,85 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-F9-trend-candidate-prefilter",
+      "id": "v0516-F9-response-home-redundancy",
       "owner": "主开发Agent",
-      "mode": "integration",
+      "mode": "implementation",
       "branch": "feat/v0.5.16-sync-latency",
-      "baseline": "c48e39",
-      "status": "REVIEWED_GO",
+      "baseline": "5cec49",
+      "status": "PAUSED_BY_OWNER",
       "allowed_write_set": [
-        "src/app/record-compression-context.mjs (eligibleReadySummary与readyInputsForDate既有候选筛选)",
-        "scripts/record-compression-trend-context-regression.mjs (必要原契约验证)",
-        "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md (原4.1事实/限制)"
+        "src/http/sync.mjs (原响应即时序列化前冗余clone)",
+        "public/frontend/app/runtime/kernel.mjs (既有首页记忆状态通知装配去重/可见性)",
+        "public/frontend/app/runtime/home-runtime.mjs (仅若实际首页恢复消费者需要最小协调)",
+        "scripts/sync-coordinator-regression.mjs (既有必要HTTP不变量)",
+        "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md (原4.1事实与限制)"
       ],
       "forbidden_write_set": [
-        "其他实现/配置/schema/协议/写入策略/依赖/构建源码",
+        "其他实现/DTO/协议/配置/schema/依赖/持久化策略",
+        "F3-B/C",
         "coordination/**",
         ".trae/**",
-        "F3-B/C",
         "Git/远程/生产/付费",
         "新agent/工作树"
       ],
-      "shared_file_owner": "主开发唯一三文件实现者；主控负责控制面/Git与独审。",
-      "integration_order": "同一F9 feat已正常快进最新develop c48e39；实际契约先核对，实现自查必要既有验证后交主控独立审查。",
+      "shared_file_owner": "主开发唯一已列实现者；主控控制面与Git/独审。",
+      "integration_order": "原F9正常ff develop5cec49后串行最小优化；自查实际序列化/状态通知/路由恢复消费者再交主控。",
       "contracts": [
-        "输入无关候选条件与原selector共享：ready合法envelope/schema/prompt/date/timezone/window/invalidatedAt；无候选跳过来源扫描，有候选仍完整输入哈希/权限验证。",
-        "保留窗口结束判断、增量优先/全日回退、原错误语义；失败替代证明和历史补充上下文不得短路。",
-        "不新增跨请求缓存/协议或改task freeze/refresh/persistence；实际payload/display/fingerprint/citations保持等价。"
+        "publicSnapshot仍原字段完整权威输出，实际sendJson/projectResponse/JSON.stringify同步消费无引用逃逸才可去clone；不得取消隐私投影。",
+        "同一次多域通知首页记忆最多一次；不可见页延迟到真实首页进入重建。保留首页展示/随机回看/删除/账户切换与读取最新state，不新增跨请求缓存。",
+        "不改F4/F7/F8窗口/阅读保护/选区，不把业务逻辑塞kernel；若生命周期无法证明等价则仅做已确定部分。",
+        "不承诺微优化足以500ms，旧SLOFAIL保留。"
       ]
+    },
+    {
+      "id": "v0516-rule-review-remediation",
+      "owner": "主控",
+      "mode": "rules_remediation",
+      "status": "APPROVED_FOR_INTEGRATION",
+      "branch": "feat/v0.5.16-sync-latency",
+      "allowed_write_set": [
+        "PROJECT_RULES.md",
+        "SOP/** (现行规则及其拆分正文)",
+        "knowledge/** (现行规则及其拆分正文；历史原始记录不改写)",
+        "scripts/commit-gate.mjs",
+        "scripts/commit-gate-regression.mjs",
+        "coordination/** (仅唯一更新入口)",
+        "deploy/** (当前部署说明拆分、候选分支部署入口及必要适配)",
+        "scripts/deploy-regression.mjs",
+        "scripts/media-transfer-regression.mjs",
+        "scripts/preview-deploy-regression.mjs (部署说明消费者及TS构建步骤必要回归适配)"
+      ],
+      "forbidden_write_set": [
+        "业务源码及原暂停差分",
+        ".trae/**",
+        "历史事件/收口快照",
+        "远程推送/tag/release/生产动作"
+      ],
+      "contracts": [
+        "逐项修复Owner审查表九项及三个关联冲突；唯一正文、map-detail、保留有效约束；不创建报告链。",
+        "Owner八项残留入口结论：候选部署后观察再main；实际SP/UP私有入库；授权/预算引用唯一策略；五问可跳过；同步/快照场景分工；移除需求工作树数量门槛；区分用户主动与系统级AI思考；核对命令文件步骤并拆分部署说明。",
+        "Owner已批准规则及配套实现提交、正常接入develop；业务开发继续暂停。"
+      ],
+      "result": "规则及门禁、部署适配已审阅并获Owner批准；准备本地提交并接入develop。SP/UP私有数据库留存实现缺口仍保留。"
     }
   ],
   "candidate": {
-    "status": "LOCAL_IMPLEMENTATION_INTEGRATED_GLOBAL_PENDING_PERFORMANCE_FAIL",
+    "status": "STATEFUL_GLOBAL_PASS_PERFORMANCE_FAIL",
     "branch": "develop",
-    "sha": "c48e39",
-    "tree": "83fa40",
+    "sha": "5cec49",
+    "tree": "6156a0",
     "release_frozen": false,
     "test_matrix_ref": "knowledge/test-impact-matrix.md",
     "quality_gate": {
       "slice_implementation_review": "pass_local",
-      "fresh_production_state_startup": "pending_current_candidate",
-      "combined_profile_startup": "pending_current_candidate",
-      "representative_performance": "fail_local_source_manifest",
+      "fresh_production_state_startup": "pass_local_complete_snapshot",
+      "combined_profile_startup": "pass_local_complete_snapshot",
+      "representative_performance": "fail_local_production_shape_24_saves",
       "real_device_performance": "partial"
     }
   },
   "authorization": {
-    "source": "Owner 2026-10-16明确：通过现有方案，请按照项目规则开始开发。既有每版本必要付费API共用4元授权保留，超额申请。",
+    "source": "Owner本轮明确：现在停止开发，Owner介入调查；保留此前许可但执行暂停，等待明确恢复。",
     "allowed_actions": [
       "九项已批准方案的本地实现、自查及受影响验证",
       "主开发串行实现；主控独立完整链路审查",
@@ -115,7 +149,7 @@
       "生产业务写入",
       "超过本版本共用4元的付费调用"
     ],
-    "execution_enabled": true,
+    "execution_enabled": false,
     "expires_at": null,
     "expiry_mode": "until_changed",
     "revoked": false,
@@ -131,16 +165,30 @@
     {
       "id": "v0516-F9-production-shape-latency",
       "status": "CONFIRMED_LOCAL_THRESHOLD_FAIL",
-      "reason": "整体同步SLO仍FAIL；移动追问toast遮挡局部修复经独审关闭。真实新思绪CPU诊断显示摘要输入重复装配为主要热点之一，待最小契约保真优化。",
+      "reason": "24真实保存功能通过，但跨端SLO多组447–1537ms（每组3样本校准）；摘要预筛54→14次已接入，剩余整账户写/重建/投影及同步消费者耗时仍待裁定。F3-B/C未授权，不能扩大实现或声称性能完成。",
       "refs": [
         "/tmp/v0516-f9-read-closure-small.log",
         "/tmp/v0516-f9-read-closure-small-browser.log",
         "artifacts/local/v0516-f9-server-acceptance-current.json",
         "/tmp/v0516-f9-mobile-preparation-browser.log"
       ]
+    },
+    {
+      "id": "v0516-owner-investigation-pause",
+      "status": "OWNER_PAUSED",
+      "reason": "Owner要求停止开发并调查单请求SQL放大与同步数据必要性。当前主开发已中断；未提交源码保留。"
+    },
+    {
+      "id": "v0516-home-browser-startup-unknown",
+      "status": "UNKNOWN_PENDING_INVESTIGATION",
+      "reason": "当前未接入五文件工作区的独立JSON/Chrome快显夹具未到secondary请求，页面显示暂时无法打开；尚未区分夹具/构建/业务原因，不计快显验证通过。Owner暂停后不继续复现或修复。",
+      "evidence": [
+        "/tmp/v0516-primary-home-publish-browser.log",
+        "/tmp/v0516-primary-home-publish-browser-diagnostic.log"
+      ]
     }
   ],
-  "next_action": "主控三文件独审通过，正常接入develop后用真实生产形态两端操作复验；输入构建减少不等于SLO通过。",
+  "next_action": "提交已批准规则及配套实现，正常接入develop，再通过唯一入口激活实际规则提交；业务开发继续暂停。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -439,40 +487,39 @@
       "id": "v0516-stateful-global-gate",
       "object": {
         "kind": "Git_commit_and_snapshot",
-        "commit": "c46225",
-        "tree": "3f89c9",
-        "snapshot": "be35d1"
+        "commit": "5cec49",
+        "tree": "6156a0",
+        "snapshot": "bc12ff"
       },
-      "conclusion": "新候选完整4账户settings/usage快照，默认及六开关组合实际启动、readyz、同库重启、116任务状态及核心保存读回/任务通知读取通过；禁止副作用尝试均0。",
+      "conclusion": "新候选完整4账户生产状态快照，默认及六开关组合实际启动、readyz、同库重启、116任务状态及核心保存读回/通知读取通过；禁止副作用尝试均0。",
       "limitations": [
         "仅本机PostgreSQL16.14，真实provider/通知/媒体副作用封闭；不证明真实provider鉴权。",
-        "代表性操作族P75完整分组、Safari/PWA/真机及生产同规格负载未完成；不是整版发布GO。",
-        "此门绑定c46225/be35d1；后续接入候选不能沿用为整版通过。"
+        "真实保存/同步SLO仍FAIL，Safari/PWA/真机仍partial；不是整版发布GO。"
       ],
       "refs": [
         "artifacts/local/v0516-global-acceptance-current.json",
-        "/tmp/v0516-read-closure-startup-default.log",
-        "/tmp/v0516-read-closure-startup-v0516-combined.log"
+        "/tmp/v0516-context-startup-default.log",
+        "/tmp/v0516-context-startup-v0516-combined.log"
       ]
     },
     {
       "id": "v0516-F9-production-shape-performance",
       "object": {
-        "kind": "Git_commit_and_snapshot",
-        "commit": "c46225",
-        "tree": "3f89c9",
-        "snapshot": "be35d1"
+        "kind": "Git_commit_with_fixture_snapshot",
+        "commit": "5cec49",
+        "tree": "6156a0",
+        "fixture_snapshot": "be35d1"
       },
-      "conclusion": "新候选19个有效保存，按钮反馈P75约13–32ms，部分跨端结果约596–1047ms，SLO仍FAIL；最小内部域修复不足以达整体目标。",
+      "conclusion": "24次真实保存全部成功，连续追问无准备失败；按钮有效反馈P75约12–26ms，跨端渲染P75约447–1537ms，多组仍FAIL。",
       "limitations": [
-        "每组1或3样本，不是完整分组P75；原移动追问准备超时后续已定位被动toast遮挡，并由当前四文件工作区修复证据关闭。",
-        "journal对端DOM不在视口，不等于可见；Chrome移动仿真不等于iOS/真机。",
-        "禁止副作用尝试0，本地音频校验6次；旧失败及阶段诊断保留原回执。"
+        "每组3样本校准，尚非正式完整分位验收；旧失败原始回执保留。",
+        "部分日记/思绪对端DOM屏外；Chrome移动仿真不等于iOS/真机。",
+        "禁止provider/outbound/media尝试0、本地音频校验6；该运行fixture基线c46225，不是新快照门。"
       ],
       "refs": [
-        "/tmp/v0516-f9-read-closure-small.log",
-        "/tmp/v0516-f9-read-closure-small-browser.log",
-        "artifacts/local/v0516-f9-server-acceptance-current.json"
+        "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "/tmp/v0516-f9-context-prefilter-performance-original.json",
+        "/tmp/v0516-f9-context-prefilter-performance.log"
       ]
     },
     {
@@ -516,15 +563,56 @@
       "object": {
         "kind": "source_manifest",
         "base_commit": "c48e39",
-        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json"
+        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "commit": "5d6d59",
+        "integration_commit": "5cec49"
       },
-      "conclusion": "三文件指纹、真实selector/权限/历史补充/失败链及20组整结果和8类非法错误对照经主控独审通过；四真实账户54→14次输入构建。",
+      "conclusion": "三文件独审与必要原专项/20组等价通过，5d6d59正常合入develop5cec49，集成趋势专项通过；四真实账户输入构建54→14。",
       "limitations": [
         "局部实现GO；HTTP/SLO及最终候选完整快照门待实际复验。"
       ],
       "refs": [
         "artifacts/local/v0516-f9-server-acceptance-current.json",
         "/tmp/v0516-f9-trend-prefilter-equivalence.log"
+      ]
+    },
+    {
+      "id": "v0516-rules-review-remediation",
+      "object": {
+        "kind": "uncommitted_rules_and_deployment_entries",
+        "branch": "feat/v0.5.16-sync-latency",
+        "base_commit": "5cec49"
+      },
+      "conclusion": "八项残留入口收尾：显式release/hotfix候选部署后观察再main；审计与思考展示边界、持续授权/共用额度、五问可跳过、同步/快照分工、需求准入去固定树数、失效命令清理及部署地图拆分完成。test:media-deploy、test:deploy、test:deploy:preview本地隔离回归PASS；83份当前入口的52个npm命令、85个明确源码路径及59个递归npm入口存在；185文档本地链接/锚点与diff检查PASS。既有门禁代码未再改动，复用有效回归。",
+      "limitations": [
+        "未提交/未接入；有效rule_baseline仍保持58db42，业务开发继续Owner暂停。",
+        "部署回归使用网络/特权命令替身；未安装服务器guard、未实际部署，不证明生产环境或真实npm依赖安装/服务启动。",
+        "SP/UP入库规范已更新，但src/app/user-model.mjs、src/app/perception.mjs及src/shared/ai-context/importance-runtime.mts仍有auditPrompt:false；src/app/ai-runtime.mjs审计append仍写私有NDJSON。业务持久化改造未在本轮实施，不能声称数据库留存闭环。",
+        "用户主动回答与系统调用的思考可见性是本轮规则裁定，应用展示及服务端过滤未在本轮改写或重新验收。",
+        "命令/文件检查不等于执行所有命令；链接检查未请求外网。原四个业务脏文件、历史事件前缀及分支/HEAD保留。"
+      ],
+      "refs": [
+        "PROJECT_RULES.md",
+        "knowledge/design-contracts.md",
+        "knowledge/commit-and-release-rules.md",
+        "SOP/README.md",
+        "scripts/commit-gate.mjs",
+        "scripts/commit-gate-regression.mjs",
+        "knowledge/observability.md",
+        "SOP/release-and-observation.md",
+        "deploy/README.md",
+        "deploy/README-preview.md",
+        "deploy/docs/production-release.md",
+        "deploy/docs/preview-release.md",
+        "deploy/deploy-with-media.sh",
+        "deploy/deploy.sh",
+        "deploy/deploy-preview.sh",
+        "scripts/deploy-regression.mjs",
+        "scripts/media-transfer-regression.mjs",
+        "scripts/preview-deploy-regression.mjs",
+        "knowledge/user-journey-testing.md",
+        "knowledge/prompt-architecture.md",
+        "knowledge/metrics.md"
       ]
     }
   ],

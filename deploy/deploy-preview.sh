@@ -214,7 +214,9 @@ if [ "$action" = "deploy" ]; then
     trap cleanup_candidate EXIT
     release_guard preview_git --git-dir="$mirror" archive "$target_commit" | tar -x -C "$candidate"
     release_guard chown -R "$runtime_user:$runtime_user" "$candidate"
-    release_guard preview_run npm --prefix "$candidate" ci --omit=dev
+    release_guard preview_run npm --prefix "$candidate" ci
+    release_guard preview_run npm --prefix "$candidate" run build:runtime
+    release_guard preview_run npm --prefix "$candidate" prune --omit=dev
 
     /usr/local/bin/node --check "$candidate/server.mjs"
     /usr/local/bin/node --check "$candidate/admin-snapshot.mjs"

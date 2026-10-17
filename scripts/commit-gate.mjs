@@ -9,7 +9,7 @@ const MAX_FILES = 16;
 const MAX_CHANGED_LINES = 1200;
 const MAX_FILE_BYTES = 512 * 1024;
 const PROTECTED_BRANCH = /^(?:main|master|production|release(?:\/|$)|hotfix(?:\/|$))/;
-const TASK_BRANCH = /^(?:feat|feature|fix|test|docs)\//;
+const TASK_BRANCH = /^feat\//;
 const ALLOWED_COMMIT_TYPES = new Set(["feat", "fix", "test", "docs"]);
 const SECRET_ENV_KEY = /^(?:DATABASE_URL|AUTH_DATABASE_URL|AI_BUDGET_DATABASE_URL|PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL|APP_URL|UPSTREAM_ORIGIN)$/;
 const SECRET_ENV_PREFIX = /^(?:OSS_|MEDIA_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/;
@@ -188,9 +188,9 @@ function blockedReason(file) {
     || file === "server.mjs"
     || file === "admin-snapshot.mjs"
     || file === "PROJECT_RULES.md"
-    || file === "knowledge/engineering-rules.md"
-    || file === "knowledge/pre-launch-confirmation.md"
-    || file === "knowledge/development-release-checklist.md"
+    // Knowledge and SOP contain authoritative rules and their split details. Treating
+    // any of them as ordinary docs would let a file move bypass governance review.
+    || /^(?:knowledge|SOP)\//.test(file)
     || /^(?:deploy|prompts)\//.test(file)
     || /^src\/(?:app|config|http|infrastructure|shared)\//.test(file)
     || /^src\/modules\/(?:ai|annotations|auth|content-attachments|exports|feedback|notifications|tasks|trash)\//.test(file)

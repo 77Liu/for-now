@@ -1,23 +1,10 @@
-# Git 当前起点与历史使用规则
+# Git 起点核对入口
 
-生效：2026-10-11（本地规则立即生效；远程分支命名与保护从下一次 `push` 起适用）。
+修订：2026-10-17，Owner 已批准，接入 develop 后生效。本文件只保留旧链接入口，不再维护一份允许分支名单或版本状态。
 
-远程分支、保护、短期分支生命周期和提交历史调整统一遵循[远程分支规则](remote-branch-policy.md)。已有远程引用、标签和发布记录保持不变；当前远端没有 `develop` 时，不得把 `origin/main` 或其他历史远程分支冒充为新的普通开发入口。
+- 本地/远程分支职责、新任务起点和原 feat 返修：[Git 分支规则](remote-branch-policy.md)。
+- 正式发布回流 develop 后再固定下一版基线：[发布 SOP](../SOP/release-and-observation.md#正式发布回流与下一版起点)。
+- 物理 checkout 的隔离和回收：[工作树生命周期](../SOP/worktree-lifecycle.md)。
+- 当前实际基线、写集和授权：[控制面](coordination-control-plane.md)。
 
-## 允许入口
-
-- `main`：已发布稳定代码，只接收已完成发布线或生产热修回流。
-- `release/v0.5.12-clean`：本次 V0.5.12 冻结复核线，只做发布复核。
-- `develop`：下一阶段唯一普通开发基线。新的 `feat/*` 必须从通过规则验收的 `develop` 创建。
-
-生产标签 `v0.5.12` 的实际提交为 `4359648b41608429832e2ce4897bd12163a5d812`；标签对象为 `17cea8ca54b6be255fe8c0060d3ec9531a02e8d0`。分支名不能替代提交核验。
-
-## 历史入口
-
-旧 `archive/*`、`codex/*`、`feat/*`、`fix/*`、`hotfix/*`、`release/*`、`docs/*`、`explore/*`、`refactor/*` 和工作树只用于审计与恢复。它们不是当前代码基线，不得继续修改、迁回、合并或作为新任务起点。需要复用时，必须在 `develop` 上由主控选择性搬运，重新验证并记录来源。
-
-归档恢复引用位于 `refs/archive/git-cleanup-20261011/heads/*`；补丁、未跟踪文件和哈希见 `docs/archive/git-cleanup-20261011/handoffs/index.md` 与 `docs/archive/git-cleanup-20261011/manifests/git-cleanup-20261011-manifest.json`。
-
-## 新任务卡最小字段
-
-新任务必须写明：起始分支、起始 SHA、是否属于 `main`/`release`/`develop`、规则基线提交。若分支不是允许入口的合法后代、规则文件与 `develop` 不一致、或写集与活跃任务重叠，则 `DO_NOT_START`，先由主控处理。
+[2026-10-11 起点整理](history/git-starting-point-20261011.md)及[既有归档清单](../docs/archive/git-cleanup-20261011/manifests/git-cleanup-20261011-manifest.json)仅供追溯。旧专用归档引用不可续写，不等于所有保留 feat 都被禁止返修；不得从历史名单推定当前开发入口。

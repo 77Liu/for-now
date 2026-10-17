@@ -1,6 +1,6 @@
 # SOP 地图
 
-按任务选择一份主流程，需要时才读取专项。跨任务约束见 [PROJECT_RULES](../PROJECT_RULES.md)，当前迭代、候选、发布和运行状态只读[唯一协调控制面](../knowledge/coordination-control-plane.md)。小任务用同一任务卡承载全过程，不为阶段单独建报告。
+按任务选择一份主流程，需要时才读取专项。跨任务约束见 [PROJECT_RULES](../PROJECT_RULES.md)；设计职责、领域边界、数据访问与同步见[设计职责与数据访问契约](../knowledge/design-contracts.md)；当前迭代、候选、发布和运行状态只读[唯一协调控制面](../knowledge/coordination-control-plane.md)。小任务用同一任务卡承载全过程，不为阶段单独建报告。
 
 | 场景 | 流程 | 产出 |
 | --- | --- | --- |
