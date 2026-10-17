@@ -1,5 +1,6 @@
 import { safeText } from "../../shared/validation/index.mjs";
 import { normalizeTtsGenerationRate, TTS_GENERATION_RATE_DEFAULT } from "../../shared/speech/index.mjs";
+import { LLM_SCENARIOS } from "../../../.build/typescript/backend/modules/ai/invocation-contracts.mjs";
 
 import { openingPreferences } from "../../../public/frontend/shared/opening/index.mjs";
 
@@ -7,7 +8,7 @@ export const LLM_SETTINGS_VERSION = 13;
 export const LLM_MODELS = ["deepseek-flash", "deepseek-v4-pro"];
 export const LLM_EFFORTS = ["none", "high", "max"];
 export const LLM_TIERS = ["lite", "mid", "high", "ultra"];
-export const LLM_SCENARIOS = ["thoughtPrompt", "thoughtDraft", "thoughtAnswer", "followUpAnswer", "chat", "diaryLead", "diaryStructure", "diaryTopic", "diaryReflection", "annotationShenji", "analysis", "bookRecognition", "healthRecognition", "contentImageUnderstanding", "capturePolish", "onboardingClaimExtraction", "perceptionExtraction", "recordCompression", "importanceScoring"];
+export { LLM_SCENARIOS };
 const RESPONSE_STYLES = ["concise", "standard", "deep", "structured", "exploratory"];
 const RESPONSE_STYLE_SCENARIOS = ["thoughtDraft", "thoughtAnswer", "followUpAnswer", "chat", "diaryReflection", "annotationShenji", "analysis"];
 

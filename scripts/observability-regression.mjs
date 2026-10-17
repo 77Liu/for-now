@@ -215,10 +215,10 @@ try {
   assert.match(lengthStream, /"type":"error"/);
   assert.doesNotMatch(lengthStream, /"type":"done"/);
   mode = "timeout";
-  assert.equal((await request("/api/thought-prompts", {})).status, 500);
+  assert.equal((await request("/api/thought-prompts", {})).status, 504);
   entries = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries;
   assert.equal(entries.at(-1).status, "timeout");
-  assert.equal(entries.at(-1).errorCode, "TIMEOUT");
+  assert.equal(entries.at(-1).errorCode, "AI_REQUEST_TIMEOUT");
 
   mode = "usage_write_failure";
   const callsBeforeLedgerFailure = providerCalls;
@@ -234,9 +234,9 @@ try {
   await fs.rename(logDir, `${logDir}.ai-saved`);
   await fs.writeFile(logDir, "blocked log directory");
   const callsBeforeAuditFailure = providerCalls;
-  assert.equal((await request("/api/settings/test", {})).status, 200);
-  assert.equal(providerCalls - callsBeforeAuditFailure, 1);
-  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries.length, ledgerBeforeLogFailure + 1);
+  assert.equal((await request("/api/settings/test", {})).status, 503);
+  assert.equal(providerCalls - callsBeforeAuditFailure, 0);
+  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries.length, ledgerBeforeLogFailure);
   await delay(50);
   await fs.unlink(logDir);
   await fs.rename(`${logDir}.ai-saved`, logDir);

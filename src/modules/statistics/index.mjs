@@ -178,7 +178,7 @@ export function createStatisticsService({
       if (!includeOwner) return { value: { records: recordStatistics(store) } };
       await ensureAiUsage();
       const [usage, operations] = await Promise.all([
-        readAiUsage(),
+        readAiUsage({ from, to }),
         readOperationEntries(from, to)
       ]);
       return {

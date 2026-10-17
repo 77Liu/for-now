@@ -109,8 +109,12 @@ export function normalizeAiCostPlan(value, settings, usage, options) {
 
 export function createAiCostService({ repository, readSettings, readUsage, cnyPerUsd, now = () => new Date().toISOString() }) {
   const normalize = async value => {
-    const [settings, usage] = await Promise.all([readSettings(), readUsage()]);
-    return normalizeAiCostPlan(value, settings, usage, { date: localDateKey(now()), cnyPerUsd });
+    const date = localDateKey(now());
+    const [settings, usage] = await Promise.all([
+      readSettings(),
+      readUsage({ from: shiftDateKey(date, -29), to: date })
+    ]);
+    return normalizeAiCostPlan(value, settings, usage, { date, cnyPerUsd });
   };
   return {
     normalize,

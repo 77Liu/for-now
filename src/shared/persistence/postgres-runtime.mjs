@@ -1,5 +1,16 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { bindBusinessIdResponse, withBusinessIdTransaction } from "../../../.build/typescript/backend/shared/persistence/business-identifiers.mjs";
+import {
+  beginAiAuditAttempt,
+  deleteExpiredAiAuditAttempts,
+  finishAiAuditAttempt,
+  markInterruptedAiAuditAttempts
+} from "../../../.build/typescript/backend/shared/persistence/ai-audit-repository.mjs";
+import {
+  readAiUsageAttempts,
+  readAiUsageDaySummary,
+  recordAiUsageAttempt
+} from "../../../.build/typescript/backend/shared/persistence/ai-usage-repository.mjs";
 import pg from "pg";
 import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "./store-mapping.mjs";
 import { clearStoreObjects, readPostgresStoreObjects, storeSqlMapping, writeStoreObjects } from "./postgres-objects.mjs";
@@ -505,6 +516,35 @@ export async function createPostgresRuntime({
       waitForIdle: () => withAccountLock(async () => {})
     };
   };
+  const aiAudit = {
+    beginAttempt: row => accountTransaction((client, id) => (
+      beginAiAuditAttempt(client, id, row)
+    )),
+    finishAttempt: (callId, terminal) => accountTransaction((client, id) => (
+      finishAiAuditAttempt(client, id, callId, terminal)
+    )),
+    markInterrupted: (cutoff, limit) => accountTransaction((client, id) => (
+      markInterruptedAiAuditAttempts(client, id, cutoff, limit)
+    )),
+    deleteExpired: (cutoff, limit) => accountTransaction((client, id) => (
+      deleteExpiredAiAuditAttempts(client, id, cutoff, limit)
+    ))
+  };
+  const aiUsage = {
+    recordAttempt: entry => accountTransaction((client, id) => (
+      recordAiUsageAttempt(client, id, entry)
+    )),
+    read: options => readAccount((client, id) => (
+      readAiUsageAttempts(client, id, options)
+    )),
+    readDaySummary: day => readAccount((client, id) => (
+      readAiUsageDaySummary(client, id, day)
+    )),
+    ensure: () => readAccount(async client => {
+      await client.query("SELECT 1 FROM for_now.ai_usage_attempts LIMIT 0");
+      await client.query("SELECT 1 FROM for_now.ai_usage_aggregates LIMIT 0");
+    })
+  };
   const aiBudget = {
     read: async () => {
       const client = await connect(budgetPool);
@@ -642,5 +682,17 @@ export async function createPostgresRuntime({
     catch (error) { onAccountFailure(error); throw error; }
     finally { client.release(); }
   };
-  return { createStoreRepository, documents, aiBudget, auth, attachments, ready, claimApplication, close, readSharedSettings };
+  return {
+    createStoreRepository,
+    documents,
+    aiAudit,
+    aiUsage,
+    aiBudget,
+    auth,
+    attachments,
+    ready,
+    claimApplication,
+    close,
+    readSharedSettings
+  };
 }

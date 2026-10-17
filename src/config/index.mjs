@@ -120,6 +120,13 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     if (!date || date.toISOString().slice(0, 10) !== testCurrentDate) throw new Error("TEST_CURRENT_DATE must be a valid YYYY-MM-DD date");
   }
   if (!["json", "postgres"].includes(persistenceBackend)) throw new Error("PERSISTENCE_BACKEND must be json or postgres");
+  if (env.AI_AUDIT_DB_ENABLED !== undefined && !["0", "1"].includes(env.AI_AUDIT_DB_ENABLED)) {
+    throw new Error("AI_AUDIT_DB_ENABLED must be 0 or 1");
+  }
+  const aiAuditDatabaseEnabled = env.AI_AUDIT_DB_ENABLED === "1";
+  if (aiAuditDatabaseEnabled && persistenceBackend !== "postgres") {
+    throw new Error("AI_AUDIT_DB_ENABLED=1 requires PERSISTENCE_BACKEND=postgres");
+  }
   if (persistenceBackend === "postgres" && (env.LOCAL_TEST_MODE === "1" || upstreamOrigin)) {
     throw new Error("PostgreSQL runtime requires a standalone data source; local-test/upstream proxy is unsupported");
   }
@@ -236,6 +243,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
       backupStatusFile: path.resolve(rootDir, env.BACKUP_STATUS_FILE || "/var/lib/for-now-monitor/last-backup-success")
     }),
     audit: Object.freeze({
+      databaseEnabled: aiAuditDatabaseEnabled,
       retentionDays: Math.max(1, Math.min(3650, Number(env.AI_AUDIT_RETENTION_DAYS) || 30)),
       textLimit: Math.max(10000, Math.min(5_000_000, Number(env.AI_AUDIT_TEXT_LIMIT) || 1_000_000))
     }),

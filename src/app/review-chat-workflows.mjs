@@ -265,6 +265,7 @@ export function createReviewChatWorkflows({
             task: payload.message
           }),
           scene: "chat",
+          triggerType: "user_explicit",
           json: true,
           citationsEnabled: true,
           citationSources: answerCitationSources(coreModel.model, [...trendCitationSources(trend.trend), ...(personalContext.importanceSources || [])]),
@@ -317,6 +318,7 @@ export function createReviewChatWorkflows({
             evidenceLevel: evidence.evidenceLevel
           }),
           scene: "analysis",
+          triggerType: task.payload?.reason === "weekly-background" ? "scheduled" : "user_explicit",
           json: true,
           citationsEnabled: true,
           citationSources: answerCitationSources(coreModel.model, [
@@ -776,6 +778,7 @@ export function createReviewChatWorkflows({
         ]), JSON.stringify([getAccountId(), clientRequestId, personalContext.receipt, evidenceHash]));
         const result = await generate(referenceRequest.prompt, {
           scene: "analysis",
+          triggerType: reason === "weekly-background" ? "scheduled" : "user_explicit",
           json: true,
           systemPrompt: citationSystemPrompt(
             renderPrompt("orchestration.role.periodicSynthesis"),

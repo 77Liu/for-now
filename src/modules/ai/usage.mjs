@@ -329,26 +329,54 @@ export function providerUsageEntry({
   }).entries[0];
 }
 
+const usageCostCny = (entry, cnyPerUsd) => (
+  entry.costKnown
+    ? Number(entry.costCny || 0)
+    : Number(entry.costsUsd?.total || 0) * cnyPerUsd
+);
+
 export function createAiUsageService({ repository, getAccountKey, dailyCallLimit, dailyCostLimitCny, cnyPerUsd, now = () => new Date().toISOString() }) {
   const reservations = new Map();
+  const read = options => repository.read(options);
+  const update = repository.update
+    ? mutator => repository.update(mutator)
+    : async () => { throw new Error("AI usage repository does not support document updates"); };
+  const ensure = repository.ensure
+    ? () => repository.ensure(AI_USAGE_VERSION, original => Number(original.version || 1) < AI_USAGE_VERSION)
+    : async () => {};
+  const recordAttempt = repository.recordAttempt
+    ? entry => repository.recordAttempt(entry)
+    : entry => update(value => {
+        if (!Array.isArray(value.entries)) value.entries = [];
+        const callId = entry.callId || entry.id;
+        if (!value.entries.some(item => (item.callId || item.id) === callId)) value.entries.push(entry);
+      });
+  const persistedDay = async day => {
+    if (repository.readDaySummary) return repository.readDaySummary(day);
+    const usage = await read();
+    const entries = usage.entries.filter(item => item.createdAt.slice(0, 10) === day);
+    return {
+      calls: entries.length,
+      knownCostCny: entries.reduce((sum, entry) => sum + usageCostCny(entry, cnyPerUsd), 0),
+      unknownCostCalls: 0
+    };
+  };
   return {
-    read: repository.read,
-    update: repository.update,
-    ensure: () => repository.ensure(AI_USAGE_VERSION, original => Number(original.version || 1) < AI_USAGE_VERSION),
+    read,
+    update,
+    ensure,
+    recordAttempt,
     async reserveAttempt({ estimatedCostCny = 0 } = {}) {
       const accountKey = getAccountKey();
-      const usage = await repository.read(), day = now().slice(0, 10);
-      const entries = usage.entries.filter(item => item.createdAt.slice(0, 10) === day);
+      const day = now().slice(0, 10);
+      const persisted = await persistedDay(day);
       const reservationKey = `${accountKey}\u0000${day}`, active = reservations.get(reservationKey) || new Map();
-      if (entries.length + active.size >= dailyCallLimit) {
+      if (persisted.calls + active.size >= dailyCallLimit) {
         throw Object.assign(new Error("今日 AI 调用次数已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_CALL_LIMIT" });
       }
-      const persistedCostCny = entries.reduce((sum, item) => (
-        sum + (item.costKnown ? Number(item.costCny || 0) : Number(item.costsUsd?.total || 0) * cnyPerUsd)
-      ), 0);
       const reservedCostCny = [...active.values()].reduce((sum, item) => sum + item.costCny, 0);
       const requestedCostCny = Math.max(0, Number(estimatedCostCny) || 0);
-      if (Number.isFinite(dailyCostLimitCny) && persistedCostCny + reservedCostCny + requestedCostCny >= dailyCostLimitCny) {
+      if (Number.isFinite(dailyCostLimitCny) && persisted.knownCostCny + reservedCostCny + requestedCostCny >= dailyCostLimitCny) {
         throw Object.assign(new Error("今日 AI 费用额度已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_COST_LIMIT" });
       }
       const id = crypto.randomUUID(), state = { costCny: requestedCostCny };

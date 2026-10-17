@@ -522,6 +522,38 @@ async def finish_with_bounded_retry(call_id, terminal):
 
 ## 4.1 开发明细（必填；评审时留空，开发结束后填写）
 
+实施日期：2026-10-18。实现保持本需求为版本级串行链第 1 位，未编码后继
+F1/F3/F4/F9 migration。
+
+|实现项|实际落点与结果|
+|---|---|
+|schema 与登记|`migrations/registry.mts` 登记 `ai-audit-v1`；`postgres-schema.sql` 新增 `ai_request_audit`、`ai_usage_attempts`、`ai_usage_aggregates`、索引、约束和账户 RLS。|
+|窄仓储|`ai-audit-repository.mts` 实现 started INSERT、条件终态 UPDATE、相同终态重放、超龄中断与有界清理；`ai-usage-repository.mts` 实现 callId 幂等 attempt、UTC 日小聚合及有界读取。|
+|调用硬门|`audit.mjs` 与 `generation.mjs` 在 provider I/O 前提交 started；begin 失败返回 `AI_AUDIT_UNAVAILABLE` 且 provider 调用为 0。终态有限重试只更新同一行；预备的非 LLM 调用在预算/账户门拒绝时以 `dispatch_state=not_invoked` 收尾，不写 usage。|
+|调用契约|`invocation-contracts.mts` 作为场景注册表；用户显式、保存后自动、周期调度和内部任务沿实际工作流传入 `triggerType`，受众、推理可见性和持久策略由服务端注册表确定。原 `auditPrompt:false` 路径已移除，内部真实调用同样保存实际 SP/UP。|
+|usage 与消费者|数据库模式下调用链只写 attempt/aggregate 行，额度读取 UTC 日聚合，统计/费用读取有界时间范围；监控在开关启用时读取 `ai_usage_attempts`，不回退账户 usage 文档。|
+|兼容、备份与恢复|v0.5.x NDJSON 只在对应 DB begin/finish 成功后 best effort 投影；PostgreSQL 导出包含审计/usage 行、摘要和独立库恢复，恢复时由 attempt 重建 aggregate。|
+|历史迁移|新增 `migrate:ai-audit` 与 `migrate:ai-usage`。默认 dry-run，`--apply` 才写，`DATABASE_URL` 仅从环境读取；apply 先取得应用会话锁再读取源文件，每批 200 行。支持 started/terminal 合并、旧 terminal-only、缺终态 `interrupted`、脱敏冲突、目标冲突和重复执行。|
+
+实现审查补充：
+
+- 旧实现允许 started 文件写失败后仍继续 provider，因此迁移不能要求开始/终态总是成对；
+  terminal-only 在字段可证实时可迁，冲突不自动覆盖。
+- started-only 的 `completed_at` 使用迁移标记时刻；重复规划时以其余完整字段和
+  `interrupted` 状态判定幂等，不因标记时刻变化重复更新。
+- `AI_AUDIT_DB_ENABLED` 默认仍为 `0`；代码和 schema 已具备切换条件，但本阶段
+  未部署、未写生产、未执行真实付费 provider 调用。
+
+实际验证：
+
+|验证|结果与边界|
+|---|---|
+|类型、构建与静态门|`typecheck:backend`、`typecheck:ai-migrations`、`build:runtime`、`npm run check`、文档链接和 `git diff --check` 通过；本阶段新增的独立函数与迁移函数均低于 100 行，既有大型装配函数 `createAiRuntime` 只做必要接线，未为满足数字强拆。|
+|原子审计与调用链|AI domain/provider/runtime、runtime infrastructure、预算、媒体、内容、用户模型、感知、重要性、思绪/日记/复盘工作流专项通过；覆盖 begin 失败 provider=0、兼容副本失败不阻断、重试独立 callId、not-invoked 收尾及完整 contract。|
+|迁移专项|`test:ai-migrations` 覆盖双行合并、terminal-only、缺终态、来源冲突、重新规划后二次执行、usage 聚合不重复和账户 document write=0；实际 `data` 目录 dry-run 只输出计数与脱敏冲突。|
+|真实 PostgreSQL|`test:postgres:stable` 在 PostgreSQL 16.14、非 owner/NOSUPERUSER/NOBYPASSRLS 角色下通过 schema 重放、RLS、真实运行时、迁移幂等/冲突、监控、导出和独立数据库恢复。早期监控仍读旧 usage 文档及备份日期比较失败均已修复，失败事实不改写。|
+|横切门|`test:observability`、`test:monitor`、`test:persistence`、`test:backup`、`test:deploy`、`test:deploy:preview`、同步与项目总回归通过。部署回归只使用隔离替身，未执行远程命令或部署；可观测性独立入口先构建 TS 产物，并按现行超时协议断言 504/`AI_REQUEST_TIMEOUT`。|
+
 ## 4.2 测试方案（必填）
 
 |用例编号 / 对应需求|环境与前置条件|输入 / 操作 / 故障注入|预期输出 / 持久化 / 用户行为|监控与通过标准|

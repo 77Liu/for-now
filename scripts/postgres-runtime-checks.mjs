@@ -147,6 +147,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*", ACCOUNT_RECOVERY_ENABLED: "0", SYNC_ACCOUNT_WAKE_ENABLED: "1",
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
+        AI_AUDIT_DB_ENABLED: backend === "postgres" ? "1" : "0",
         AUTH_REQUIRED: "1", INVITE_CODE_HASH: crypto.createHash("sha256").update("runtime-invite").digest("hex"),
         APP_BASE_PATH: "/now", PORT: String(appPort), LOCAL_TEST_MODE: "", UPSTREAM_ORIGIN: "",
         ATTACHMENT_STORAGE: "local", DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}`,
@@ -806,6 +807,24 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         .map(({ id, type, version, content, relatedTo }) => ({ id, type, version, content, relatedTo }))
     }));
     assert.equal(providerCalls, 1);
+    const firstAuditRows = (await database.query(`
+      SELECT status, trigger_type, result_audience, reasoning_visibility,
+        persistence_mode, request_payload, response_payload
+      FROM for_now.ai_request_audit
+      WHERE account_id=$1
+    `, [id])).rows;
+    assert.equal(firstAuditRows.length, 1);
+    assert.equal(firstAuditRows[0].status, "success");
+    assert.equal(firstAuditRows[0].trigger_type, "user_action_auto");
+    assert.equal(firstAuditRows[0].result_audience, "user");
+    assert.equal(firstAuditRows[0].reasoning_visibility, "user_viewable");
+    assert.equal(firstAuditRows[0].persistence_mode, "business_result");
+    assert.match(firstAuditRows[0].request_payload.userPrompt, /数据库问题/);
+    assert.equal(firstAuditRows[0].response_payload.reasoningContent, "隔离模型思考");
+    assert.equal((await database.query(
+      "SELECT count(*)::int AS count FROM for_now.ai_usage_attempts WHERE account_id=$1",
+      [id]
+    )).rows[0].count, 1);
     assert.equal((await request(app.base, `/api/ai-tasks/${backgroundTask.id}`, { cookie: otherCookie })).status, 404);
     const resultState = await account(id, () => repo.read());
     const generatedAnswer = resultState.thoughts.find(item => item.sourceTaskId === backgroundTask.id);
@@ -1083,20 +1102,20 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(restartedSettings.responseStyles.thoughtAnswer, "deep");
     assert.equal((await request(app.base, "/api/ai-cost-plan", { cookie })).body.monthlyBudgetCny, 81);
     const monitorCreatedAt = new Date().toISOString();
-    await account(id, () => runtime.documents.update("usage", { version: 3, entries: [] }, usage => {
-      usage.entries.push(
-        {
-          id: "monitor-known", callId: "monitor-known", createdAt: monitorCreatedAt,
-          provider: "volcengine", service: "speech", scene: "speechSynthesis",
-          model: "volcengine-speech", status: "success", costKnown: true, costCny: 2.5
-        },
-        {
-          id: "monitor-unknown", callId: "monitor-unknown", createdAt: monitorCreatedAt,
-          provider: "volcengine", service: "vision", scene: "visionOcr",
-          model: "volcengine-vision", status: "success", costKnown: false, costCny: 0
-        }
-      );
-    }));
+    await account(id, async () => {
+      await runtime.aiUsage.recordAttempt({
+        id: "monitor-known", callId: "monitor-known", createdAt: monitorCreatedAt,
+        provider: "volcengine", service: "speech", scene: "speechSynthesis",
+        model: "volcengine-speech", status: "success", usageKnown: true,
+        costKnown: true, costCny: 2.5
+      });
+      await runtime.aiUsage.recordAttempt({
+        id: "monitor-unknown", callId: "monitor-unknown", createdAt: monitorCreatedAt,
+        provider: "volcengine", service: "vision", scene: "visionOcr",
+        model: "volcengine-vision", status: "success", usageKnown: true,
+        costKnown: false, costCny: 0
+      });
+    });
     const adminSnapshot = await request(app.base, "/api/admin/v1/snapshot", {
       headers: { authorization: `Bearer ${platformToken}` }
     });
@@ -1111,7 +1130,8 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.doesNotMatch(JSON.stringify(adminSnapshot.body), /数据库中的模型回答|runtime-password-1|synthetic-test-key/);
     const monitorUsage = await dailyAiUsage(dataDir, Date.parse(monitorCreatedAt), {
       persistenceBackend: "postgres",
-      backupDatabaseUrl: url("runtime_backup")
+      backupDatabaseUrl: url("runtime_backup"),
+      auditDatabaseEnabled: true
     });
     assert.ok(monitorUsage.calls >= 2);
     assert.ok(monitorUsage.costCny >= 2.5);

@@ -682,7 +682,7 @@ export function createPerceptionRuntime({
       prompt: workingContext.prompt,
       scene: PERCEPTION_TASK_KIND,
       json: true,
-      auditPrompt: false,
+      triggerType: "system_internal",
       maxTokens: 3000,
       contextReceipt: workingContext.receipt,
       contextFingerprint: workingContextReceiptFingerprint(workingContext.receipt)

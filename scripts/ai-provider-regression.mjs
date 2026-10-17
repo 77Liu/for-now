@@ -409,7 +409,7 @@ for (const id of ["a", "b"]) {
   assert.equal(accounts.get(id).entries.length, 1);
   const terminalAudit = auditRecords.find(entry => entry.actor.userId === id && entry.status === "success");
   const startedAudit = auditRecords.find(entry => entry.actor.userId === id && entry.status === "started");
-  assert.equal(terminalAudit.schemaVersion, 3);
+  assert.equal(terminalAudit.schemaVersion, 4);
   assert.equal(terminalAudit.traceId, `trace-${id}`);
   assert.equal(terminalAudit.request.userPrompt, `account-${id}`);
   assert.equal(terminalAudit.request.promptCatalog.version, promptManifest.activeVersion);
@@ -420,13 +420,17 @@ for (const id of ["a", "b"]) {
 }
 await run("private-prompt", () => generate("PRIVATE_ONBOARDING_SOURCE", {
   scene: "onboardingClaimExtraction",
-  json: true,
-  auditPrompt: false
+  json: true
 }));
 const privateAudits = auditRecords.filter(entry => entry.actor.userId === "private-prompt");
 assert.ok(privateAudits.length >= 2);
-assert.ok(privateAudits.every(entry => entry.request.userPrompt.omitted === true));
-assert.equal(JSON.stringify(privateAudits).includes("PRIVATE_ONBOARDING_SOURCE"), false);
+assert.ok(privateAudits.every(entry => entry.request.userPrompt === "PRIVATE_ONBOARDING_SOURCE"));
+assert.ok(privateAudits.every(entry => (
+  entry.invocationContract.triggerType === "system_internal"
+  && entry.invocationContract.resultAudience === "internal"
+  && entry.invocationContract.reasoningVisibility === "privileged_only"
+  && entry.invocationContract.persistenceMode === "audit_only"
+)));
 
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), "growth-provider-"));
 try {

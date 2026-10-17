@@ -23,8 +23,10 @@
 
 - 本机模式：`data/ai-usage.json`
 - 账户模式：`data/users/<user-id>/ai-usage.json`
-- PostgreSQL 模式：账户 `usage` 文档；主机监控通过
-  `PG_BACKUP_DATABASE_URL` 只读角色汇总，不回退读取 JSON
+- PostgreSQL 审计模式：`for_now.ai_usage_attempts` 每个 `callId` 一行，
+  `for_now.ai_usage_aggregates` 只保存账户、UTC 日、供应商和模型维度的小聚合；
+  主机监控通过 `PG_BACKUP_DATABASE_URL` 只读角色汇总，不回退读取 JSON 或账户
+  `usage` 文档
 
 v5 每条记录包含：
 
@@ -46,24 +48,37 @@ v5 每条记录包含：
 真实成本。旧版本升级先备份；旧流水原有费用保留，已有合法单位的供应商记录
 迁移为 `usageKnown=true`，未知输入形态、状态和耗时不伪造。
 
+历史 `ai-usage.json` 使用 `npm run migrate:ai-usage -- --data-dir <目录>` 预演；
+该命令默认 dry-run，只输出账户、行数和脱敏冲突。确认后显式增加 `--apply`，
+并只从环境变量读取 `DATABASE_URL`；apply 前须停止 PostgreSQL 应用，命令会获取
+同一应用会话锁并在仍有实例运行时拒绝。迁移按 `callId` 幂等写入 attempt 行并只更新
+对应聚合小行，不读取、清空或重写 PostgreSQL 账户文档；重复执行不得重复累计。
+来源中同一 `callId` 的不同内容不自动覆盖，报告冲突后留待人工处置。
+
 ## AI 调用审计
 
-位置：
+规范事实源是按账户隔离的私有审计数据库。每一次真实供应商请求尝试只允许对应一行，以唯一 `callId` 标识；业务请求重试使用共同 `callGroupId`，但每次尝试使用新的 `callId` 和新行。禁止把 SP、UP、历史、参数、回答、推理、错误或 usage 拆成不同审计表、不同事件行，禁止靠重放增量事件拼出一次调用的最终内容。
 
-- 本机模式：`data/logs/ai-audit-YYYY-MM-DD.ndjson`
-- 账户模式：`data/users/<user-id>/logs/ai-audit-YYYY-MM-DD.ndjson`
+一次尝试开始时插入同一行并置 `status=started`；未成功提交该行不得发送真实供应商请求。结束时按 `callId` 条件更新原行至终态，不追加第二条终态记录；终态更新失败只重试同一行更新，不重新调用供应商。进程崩溃可留下 `started`，恢复或对账只能更新该行的中断/未知状态及可证实字段，不能推测回答、推理、usage 或费用。唯一约束阻止同一 `callId` 产生多行；终态更新须校验合法状态转换，迟到或重复终态不得覆盖已确认终态。
 
-三类日志文件均为 `0600`、目录为 `0700`。默认保留 30 天，可通过 `AI_AUDIT_RETENTION_DAYS` 设置为 1–3650 天；初始化和每小时后台任务清理过期日文件，保留 UTC 截止边界整日。用量账本不随审计日文件清理。
-
-每个尝试先写 `status=started`，结束后以同一 `callId` 写终态；终态记录包含：
+同一行包含：
 
 - 版本、类型、调用 ID、调用组 ID、请求追踪 ID和账户 ID。
 - 供应商、场景、档位、尝试序号、重试原因、起止时间、耗时和状态。
-- 实际生效参数与实际发送的 SP/UP 必须写入私有审计数据库，关联账户、场景、callId、traceId 和来源版本；五问整理、用户模型及日总结等系统调用同样适用，不以仅存长度或模板代替实际请求。
+- 调用触发类型 `triggerType`、结果受众 `resultAudience` 和推理可见性
+  `reasoningVisibility`。这三项描述本次调用的产品语义，必须与请求、回答和推理
+  一起保存在同一审计行，不另建可见性表；自动触发不等于结果或推理只限内部。
+- 实际生效参数，以及实际发送的 SP、UP 和历史消息；关联账户、场景、`callId`、`traceId` 和来源版本。五问整理、用户模型及日总结等系统调用同样适用，不以仅存长度、模板或另一张提示词表代替实际请求。
 - 提示词目录版本及对应摘要用于追溯模板；目录引用不替代实际调用内容。入库与关联读取须可验证；现有文件日志不等于已完成数据库持久化，未接入路径如实记录缺口。
 - 图片 MIME、字节、宽高和 SHA-256；不重复保存图片二进制或 Base64。
-- HTTP 状态、供应商请求 ID、返回模型、结束原因、回答、`reasoning_content`、原始 usage 和费用快照。
+- HTTP 状态、供应商请求 ID、返回模型、结束原因、最终回答、`reasoning_content`、原始及标准化 usage 和费用快照。
 - 失败类别、错误码和受限长度的错误响应。
+
+非 LLM 服务没有 SP、UP、推理或 Token 时，相应列显式保存不适用状态，不拆出另一种审计模型。用量账本可以作为计费和聚合事实独立维护，但审计行仍保存本次尝试取得的 usage 与价格快照；账本不能替代或反向拼装审计正文。
+
+旧 `data/logs/ai-audit-YYYY-MM-DD.ndjson` 与 `data/users/<user-id>/logs/ai-audit-YYYY-MM-DD.ndjson` 只能作为迁移核对来源，不能视为满足本规则。使用 `npm run migrate:ai-audit -- --data-dir <目录>` 默认 dry-run 预演；确认后显式增加 `--apply`，数据库地址只从 `DATABASE_URL` 读取，且 apply 与用量迁移相同，要求 PostgreSQL 应用已停止并取得应用会话锁。命令按 `callId` 把可证实的开始/终态合并为一行，允许恢复旧实现留下的 terminal-only 事实；缺终态行标记 `interrupted`，回答、推理、usage 和费用保持未知。来源冲突或字段缺失只输出不含正文的分类报告，不自动覆盖；每批最多 200 行，重复执行保持幂等。
+
+数据库审计启用后，NDJSON 在全部 v0.5.x 版本中继续保留为兼容副本，但数据库单行是唯一事实源；数据库开始行未成功时不得通过只写 NDJSON 降级调用供应商。v0.6.0 正式上线后停止生成并正式退役该兼容副本，历史文件按既定备份、保留和删除流程处理。数据库默认保留 30 天，可通过 `AI_AUDIT_RETENTION_DAYS` 设置为 1–3650 天；初始化和后台清理按 UTC 截止边界删除过期行。用量账本不随审计记录清理。
 
 API Key、Cookie、会话令牌、邀请码和密码不进入 AI 审计。单个文本字段默认最多 100 万字符，超过部分显式标记截断；可用 `AI_AUDIT_TEXT_LIMIT` 在 1 万至 500 万字符间调整。
 
@@ -80,7 +95,7 @@ S3 中阿里云适配通过注入的审计接口报告各次调用，记录结�
 - 每个 HTTP 响应返回 `X-Request-Id`；合法的上游 `X-Request-Id` 会沿用，否则服务端生成 UUID。
 - 同一 HTTP/后台业务链使用 `traceId`，一次模型任务内的重试共用 `callGroupId`。
 - 每次实际供应商请求有独立 `callId`；重试不会覆盖首轮失败记录。
-- 正常落盘时，一条供应商用量记录对应同 `callId` 的开始和终态审计。
+- 正常落库时，一条供应商用量记录对应同 `callId` 的一行审计；开始与终态是该行的状态变化，不是两条审计事件。
 
 ## 访问、备份与删除
 
@@ -100,8 +115,8 @@ S3 中阿里云适配通过注入的审计接口报告各次调用，记录结�
 
 ## 已知边界与发布观察
 
-- 进程被强制停止时，可能只留下 `started`；没有终态的调用用量/费用未知，不能由开始记录推算。请求中途日志盘故障可能导致开始记录也丢失。
-- 业务写入、用量账本与 NDJSON 不是同一事务。任一日志失败会记录 `logging.failed / ai.log_failed`，不覆盖已经提交的数据，也不让已完成的模型回答自动重试；尚无自动补写和对账。
-- 在线日志按时间清理但未设单日容量上限，JSON 账本会增长并在统计时全量读取。当前单进程队列不支持多实例共同写文件。
+- 进程被强制停止时，同一审计行可能停留在 `started`；没有终态的调用用量/费用未知，不能由开始记录推算。开始插入失败属于开发不完整或严重运行错误，本次调用不得进入供应商，必须显式失败并告警；不能用拆分文件事件冒充合规落库。
+- `AI_AUDIT_DB_ENABLED=1` 时数据库审计和记录级用量账本生效；关闭只保留迁移前 JSON/NDJSON 兼容路径，不能作为正式切换后的合规降级。兼容 NDJSON 与数据库不在同一事务，但只在对应数据库事实成功后 best effort 写入；失败记录 `ai.log_failed`，不改变数据库事实或重调供应商。
+- 兼容 NDJSON 按时间清理但未设单日容量上限；迁移前 JSON 用量文件仍会增长并在统计时全量读取。当前单进程队列不支持多实例共同写文件。
 - 最低告警依赖生效通知配置；当前送达证据和发布观察窗口按[发布 SOP](../SOP/release-and-observation.md)核对。观察内容包括：检查新 `storage.*_failed / logging.failed / ai.log_failed`，检查无终态调用、AI 失败与重试量、响应耗时和磁盘增长；持久化故障或账户串写立即停止发布，按预定回退方案处理；代码回退不能替代数据修复。
-- 本地可复核命令：`npm run test:observability`、`npm run test:auth`、`npm run test:monitor` 和 `npm test`。当前结论只从控制面及绑定候选的回执读取。
+- 本地可复核命令：`npm run test:ai-migrations`、`npm run test:observability`、`npm run test:postgres:stable`、`npm run test:monitor` 和 `npm test`。当前结论只从控制面及绑定候选的回执读取。

@@ -1,3 +1,4 @@
+-- migration:core-schema-v1
 CREATE SCHEMA IF NOT EXISTS for_now;
 
 CREATE TABLE IF NOT EXISTS for_now.accounts (
@@ -229,6 +230,76 @@ CREATE TABLE IF NOT EXISTS for_now.document_secrets (
   PRIMARY KEY (account_id, document, field),
   FOREIGN KEY (account_id, document, field) REFERENCES for_now.document_fields(account_id, document, field) ON DELETE CASCADE
 );
+
+-- migration:ai-audit-v1
+CREATE TABLE IF NOT EXISTS for_now.ai_request_audit (
+  account_id text NOT NULL REFERENCES for_now.accounts(account_id) ON DELETE CASCADE,
+  call_id text PRIMARY KEY,
+  call_group_id text NOT NULL,
+  trace_id text NOT NULL,
+  provider text NOT NULL,
+  service text NOT NULL,
+  scene text NOT NULL,
+  action text NOT NULL,
+  trigger_type text NOT NULL CHECK (trigger_type IN ('user_explicit', 'user_action_auto', 'scheduled', 'system_internal')),
+  result_audience text NOT NULL CHECK (result_audience IN ('user', 'internal')),
+  reasoning_visibility text NOT NULL CHECK (reasoning_visibility IN ('user_viewable', 'privileged_only')),
+  persistence_mode text NOT NULL CHECK (persistence_mode IN ('business_result', 'live_only', 'audit_only')),
+  contract_schema_version integer NOT NULL CHECK (contract_schema_version > 0),
+  attempt integer NOT NULL CHECK (attempt > 0),
+  max_attempts integer NOT NULL CHECK (max_attempts >= attempt),
+  status text NOT NULL CHECK (status IN ('started', 'success', 'failed', 'timeout', 'cancelled', 'interrupted')),
+  dispatch_state text NOT NULL CHECK (dispatch_state IN ('pending', 'invoked', 'not_invoked')),
+  started_at timestamptz NOT NULL,
+  completed_at timestamptz,
+  request_payload jsonb NOT NULL CHECK (jsonb_typeof(request_payload) = 'object'),
+  response_payload jsonb NOT NULL CHECK (jsonb_typeof(response_payload) = 'object'),
+  error_payload jsonb,
+  usage_payload jsonb,
+  truncation jsonb NOT NULL CHECK (jsonb_typeof(truncation) = 'object'),
+  schema_version integer NOT NULL CHECK (schema_version > 0),
+  CHECK ((status = 'started') = (completed_at IS NULL)),
+  CHECK ((status = 'started') = (dispatch_state = 'pending'))
+);
+CREATE INDEX IF NOT EXISTS ai_request_audit_account_started_idx
+  ON for_now.ai_request_audit(account_id, started_at DESC, call_id);
+CREATE INDEX IF NOT EXISTS ai_request_audit_stale_idx
+  ON for_now.ai_request_audit(account_id, started_at, call_id)
+  WHERE status = 'started';
+
+CREATE TABLE IF NOT EXISTS for_now.ai_usage_attempts (
+  account_id text NOT NULL REFERENCES for_now.accounts(account_id) ON DELETE CASCADE,
+  call_id text NOT NULL,
+  provider text NOT NULL,
+  service text NOT NULL,
+  scene text NOT NULL,
+  model text NOT NULL,
+  status text NOT NULL,
+  occurred_at timestamptz NOT NULL,
+  usage_known boolean NOT NULL,
+  cost_known boolean NOT NULL,
+  cost_micros bigint NOT NULL CHECK (cost_micros >= 0),
+  payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
+  PRIMARY KEY (account_id, call_id)
+);
+CREATE INDEX IF NOT EXISTS ai_usage_attempts_account_time_idx
+  ON for_now.ai_usage_attempts(account_id, occurred_at, call_id);
+CREATE INDEX IF NOT EXISTS ai_usage_attempts_account_scene_time_idx
+  ON for_now.ai_usage_attempts(account_id, scene, occurred_at);
+
+CREATE TABLE IF NOT EXISTS for_now.ai_usage_aggregates (
+  account_id text NOT NULL REFERENCES for_now.accounts(account_id) ON DELETE CASCADE,
+  period_date date NOT NULL,
+  provider text NOT NULL,
+  model text NOT NULL,
+  calls integer NOT NULL CHECK (calls >= 0),
+  known_cost_micros bigint NOT NULL CHECK (known_cost_micros >= 0),
+  unknown_cost_calls integer NOT NULL CHECK (unknown_cost_calls >= 0),
+  PRIMARY KEY (account_id, period_date, provider, model)
+);
+CREATE INDEX IF NOT EXISTS ai_usage_aggregates_account_period_idx
+  ON for_now.ai_usage_aggregates(account_id, period_date);
+
 CREATE TABLE IF NOT EXISTS for_now.attachment_inventory (
   account_id text NOT NULL REFERENCES for_now.accounts(account_id),
   path text NOT NULL CHECK (path ~ '^/attachments/[A-Za-z0-9_.-]+$'),
@@ -319,6 +390,9 @@ BEGIN
     'document_fields',
     'document_records',
     'document_secrets',
+    'ai_request_audit',
+    'ai_usage_attempts',
+    'ai_usage_aggregates',
     'attachment_inventory'
   ]
   LOOP

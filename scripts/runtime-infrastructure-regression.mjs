@@ -31,7 +31,8 @@ assert.equal(defaults.aiQueue.enabled, false);
 assert.ok(Object.isFrozen(defaults.aiQueue));
 assert.throws(() => config({ AI_QUEUE_ENABLED: "1", AI_QUEUE_MAX_OUTSTANDING: "1", AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT: "2" }), /must not exceed/);
 assert.throws(() => config({ AI_QUEUE_MAX_QUEUE_WAIT_MS: "0" }), /positive integer/);
-assert.deepEqual(defaults.features, { incrementalSync: true });
+assert.equal(defaults.features.incrementalSync, true);
+assert.equal(defaults.features.thoughtPaging.enabled, false);
 assert.equal(config({ INCREMENTAL_SYNC_ENABLED: "0" }).features.incrementalSync, false);
 assert.deepEqual(defaults.limits, {
   aiQps: 20, aiConcurrency: 20, segmentationQps: 5, segmentationConcurrency: 5,
@@ -48,6 +49,13 @@ assert.equal(config({ AI_GLOBAL_QPS: "bad" }).limits.aiQps, 20);
 assert.equal(config({ AI_GLOBAL_QPS: "3000" }).limits.aiQps, 2500);
 assert.equal(config({ OCR_GLOBAL_QPS: "99" }).limits.ocrQps, 10);
 assert.equal(config({ DOCUMENT_PARSE_GLOBAL_CONCURRENCY: "99" }).limits.documentConcurrency, 2);
+assert.equal(defaults.audit.databaseEnabled, false);
+assert.throws(() => config({ AI_AUDIT_DB_ENABLED: "yes" }), /must be 0 or 1/);
+assert.throws(() => config({ AI_AUDIT_DB_ENABLED: "1" }), /requires PERSISTENCE_BACKEND=postgres/);
+assert.equal(config({
+  PERSISTENCE_BACKEND: "postgres",
+  AI_AUDIT_DB_ENABLED: "1"
+}).audit.databaseEnabled, true);
 assert.equal(config({ AI_AUDIT_TEXT_LIMIT: "1" }).audit.textLimit, 10000);
 assert.equal(config({ AI_AUDIT_RETENTION_DAYS: "4000" }).audit.retentionDays, 3650);
 assert.equal(config({ ATTACHMENT_USER_QUOTA_BYTES: "1" }).limits.attachmentBytes, 1024 ** 2);

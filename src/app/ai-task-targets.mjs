@@ -281,6 +281,7 @@ export function createAiTaskTargets({
       inputVersion: recordVersion(root.version),
       subtargetVersion: recordVersion(annotation.version),
       scene: "annotationShenji",
+      triggerType: "user_explicit",
       systemPrompt: shenjiSystemPrompt(),
       contextReceipt: workingContext.receipt,
       contextFingerprint,
@@ -323,7 +324,8 @@ export function createAiTaskTargets({
         originalText: work.originalText
       })),
       prompt,
-      scene: "contentImageUnderstanding"
+      scene: "contentImageUnderstanding",
+      triggerType: "user_action_auto"
     };
   }
 
@@ -505,6 +507,7 @@ export function createAiTaskTargets({
           })),
           prompt: workingContext.prompt,
           scene: "thoughtAnswer",
+          triggerType: task.payload?.triggerType || "user_action_auto",
           contextReceipt: workingContext.receipt,
           contextFingerprint,
           citationSources: [
@@ -531,6 +534,7 @@ export function createAiTaskTargets({
         inputHash,
         prompt: workingContext.prompt,
         scene: "followUpAnswer",
+        triggerType: "user_explicit",
         contextReceipt: workingContext.receipt,
         contextFingerprint,
         citationSources: [

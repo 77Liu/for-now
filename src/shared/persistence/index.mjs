@@ -40,6 +40,7 @@ export {
   readAttachmentInventory
 } from "./postgres-documents.mjs";
 export {
+  AI_AUDIT_EXPORT_FILE, AI_USAGE_ATTEMPTS_EXPORT_FILE,
   EMPTY_RECORD_COMPRESSION_QUOTA, RECORD_COMPRESSION_QUOTA_FILE,
   validateRecordCompressionQuota, discoverJsonBundle, applyPostgresBundle, readPostgresBundle
 } from "./postgres-bundle.mjs";

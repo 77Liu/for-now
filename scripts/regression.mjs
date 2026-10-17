@@ -1375,7 +1375,7 @@ try {
   const auditEntries = (await Promise.all(auditFiles.map(async name => (await fs.readFile(path.join(dataDir, "logs", name), "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse)))).flat();
   const sleepAudit = auditEntries.find(item => item.traceId === sleepTraceId && item.status !== "started");
   assert.ok(auditEntries.some(item => item.callId === sleepAudit.callId && item.status === "started"));
-  assert.equal(sleepAudit.schemaVersion, 3);
+  assert.equal(sleepAudit.schemaVersion, 4);
   assert.equal(sleepAudit.actor.userId, "local");
   assert.equal(sleepAudit.request.images.length, 2);
   assert.equal(sleepAudit.request.images[0].sha256.length, 64);

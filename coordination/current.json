@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 415,
-  "updated_at": "2026-10-17T09:36:12.027Z",
+  "revision": 424,
+  "updated_at": "2026-10-17T18:51:27.601Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,147 +9,120 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "58db42",
-    "effective_date": "2026-10-16",
-    "source": "PROJECT_RULES.md及现有唯一正文；发布SOP v1.5补齐main回流后确定下一版起点"
+    "commit": "a7ea41",
+    "effective_date": "2026-10-18",
+    "source": "Owner 本轮批准的开发规则与 v0.5.16 严格串行技术基线；规则提交 88f5de，方案基线 a7ea41。"
   },
-  "work_mode": "OWNER_INVESTIGATION",
+  "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
     "id": "v0.5.16",
-    "status": "PAUSED",
-    "phase": "Owner介入SQL与同步架构调查，开发停止"
+    "status": "BUILDING",
+    "phase": "阶段 1/11：AI 请求原子行审计出口通过，准备本地提交"
   },
   "scope": {
-    "description": "v0.5.16九项：F1-F5（F3仅A）、F6批注计数、F7阅读状态、F8移动选区、F9同步与交互P75≤500ms；按已批准方案串行实现、主控独立审查和本地验证。",
+    "description": "v0.5.16 共 11 项有效需求，严格串行：AI 原子审计 → 新 F1 → F2 → F5 → 新 F3 → 新 F4 → F7 → F6 → F8 → AI 推理可见性 → 新 F9；当前仅阶段 1 可开发。",
     "baseline": {
-      "branch": "develop",
-      "commit": "5cec49",
-      "source": "主控三文件独审通过，摘要候选预筛5d6d59正常合入；集成趋势上下文专项通过。"
+      "branch": "feat/v0.5.16-sync-latency",
+      "commit": "a7ea41",
+      "source": "Owner 于 2026-10-18 明确要求遵循已评审方案开始并持续开发；规则和方案基线已形成本地提交。"
     },
     "inputs": [
+      "docs/technical-proposals/V0516-跨需求共用底座与串行开发-技术方案.md",
       "docs/technical-proposals/评审索引.md",
-      "docs/technical-proposals/版本级集成设计与协同执行说明.md",
-      "docs/audits/engineering-2026-10-14.md"
+      "docs/technical-proposals/reczz28ORRaxSCBn-应新规修订AI请求原子行审计-技术方案.md",
+      "knowledge/design-contracts.md",
+      "knowledge/test-impact-matrix.md"
     ],
     "exclusions": [
-      "F3差量写阶段B及资源命令阶段C、多实例改造",
-      "本轮不push/tag/Release或部署；生产写入仍暂停"
+      "阶段 1 出口门通过前，不开发阶段 2 至 11",
+      "不 push、tag、Release、Preview 或生产部署",
+      "不执行生产业务写入或未授权真实付费调用",
+      "不回退或夹带工作区内既有 F9 未提交差分"
     ],
     "selected_requirement_ids": [
-      "reczz28NLb1qyuSM",
+      "reczz28ORRaxSCBn",
+      "reczz28ORRaxPAap",
       "reczz28NLb1qzsCc",
-      "reczz28NmXA3HYn6",
-      "reczz28NLb1qxaIE",
       "reczz28NLb1qxhIC",
-      "reczz28JmUJNsOl9",
+      "reczz28ORRaxPiK3",
+      "reczz28ORRaxSFnV",
       "reczz28JmeyoL7D0",
+      "reczz28JmUJNsOl9",
       "recvxlWptXiRfk",
-      "recvxyrQv7utyV"
+      "reczz28ORRaxQBcy",
+      "reczz28ORRaxQJDJ"
     ],
-    "plan_ref": "docs/versions/v0.5.16/README.md",
-    "planned_deliveries": [
-      "reczz28NmYM0vJSR",
-      "reczz28NmYM0rrKt",
-      "reczz28NmYM0s39S"
-    ]
+    "plan_ref": "docs/versions/v0.5.16/README.md"
   },
   "active_tasks": [
     {
-      "id": "v0516-F9-response-home-redundancy",
+      "id": "v0516-ai-atomic-audit",
       "owner": "主开发Agent",
-      "mode": "implementation",
+      "mode": "integration",
       "branch": "feat/v0.5.16-sync-latency",
-      "baseline": "5cec49",
-      "status": "PAUSED_BY_OWNER",
+      "baseline": "a7ea41",
+      "status": "REVIEWED_GO",
       "allowed_write_set": [
-        "src/http/sync.mjs (原响应即时序列化前冗余clone)",
-        "public/frontend/app/runtime/kernel.mjs (既有首页记忆状态通知装配去重/可见性)",
-        "public/frontend/app/runtime/home-runtime.mjs (仅若实际首页恢复消费者需要最小协调)",
-        "scripts/sync-coordinator-regression.mjs (既有必要HTTP不变量)",
-        "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md (原4.1事实与限制)"
+        "src/modules/ai/**（审计端口、调用硬门及必要类型迁移）",
+        "src/app/ai-runtime.mjs（repository 与兼容投影装配）",
+        "src/shared/persistence/ai-audit-repository.mts",
+        "src/shared/persistence/ai-usage-repository.mts",
+        "src/shared/persistence/migrations/registry.mts",
+        "src/shared/persistence/postgres-schema.sql（本阶段 schema 唯一写者）",
+        "scripts/ai-audit-*、scripts/migrate-ai-audit.mts、scripts/migrate-ai-usage.mts（阶段专项）",
+        "package.json、相关 tsconfig（仅必要构建与测试入口）",
+        "docs/technical-proposals/reczz28ORRaxSCBn-应新规修订AI请求原子行审计-技术方案.md（仅开发明细与真实证据）",
+        "coordination/**（仅主控通过唯一更新入口）",
+        "src/config/index.mjs、src/app/runtime-foundation.mjs（AI_AUDIT_DB_ENABLED 装配）",
+        "src/app/content/background.mjs、src/app/user-model.mjs、src/app/perception.mjs、src/shared/ai-context/importance-runtime.mts（完整审计与实际 trigger）",
+        "src/app/record-compressions.mjs、src/modules/statistics/index.mjs、src/modules/ai/costs.mjs（有界 usage 读取消费者）",
+        "src/shared/persistence/postgres-runtime.mjs、postgres-migration.mjs、postgres-export.mjs、postgres-bundle.mjs、index.mjs（窄仓储接入、迁移登记与备份恢复）",
+        "deploy/for-now.env.example、deploy/deploy-preview.sh（新开关声明与预览边界）",
+        "scripts/*ai-audit*、scripts/ai-domain-regression.mjs、scripts/ai-provider-regression.mjs、scripts/ai-runtime-regression.mjs、scripts/observability-regression.mjs、scripts/postgres-runtime-checks.mjs、scripts/postgres-integration.mjs、scripts/persistence-regression.mjs、scripts/runtime-infrastructure-regression.mjs（阶段专项与受影响回归）",
+        "src/app/ai-task-targets.mjs、src/app/thought-workflows.mjs、src/app/capture-journal-workflows.mjs、src/app/review-chat-workflows.mjs（仅真实 triggerType 传递）",
+        "scripts/importance-scoring-regression.mts、scripts/user-model-extraction-regression.mjs、相关 workflow 回归（仅审计契约断言）",
+        "scripts/monitor-health.mjs、scripts/monitor-regression.mjs（PostgreSQL usage 小行监控消费者）",
+        "knowledge/observability.md（PostgreSQL usage 事实源、历史迁移命令与已知边界）",
+        "scripts/regression.mjs（仅 AI 审计 schema v4 端到端断言）"
       ],
       "forbidden_write_set": [
-        "其他实现/DTO/协议/配置/schema/依赖/持久化策略",
-        "F3-B/C",
-        "coordination/**",
+        "阶段 2 至 11 的业务实现、migration 与运行时开关",
+        "工作区既有 F9 未提交源码差分，除非与阶段 1 真实冲突并先停报",
         ".trae/**",
-        "Git/远程/生产/付费",
-        "新agent/工作树"
+        "远程 push、tag、Release、Preview、生产部署与生产业务写入"
       ],
-      "shared_file_owner": "主开发唯一已列实现者；主控控制面与Git/独审。",
-      "integration_order": "原F9正常ff develop5cec49后串行最小优化；自查实际序列化/状态通知/路由恢复消费者再交主控。",
+      "shared_file_owner": "主开发是阶段 1 AI 与 audit/usage schema 唯一写者；控制面仍由主控经唯一入口维护。",
+      "integration_order": "先 RC-01 migration 登记与 schema，再 repository，再 AI runtime dispatch hard gate 与 NDJSON 兼容投影，最后迁移/权限/回归；全部通过后才解锁新 F1。",
       "contracts": [
-        "publicSnapshot仍原字段完整权威输出，实际sendJson/projectResponse/JSON.stringify同步消费无引用逃逸才可去clone；不得取消隐私投影。",
-        "同一次多域通知首页记忆最多一次；不可见页延迟到真实首页进入重建。保留首页展示/随机回看/删除/账户切换与读取最新state，不新增跨请求缓存。",
-        "不改F4/F7/F8窗口/阅读保护/选区，不把业务逻辑塞kernel；若生命周期无法证明等价则仅做已确定部分。",
-        "不承诺微优化足以500ms，旧SLOFAIL保留。"
-      ]
-    },
-    {
-      "id": "v0516-rule-review-remediation",
-      "owner": "主控",
-      "mode": "rules_remediation",
-      "status": "APPROVED_FOR_INTEGRATION",
-      "branch": "feat/v0.5.16-sync-latency",
-      "allowed_write_set": [
-        "PROJECT_RULES.md",
-        "SOP/** (现行规则及其拆分正文)",
-        "knowledge/** (现行规则及其拆分正文；历史原始记录不改写)",
-        "scripts/commit-gate.mjs",
-        "scripts/commit-gate-regression.mjs",
-        "coordination/** (仅唯一更新入口)",
-        "deploy/** (当前部署说明拆分、候选分支部署入口及必要适配)",
-        "scripts/deploy-regression.mjs",
-        "scripts/media-transfer-regression.mjs",
-        "scripts/preview-deploy-regression.mjs (部署说明消费者及TS构建步骤必要回归适配)"
+        "每次真实 provider attempt 使用唯一 callId 且仅一行；重试使用新 callId、同 callGroupId。",
+        "beginAttempt 提交失败时 provider 调用必须为 0；终态写失败不得触发 provider 重试。",
+        "SP、UP、history、参数、回答、reasoning、错误、usage、费用快照与 invocation contract 保存在同一审计行。",
+        "usage 账本按 callId 记录级写，并只更新有限聚合行；禁止账户 document 全读、清写或完整重写。",
+        "数据库启用后是唯一事实源；v0.5.x NDJSON 仅在对应 DB 成功后 best effort 投影，失败不改变 dispatch 或数据库事实。",
+        "新增或实质修改函数遵循少于 100 行软目标；抽象与防御必须对应实际使用方或已知失败边界。"
       ],
-      "forbidden_write_set": [
-        "业务源码及原暂停差分",
-        ".trae/**",
-        "历史事件/收口快照",
-        "远程推送/tag/release/生产动作"
-      ],
-      "contracts": [
-        "逐项修复Owner审查表九项及三个关联冲突；唯一正文、map-detail、保留有效约束；不创建报告链。",
-        "Owner八项残留入口结论：候选部署后观察再main；实际SP/UP私有入库；授权/预算引用唯一策略；五问可跳过；同步/快照场景分工；移除需求工作树数量门槛；区分用户主动与系统级AI思考；核对命令文件步骤并拆分部署说明。",
-        "Owner已批准规则及配套实现提交、正常接入develop；业务开发继续暂停。"
-      ],
-      "result": "规则及门禁、部署适配已审阅并获Owner批准；准备本地提交并接入develop。SP/UP私有数据库留存实现缺口仍保留。"
+      "result": "AI 原子行审计、记录级 usage、v0.5.x DB 后兼容投影、历史迁移、监控及备份恢复已实现并完成本地出口验证；允许形成阶段 1 本地提交，不代表发布 GO。"
     }
   ],
-  "candidate": {
-    "status": "STATEFUL_GLOBAL_PASS_PERFORMANCE_FAIL",
-    "branch": "develop",
-    "sha": "5cec49",
-    "tree": "6156a0",
-    "release_frozen": false,
-    "test_matrix_ref": "knowledge/test-impact-matrix.md",
-    "quality_gate": {
-      "slice_implementation_review": "pass_local",
-      "fresh_production_state_startup": "pass_local_complete_snapshot",
-      "combined_profile_startup": "pass_local_complete_snapshot",
-      "representative_performance": "fail_local_production_shape_24_saves",
-      "real_device_performance": "partial"
-    }
-  },
+  "candidate": null,
   "authorization": {
-    "source": "Owner本轮明确：现在停止开发，Owner介入调查；保留此前许可但执行暂停，等待明确恢复。",
+    "source": "Owner 2026-10-18 本轮明确：遵循项目规则开始开发，已评审需求按唯一串行方案持续推进，遇技术计划矛盾或必须 Owner 裁定时停止报告。",
     "allowed_actions": [
-      "九项已批准方案的本地实现、自查及受影响验证",
-      "主开发串行实现；主控独立完整链路审查",
-      "方案及实现提交、正常合入develop；保留分支",
-      "必要需求资产和控制面更新",
-      "隔离本地状态与性能验收；必要付费API计入每版本共用4元"
+      "11 项已评审方案的本地串行实现、自查、审查与受影响验证",
+      "当前阶段必要的 schema、迁移、运行时、测试和方案开发明细修改",
+      "隔离本地 PostgreSQL、mock provider 与无生产副作用测试",
+      "本地原子提交及必要需求资产、控制面更新"
     ],
     "excluded": [
+      "阶段出口前越级开发后继需求",
       "push",
       "tag",
       "Release",
-      "Preview或生产部署",
+      "Preview 或生产部署",
       "生产业务写入",
-      "超过本版本共用4元的付费调用"
+      "未另行确认的真实付费 provider 调用"
     ],
-    "execution_enabled": false,
+    "execution_enabled": true,
     "expires_at": null,
     "expiry_mode": "until_changed",
     "revoked": false,
@@ -161,34 +134,8 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [
-    {
-      "id": "v0516-F9-production-shape-latency",
-      "status": "CONFIRMED_LOCAL_THRESHOLD_FAIL",
-      "reason": "24真实保存功能通过，但跨端SLO多组447–1537ms（每组3样本校准）；摘要预筛54→14次已接入，剩余整账户写/重建/投影及同步消费者耗时仍待裁定。F3-B/C未授权，不能扩大实现或声称性能完成。",
-      "refs": [
-        "/tmp/v0516-f9-read-closure-small.log",
-        "/tmp/v0516-f9-read-closure-small-browser.log",
-        "artifacts/local/v0516-f9-server-acceptance-current.json",
-        "/tmp/v0516-f9-mobile-preparation-browser.log"
-      ]
-    },
-    {
-      "id": "v0516-owner-investigation-pause",
-      "status": "OWNER_PAUSED",
-      "reason": "Owner要求停止开发并调查单请求SQL放大与同步数据必要性。当前主开发已中断；未提交源码保留。"
-    },
-    {
-      "id": "v0516-home-browser-startup-unknown",
-      "status": "UNKNOWN_PENDING_INVESTIGATION",
-      "reason": "当前未接入五文件工作区的独立JSON/Chrome快显夹具未到secondary请求，页面显示暂时无法打开；尚未区分夹具/构建/业务原因，不计快显验证通过。Owner暂停后不继续复现或修复。",
-      "evidence": [
-        "/tmp/v0516-primary-home-publish-browser.log",
-        "/tmp/v0516-primary-home-publish-browser-diagnostic.log"
-      ]
-    }
-  ],
-  "next_action": "提交已批准规则及配套实现，正常接入develop，再通过唯一入口激活实际规则提交；业务开发继续暂停。",
+  "blockers": [],
+  "next_action": "仅提交阶段 1 已审写集并核对提交树；提交成功后通过唯一入口登记实际 commit、关闭阶段 1 并激活阶段 2 新 F1。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -579,17 +526,17 @@
     {
       "id": "v0516-rules-review-remediation",
       "object": {
-        "kind": "uncommitted_rules_and_deployment_entries",
-        "branch": "feat/v0.5.16-sync-latency",
-        "base_commit": "5cec49"
+        "kind": "git_commit",
+        "commit": "f7bd64",
+        "branch": "develop"
       },
-      "conclusion": "八项残留入口收尾：显式release/hotfix候选部署后观察再main；审计与思考展示边界、持续授权/共用额度、五问可跳过、同步/快照分工、需求准入去固定树数、失效命令清理及部署地图拆分完成。test:media-deploy、test:deploy、test:deploy:preview本地隔离回归PASS；83份当前入口的52个npm命令、85个明确源码路径及59个递归npm入口存在；185文档本地链接/锚点与diff检查PASS。既有门禁代码未再改动，复用有效回归。",
+      "conclusion": "Owner批准，规则与配套实现已提交并快进接入develop；适用规则commit f7bd64。业务审计SP/UP入库尚未实现。",
       "limitations": [
-        "未提交/未接入；有效rule_baseline仍保持58db42，业务开发继续Owner暂停。",
         "部署回归使用网络/特权命令替身；未安装服务器guard、未实际部署，不证明生产环境或真实npm依赖安装/服务启动。",
         "SP/UP入库规范已更新，但src/app/user-model.mjs、src/app/perception.mjs及src/shared/ai-context/importance-runtime.mts仍有auditPrompt:false；src/app/ai-runtime.mjs审计append仍写私有NDJSON。业务持久化改造未在本轮实施，不能声称数据库留存闭环。",
         "用户主动回答与系统调用的思考可见性是本轮规则裁定，应用展示及服务端过滤未在本轮改写或重新验收。",
-        "命令/文件检查不等于执行所有命令；链接检查未请求外网。原四个业务脏文件、历史事件前缀及分支/HEAD保留。"
+        "命令/文件检查不等于执行所有命令；链接检查未请求外网。原四个业务差分及历史事件前缀保留。",
+        "业务开发继续Owner暂停；规则接入结果已落盘，按规则随下一相关提交保存，不单独创建过程提交。"
       ],
       "refs": [
         "PROJECT_RULES.md",
@@ -613,6 +560,30 @@
         "knowledge/user-journey-testing.md",
         "knowledge/prompt-architecture.md",
         "knowledge/metrics.md"
+      ]
+    },
+    {
+      "id": "v0516-stage1-ai-atomic-audit-verification",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-sync-latency",
+        "baseline": "a7ea41",
+        "requirement_id": "reczz28ORRaxSCBn"
+      },
+      "conclusion": "TC-01 至 TC-14 的本地实现证据闭合：begin 失败 provider=0、真实尝试单行、完整 invocation contract、usage 记录级写、兼容投影顺序、脱敏幂等迁移、RLS、监控与独立库恢复通过；PostgreSQL 16.14 全门和项目总回归通过。",
+      "limitations": [
+        "AI_AUDIT_DB_ENABLED 默认仍为0；未部署、未写生产、未执行真实付费 provider 调用。",
+        "本结论是阶段研发出口 GO，不是版本发布 GO；v0.5.x NDJSON 兼容保留至 v0.6.0 正式上线。",
+        "部署测试使用隔离替身；生产角色授权、灰度观测、容量和真实外部账单仍属发布阶段。"
+      ],
+      "refs": [
+        "docs/technical-proposals/reczz28ORRaxSCBn-应新规修订AI请求原子行审计-技术方案.md#41-开发明细必填评审时留空开发结束后填写",
+        "scripts/ai-audit-migration-regression.mts",
+        "scripts/ai-audit-migration-postgres-checks.mjs",
+        "npm run test:postgres:stable",
+        "npm test",
+        "npm run test:deploy",
+        "npm run test:deploy:preview"
       ]
     }
   ],

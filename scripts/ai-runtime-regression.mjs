@@ -155,6 +155,29 @@ function createHarness({
 
   const createAudit = options => {
     captures.auditOptions = options;
+    const invokePrepared = async (details, invoke, summarize) => {
+      let result;
+      let response = {};
+      try {
+        result = await invoke();
+        response = summarize(result) || {};
+        return result;
+      } finally {
+        const usage = {
+          callId: `call-${++sequence}`,
+          costKnown: response.costKnown ?? details.costKnown ?? false,
+          costCny: response.costCny ?? details.costCny ?? 0
+        };
+        details.reservation?.retain?.(usage);
+        events.push("usage");
+        await options.updateUsage(document => {
+          if (!Array.isArray(document.entries)) document.entries = [];
+          document.entries.push(usage);
+        });
+        details.reservation?.commit?.();
+        events.push("audit");
+      }
+    };
     return {
       async recoverPending() {
         events.push("audit-recover-pending");
@@ -165,29 +188,18 @@ function createHarness({
           pendingAudit: 0
         };
       },
-      async providerCall(details, invoke, summarize = value => value || {}) {
+      async prepareProviderCall(details, summarize = value => value || {}) {
         events.push("audit-start");
-        let result;
-        let response = {};
-        try {
-          result = await invoke();
-          response = summarize(result) || {};
-          return result;
-        } finally {
-          const usage = {
-            callId: `call-${++sequence}`,
-            costKnown: response.costKnown ?? details.costKnown ?? false,
-            costCny: response.costCny ?? details.costCny ?? 0
-          };
-          details.reservation?.retain?.(usage);
-          events.push("usage");
-          await options.updateUsage(document => {
-            if (!Array.isArray(document.entries)) document.entries = [];
-            document.entries.push(usage);
-          });
-          details.reservation?.commit?.();
-          events.push("audit");
-        }
+        return {
+          invoke: operation => invokePrepared(details, operation, summarize),
+          async finishUninvoked() {
+            events.push("audit-not-invoked");
+            return true;
+          }
+        };
+      },
+      async providerCall(details, invoke, summarize = value => value || {}) {
+        return (await this.prepareProviderCall(details, summarize)).invoke(invoke);
       }
     };
   };
@@ -541,6 +553,8 @@ const deepSeekGeneratorDouble = (options, { events }) => async () => (
     harness.events.push("provider");
   }), error => error === startError);
   assert.equal(harness.events.includes("provider"), false);
+  assert.ok(harness.events.includes("audit-not-invoked"));
+  assert.equal(harness.events.includes("usage"), false);
   assert.ok(harness.events.includes("account-release"));
   assert.ok(harness.events.includes("site-release"));
   assert.equal(harness.budget.calls.some(call => call.type === "site-settle"), false);

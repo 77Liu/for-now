@@ -535,23 +535,32 @@ try {
   const terminal = { callId: "audit-test", status: "success", startedAt: now(), response: { httpStatus: 200, content: "private-test-value" } };
   await run("audit-a", async () => {
     await audit.start(terminal);
-    await audit.recordDeepSeekAttempt({ usage: null, audit: terminal, usageMetadata: { model: "deepseek-flash", createdAt: now() } });
+    await audit.recordDeepSeekAttempt({ usage: null, audit: terminal, usageMetadata: { callId: terminal.callId, model: "deepseek-flash", createdAt: now() } });
     auditFails = true;
-    await audit.start(terminal);
-    await audit.recordDeepSeekAttempt({ audit: terminal, usageMetadata: { model: "deepseek-flash", createdAt: now() } });
+    await assert.rejects(audit.start({ ...terminal, callId: "begin-failed" }), { code: "AI_AUDIT_UNAVAILABLE" });
     auditFails = false;
     usageFails = true;
-    await audit.recordDeepSeekAttempt({ audit: terminal, usageMetadata: { model: "deepseek-flash", createdAt: now() } });
+    const usageFailure = { ...terminal, callId: "usage-failed", id: "usage-failed" };
+    await audit.start(usageFailure);
+    await audit.recordDeepSeekAttempt({ audit: usageFailure, usageMetadata: { callId: usageFailure.callId, model: "deepseek-flash", createdAt: now() } });
+    usageFails = false;
+    await audit.recoverPending();
+    const finishFailure = { ...terminal, callId: "finish-failed", id: "finish-failed" };
+    await audit.start(finishFailure);
     auditFails = true;
-    await audit.recordDeepSeekAttempt({ audit: terminal, usageMetadata: { model: "deepseek-flash", createdAt: now() } });
+    await audit.recordDeepSeekAttempt({ audit: finishFailure, usageMetadata: { callId: finishFailure.callId, model: "deepseek-flash", createdAt: now() } });
+    auditFails = false;
+    await audit.recoverPending();
     assert.equal(await audit.segmentationCall("mock", "group", {}, async () => "success", () => ({})), "success");
     await assert.rejects(audit.segmentationCall("mock", "group", {}, async () => { throw Object.assign(new Error("provider failed"), { code: "PROVIDER_FAIL" }); }), { code: "PROVIDER_FAIL" });
   });
-  assert.equal(usageRecords.length, 1);
-  assert.equal(auditRecords.length, 3);
+  assert.equal(usageRecords.length, 5);
+  assert.ok(auditRecords.length >= 10);
   assert.doesNotMatch(JSON.stringify(auditRecords), /private-test-value/);
-  for (const target of ["usage", "audit", "audit_start"]) assert.ok(events.some(([, name, fields]) => name === "ai.log_failed" && fields.target === target));
-  assert.equal(events.filter(([, name]) => name === "ai.completed").length, 4);
+  for (const target of ["usage", "audit_finish", "audit_start"]) {
+    assert.ok(events.some(([, name, fields]) => name === "ai.log_failed" && fields.target === target));
+  }
+  assert.equal(events.filter(([, name]) => name === "ai.completed").length, 3);
 
   let recoveryUsageFails = true, recoveryAuditFails = true, retained = 0, committed = 0;
   const recoveredUsage = [], recoveredAudits = [];
@@ -577,13 +586,13 @@ try {
   const persistence = await run("recovery-a", () => recoverableAudit.recordDeepSeekAttempt({
     usage: { prompt_tokens: 20, completion_tokens: 5 },
     audit: { ...recoverableTerminal, actor: { userId: "recovery-a" } },
-    usageMetadata: { model: "deepseek-flash", createdAt: now(), scene: "thoughtAnswer", status: "success" },
+    usageMetadata: { callId: recoverableTerminal.callId, model: "deepseek-flash", createdAt: now(), scene: "thoughtAnswer", status: "success" },
     reservation: {
       retain() { retained += 1; },
       commit() { committed += 1; }
     }
   }));
-  assert.deepEqual(persistence, { usagePersisted: false, auditPersisted: false, pendingUsage: 1, pendingAudit: 1 });
+  assert.deepEqual(persistence, { usagePersisted: false, auditPersisted: false });
   assert.equal(retained, 1);
   assert.equal(committed, 0);
   recoveryUsageFails = false;
@@ -603,16 +612,103 @@ try {
   });
   assert.equal(committed, 1);
   assert.equal(recoveredUsage.length, 1);
-  assert.equal(recoveredAudits.length, 2);
+  assert.equal(recoveredAudits.length, 1);
   assert.equal(recoveredAudits[0].entry.usage.costKnown, true);
   assert.equal(recoveredAudits[0].entry.usage.costCny, recoveredUsage[0].costCny);
   assert.deepEqual(recoveredAudits[0].entry.usage.ratesCnyPerMillion, recoveredUsage[0].ratesCnyPerMillion);
   assert.deepEqual(recoveredAudits[0].entry.usage.costsCny, recoveredUsage[0].costsCny);
-  assert.equal(recoveredAudits.at(-1).entry.type, "ai.usage_recovered");
-  assert.deepEqual(
-    usageEntryFromAudit(recoveredAudits[0].entry),
-    recoveredUsage[0]
-  );
+  assert.equal(usageEntryFromAudit(recoveredAudits[0].entry), null);
+
+  const databaseRows = new Map();
+  const databaseUsage = new Map();
+  let databaseBeginFails = true;
+  let compatibilityFails = true;
+  let databaseProviderCalls = 0;
+  let databaseCallSequence = 0;
+  const databaseAudit = createAiAudit({
+    textLimit: 100,
+    getContext: () => ({
+      user: { id: "database-audit-account" },
+      traceId: "database-audit-trace",
+      secrets: []
+    }),
+    repository: {
+      async beginAttempt(row) {
+        if (databaseBeginFails) throw new Error("database begin failed");
+        if (databaseRows.has(row.callId)) throw Object.assign(new Error("duplicate"), { code: "AI_AUDIT_CALL_ID_CONFLICT" });
+        databaseRows.set(row.callId, { ...structuredClone(row), status: "started" });
+      },
+      async finishAttempt(callId, terminalRow) {
+        const row = databaseRows.get(callId);
+        if (!row) throw Object.assign(new Error("missing"), { code: "AI_AUDIT_ATTEMPT_MISSING" });
+        if (row.status !== "started") throw Object.assign(new Error("conflict"), { code: "AI_AUDIT_STATE_CONFLICT" });
+        Object.assign(row, structuredClone(terminalRow));
+      }
+    },
+    recordUsageAttempt: async entry => {
+      if (databaseUsage.has(entry.callId)) throw new Error("duplicate usage");
+      databaseUsage.set(entry.callId, structuredClone(entry));
+    },
+    append: async () => {
+      if (compatibilityFails) throw new Error("compatibility unavailable");
+    },
+    updateUsage: async () => {
+      throw new Error("database audit must not update the account usage document");
+    },
+    logEvent: async (...args) => events.push(args),
+    now,
+    createId: () => `database-call-${++databaseCallSequence}`
+  });
+  await assert.rejects(databaseAudit.providerCall({
+    provider: "volcengine",
+    service: "vision",
+    scene: "visionOcr",
+    action: "OCRNormal"
+  }, async () => {
+    databaseProviderCalls += 1;
+    return {};
+  }), { code: "AI_AUDIT_UNAVAILABLE" });
+  assert.equal(databaseProviderCalls, 0);
+  assert.equal(databaseRows.size, 0);
+  databaseBeginFails = false;
+  const databaseResult = await databaseAudit.providerCall({
+    provider: "volcengine",
+    service: "vision",
+    scene: "visionOcr",
+    action: "OCRNormal",
+    request: { imageBytes: 12 }
+  }, async () => {
+    databaseProviderCalls += 1;
+    return { requestId: "database-provider-request" };
+  });
+  assert.equal(databaseResult.requestId, "database-provider-request");
+  assert.equal(databaseProviderCalls, 1);
+  assert.equal(databaseRows.size, 1);
+  assert.equal(databaseUsage.size, 1);
+  const databaseRow = [...databaseRows.values()][0];
+  assert.equal(databaseRow.status, "success");
+  assert.equal(databaseRow.triggerType, "system_internal");
+  assert.equal(databaseRow.resultAudience, "internal");
+  assert.equal(databaseRow.reasoningVisibility, "privileged_only");
+  assert.equal(databaseRow.persistenceMode, "audit_only");
+  assert.deepEqual(databaseRow.requestPayload.systemPrompt, { notApplicable: true });
+  assert.equal(databaseRow.responsePayload.reasoningContent, null);
+  const preparedWithoutDispatch = await databaseAudit.prepareProviderCall({
+    provider: "volcengine",
+    service: "speech",
+    scene: "speechSynthesis",
+    action: "synthesize"
+  });
+  assert.equal(await preparedWithoutDispatch.finishUninvoked(
+    Object.assign(new Error("budget rejected"), { code: "AI_SITE_DAILY_COST_LIMIT" })
+  ), true);
+  assert.equal(await preparedWithoutDispatch.finishUninvoked(new Error("duplicate")), false);
+  const notInvokedRow = [...databaseRows.values()].find(row => row.dispatchState === "not_invoked");
+  assert.ok(notInvokedRow);
+  assert.equal(notInvokedRow.status, "failed");
+  assert.equal(notInvokedRow.dispatchState, "not_invoked");
+  assert.equal(notInvokedRow.usagePayload, null);
+  assert.equal(databaseUsage.size, 1);
 
   const providerUsage = [], providerAudits = [], providerEvents = [];
   const providerAudit = createAiAudit({

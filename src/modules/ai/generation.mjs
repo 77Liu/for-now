@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { createExecutionControl, createAiAdmission } from "../../../.build/typescript/backend/modules/ai/execution-control.mjs";
+import { resolveInvocationContract } from "../../../.build/typescript/backend/modules/ai/invocation-contracts.mjs";
 import { safeText, safeIso } from "../../shared/validation/index.mjs";
 import { redact } from "../../shared/observability/index.mjs";
 import { promptCatalogMetadata } from "../../shared/prompts/index.mjs";
@@ -77,7 +78,7 @@ export function createAiGenerator({
     timeoutMs = 300000,
     signal = null,
     isCurrent = async () => true,
-    auditPrompt = true,
+    triggerType = undefined,
     budgetExecution = null,
     budgetStageIds = null
   } = {}) {
@@ -111,12 +112,8 @@ export function createAiGenerator({
       const receipt = contextReceipt && typeof contextReceipt === "object" && !Array.isArray(contextReceipt)
         ? structuredClone(contextReceipt)
         : null;
-      const auditText = value => auditPrompt
-        ? audit.text(value)
-        : { omitted: true, characters: String(value ?? "").length };
-      const auditMessage = value => auditPrompt
-        ? audit.message(value)
-        : { role: safeText(value?.role, 20) || "unknown", omitted: true };
+      const auditText = value => audit.text(value);
+      const auditMessage = value => audit.message(value);
       if (context.secrets) context.secrets.push(settings.apiKey);
       const traceId = safeText(context.traceId, 128) || createId(), callGroupId = createId();
       const userId = safeText(context.user?.id, 100) || "local", endpointHost = provider.endpointHost;
@@ -187,8 +184,10 @@ export function createAiGenerator({
               ...(onDelta ? { stream_options: { include_usage: true } } : {}),
               ...(json ? { response_format: { type: "json_object" } } : {})
             };
-            await audit.start({
+            const invocationContract = resolveInvocationContract(scene, triggerType);
+            const startedAudit = await audit.start({
               id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
+              service: "chat-completions", action: "complete", invocationContract,
               scene, startedAt: createdAt, attempt: attempt + 1, maxAttempts: efforts.length,
               request: {
                 endpointHost,
@@ -227,8 +226,8 @@ export function createAiGenerator({
                 usage, usageMetadata: { ...common, model, createdAt },
                 reservation: usageReservation,
                 audit: {
-                  id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
-                  scene, tier: settings.tier, attempt: attempt + 1, maxAttempts: efforts.length,
+                  ...startedAudit,
+                  tier: settings.tier,
                   retryReason: common.retryReason, retryScheduled, startedAt: createdAt, completedAt, durationMs, status,
                   error: error ? { ...failure, message: audit.text(error.privateMessage || failure.message) } : null,
                   request: {

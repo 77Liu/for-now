@@ -4,7 +4,12 @@ import path from "node:path";
 import { AI_BUDGET_DOCUMENT_FILE } from "./ai-budget-repository.mjs";
 import { ACCOUNT_DOCUMENT_FILES } from "./document-mapping.mjs";
 import { readAuthDocument } from "./postgres-documents.mjs";
-import { readPostgresBundle, RECORD_COMPRESSION_QUOTA_FILE } from "./postgres-bundle.mjs";
+import {
+  AI_AUDIT_EXPORT_FILE,
+  AI_USAGE_ATTEMPTS_EXPORT_FILE,
+  readPostgresBundle,
+  RECORD_COMPRESSION_QUOTA_FILE
+} from "./postgres-bundle.mjs";
 import { storeContentSha256 } from "./store-mapping.mjs";
 
 // The recovery role has read-only privileges in both schemas. It must still be
@@ -42,6 +47,8 @@ export async function exportPostgresDirectory(client, { outputDir, readAttachmen
       for (const [document, value] of Object.entries(account.documents)) {
         await write(path.join(directory, ACCOUNT_DOCUMENT_FILES[document]), value);
       }
+      await write(path.join(directory, AI_AUDIT_EXPORT_FILE), account.auditAttempts);
+      await write(path.join(directory, AI_USAGE_ATTEMPTS_EXPORT_FILE), account.usageAttempts);
       const references = new Set();
       // Active references without inventory must never become a "good" backup.
       for (const row of (await client.query(
@@ -76,6 +83,16 @@ export async function exportPostgresDirectory(client, { outputDir, readAttachmen
       accounts: bundle.accounts.map(row => ({
         accountId: row.accountId, storeSha256: storeContentSha256(row.store),
         documents: Object.fromEntries(Object.entries(row.documents).map(([name, value]) => [name, storeContentSha256(value)])),
+        aiAudit: {
+          file: AI_AUDIT_EXPORT_FILE,
+          rows: row.auditAttempts.length,
+          sha256: storeContentSha256(row.auditAttempts)
+        },
+        aiUsage: {
+          file: AI_USAGE_ATTEMPTS_EXPORT_FILE,
+          rows: row.usageAttempts.length,
+          sha256: storeContentSha256(row.usageAttempts)
+        },
         attachments: row.inventory
       }))
     };

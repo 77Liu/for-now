@@ -287,6 +287,7 @@ export async function createRuntimeFoundation({
   }
 
   const {
+    databaseEnabled: aiAuditDatabaseEnabled,
     retentionDays: aiAuditRetentionDays,
     textLimit: aiAuditTextLimit
   } = appConfig.audit;
@@ -326,6 +327,7 @@ export async function createRuntimeFoundation({
     recordCompressionDailyInvocationLimit: appConfig.recordCompressionDailyInvocationLimit,
     recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,
     cnyPerUsd: usdCny,
+    auditDatabaseEnabled: aiAuditDatabaseEnabled,
     auditTextLimit: aiAuditTextLimit,
     auditRetentionDays: aiAuditRetentionDays,
     now

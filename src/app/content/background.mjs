@@ -176,7 +176,7 @@ export function createContentBackground({
           json: work.json === true,
           retryWithoutThinking: work.retryWithoutThinking,
           maxTokens: work.maxTokens || 16000,
-          auditPrompt: work.auditPrompt !== false,
+          triggerType: work.triggerType,
           contextReceipt: referenceRequest
             ? { ...work.contextReceipt, referenceRequest: referenceRequest.receipt }
             : work.contextReceipt || null,

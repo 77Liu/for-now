@@ -59,6 +59,7 @@ export async function createAiRuntime({
   recordCompressionDailyInvocationLimit = 0,
   recordCompressionPerCallBudgetCny = 0,
   cnyPerUsd,
+  auditDatabaseEnabled = false,
   auditTextLimit,
   auditRetentionDays,
   budgetPolicy = AI_BUDGET_POLICY,
@@ -68,6 +69,9 @@ export async function createAiRuntime({
   if (typeof storagePaths !== "function") throw new TypeError("AI runtime storagePaths is required");
   if (typeof requestStorage?.getStore !== "function") throw new TypeError("AI runtime requestStorage is required");
   if (typeof logEvent !== "function") throw new TypeError("AI runtime logEvent is required");
+  if (auditDatabaseEnabled && (!postgresRuntime?.aiAudit || !postgresRuntime?.aiUsage)) {
+    throw new TypeError("AI audit database mode requires PostgreSQL audit and usage repositories");
+  }
 
   const {
     fs: fileSystem = nodeFs,
@@ -180,16 +184,18 @@ export async function createAiRuntime({
     ensure: ensureLlmSettings
   } = llmSettingsService;
 
-  const usageRepository = createAccountDocumentRepositoryImpl({
-    runtime: postgresRuntime,
-    name: "usage",
-    getFile: () => storagePaths().aiUsageFile,
-    readDocument: readStoredJson,
-    writeDocument: writeJsonAtomic,
-    normalize: normalizeAiUsage,
-    assertCommit: (before, after, name) => accountRuntime?.assertCommit(before, after, name),
-    emptyDocument: {}
-  });
+  const usageRepository = auditDatabaseEnabled
+    ? postgresRuntime.aiUsage
+    : createAccountDocumentRepositoryImpl({
+        runtime: postgresRuntime,
+        name: "usage",
+        getFile: () => storagePaths().aiUsageFile,
+        readDocument: readStoredJson,
+        writeDocument: writeJsonAtomic,
+        normalize: normalizeAiUsage,
+        assertCommit: (before, after, name) => accountRuntime?.assertCommit(before, after, name),
+        emptyDocument: {}
+      });
   const aiUsageService = createAiUsageServiceImpl({
     repository: usageRepository,
     getAccountKey: () => storagePaths().aiUsageFile,
@@ -202,7 +208,8 @@ export async function createAiRuntime({
     read: readAiUsage,
     update: updateAiUsage,
     ensure: ensureAiUsage,
-    reserveAttempt: reserveAiAttempt
+    reserveAttempt: reserveAiAttempt,
+    recordAttempt: recordAiUsageAttempt
   } = aiUsageService;
 
   const aiAudit = createAiAuditImpl({
@@ -213,6 +220,8 @@ export async function createAiRuntime({
       entry
     ),
     updateUsage: updateAiUsage,
+    repository: auditDatabaseEnabled ? postgresRuntime.aiAudit : null,
+    recordUsageAttempt: recordAiUsageAttempt,
     beginCall: id => accountRuntime?.beginAuditCall(id),
     endUninvokedCall: id => accountRuntime?.endUninvokedAuditCall(id),
     finalizeUsage: (entry, operation) => accountRuntime ? accountRuntime.finalizeUsage(entry, operation) : operation(),
@@ -280,7 +289,6 @@ export async function createAiRuntime({
 
   async function meteredProviderCall(details, invoke, summarize, budgetContext = null) {
     accountRuntime?.assertDispatch();
-    const guardedInvoke = (...args) => { accountRuntime?.assertDispatch(); return invoke(...args); };
     const {
       budgeted = true,
       estimatedCostCny,
@@ -291,7 +299,21 @@ export async function createAiRuntime({
       0,
       Number(estimatedCostCny ?? budgetStage.estimatedCostCny) || 0
     );
-    if (!budgeted) return aiAudit.providerCall(auditDetails, guardedInvoke, summarize);
+    let providerDispatched = false;
+    const dispatch = prepared => {
+      accountRuntime?.assertDispatch();
+      providerDispatched = true;
+      return prepared.invoke(invoke);
+    };
+    if (!budgeted) {
+      const prepared = await aiAudit.prepareProviderCall(auditDetails, summarize);
+      try {
+        return await dispatch(prepared);
+      } catch (error) {
+        if (!providerDispatched) await prepared.finishUninvoked(error);
+        throw error;
+      }
+    }
 
     const execute = async execution => {
       const accountReservation = await reserveAiAttempt({
@@ -311,24 +333,26 @@ export async function createAiRuntime({
         },
         commit: typeof commitQuota === "function" ? () => commitQuota() : () => {}
       };
-      const auditedCall = () => aiAudit.providerCall({
-        ...auditDetails,
-        reservation
-      }, guardedInvoke, summarize);
-      let stageStarted = false;
+      let prepared = null;
       try {
+        prepared = await aiAudit.prepareProviderCall({
+          ...auditDetails,
+          reservation
+        }, summarize);
         return await execution.runStage(
           budgetContext?.stageId || "provider-call",
           async ({ recordUsage }) => {
             recordSiteUsage = typeof recordUsage === "function"
               ? recordUsage
               : () => false;
-            stageStarted = true;
-            return auditedCall();
+            return dispatch(prepared);
           }
         );
       } catch (error) {
-        if (!stageStarted && typeof releaseQuota === "function") releaseQuota();
+        if (!providerDispatched) {
+          await prepared?.finishUninvoked(error);
+          if (typeof releaseQuota === "function") releaseQuota();
+        }
         throw error;
       }
     };
@@ -429,6 +453,10 @@ export async function createAiRuntime({
   };
 
   async function recoverAiUsageFromAuditLogs() {
+    if (auditDatabaseEnabled) {
+      await aiAudit.recoverPending();
+      return;
+    }
     let names = [];
     try {
       names = await fileSystem.readdir(storagePaths().logsDir);
@@ -468,6 +496,9 @@ export async function createAiRuntime({
   async function ensureAuditLogs() {
     await pruneLogsImpl(storagePaths().logsDir, auditRetentionDays);
     await recoverAiUsageFromAuditLogs();
+    if (auditDatabaseEnabled) {
+      await aiAudit.maintain({ retentionDays: auditRetentionDays });
+    }
   }
 
   /**
@@ -512,6 +543,7 @@ export async function createAiRuntime({
     updateAiUsage,
     ensureAiUsage,
     reserveAiAttempt,
+    recordAiUsageAttempt,
     costRepository,
     aiCosts,
     aiAudit,

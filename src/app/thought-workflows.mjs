@@ -246,6 +246,7 @@ export function createThoughtWorkflows({
             prompt: context
           })),
           scene: "thoughtDraft",
+          triggerType: "user_explicit",
           maxTokens: 16000,
           taskOutput: {
             requestId: payload.binding?.requestId || task.clientRequestId,
@@ -273,6 +274,7 @@ export function createThoughtWorkflows({
             recentTrendFingerprint: trendFingerprint(recentTrend)
           })),
           scene: "thoughtPrompt",
+          triggerType: "user_explicit",
           systemPrompt: thoughtPromptSystem(),
           maxTokens: 400,
           taskOutput: {
@@ -331,6 +333,7 @@ export function createThoughtWorkflows({
       return backgroundAi.enqueue({
         kind: "thoughtAnswer",
         targetId: id,
+        payload: { triggerType: "user_explicit" },
         clientRequestId
       });
     },
@@ -360,6 +363,7 @@ export function createThoughtWorkflows({
               kind: "thoughtAnswer",
               targetId: result.items[0].id,
               inputVersion: result.items[0].version,
+              payload: { triggerType: "user_action_auto" },
               clientRequestId: `${input.clientRequestId || result.items[0].id}:answer`
             })
           : null;
