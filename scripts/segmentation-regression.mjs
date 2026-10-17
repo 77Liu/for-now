@@ -169,8 +169,12 @@ try {
 
   logsFail = true;
   const unlogged = transport();
-  assert.equal((await run("audit-fail", () => workflow(unlogged.provider)({ image: pixel }))).cutout, pixel);
-  assert.deepEqual(unlogged.calls.map(call => call.action), ["submit", "download"]);
+  await assert.rejects(
+    run("audit-fail", () => workflow(unlogged.provider)({ image: pixel })),
+    /主体识别服务暂时不可用/
+  );
+  assert.deepEqual(unlogged.calls, [], "audit begin failure must block provider dispatch");
+  await noTemporaryFiles("audit-fail");
   logsFail = false;
   const mock = transport({ provider: { mockResult: pixel, mockDelayMs: 25 } });
   assert.equal((await run("mock", () => workflow(mock.provider)({ image: pixel }))).cutout, pixel);

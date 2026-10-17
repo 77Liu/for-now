@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 433,
-  "updated_at": "2026-10-17T22:46:49.047Z",
+  "revision": 437,
+  "updated_at": "2026-10-17T23:08:06.815Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段 3/11：F2 账户恢复故障隔离出口通过，准备本地提交"
+    "phase": "阶段 4/11：F5 AI 排队取消与超时出口通过，准备本地提交"
   },
   "scope": {
     "description": "v0.5.16 共 11 项有效需求，严格串行：AI 原子审计 → 新 F1 → F2 → F5 → 新 F3 → 新 F4 → F7 → F6 → F8 → AI 推理可见性 → 新 F9；当前仅阶段 1 可开发。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
-      "commit": "675408",
-      "source": "阶段 2 新 F1 认证精准查询经本地出口审查后提交；提交树 689b8e4，未夹带既有 F9、knowledge 与 .trae 差分。"
+      "commit": "422cdd",
+      "source": "阶段 3 F2 组合复验经本地出口审查后提交；提交树 51f7e34，未夹带既有 F9、knowledge 与 .trae 差分。"
     },
     "inputs": [
       "docs/technical-proposals/V0516-跨需求共用底座与串行开发-技术方案.md",
@@ -56,36 +56,38 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-account-recovery-requalification",
+      "id": "v0516-ai-queue-requalification",
       "owner": "主开发Agent",
       "mode": "integration",
       "branch": "feat/v0.5.16-sync-latency",
-      "baseline": "675408",
+      "baseline": "422cdd",
       "status": "REVIEWED_GO",
       "allowed_write_set": [
-        "scripts/account-lifecycle-regression.mjs（AccountIdentityPort 多页启动枚举、跨页隔离继续）",
-        "scripts/postgres-runtime-checks.mjs（隔离 PostgreSQL row 认证下显式开启 F2 的真实启动恢复）",
-        "docs/technical-proposals/F2-账户恢复故障隔离-技术方案.md（仅本阶段组合复验开发明细与真实证据）",
+        "scripts/ai-provider-regression.mjs（原子审计硬门、F2派发资格与F5预算/队列组合回归）",
+        "scripts/segmentation-regression.mjs（阶段1审计硬门下其他媒体无参gate兼容与零派发断言）",
+        "scripts/server-runtime-regression.mjs（仅现有F2/F5真实装配组合断言，出现明确缺口时修改）",
+        "src/modules/ai/**、src/app/ai-runtime.mjs、src/app/ai-budget-runtime.mjs、src/app/account-runtime-state.mts（仅组合回归复现实际缺陷后修复）",
+        "docs/technical-proposals/F5-AI排队取消与超时-技术方案.md（仅本阶段组合复验开发明细与真实证据）",
         "coordination/**（仅主控通过唯一更新入口）"
       ],
       "forbidden_write_set": [
-        "未出现可复现失败前，不修改既有 F2 运行时源码",
-        "阶段 4 至 11 的业务实现、migration 与运行时开关",
-        "src/http/sync.mjs、scripts/sync-coordinator-regression.mjs、public/frontend/app/runtime/home-runtime.mjs、public/frontend/app/runtime/kernel.mjs 既有未提交差分",
-        "knowledge/development-release-checklist.md、knowledge/privacy-notice.md、knowledge/prompt-architecture.md 既有未提交差分",
+        "未出现可复现失败前，不修改既有F5生产实现",
+        "阶段5至11的业务实现、migration与运行时开关",
+        "src/http/sync.mjs、scripts/sync-coordinator-regression.mjs、public/frontend/app/runtime/home-runtime.mjs、public/frontend/app/runtime/kernel.mjs既有未提交差分",
+        "knowledge/development-release-checklist.md、knowledge/privacy-notice.md、knowledge/prompt-architecture.md既有未提交差分",
         ".trae/**",
-        "远程 push、tag、Release、Preview、生产部署与生产业务写入"
+        "远程push、tag、Release、Preview、生产部署、生产业务写入与真实付费provider调用"
       ],
-      "shared_file_owner": "主开发是阶段 3 新增组合回归与 F2 开发明细唯一写者；控制面仍由主控经唯一入口维护。",
-      "integration_order": "先补 AccountIdentityPort 多页恢复回归，再在隔离 PostgreSQL row 模式显式开启 F2 验证真实启动与 readiness；仅在可复现失败后扩展源码写集，随后执行 F2 既有专项与项目出口门。",
+      "shared_file_owner": "主开发是阶段4组合回归、失败驱动修复与F5开发明细唯一写者；控制面仍由主控经唯一入口维护。",
+      "integration_order": "先补原子审计begin失败与F5完整预算清理组合，再补审计已开始后F2资格失效的not_invoked组合；修正其他媒体审计失败仍派发的旧断言；仅在可复现生产缺陷后修改生产源码，随后执行F5专项、PG/服务端组合及项目出口门。",
       "contracts": [
-        "当前基线既有 F2 状态机、统一 gate、受控重试与清理能力是待复用实现，不因阶段重排重复重写。",
-        "认证启动枚举只经 AccountIdentityPort 按不超过 100 行的 keyset 页读取；row 错误不得回退完整认证文档。",
-        "跨页账户发生可证明局部损坏时继续恢复后页账户；未知或共享故障仍关闭全局准入。",
-        "隔离 PostgreSQL row 模式显式开启 F2 后，正常账户全部 ready、readiness 汇总正确且普通业务可用。",
-        "新增或实质修改函数遵循少于 100 行软目标；防御与抽象必须对应已知失败或真实消费者。"
+        "审计begin未持久化时供应商调用为0，账户额度、站点reservation、gate和admission均由唯一所有者归还。",
+        "审计已开始但派发前账户资格失效时，审计终态与预算stage均记录not_invoked；不得写usage或启动provider。",
+        "已派发后账户隔离仅允许受限usage、预算和任务终态收尾，不授权新的供应商调用或业务写。",
+        "取消、排队到期、请求超时和过载保留首次原因；不得进入waitingBudget自动重跑。",
+        "新增或实质修改函数遵循少于100行软目标；防御与抽象必须对应已知失败或真实消费者。"
       ],
-      "result": "F2 既有账户状态机、统一准入、受控重试和清理能力经新 AccountIdentityPort 多页恢复及 PostgreSQL row 模式组合复验保持成立；新增两项回归并通过完整本地出口门，允许形成阶段 3 本地提交，不代表发布 GO。"
+      "result": "F5既有生产实现经阶段1原子审计硬门、阶段3账户资格及完整预算/队列组合复验保持成立；新增两条文本生成组合回归，并修正媒体审计失败仍派发的旧测试契约。专项、PG16.14、服务端和项目出口门全部通过，允许形成阶段4本地提交，不代表发布GO。"
     }
   ],
   "candidate": null,
@@ -119,7 +121,7 @@
     }
   },
   "blockers": [],
-  "next_action": "仅暂存并提交阶段 3 的两项组合回归、F2 开发明细及控制面记录，排除既有 F9、knowledge 与 .trae 差分；核对提交树后关闭阶段 3 并进入阶段 4 F5 只读准备。",
+  "next_action": "仅暂存并提交阶段4的两份回归、F5开发明细及控制面记录，排除既有F9、knowledge与.trae差分；核对提交树后关闭阶段4并进入阶段5新F3只读准备。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -609,9 +611,11 @@
         "kind": "source_manifest",
         "branch": "feat/v0.5.16-sync-latency",
         "baseline": "675408",
-        "requirement_id": "reczz28NLb1qzsCc"
+        "requirement_id": "reczz28NLb1qzsCc",
+        "commit": "422cdd",
+        "tree": "51f7e3"
       },
-      "conclusion": "阶段 3 未重写既有 F2 生产实现；新增多页身份恢复与 PostgreSQL row+F2 重启组合回归。跨页隔离结果为 4 账户中 3 ready、1 quarantined，后页继续恢复；PG 16.14 真实启动为 2 ready、0 quarantined/recovering。JSON 故障隔离、受控重试、共享故障退出、后台收尾及项目总门全部通过。",
+      "conclusion": "阶段 3 经组合审查与完整出口门通过后形成提交 422cdd0（tree 51f7e34）；既有 F2 状态机在 AccountIdentityPort 多页恢复与 PostgreSQL row 模式下保持成立，两项新增回归已接入当前分支，允许进入阶段 4 只读准备。",
       "limitations": [
         "ACCOUNT_RECOVERY_ENABLED 默认仍为 0；未部署、未生产开启或写入生产。",
         "PostgreSQL 组合验证使用正常账户；账户局部坏数据保留与重试由 JSON 全应用及状态机专项覆盖，未在生产形态数据库注入损坏。",
@@ -624,6 +628,36 @@
         "npm run test:postgres:stable",
         "npm run test:server-runtime",
         "npm run test:local-runtime",
+        "npm test",
+        "npm run check",
+        "npm run test:deploy",
+        "npm run test:deploy:preview",
+        "npm run test:observability",
+        "npm run test:boundaries"
+      ]
+    },
+    {
+      "id": "v0516-stage4-ai-queue-verification",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-sync-latency",
+        "baseline": "422cdd",
+        "requirement_id": "reczz28NLb1qxhIC"
+      },
+      "conclusion": "阶段4未修改F5生产实现；原子审计begin失败连续两次均零provider/usage且资源可复用，预算stage开始后账户隔离同时形成审计与预算not_invoked并零费用。媒体兼容旧断言已改为审计失败零供应商I/O。AI专项、PG16.14、服务端、主回归、静态检查及本地部署出口门全部通过。",
+      "limitations": [
+        "AI_QUEUE_ENABLED默认仍为0；未部署、未生产开启或写入生产。",
+        "未执行真实付费provider调用；媒体仅验证旧无参gate兼容和审计硬门，不宣称全部媒体支持取消。",
+        "结论是阶段研发出口GO，不是版本发布GO；生产容量、真实设备、24小时及至少100请求观测仍属发布阶段。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F5-AI排队取消与超时-技术方案.md#41-开发明细必填评审时留空开发结束后填写",
+        "scripts/ai-provider-regression.mjs",
+        "scripts/segmentation-regression.mjs",
+        "npm run test:postgres:stable",
+        "npm run test:server-runtime",
+        "npm run test:ai-budget",
+        "npm run test:ai-migrations",
         "npm test",
         "npm run check",
         "npm run test:deploy",

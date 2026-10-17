@@ -494,6 +494,106 @@ try {
   }));
   const settled = await budget.read(); assert.equal(settled.reservations.length, 0); assert.equal(settled.days[0].knownCostMicros, 20000);
   assert.ok(auditRecords.some(entry => entry.actor?.userId === "f5-parent" && entry.dispatchState === "not_invoked" && entry.persistence.usage === "not_applicable"));
+
+  // 原子审计begin是派发硬门；失败后账户额度、站点预算、gate和admission都必须可复用。
+  {
+    const siteRepository = createAtomicRepository({}); let sequence = 0, auditBegins = 0;
+    const siteBudget = createAiBudgetService({ repository: siteRepository, createId: () => `f5-audit-gate-${++sequence}` });
+    const siteRuntime = createAiBudgetRuntime({ budget: siteBudget });
+    const activeAuditCalls = new Set();
+    const hardGateAudit = createAiAudit({
+      textLimit: 10000,
+      getContext: () => context.getStore(),
+      repository: {
+        async beginAttempt() { auditBegins += 1; throw new Error("audit begin unavailable"); },
+        async finishAttempt() { throw new Error("unreachable audit finish"); }
+      },
+      append: async () => {},
+      updateUsage: quota.update,
+      beginCall: callId => activeAuditCalls.add(callId),
+      endUninvokedCall: callId => activeAuditCalls.delete(callId),
+      logEvent: async () => {}
+    });
+    const hardGate = createAiGenerator({
+      provider, readSettings: async () => settings, getContext: () => context.getStore(),
+      reserveAttempt: quota.reserveAttempt, gate: createRateGate(10000, 1),
+      audit: hardGateAudit, aiQueue: { ...queue, maxOutstanding: 1, maxOutstandingPerAccount: 1 },
+      executeBudgetTask: (details, execute, options) => siteRuntime.executeTask({
+        accountId: details.accountId,
+        taskId: details.taskId,
+        stages: [{ id: "deepseek-attempt-1", provider: "deepseek", service: "chat-completions",
+          scene: details.scene, costKnown: true, estimatedCostCny: 0.01 }]
+      }, execute, options)
+    });
+    const callsBeforeAuditFailure = transportCalls.length;
+    for (let index = 0; index < 2; index += 1) {
+      await assert.rejects(run("f5-audit-hard-gate", () => hardGate("审计失败禁止派发", {
+        retryWithoutThinking: false
+      })), { code: "AI_AUDIT_UNAVAILABLE", statusCode: 503 });
+    }
+    assert.equal(auditBegins, 2, "released admission and gate capacity must allow a fresh attempt");
+    assert.equal(transportCalls.length, callsBeforeAuditFailure);
+    assert.equal(accounts.get("f5-audit-hard-gate").entries.length, 0);
+    assert.equal((await siteBudget.read()).reservations.length, 0);
+    assert.equal(activeAuditCalls.size, 0);
+  }
+
+  // 审计已开始且预算stage已落库后失去账户资格：双账本证明未调用，不写usage。
+  {
+    const siteRepository = createAtomicRepository({}); let sequence = 0, ready = true;
+    const rows = new Map(), activeAuditCalls = new Set();
+    const siteBudget = createAiBudgetService({ repository: siteRepository, createId: () => `f5-account-gate-${++sequence}` });
+    const guardedBudget = {
+      ...siteBudget,
+      async startStage(input) {
+        const result = await siteBudget.startStage(input);
+        ready = false;
+        return result;
+      }
+    };
+    const assertReady = () => {
+      if (!ready) throw Object.assign(new Error("账户数据暂不可用，请稍后重试"), {
+        code: "ACCOUNT_QUARANTINED", statusCode: 503
+      });
+    };
+    const siteRuntime = createAiBudgetRuntime({ budget: guardedBudget, assertAccountReady: assertReady });
+    const atomicAudit = createAiAudit({
+      textLimit: 10000,
+      getContext: () => context.getStore(),
+      repository: {
+        async beginAttempt(row) { rows.set(row.callId, { ...structuredClone(row), status: "started", dispatchState: "pending" }); },
+        async finishAttempt(callId, terminal) { Object.assign(rows.get(callId), structuredClone(terminal)); }
+      },
+      append: async () => {},
+      updateUsage: quota.update,
+      beginCall: callId => activeAuditCalls.add(callId),
+      endUninvokedCall: callId => activeAuditCalls.delete(callId),
+      logEvent: async () => {}
+    });
+    const accountGuarded = createAiGenerator({
+      provider, readSettings: async () => settings, getContext: () => context.getStore(),
+      reserveAttempt: quota.reserveAttempt, gate, audit: atomicAudit, aiQueue: queue,
+      assertAccountReady: assertReady,
+      executeBudgetTask: (details, execute, options) => siteRuntime.executeTask({
+        accountId: details.accountId,
+        taskId: details.taskId,
+        stages: [{ id: "deepseek-attempt-1", provider: "deepseek", service: "chat-completions",
+          scene: details.scene, costKnown: true, estimatedCostCny: 0.01 }]
+      }, execute, options)
+    });
+    const callsBeforeQuarantine = transportCalls.length;
+    await assert.rejects(run("f5-account-gate", () => accountGuarded("派发前隔离", {
+      retryWithoutThinking: false
+    })), { code: "ACCOUNT_QUARANTINED", statusCode: 503 });
+    assert.equal(transportCalls.length, callsBeforeQuarantine);
+    assert.equal(accounts.get("f5-account-gate").entries.length, 0);
+    assert.equal((await siteBudget.read()).reservations.length, 0);
+    assert.equal((await siteBudget.read()).days[0].knownCostMicros, 0);
+    assert.equal(rows.size, 1);
+    assert.equal([...rows.values()][0].dispatchState, "not_invoked");
+    assert.equal([...rows.values()][0].usagePayload, null);
+    assert.equal(activeAuditCalls.size, 0);
+  }
 }
 
 // 首个full/stale发生后，必要预算清理仍等待真实完成；后到timeout/cancel不能改写原429/409。
