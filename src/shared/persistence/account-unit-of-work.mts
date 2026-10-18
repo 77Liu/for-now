@@ -307,6 +307,23 @@ function createObjectPort(
     }
     return result.rows[0] || null;
   };
+  const findTaskRequest = async (field: "clientRequestId" | "retryOf", value: string) => {
+    if (!["clientRequestId", "retryOf"].includes(field)) {
+      throw new TypeError("Task request selection is invalid");
+    }
+    const column = field === "clientRequestId" ? "task_client_request_id" : "task_retry_of";
+    const result = await client.query<ObjectRow>(`
+      SELECT ${objectColumns} FROM for_now.store_objects
+      WHERE account_id = $1 AND collection = 'aiTasks'
+        AND ${column} = $2
+      LIMIT 2 FOR UPDATE
+    `, [accountId, required(value, field)]);
+    noteRead(count(result));
+    if (result.rows.length > 1) {
+      throw problem("任务请求身份重复，原数据已保留", "ACCOUNT_DATA_INVALID", 503);
+    }
+    return result.rows[0] ? structuredClone(result.rows[0]) : null;
+  };
   const findForLocalDates = async (
     collection: string,
     localDates: string[],
@@ -453,6 +470,7 @@ function createObjectPort(
     findByCollection,
     findTrash,
     findAnnotation,
+    findTaskRequest,
     findForLocalDates,
     findTree,
     insert,

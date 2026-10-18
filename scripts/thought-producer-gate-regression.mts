@@ -46,7 +46,9 @@ function bindings(runtime: Runtime) {
     annotations: runtime.annotationCommands.recordProducerCommands,
     trash: runtime.trashCommands.recordProducerCommands,
     attachments: runtime.contentAttachmentService.recordProducerCommands,
-    contentAi: runtime.backgroundAi.recordProducerCommand("content.aiWriteback")
+    contentAi: runtime.backgroundAi.recordProducerCommand("content.aiWriteback"),
+    taskCreation: runtime.backgroundAi.recordProducerCommand("task.creation"),
+    taskTransitions: runtime.backgroundAi.recordProducerCommand("task.transitions")
   };
 }
 

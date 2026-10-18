@@ -706,3 +706,18 @@ CREATE INDEX IF NOT EXISTS store_objects_local_date_idx
 CREATE INDEX IF NOT EXISTS store_objects_date_window_idx
   ON for_now.store_objects(account_id, collection, record_window_end, record_window_start)
   WHERE parent_key IS NULL;
+
+-- migration:task-request-index-v1
+ALTER TABLE for_now.store_objects
+  ADD COLUMN IF NOT EXISTS task_client_request_id text GENERATED ALWAYS AS (
+    payload->>'clientRequestId'
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS task_retry_of text GENERATED ALWAYS AS (
+    payload->>'retryOf'
+  ) STORED;
+CREATE INDEX IF NOT EXISTS store_objects_task_request_idx
+  ON for_now.store_objects(account_id, task_client_request_id)
+  WHERE collection = 'aiTasks';
+CREATE INDEX IF NOT EXISTS store_objects_task_retry_idx
+  ON for_now.store_objects(account_id, task_retry_of)
+  WHERE collection = 'aiTasks';

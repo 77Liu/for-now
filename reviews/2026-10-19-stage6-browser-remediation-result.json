@@ -582,6 +582,61 @@
       "no new browser or real corpus experiment; stage7 not started; F9 digests unchanged"
     ]
   },
+  "nightTaskCreationSubset": {
+    "recordedAt": "2026-10-19T05:38:00+08:00",
+    "baselineCommit": "e45d7f",
+    "status": "PASS_TASK_CREATION_SUBSET_STAGE6_PARTIAL",
+    "sourceManifest": [
+      { "path": "src/app/record-commands/task-creation.mts", "sha256_6": "279774" },
+      { "path": "src/app/record-commands/task-transitions.mts", "sha256_6": "6fc3e8" },
+      { "path": "src/app/background-ai.mjs", "sha256_6": "6ee987" },
+      { "path": "src/app/content/background.mjs", "sha256_6": "68a9b1" },
+      { "path": "src/app/content-runtime.mjs", "sha256_6": "c2b808" },
+      { "path": "src/modules/tasks/index.mjs", "sha256_6": "0d710d" },
+      { "path": "src/modules/thoughts/producer-coverage.mts", "sha256_6": "be6934" },
+      { "path": "src/shared/persistence/account-unit-of-work.mts", "sha256_6": "2ed9f6" },
+      { "path": "src/shared/persistence/postgres-schema.sql", "sha256_6": "3ed010" },
+      { "path": "src/shared/persistence/migrations/registry.mts", "sha256_6": "dfba2e" },
+      { "path": "scripts/thought-task-creation-postgres-checks.mts", "sha256_6": "7c2368" },
+      { "path": "scripts/thought-runtime-fixture.mts", "sha256_6": "47d827" },
+      { "path": "scripts/thought-closure-postgres-checks.mts", "sha256_6": "d6dbd1" },
+      { "path": "scripts/thought-producer-gate-regression.mts", "sha256_6": "19d788" },
+      { "path": "scripts/record-command-producer-coverage-regression.mts", "sha256_6": "d55efe" },
+      { "path": "scripts/postgres-runtime-checks.mjs", "sha256_6": "d69032" },
+      { "path": "tsconfig.backend.json", "sha256_6": "3d81d1" },
+      { "path": "tsconfig.thought-db-regression.json", "sha256_6": "d38a6b" }
+    ],
+    "verified": [
+      "four formal-runtime task kinds enqueue/retry without compatibility updater or ledger",
+      "commit-tail failure rolls back records, relationships, projection, sync cursor, revision and idempotency",
+      "duplicate requests/retries replay; conflict, invalid and missing target create no records",
+      "only committed queued tasks dispatch; waiting/replay/failure do not dispatch",
+      "context preparation is outside write transaction; revision race prepares fresh version before retry",
+      "ordinary RLS task request/retry scans one row at 4009 and 40009 objects, missing request scans zero",
+      "paging assembly gate requires actual creation/preparation/transition functions",
+      "stable PG16.14 suite including formal HTTP, restart, independent export/restore PASS; model/content/record coverage/modules PASS"
+    ],
+    "resolvedFailures": [
+      "JSON expression request/retry indexes ignored under ordinary RLS; generated lookup columns and real plans verified",
+      "fixture omitted confirmed attachment inventory; registered synthetic attachment",
+      "fixture attempted duplicate installation of runtime-unique projection; background-only fixture retains installed projection",
+      "dispatch fixture assumed all eight tasks queued; expected dispatch count derives from actual waiting status",
+      "call chain review found initial context compiled inside task creation transaction; public normalization/fixed time and prepared work now outside transaction",
+      "old record coverage recovery regex expected all tasks; actual legacy subset and deferred-input behavior verified"
+    ],
+    "logs": [
+      "/tmp/for-now-night-task-creation-postgres-closed.log",
+      "/tmp/for-now-night-task-creation-model.log",
+      "/tmp/for-now-night-task-creation-content.log",
+      "/tmp/for-now-night-task-creation-commands.log",
+      "/tmp/for-now-night-task-creation-modules.log"
+    ],
+    "limitations": [
+      "TC10 remains open: waiting release still compiles full context in transition; recovery callback and full call chain review pending",
+      "personal context full snapshot read remains outside short transaction; other task families keep legacy lifecycle",
+      "no new browser, real corpus, production or paid experiment; stage7 not started; protected F9 hashes unchanged"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

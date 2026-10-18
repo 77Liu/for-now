@@ -48,6 +48,12 @@ export const POSTGRES_SCHEMA_COMPONENTS: readonly MigrationDescriptor[] = Object
     order: 60,
     ownerRequirementId: "reczz28ORRaxSFnV",
     marker: "migration:record-closure-index-v1"
+  }),
+  Object.freeze({
+    id: "task-request-index-v1",
+    order: 70,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-request-index-v1"
   })
 ]);
 

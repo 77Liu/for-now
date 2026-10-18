@@ -40,8 +40,8 @@ async function seed(database: QueryClient) {
       '[]','根','ready','user',1,'{"id":"closure-root","type":"question"}')
   `, [accountId, rootKey]);
   for (const [collection, id, payload] of [
-    ["aiTasks", "live-task", { sourceRef: { rootId: "closure-root" } }],
-    ["aiTasks", "history-task", { sourceRef: { rootId: "closure-root" } }],
+    ["aiTasks", "live-task", { sourceRef: { rootId: "closure-root" }, clientRequestId: "closure-request" }],
+    ["aiTasks", "history-task", { sourceRef: { rootId: "closure-root" }, retryOf: "live-task" }],
     ["aiTasks", "wrong-root-history", { sourceRef: { rootId: "other-root" } }],
     ["aiTasks", "date-task", { payload: { localDate: "2026-10-19" } }],
     ["aiTasks", "window-task", { payload: { windowStart: "2026-10-17", windowEnd: "2026-10-20" } }],
@@ -76,6 +76,7 @@ async function grow(database: QueryClient, from: number, to: number) {
       jsonb_build_object('id','noise-'||n,
         'localDate',CASE WHEN n%2=0 THEN '2020-01-01' ELSE '2030-01-01' END,
         'type','thoughtChain','resourceId','noise-'||n,
+        'clientRequestId','noise-request-'||n,'retryOf','noise-source-'||n,
         'payload',jsonb_build_object(
           'localDate',CASE WHEN n%2=0 THEN '2020-01-01' ELSE '2030-01-01' END,
           'windowStart',CASE WHEN n%2=0 THEN '2020-01-01' ELSE '2030-01-01' END,
@@ -110,7 +111,9 @@ async function measure(database: QueryClient) {
             );
             const plan = explained.rows[0]["QUERY PLAN"][0].Plan;
             const measurement = {
-              query: sql.includes("WITH candidates") ? "relations" : sql.includes("record_window_start") ? "dates"
+              query: sql.includes("task_client_request_id") ? "taskRequest"
+                : sql.includes("task_retry_of") ? "taskRetry"
+                : sql.includes("WITH candidates") ? "relations" : sql.includes("record_window_start") ? "dates"
                 : sql.includes("collection = 'trash'") ? "trash" : "tree",
               scanned: 0,
               buffers: Number(plan["Shared Hit Blocks"] || 0) + Number(plan["Shared Read Blocks"] || 0),
@@ -142,6 +145,9 @@ async function measure(database: QueryClient) {
     })).map(row => row.id).sort(), ["date-task", "window-task"]);
     assert.deepEqual((await ports.objects.findForLocalDates("recordCompressions", ["2026-10-19"]))
       .map(row => row.id), ["date-summary"]);
+    assert.equal((await ports.objects.findTaskRequest("clientRequestId", "closure-request"))?.id, "live-task");
+    assert.equal((await ports.objects.findTaskRequest("retryOf", "live-task"))?.id, "history-task");
+    assert.equal(await ports.objects.findTaskRequest("clientRequestId", "missing-request"), null);
   });
   return measurements;
 }

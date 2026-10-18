@@ -17,6 +17,8 @@ type Runtime = {
     recordProducerCommand(name: string): unknown;
     schedule(taskId: string): void;
     cancel(taskId: string): boolean;
+    enqueue(input: Record<string, unknown>): Promise<{ task?: Record<string, unknown>; duplicate?: boolean; [key: string]: unknown }>;
+    retry(taskId: string): Promise<{ task?: Record<string, unknown>; duplicate?: boolean; [key: string]: unknown }>;
   };
 };
 type Factory = (options: Record<string, unknown>) => Runtime;
@@ -64,6 +66,7 @@ export function createThoughtRuntimeFixture(
     trashCommands: runtime.trashCommands,
     attachments: runtime.contentAttachmentService,
     contentAi: runtime.backgroundAi.recordProducerCommand("content.aiWriteback"),
+    backgroundAi: runtime.backgroundAi,
     thoughtService: runtime.thoughtService,
     producerRepository: repository,
     scheduledTaskIds,

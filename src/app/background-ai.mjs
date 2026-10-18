@@ -71,6 +71,13 @@ export function createBackgroundAi({
     || typeof taskTransitions.transition !== "function")) {
     throw new TypeError("Task transition record command is invalid");
   }
+  const taskCreation = recordCommands?.enabled?.("task.status") ? recordCommands?.creation : null;
+  if (taskCreation && (typeof taskCreation.supports !== "function"
+    || typeof taskCreation.create !== "function"
+    || typeof taskCreation.prepareSnapshot !== "function"
+    || typeof tasks.normalizeRequest !== "function")) {
+    throw new TypeError("Task creation record command is invalid");
+  }
   const transitionTask = async (taskId, action, mutate) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const revision = await repository.accountUnitOfWork.readRevision();
@@ -179,7 +186,7 @@ export function createBackgroundAi({
   const createInStore = (
     store,
     input = {},
-    { waitingBudget = false, deferInputBinding = false } = {}
+    { waitingBudget = false, deferInputBinding = false, prepared = null } = {}
   ) => {
     if (waitingBudget) {
       const existing = store.aiTasks.find(task => task.clientRequestId === input?.clientRequestId);
@@ -189,18 +196,19 @@ export function createBackgroundAi({
         return { budgetQueueFull: true };
       }
     }
-    const waiting = Boolean(shouldWaitForModel(store, input));
-    const requestedIntent = waiting ? inspectRequestedIntent(store, input) : null;
+    const waiting = prepared ? prepared.waiting : Boolean(shouldWaitForModel(store, input));
+    const requestedIntent = prepared ? prepared.intent : waiting ? inspectRequestedIntent(store, input) : null;
     if (waiting && !requestedIntent) return { missing: true };
     return notifyCreated(store, tasks.create(
       store.aiTasks,
       input,
-      task => prepareTarget(store, task),
+      task => prepared ? prepared.work : prepareTarget(store, task),
       {
         deferTargetInspection: waiting,
         deferInputBinding: deferInputBinding && !waiting,
         requestedIntent,
         waitingBudget,
+        preparedAt: prepared?.createdAt || "",
         allocateIdentity: task => targetFor(task).allocateIdentity?.(store, task) }
     ));
   };
@@ -430,33 +438,87 @@ export function createBackgroundAi({
     }
   }
 
-  async function retryTask(id, { includeInternal = false } = {}) {
-    const created = await repository.update(store => {
-      const source = store.aiTasks.find(item => item.id === id);
-      if (isInternalAiTask(source)
+  const retryInputFor = source => source && ({
+    kind: source.kind,
+    resourceType: source.resourceType,
+    targetId: source.targetId,
+    subtargetId: source.subtargetId,
+    payload: source.payload,
+    clientRequestId: `retry:${source.id}`
+  });
+  const retryInStore = (store, id, includeInternal, prepared = null) => {
+    const source = store.aiTasks.find(item => item.id === id);
+    if (isInternalAiTask(source)
+      && (!includeInternal || source.kind === RECORD_COMPRESSION_TASK_KIND)) {
+      return { missing: true };
+    }
+    if (source && !taskHasRequiredTarget(store, source)) return { missing: true };
+    const retryInput = retryInputFor(source);
+    const waiting = prepared ? prepared.waiting : retryInput && Boolean(shouldWaitForModel(store, retryInput));
+    const requestedIntent = prepared ? prepared.intent : waiting ? inspectRequestedIntent(store, retryInput) : null;
+    if (waiting && !requestedIntent) return { missing: true };
+    return notifyCreated(
+      store,
+      tasks.retry(store.aiTasks, id, task => prepared ? prepared.work : prepareTarget(store, task), {
+        deferTargetInspection: waiting,
+        requestedIntent,
+        preparedAt: prepared?.createdAt || ""
+      })
+    );
+  };
+  const prepareCreation = (store, input, source) => {
+    const createdAt = now();
+    const normalized = tasks.normalizeRequest(input);
+    if (store.aiTasks.some(task => task.clientRequestId === normalized.clientRequestId
+      || (source && task.retryOf === source.id))) {
+      return { waiting: false, createdAt, intent: null, work: null };
+    }
+    const waiting = Boolean(shouldWaitForModel(store, input));
+    const candidate = { ...normalized, createdAt,
+      ...(source?.importanceSelectionPlan ? {
+        importanceSelectionPlan: structuredClone(source.importanceSelectionPlan)
+      } : {}) };
+    return {
+      waiting,
+      createdAt,
+      intent: waiting ? inspectRequestedIntent(store, input) : null,
+      work: waiting ? null : prepareTarget(store, candidate)
+    };
+  };
+  async function createRecordTask(input, { retryOf = "", includeInternal = false } = {}) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const revision = await repository.accountUnitOfWork.readRevision();
+      const snapshot = await repository.read();
+      if (revision !== await repository.accountUnitOfWork.readRevision()) continue;
+      const source = retryOf && snapshot.aiTasks.find(task => task.id === retryOf);
+      if (retryOf && !source) return { missing: true };
+      if (source && isInternalAiTask(source)
         && (!includeInternal || source.kind === RECORD_COMPRESSION_TASK_KIND)) {
         return { missing: true };
       }
-      if (source && !taskHasRequiredTarget(store, source)) return { missing: true };
-      const retryInput = source && {
-        kind: source.kind,
-        resourceType: source.resourceType,
-        targetId: source.targetId,
-        subtargetId: source.subtargetId,
-        payload: source.payload,
-        clientRequestId: `retry:${source.id}`
-      };
-      const waiting = retryInput && Boolean(shouldWaitForModel(store, retryInput));
-      const requestedIntent = waiting ? inspectRequestedIntent(store, retryInput) : null;
-      if (waiting && !requestedIntent) return { missing: true };
-      return notifyCreated(
-        store,
-        tasks.retry(store.aiTasks, id, task => prepareTarget(store, task), {
-          deferTargetInspection: waiting,
-          requestedIntent
-        })
-      );
+      if (source && !taskHasRequiredTarget(snapshot, source)) return { missing: true };
+      const request = retryOf ? retryInputFor(source) : input;
+      if (!taskCreation.supports(request)) return null;
+      const prepared = prepareCreation(taskCreation.prepareSnapshot(snapshot), request, source);
+      try {
+        return await taskCreation.create({
+          input: request, retryOf, snapshot, expectedRevision: revision,
+          idempotency: tasks.idempotency?.(request) || null,
+          mutate: store => retryOf
+            ? retryInStore(store, retryOf, includeInternal, prepared)
+            : createInStore(store, request, { prepared })
+        });
+      } catch (error) {
+        if (error.code !== "VERSION_CONFLICT") throw error;
+      }
+    }
+    throw Object.assign(new Error("任务上下文持续变化，请稍后重试"), {
+      code: "VERSION_CONFLICT", statusCode: 409
     });
+  }
+  async function retryTask(id, { includeInternal = false } = {}) {
+    const record = taskCreation ? await createRecordTask(null, { retryOf: id, includeInternal }) : null;
+    const created = record || await repository.update(store => retryInStore(store, id, includeInternal));
     if (!created.duplicate && created.task?.status === "queued") schedule(created.task.id);
     return created;
   }
@@ -472,7 +534,9 @@ export function createBackgroundAi({
     }
     const idempotency = tasks.idempotency?.(input);
     let created;
-    if (idempotency && typeof repository.executeIdempotent === "function") {
+    if (taskCreation?.supports(input)) {
+      created = await createRecordTask(input);
+    } else if (idempotency && typeof repository.executeIdempotent === "function") {
       try {
         created = await repository.executeIdempotent(
           idempotency,
@@ -682,6 +746,9 @@ export function createBackgroundAi({
       if (recordCommands?.enabled?.("thought.aiWriteback") && !taskTransitions) {
         throw new TypeError("Thought AI writeback requires task transition record commands");
       }
+      if (recordCommands?.enabled?.("thought.aiWriteback") && !taskCreation) {
+        throw new TypeError("Thought AI writeback requires task creation record commands");
+      }
       if (recordCommands?.enabled?.("thought.aiWriteback")) {
         for (const name of ["thought.aiWriteback", "content.aiWriteback"]) {
           if (!dynamicRecordCommands.has(name)) {
@@ -691,7 +758,11 @@ export function createBackgroundAi({
       }
       return true;
     },
-    recordProducerCommand: name => dynamicRecordCommands.get(name) || null,
+    recordProducerCommand: name => {
+      if (name === "task.creation") return taskCreation;
+      if (name === "task.transitions") return taskTransitions;
+      return dynamicRecordCommands.get(name) || null;
+    },
     registerHandler(kind, handler) {
       if (!kind || !handler?.prepare || !handler?.save || !handler?.result) {
         throw new TypeError("A background task handler requires prepare(), save(), and result()");

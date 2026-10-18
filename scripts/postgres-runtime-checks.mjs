@@ -63,6 +63,7 @@ import { createRecordCompressionService, createAnnotationCommands } from "../src
 import { createThoughtRuntimeFixture } from "../.build/typescript/thought-db-regression/scripts/thought-runtime-fixture.mjs";
 import { runThoughtProducerGateChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-gate-regression.mjs";
 import { runThoughtTaskTransitionPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-transition-postgres-checks.mjs";
+import { runThoughtTaskCreationPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-creation-postgres-checks.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -1380,6 +1381,23 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         hash: value => crypto.createHash("sha256").update(value).digest("hex") }),
       notify: createNotificationService({ createId: () => crypto.randomUUID(), now: () => new Date().toISOString() }).upsertTask
     }));
+    await account("thought-producer-test", async () => {
+      const attachment = { path: "/attachments/creation.png", storage: "local",
+        objectKey: "creation.png", bytes: 0, sha256: crypto.createHash("sha256").update("").digest("hex") };
+      await runtime.attachments.record(attachment);
+      await runtime.attachments.confirm(attachment);
+      await runThoughtTaskCreationPostgresChecks({
+        database,
+        repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
+        createBackground: (repository, dispatch) => createThoughtRuntimeFixture(createContentRuntime, {
+          ...repository, queryRecords: undefined, installRecordProjection: undefined
+        }, "thought-producer-test", {
+          // 该运行时已安装唯一投影；此夹具只验正式后台装配，不重复安装查询。
+          thoughtPagingConfig: { enabled: false },
+          dispatchBackground: dispatch
+        }).backgroundAi
+      });
+    });
     await account("repo-test", () => pagingQueries.rebuild());
     const assertProjectionParity = async accountId => account(accountId, async () => {
       const store = await repo.read();

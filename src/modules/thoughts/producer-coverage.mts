@@ -13,6 +13,8 @@ export type ThoughtProducerBindings = {
   trash: ThoughtProducerCommands;
   attachments: ThoughtProducerCommands;
   contentAi: ThoughtProducerCommands;
+  taskCreation: ThoughtProducerCommands;
+  taskTransitions: ThoughtProducerCommands;
 };
 
 const requiredFlags = [
@@ -24,7 +26,9 @@ const requiredCommands = {
   annotations: ["create", "reply", "convert", "remove"],
   trash: ["removeBlock", "removeNested", "restore"],
   attachments: ["run"],
-  contentAi: ["writeback", "failWriteback"]
+  contentAi: ["writeback", "failWriteback"],
+  taskCreation: ["supports", "prepareSnapshot", "create"],
+  taskTransitions: ["supports", "transition"]
 } as const;
 
 export function incompleteThoughtProducers(missing: string[]) {

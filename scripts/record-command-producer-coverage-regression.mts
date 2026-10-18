@@ -86,7 +86,8 @@ const [background, thoughtWorkflows, thoughtDomain, trash] = await Promise.all([
 
 assert.match(background, /repository\.update\(store => createInStore/);
 assert.match(background, /tasks\.claim\(store\.aiTasks/);
-assert.match(background, /tasks\.recover\(store\.aiTasks/);
+assert.match(background, /tasks\.recover\(legacy\)/);
+assert.match(background, /store\.aiTasks\.filter\(task => !taskTransitions\?\.supports\(task\)\)/);
 assert.match(thoughtWorkflows, /saveForegroundAnswer/);
 assert.match(thoughtDomain, /createBlock/);
 assert.match(trash, /function restoreTrashEntry/);

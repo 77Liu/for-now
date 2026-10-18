@@ -257,7 +257,8 @@ export function createTaskLifecycle({ createId, now, hash }) {
     deferInputBinding = false,
     requestedIntent = null,
     waitingBudget = false,
-    allocateIdentity = null
+    allocateIdentity = null,
+    preparedAt = ""
   } = {}) {
     const normalized = normalizeRequest(input);
     let { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
@@ -284,7 +285,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
       || (kind === "followUpAnswer" && !subtargetId)
       || (kind === "annotationShenji" && !subtargetId)
     )) return { missing: true };
-    const createdAt = now();
+    const createdAt = preparedAt || now();
     const inspectionInput = { ...normalized, createdAt };
     const work = deferTargetInspection || deferInputBinding
       ? null
@@ -469,6 +470,8 @@ export function createTaskLifecycle({ createId, now, hash }) {
 
   return {
     create,
+    /** 事务外准备使用与任务入库完全相同的规范化意图。 @since unreleased */
+    normalizeRequest,
     idempotency(input) {
       const normalized = normalizeRequest(input);
       if (!TASK_KINDS.has(normalized.kind) || !normalized.clientRequestId) return null;

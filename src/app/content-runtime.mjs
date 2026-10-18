@@ -309,7 +309,9 @@ export function createContentRuntime({
       annotations: foundation.annotationCommands.recordProducerCommands,
       trash: trashCommands.recordProducerCommands,
       attachments: contentAttachmentService.recordProducerCommands,
-      contentAi: backgroundAi.recordProducerCommand("content.aiWriteback")
+      contentAi: backgroundAi.recordProducerCommand("content.aiWriteback"),
+      taskCreation: backgroundAi.recordProducerCommand("task.creation"),
+      taskTransitions: backgroundAi.recordProducerCommand("task.transitions")
     });
   }
 

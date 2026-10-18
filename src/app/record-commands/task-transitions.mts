@@ -14,6 +14,9 @@ import { addThoughtClosureChanges } from "../../modules/thoughts/local-changes.m
 const supportedKinds = new Set([
   "thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding"
 ]);
+export const supportsRecordTask = (task: { kind?: string } | null | undefined) => (
+  supportedKinds.has(String(task?.kind).trim())
+);
 type Action = "claim" | "releaseWaiting" | "recover";
 type Input<Result> = {
   taskId: string;
@@ -75,7 +78,7 @@ export function createTaskTransitionCommands({
   unitOfWork: AccountUnitOfWork;
   mapping: StoreMapping;
 }) {
-  const supports = (task: { kind?: string } | null | undefined) => supportedKinds.has(String(task?.kind));
+  const supports = supportsRecordTask;
   const transition = async <Result,>(input: Input<Result>) => {
     if (!["claim", "releaseWaiting", "recover"].includes(input.action)) {
       throw new TypeError("Task transition action is invalid");

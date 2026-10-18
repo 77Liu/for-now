@@ -18,6 +18,7 @@ import { createBackgroundAi } from "../background-ai.mjs";
 import { createNotificationRecordCommands } from "../record-commands/notifications.mjs";
 import { createContentAiRecordCommands } from "../record-commands/content-ai.mjs";
 import { createTaskTransitionCommands } from "../../../.build/typescript/backend/app/record-commands/task-transitions.mjs";
+import { createTaskCreationCommands } from "../../../.build/typescript/backend/app/record-commands/task-creation.mjs";
 import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../../shared/persistence/index.mjs";
 import { createTaskRecordCommands } from "../../modules/tasks/index.mjs";
 import { userModelRequiresCoreReady } from "../user-model.mjs";
@@ -153,6 +154,13 @@ export function createContentBackground({
         ? createTaskTransitionCommands({
             unitOfWork: repository.accountUnitOfWork,
             mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects }
+          })
+        : null,
+      creation: repository.accountUnitOfWork?.run
+        ? createTaskCreationCommands({
+            unitOfWork: repository.accountUnitOfWork,
+            mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+            now
           })
         : null
     },
