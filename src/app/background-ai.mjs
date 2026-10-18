@@ -570,12 +570,16 @@ export function createBackgroundAi({
       return true;
     },
     assertRecordCommandsReady() {
-      if (recordCommands?.enabled?.("thought.aiWriteback")
-        && !dynamicRecordCommands.has("thought.aiWriteback")) {
-        throw new TypeError("Record command thought.aiWriteback is enabled without an implementation");
+      if (recordCommands?.enabled?.("thought.aiWriteback")) {
+        for (const name of ["thought.aiWriteback", "content.aiWriteback"]) {
+          if (!dynamicRecordCommands.has(name)) {
+            throw new TypeError(`Record command ${name} is enabled without an implementation`);
+          }
+        }
       }
       return true;
     },
+    recordProducerCommand: name => dynamicRecordCommands.get(name) || null,
     registerHandler(kind, handler) {
       if (!kind || !handler?.prepare || !handler?.save || !handler?.result) {
         throw new TypeError("A background task handler requires prepare(), save(), and result()");

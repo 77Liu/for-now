@@ -490,6 +490,53 @@
       "stage7 not started and F9 protected digests unchanged"
     ]
   },
+  "nightProducerGateSubset": {
+    "recordedAt": "2026-10-19T04:55:00+08:00",
+    "baselineCommit": "136c49",
+    "status": "PASS_RUNTIME_GATE_SUBSET_STAGE6_PARTIAL",
+    "sourceManifest": [
+      { "path": "src/modules/thoughts/producer-coverage.mts", "sha256_6": "46e33c" },
+      { "path": "src/modules/thoughts/query-runtime.mts", "sha256_6": "8a617b" },
+      { "path": "src/modules/thoughts/index.mjs", "sha256_6": "193076" },
+      { "path": "src/app/content-runtime.mjs", "sha256_6": "049757" },
+      { "path": "src/app/content/workflows.mjs", "sha256_6": "0e37d7" },
+      { "path": "src/app/background-ai.mjs", "sha256_6": "5dcd59" },
+      { "path": "src/app/annotation-resources.mjs", "sha256_6": "74c753" },
+      { "path": "src/app/trash.mjs", "sha256_6": "c9b550" },
+      { "path": "src/modules/content-attachments/service.mjs", "sha256_6": "e6c430" },
+      { "path": "scripts/thought-runtime-fixture.mts", "sha256_6": "76bfb0" },
+      { "path": "scripts/thought-producer-gate-regression.mts", "sha256_6": "0ea126" },
+      { "path": "scripts/postgres-runtime-checks.mjs", "sha256_6": "b8a7e9" },
+      { "path": "tsconfig.thought-db-regression.json", "sha256_6": "1b4a50" }
+    ],
+    "verified": [
+      "paging requires root create/update/delete, AI writeback and task status flags before runtime effects",
+      "partial/empty repository coverage, missing UoW and rebuild, missing actual family command reject",
+      "unassembled query and invalidated producer bindings reject before SQL",
+      "both thought/content AI writeback handlers required when enabled",
+      "thirty producer PostgreSQL success/failure matrix uses the complete content runtime instead of handcrafted adapters",
+      "stable PostgreSQL suite including formal HTTP/restart/export/recovery PASS",
+      "final extra gate cases, backend types, module boundary, content-runtime and existing command coverage PASS"
+    ],
+    "resolvedFailures": [
+      "new test imported app private module; changed to public app entry",
+      "old paging-only HTTP fixture omitted command flags and correctly failed startup; default test configuration now declares required commands"
+    ],
+    "logs": [
+      "/tmp/for-now-night-producer-gate-postgres-final.log",
+      "/tmp/for-now-night-producer-gate-final.log",
+      "/tmp/for-now-night-producer-gate-types-final.log",
+      "/tmp/for-now-night-producer-gate-modules-final.log",
+      "/tmp/for-now-night-producer-gate-content.log",
+      "/tmp/for-now-night-producer-gate-commands.log"
+    ],
+    "limitations": [
+      "task claim/enqueue/retry/wait/recovery still use account compatibility updater; projection no-op hooks audited but writes not yet bounded",
+      "maintenance normalization/offline invalidation remain explicit compatibility boundaries",
+      "runtime assembly gate proves installed functions, not absence of every future bypass; compatibility write protection remains to implement",
+      "no new browser or real corpus experiment; stage7 not started; F9 protected digests unchanged"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

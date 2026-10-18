@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 463,
-  "updated_at": "2026-10-18T20:42:19.359Z",
+  "revision": 464,
+  "updated_at": "2026-10-18T20:55:29.946Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -175,7 +175,7 @@
       ]
     }
   ],
-  "next_action": "继续阶段6 TC-10：完整生产者覆盖硬门与上下文准备、任务认领、启动恢复必要兼容写审计改造；所列关联历史及物理SQL规模已验证，阶段出口真正通过后接续阶段7。",
+  "next_action": "继续阶段6 TC-10：任务认领/等待/恢复的必要记录状态写与兼容入口旁路保护；实际生产者装配硬门已验证，阶段出口真正通过后接续阶段7。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -862,6 +862,23 @@
         "reviews/2026-10-19-stage6-browser-remediation-result.json#nightClosureSubset",
         "scripts/thought-closure-postgres-checks.mts",
         "npm run test:postgres:stable"
+      ]
+    },
+    {
+      "id": "stage6-night-producer-gate",
+      "object": {
+        "kind": "source_manifest",
+        "ref": "reviews/2026-10-19-stage6-browser-remediation-result.json#nightProducerGateSubset"
+      },
+      "conclusion": "实际命令装配/开关/维护端口硬门通过；正式完整内容运行时三十生产者成功/故障与稳定PG套件通过。",
+      "limitations": [
+        "task claim/enqueue/retry/wait/recovery compatibility writes remain unbounded",
+        "future compatibility bypass protection remains open",
+        "stage6 partial; stage7 not started"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-browser-remediation.md",
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightProducerGateSubset"
       ]
     }
   ],

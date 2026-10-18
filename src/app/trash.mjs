@@ -293,6 +293,7 @@ export function createTrashCommands({ repository, trash, mutations, cleanup, now
       })
     : null;
   return {
+    recordProducerCommands: thoughtCommands,
     removeThoughtBlock: id => thoughtCommands
       ? thoughtCommands.removeBlock(id)
       : repository.update(store => mutations.moveThoughtBlockToTrash(store, id)),

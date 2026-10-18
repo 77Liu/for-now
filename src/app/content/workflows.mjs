@@ -248,6 +248,7 @@ export function createContentWorkflows({
   backgroundAi.assertRecordCommandsReady();
 
   return {
+    thoughtRecordCommands,
     thoughtWorkflows,
     captureJournalWorkflows,
     reviewChatWorkflows,

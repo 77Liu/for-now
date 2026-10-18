@@ -1,6 +1,6 @@
 import { thoughtSpeechProjection } from "./speech-cache.mjs";
 import { thoughtDiscoveryProjection } from "../modules/discovery/index.mjs";
-import { createThoughtQueries } from "../modules/thoughts/index.mjs";
+import { createThoughtQueries, assertThoughtProducerFlags } from "../modules/thoughts/index.mjs";
 import { createNotificationService } from "../modules/notifications/index.mjs";
 import { cancelExistingTaskForAccountRecovery } from "../modules/tasks/index.mjs";
 import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
@@ -84,6 +84,7 @@ export function createContentRuntime({
   if (effectObserver !== null && typeof effectObserver !== "function") {
     throw new TypeError("Content runtime effectObserver must be a function");
   }
+  if (thoughtPagingConfig?.enabled === true) assertThoughtProducerFlags(recordCommandConfig);
 
   const observedRunDeepSeek = effectObserver
     ? (...args) => {
@@ -301,6 +302,16 @@ export function createContentRuntime({
     cleanup: mediaRuntime.attachmentCleanup,
     now
   });
+  if (thoughtPagingConfig?.enabled === true) {
+    thoughtQueries.assertProducersReady({
+      roots: workflows.thoughtRecordCommands,
+      local: records.thoughtService.recordProducerCommands,
+      annotations: foundation.annotationCommands.recordProducerCommands,
+      trash: trashCommands.recordProducerCommands,
+      attachments: contentAttachmentService.recordProducerCommands,
+      contentAi: backgroundAi.recordProducerCommand("content.aiWriteback")
+    });
+  }
 
   return {
     ...foundation,

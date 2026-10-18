@@ -634,6 +634,7 @@ export function createContentAttachmentService({
   }
 
   return {
+    recordProducerCommands: recordCommands,
     get,
     replaceOriginalImages,
     reconcileOriginalImagesInStore,

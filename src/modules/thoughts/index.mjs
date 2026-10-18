@@ -413,6 +413,7 @@ export function createThoughtService({
     : repository.update(store => localMutations[operation](store, input));
 
   return {
+    recordProducerCommands: localCommands,
     createChainInStore(store, {
       questionText, eventTime, tags, clientRequestId, requestHash,
       idea, answer, modelDraft, modelReasoning, attachmentPaths = [], sourceRef = null
@@ -686,6 +687,7 @@ export function createThoughtService({
 }
 
 export { createThoughtRecordCommands } from "../../../.build/typescript/backend/modules/thoughts/record-commands.mjs";
+export { assertThoughtProducerFlags } from "../../../.build/typescript/backend/modules/thoughts/producer-coverage.mjs";
 
 import { createThoughtQueryRuntime as createQueryRuntime } from "../../../.build/typescript/backend/modules/thoughts/query-runtime.mjs";
 /** 装配公开思绪数据库查询与投影维护；业务事实仍是正式思绪对象。 @since unreleased

@@ -26,7 +26,7 @@ import {
   exportPostgresDirectory, readPostgresBundle, storeContentSha256
 } from "../src/shared/persistence/index.mjs";
 import {
-  createBackgroundAi, createEmptyStore, createStoreNormalizer,
+  createBackgroundAi, createContentRuntime, createEmptyStore, createStoreNormalizer,
   createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep,
   userModelCoreReadiness, createPerceptionAwareRepository, createPerceptionRuntime,
   createNotificationRecordCommands, createTaskRecordCommands,
@@ -60,6 +60,8 @@ import { runThoughtProducerPostgresChecks } from "../.build/typescript/thought-d
 import { runThoughtClosurePostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-closure-postgres-checks.mjs";
 import { runThoughtTrashHttpChecks } from "../.build/typescript/thought-db-regression/scripts/thought-trash-http-checks.mjs";
 import { createRecordCompressionService, createAnnotationCommands } from "../src/app/index.mjs";
+import { createThoughtRuntimeFixture } from "../.build/typescript/thought-db-regression/scripts/thought-runtime-fixture.mjs";
+import { runThoughtProducerGateChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-gate-regression.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -1037,8 +1039,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     backend = "postgres",
     {
       accountRecoveryEnabled = false,
-      recordCommandAllowlist = "",
-      thoughtPagingEnabled = false
+      thoughtPagingEnabled = false,
+      recordCommandAllowlist = thoughtPagingEnabled
+        ? "thought.create,thought.update,thought.delete,thought.aiWriteback,task.status"
+        : ""
     } = {}
   ) => {
     const appPort = await freePort();
@@ -1289,10 +1293,27 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       WHERE account_id = 'repo-test' AND cursor = 3
     `)).rows, [{ cursor: "3", version: 3, operation: "delete" }]);
     await runThoughtSearchCorpusChecks(database);
+    await runThoughtProducerGateChecks(options => {
+      let runtime;
+      createThoughtRuntimeFixture(input => {
+        runtime = createContentRuntime(input);
+        return runtime;
+      }, options.repository, "thought-gate-test", {
+        repository: {
+          read: async () => { throw new Error("Gate must not read"); },
+          update: async () => { throw new Error("Gate must not update"); },
+          executeIdempotent: async () => { throw new Error("Gate must not write"); },
+          ...options.repository
+        },
+        thoughtPagingConfig: options.thoughtPagingConfig,
+        recordCommandConfig: options.recordCommandConfig
+      });
+      return runtime;
+    }, repository => createThoughtQueries({ repository, enabled: true }));
     const pagingRepo = runtime.createStoreRepository({ normalize: value => value, emptyDocument: empty() });
     const pagingQueries = await runThoughtDbPagingChecks({ database, repo: pagingRepo, account,
-      createQueries: options => createThoughtQueries({ ...options, discoveryProjection: thoughtDiscoveryProjection,
-        speechProjection: thoughts => thoughtSpeechProjection(thoughts, value => crypto.createHash("sha256").update(value).digest("hex")) }),
+      createQueries: options => createThoughtRuntimeFixture(createContentRuntime,
+        options.repository, "thought-paging-db").queries,
       registerSpeechFixture: async () => {
         await runtime.attachments.record({ path: "/attachments/paging.mp3", storage: "local",
           objectKey: "paging.mp3", bytes: 0, sha256: crypto.createHash("sha256").update("").digest("hex") });
@@ -1307,6 +1328,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         now: () => "2026-10-19T00:00:00.000Z" }),
       legacyPage: thoughtChainListPage,
       removeRoot: (store, id) => createThoughtRecordHarness(pagingRepo).mutations.moveThoughtChainToTrash(store, id) });
+    const producerFixtures = new WeakMap();
     await runThoughtProducerPostgresChecks({
       database,
       repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
@@ -1315,112 +1337,20 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       attachmentChecks: runAttachmentProducerPostgresChecks,
       aiChecks: runThoughtAiPostgresChecks,
       discoveryChecks: runThoughtDiscoveryPostgresChecks,
-      createQueries: repository => createThoughtQueries({
-        repository, enabled: true, discoveryProjection: thoughtDiscoveryProjection,
-        speechProjection: thoughts => thoughtSpeechProjection(thoughts,
-          value => crypto.createHash("sha256").update(value).digest("hex"))
-      }),
+      createQueries: repository => {
+        const fixture = createThoughtRuntimeFixture(createContentRuntime, repository, "thought-producer-test");
+        producerFixtures.set(repository, fixture);
+        return fixture.queries;
+      },
       createService: (repository, queryRuntime) => {
-        const now = () => "2026-10-19T00:00:00.000Z";
-        const createId = () => crypto.randomUUID();
-        const hash = value => crypto.createHash("sha256").update(value).digest("hex");
-        const scheduledTaskIds = [];
-        const cancelledTaskIds = [];
-        const perception = createPerceptionRuntime({ getAccountId: () => "thought-producer-test", createId, now, hash });
-        const compression = createRecordCompressionService({
-          repository,
-          getAccountId: () => "thought-producer-test",
-          createId,
-          now,
-          hash
-        });
-        let background;
-        const aware = createPerceptionAwareRepository({
-          repository,
-          perception,
-          createTask: (store, input) => background.createInStore(store, input),
-          scheduleTask: taskId => scheduledTaskIds.push(taskId),
-          recordEffects: {
-            sourceDates: store => compression.sourceMutationDates(store),
-            invalidate: (store, before) => compression.invalidateSourceClosure(store, before),
-            cancel: () => {}
-          }
-        });
-        background = createBackgroundAi({
-          repository: aware,
-          tasks: createTaskLifecycle({ createId, now, hash }),
-          notifications: createNotificationService({ createId, now }),
-          targets: perception,
-          generate: async () => { throw new Error("Producer test must not invoke a provider"); },
-          dispatch: () => {},
-          contextKey: () => "producer-test",
-          now,
-          onError: error => { throw error; }
-        });
-        const service = createThoughtService({
-          repository: aware,
-          queryRuntime,
-          createId,
-          now,
-          recordVersion,
-          eventTimeFields,
-          reanchorAnnotations: createAnnotationService({ createId, now }).reanchorAnnotations
-        });
-        const discovery = createThoughtDiscoveryService({
-          repository: aware, thoughtQueries: () => queryRuntime, now
-        });
-        const annotations = createAnnotationService({ createId, now });
-        const trash = createTrashService({ createId, now, hash, retentionDays: 30 });
-        const mutations = createTrashMutations({
-          trash,
-          annotations,
-          now,
-          getAccountId: () => "thought-producer-test",
-          cancelTask: () => {}
-        });
-        const annotationCommands = createAnnotationCommands({
-          repository: aware,
-          annotations,
-          moveNestedItemToTrash: mutations.moveNestedItemToTrash,
-          now
-        });
-        const rootCommands = createThoughtRecordCommands({
-          unitOfWork: aware.accountUnitOfWork,
-          effects: aware.sourceMutationEffects,
-          thoughts: service,
-          removeChain: mutations.moveThoughtChainToTrash,
-          removeBlock: mutations.moveThoughtBlockToTrash,
-          createTaskInStore: (store, input, options) => background.createInStore(store, input, options),
-          tasks: createTaskLifecycle({ createId, now, hash }),
-          notifications: createNotificationService({ createId, now }),
-          thoughtTarget: createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead }),
-          now
-        });
-        const trashCommands = createTrashCommands({
-          repository: aware, trash, mutations, cleanup: null, now
-        });
-        const attachments = createContentAttachmentService({
-          repository: aware,
-          recordCommands: createContentAttachmentRecordCommands(aware),
-          trash,
-          attachmentInventory: () => { throw new Error("Attachment producer must not enumerate inventory"); },
-          cancelTask: taskId => cancelledTaskIds.push(taskId),
-          getAccountId: () => "thought-producer-test", now, createId
-        });
-        const targets = createAiTaskTargets({
-          thoughts: createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead }),
-          annotations, contentAttachments: attachments,
-          getAccountId: () => "thought-producer-test", now, hash
-        });
-        const contentAi = createContentAiRecordCommands({
-          unitOfWork: aware.accountUnitOfWork,
-          effects: aware.sourceMutationEffects,
-          tasks: createTaskLifecycle({ createId, now, hash }),
-          notifications: createNotificationService({ createId, now }),
-          targets
-        });
-        return { ...service, discovery, scheduledTaskIds, cancelledTaskIds, annotationCommands, rootCommands, trashCommands,
-          attachments, contentAi, thoughtService: service, producerRepository: aware };
+        return {
+          ...producerFixtures.get(repository),
+          discovery: createThoughtDiscoveryService({
+            repository,
+            thoughtQueries: () => queryRuntime,
+            now: () => "2026-10-19T00:00:00.000Z"
+          })
+        };
       }
     });
     await account("repo-test", () => pagingQueries.rebuild());

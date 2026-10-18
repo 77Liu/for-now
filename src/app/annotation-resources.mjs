@@ -72,6 +72,7 @@ export function createAnnotationCommands({ repository, annotations, moveNestedIt
       })
     : null;
   return {
+    recordProducerCommands: thoughtCommands,
     create(resourceType, resourceId, input, { clientRequestId = "" } = {}) {
       const parsed = annotations.creationInput(input);
       if (parsed.invalid) return parsed;

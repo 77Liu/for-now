@@ -18,6 +18,8 @@ import { createThoughtProjection } from "./projection.mjs";
 import { queryThoughtDiscoveryCandidates } from "./discovery-query.mjs";
 import { THOUGHT_PAGING } from "../../shared/thought-pagination/index.mjs";
 import { assertThoughtIndexReady, getThoughtChainDetail, listThoughtChainsPage } from "./query.mjs";
+import { assertThoughtProducerBindings, incompleteThoughtProducers } from "./producer-coverage.mjs";
+import type { ThoughtProducerBindings } from "./producer-coverage.mjs";
 export type ThoughtQueryRepository = {
   accountUnitOfWork?: AccountUnitOfWork;
   recordProjectionCoverage?: {
@@ -79,28 +81,56 @@ export function createThoughtQueryRuntime({ repository, dependencies, enabled }:
     if (enabled) throw new Error("THOUGHT_PAGING_ENABLED requires the database query adapter");
     return null;
   }
-  if (enabled && (!repository.recordProjectionCoverage
-    || Object.values(repository.recordProjectionCoverage).some(covered => covered !== true))) {
-    throw Object.assign(new Error("思绪索引生产者维护边界不完整，禁止启用"), {
-      code: "THOUGHT_INDEX_PRODUCER_COVERAGE_INCOMPLETE"
-    });
+  if (enabled) {
+    const coverage = repository.recordProjectionCoverage;
+    const missing = (["recordTransactions", "legacyCommits", "initialization", "offlineImportInvalidates"] as const)
+      .filter(name => coverage?.[name] !== true);
+    if (!repository.accountUnitOfWork?.run) missing.push("recordTransactions");
+    if (!repository.rebuildRecordProjection) missing.push("initialization");
+    if (missing.length) throw incompleteThoughtProducers(missing.map(name => `repository:${name}`));
   }
   repository.installRecordProjection(createThoughtProjection(dependencies));
+  let producersReady = false;
+  const assertReady = () => {
+    if (enabled && !producersReady) throw incompleteThoughtProducers(["runtime:producerBindings"]);
+  };
+  const mutateDiscovery = discoveryMutation(repository, dependencies);
   return {
     enabled,
-    speechSources: (rootIds: string[]) => query(async context => {
+    assertProducersReady(bindings: ThoughtProducerBindings) {
+      producersReady = false;
+      const coverage = assertThoughtProducerBindings(bindings);
+      producersReady = true;
+      return coverage;
+    },
+    speechSources: (rootIds: string[]) => {
+      assertReady();
       if (rootIds.length > THOUGHT_PAGING.pageSize) throw new RangeError("Speech sources require at most one thought page");
-      await assertThoughtIndexReady(context);
-      const result = await context.client.query<{ speech_sources: SpeechSourceReceipt[] }>(`
-        SELECT speech_sources FROM for_now.thought_chain_index
-        WHERE account_id=$1 AND root_id=ANY($2::text[])
-      `, [context.accountId, rootIds]);
-      return result.rows.flatMap(row => row.speech_sources);
-    }),
-    mutateDiscovery: discoveryMutation(repository, dependencies),
-    list: (input: ThoughtPageInput) => query(context => listThoughtChainsPage(context, input)),
-    discovery: (input: ThoughtDiscoveryInput) => query(context => queryThoughtDiscoveryCandidates(context, input, dependencies)),
-    detail: (rootId: string) => query(context => getThoughtChainDetail(context, rootId, dependencies)),
+      return query(async context => {
+        await assertThoughtIndexReady(context);
+        const result = await context.client.query<{ speech_sources: SpeechSourceReceipt[] }>(`
+          SELECT speech_sources FROM for_now.thought_chain_index
+          WHERE account_id=$1 AND root_id=ANY($2::text[])
+        `, [context.accountId, rootIds]);
+        return result.rows.flatMap(row => row.speech_sources);
+      });
+    },
+    mutateDiscovery: (...args: Parameters<ReturnType<typeof discoveryMutation>>) => {
+      assertReady();
+      return mutateDiscovery(...args);
+    },
+    list: (input: ThoughtPageInput) => {
+      assertReady();
+      return query(context => listThoughtChainsPage(context, input));
+    },
+    discovery: (input: ThoughtDiscoveryInput) => {
+      assertReady();
+      return query(context => queryThoughtDiscoveryCandidates(context, input, dependencies));
+    },
+    detail: (rootId: string) => {
+      assertReady();
+      return query(context => getThoughtChainDetail(context, rootId, dependencies));
+    },
     async rebuild() {
       let afterRootId = "";
       let processed = 0;
