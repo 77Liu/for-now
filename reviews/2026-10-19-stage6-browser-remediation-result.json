@@ -384,6 +384,52 @@
       "F9 protected digests unchanged; TC-10 open, stage7 not started"
     ]
   },
+  "nightDiscoverySubset": {
+    "recordedAt": "2026-10-19T04:24:00+08:00",
+    "baselineCommit": "c6bb64",
+    "status": "PASS_THIRTY_COMMAND_SUBSET_STAGE6_PARTIAL",
+    "caseSource": "scripts/thought-discovery-postgres-checks.mts",
+    "sourceManifest": [
+      { "path": "src/modules/discovery/index.mjs", "sha256_6": "ac6991" },
+      { "path": "src/modules/thoughts/query-runtime.mts", "sha256_6": "ac1142" },
+      { "path": "scripts/thought-discovery-postgres-checks.mts", "sha256_6": "e2dcc8" },
+      { "path": "scripts/thought-producer-postgres-checks.mts", "sha256_6": "ad6653" },
+      { "path": "scripts/postgres-runtime-checks.mjs", "sha256_6": "dd18a5" },
+      { "path": "tsconfig.thought-db-regression.json", "sha256_6": "72a166" }
+    ],
+    "addedCommands": [
+      "thought.discovery.markRead",
+      "thought.discovery.snooze",
+      "thought.discovery.clearSnooze"
+    ],
+    "verified": [
+      "three public actions: success and commit-time failure rollback of account revision, objects, index and changes",
+      "missing target, old version, repeated stale request and invalid until write nothing",
+      "root version, summary, search text and tag counts preserved; discovery version and projection updated",
+      "fresh candidate membership follows snooze, clear and markRead",
+      "all thirty commands recorded through wrapped record transactions; 1000 unrelated roots unchanged",
+      "formal PostgreSQL HTTP with paging enabled: three actions, stale If-Match and cross-account denial",
+      "npm run test:postgres:stable full terminal PASS",
+      "discovery domain and frontend, thought service, TypeScript build and module boundaries PASS"
+    ],
+    "resolvedFailures": [
+      "runtime-wide projection installed twice by new matrix query fixture; final fixture uses independent peer runtime",
+      "new HTTP fixture initially used incorrect v-prefixed ETag; aligned with existing numeric ETag contract"
+    ],
+    "logs": [
+      "/tmp/for-now-night-discovery-postgres-commit.log",
+      "/tmp/for-now-night-discovery-service.log",
+      "/tmp/for-now-night-discovery-frontend.log",
+      "/tmp/for-now-night-discovery-thoughts.log",
+      "/tmp/for-now-night-discovery-modules.log"
+    ],
+    "limitations": [
+      "related-history growth, physical SQL costs and complete producer coverage hard gate still pending",
+      "context preparation and task claim compatibility paths remain to audit",
+      "no new actual browser or real corpus experiment",
+      "F9 protected file digests unchanged; TC-10 open and stage7 not started"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

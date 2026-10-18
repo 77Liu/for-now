@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 461,
-  "updated_at": "2026-10-18T20:10:05.462Z",
+  "revision": 462,
+  "updated_at": "2026-10-18T20:22:35.008Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -175,7 +175,7 @@
       ]
     }
   ],
-  "next_action": "继续阶段6 TC-10：发现状态逐入口矩阵、关联历史/物理SQL规模与生产者覆盖硬门；出口真正通过后接续阶段7。",
+  "next_action": "继续阶段6 TC-10：关联历史增长与日期/回收/关系SQL物理成本，生产者完整覆盖硬门；发现三入口矩阵已通过，出口真正通过后接续阶段7。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -822,6 +822,26 @@
       "refs": [
         "reviews/2026-10-19-stage6-browser-remediation-result.json#nightAiWritebackSubset",
         "scripts/thought-ai-postgres-checks.mjs",
+        "npm run test:postgres:stable"
+      ]
+    },
+    {
+      "id": "v0516-stage6-discovery-producer-verification",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-sync-latency",
+        "baseline": "c6bb64",
+        "requirement_id": "reczz28ORRaxSFnV"
+      },
+      "conclusion": "三个发现状态入口独立记录command；三十公开命令PG成功/末尾故障矩阵、正式开启分页HTTP版本/账户拒绝与稳定PG全套通过。根版本、正文和标签保持，发现状态/投影/ChangeDraft同事务。TC-10未关闭。",
+      "limitations": [
+        "关联历史增长、日期/回收/关系SQL实际扫描与完整生产者硬门仍待完成",
+        "上下文准备/任务认领兼容路径待审计，不由终态局部化推断整链有界",
+        "无新浏览器/真实语料实验；F9保护指纹不变；阶段7未开始"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightDiscoverySubset",
+        "scripts/thought-discovery-postgres-checks.mts",
         "npm run test:postgres:stable"
       ]
     }

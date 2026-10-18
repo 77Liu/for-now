@@ -641,7 +641,7 @@ export function createThoughtDiscoveryService({
     return result.candidates.filter(candidate => candidate.value.fresh).length;
   }
 
-  async function mutateStatus(id, mutation, { expectedVersion = null, clock = nowValue(now) } = {}) {
+  async function mutateStatus(action, id, mutation, { expectedVersion = null, clock = nowValue(now) } = {}) {
     const apply = (root, children) => {
       if (!root) return { missing: true };
       const discovery = root.discovery && typeof root.discovery === "object" && !Array.isArray(root.discovery)
@@ -658,7 +658,7 @@ export function createThoughtDiscoveryService({
       return { value: { id: root.id, status, untraced: status.untraced, fresh: status.fresh } };
     };
     const queries = thoughtQueries();
-    if (queries?.enabled) return queries.mutateDiscovery(id, apply);
+    if (queries?.enabled) return queries.mutateDiscovery(id, apply, action);
     return repository.update(document => {
       const thoughts = thoughtsOf(document);
       const root = thoughts.find(item => item?.id === id && item.type === "question");
@@ -668,7 +668,7 @@ export function createThoughtDiscoveryService({
     });
   }
 
-  const markRead = (id, options = {}) => mutateStatus(id, (discovery, root, children, clock) => {
+  const markRead = (id, options = {}) => mutateStatus("markRead", id, (discovery, root, children, clock) => {
     discovery.readAt = clock.iso;
     discovery.seenRevision = chainRevision(root, children);
   }, options);
@@ -683,12 +683,12 @@ export function createThoughtDiscoveryService({
       });
     }
     const normalizedUntil = new Date(untilMilliseconds).toISOString();
-    return mutateStatus(id, discovery => {
+    return mutateStatus("snooze", id, discovery => {
       discovery.snoozedUntil = normalizedUntil;
     }, { ...options, clock });
   }
 
-  const clearSnooze = (id, options = {}) => mutateStatus(id, discovery => {
+  const clearSnooze = (id, options = {}) => mutateStatus("clearSnooze", id, discovery => {
     delete discovery.snoozedUntil;
   }, options);
 

@@ -30,9 +30,17 @@ export type ThoughtQueryRepository = {
 };
 function discoveryMutation(repository: ThoughtQueryRepository, dependencies: ThoughtQueryDependencies) {
   const graph = createThoughtRecordRepository(dependencies);
-  return async <T,>(rootId: string, operation: (root: RecordEntity, blocks: RecordEntity[]) => T): Promise<T | { missing: true }> => {
+  const commandIds = {
+    markRead: "thought.discovery.markRead",
+    snooze: "thought.discovery.snooze",
+    clearSnooze: "thought.discovery.clearSnooze"
+  } as const;
+  return async <T,>(rootId: string, operation: (root: RecordEntity, blocks: RecordEntity[]) => T,
+    action: keyof typeof commandIds): Promise<T | { missing: true }> => {
     if (!repository.accountUnitOfWork) throw new Error("Discovery mutation requires record transactions");
-    const committed = await repository.accountUnitOfWork.run({ commandId: "thought.discoveryStatus" }, async ports => {
+    const commandId = commandIds[action];
+    if (!commandId) throw new TypeError("Discovery mutation action is invalid");
+    const committed = await repository.accountUnitOfWork.run({ commandId }, async ports => {
       const closure = await graph.readThoughtClosure(ports.objects, ports.relations, rootId);
       if (!closure) return { missing: true } as const;
       const root = closure.thoughts.find(item => item.id === rootId && item.type === "question")!;

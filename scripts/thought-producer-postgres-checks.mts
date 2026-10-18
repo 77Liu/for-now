@@ -50,6 +50,7 @@ type Context = {
   attachmentFixtures(root: (id: string) => RecordStore["thoughts"][number]): RecordStore["thoughts"];
   attachmentChecks(input: Record<string, unknown>): Promise<void>;
   aiChecks(context: Record<string, unknown>, service: unknown): Promise<void>;
+  discoveryChecks(context: Record<string, unknown>, service: unknown): Promise<void>;
 };
 const accountId = "thought-producer-test";
 const rootId = "producer-root";
@@ -72,7 +73,7 @@ const root = (id: string) => ({
 
 async function snapshot(database: SqlClient) {
   const tables = [
-    "store_objects", "store_relations", "store_attachment_refs", "resource_lifecycle",
+    "accounts", "store_fields", "store_objects", "store_relations", "store_attachment_refs", "resource_lifecycle",
     "thought_chain_index", "thought_tag_counts", "record_changes", "account_sync_heads",
     "idempotency_ledger"
   ];
@@ -112,8 +113,6 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
         createdAt: timestamp, occurredAt: timestamp, occurredOn: "2026-10-19"
       }];
     });
-    const queries = context.createQueries(repo);
-    await queries.rebuild();
     const transactions: { reads: number; writes: number; commandId: string }[] = [];
     const run: AccountUnitOfWork["run"] = async (options, operation) => {
       const result = await repo.accountUnitOfWork.run(options, operation);
@@ -129,9 +128,36 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
         run
       }
     };
+    const queries = context.createQueries(boundedRepository);
+    await queries.rebuild();
     const service = context.createService(boundedRepository, queries);
     const beforeOthers = (await database.query(`SELECT object_key, version, payload FROM for_now.store_objects
       WHERE account_id=$1 AND id LIKE 'unrelated-%' ORDER BY object_key`, [accountId])).rows;
+    const blockId = await blockCommandMatrix(context, service, queries);
+    const nested = await nestedCommandMatrix(context, service, queries);
+    await annotationMatrix(context, service.annotationCommands, queries);
+    await rootCommandMatrix(context, service, queries);
+    await trashCommandMatrix(context, service, queries, { blockId, ...nested });
+    await context.attachmentChecks({
+      database, repo, service: service.attachments, scheduledTaskIds: service.scheduledTaskIds,
+      cancelledTaskIds: service.cancelledTaskIds, queries
+    });
+    await context.aiChecks({ database, repo, queries }, service);
+    await context.discoveryChecks({ database, repo, queries }, service);
+    const afterOthers = (await database.query(`SELECT object_key, version, payload FROM for_now.store_objects
+      WHERE account_id=$1 AND id LIKE 'unrelated-%' ORDER BY object_key`, [accountId])).rows;
+    assert.deepEqual(afterOthers, beforeOthers);
+    assert.ok(transactions.every(transaction => transaction.reads < 100), JSON.stringify(transactions));
+    assert.ok(transactions.every(transaction => transaction.writes < 100), JSON.stringify(transactions));
+    const commands = (await database.query(`SELECT DISTINCT command_id FROM for_now.record_changes
+      WHERE account_id=$1 ORDER BY command_id`, [accountId])).rows.map(row => row.command_id);
+    assert.equal(commands.length, 30);
+    console.log("Thought producer PostgreSQL matrix passed: thirty public commands, document mutation forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
+  });
+}
+
+async function blockCommandMatrix(context: Context, service: ReturnType<Context["createService"]>, queries: Queries) {
+    const { repo, database } = context;
     const blockInput: LocalThoughtInput = {
       relatedTo: rootId,
       type: "idea",
@@ -195,6 +221,11 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
       id: blockId, content: "失败更新词", eventTimeInput: {}
     }));
     assert.deepEqual(service.scheduledTaskIds, scheduledBeforeFailure);
+    return blockId;
+}
+
+async function nestedCommandMatrix(context: Context, service: ReturnType<Context["createService"]>, queries: Queries) {
+    const { database } = context;
     await service.setDisposition({ id: rootId, disposition: "pending" });
     await failureCase(context, "thought.disposition", () => service.setDisposition({ id: rootId, disposition: "discarded" }));
     const remark = await service.addRemark({ id: rootId, text: "备注新增词" });
@@ -227,26 +258,7 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
     await failureCase(context, "thought.followUp.update", () => service.updateFollowUp({
       id: rootId, followUpId: followUp.value!.id, hasAnswer: true, answer: "失败追问回答"
     }));
-    await annotationMatrix(context, service.annotationCommands, queries);
-    await rootCommandMatrix(context, service, queries);
-    await trashCommandMatrix(context, service, queries, {
-      blockId, remarkId: remark.value.id, followUpId: followUp.value.id
-    });
-    await context.attachmentChecks({
-      database, repo, service: service.attachments, scheduledTaskIds: service.scheduledTaskIds,
-      cancelledTaskIds: service.cancelledTaskIds, queries
-    });
-    await context.aiChecks({ database, repo, queries }, service);
-    const afterOthers = (await database.query(`SELECT object_key, version, payload FROM for_now.store_objects
-      WHERE account_id=$1 AND id LIKE 'unrelated-%' ORDER BY object_key`, [accountId])).rows;
-    assert.deepEqual(afterOthers, beforeOthers);
-    assert.ok(transactions.every(transaction => transaction.reads < 100), JSON.stringify(transactions));
-    assert.ok(transactions.every(transaction => transaction.writes < 100), JSON.stringify(transactions));
-    const commands = (await database.query(`SELECT DISTINCT command_id FROM for_now.record_changes
-      WHERE account_id=$1 ORDER BY command_id`, [accountId])).rows.map(row => row.command_id);
-    assert.equal(commands.length, 27);
-    console.log("Thought producer PostgreSQL matrix passed: twenty-seven public commands, document mutation forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
-  });
+    return { remarkId: remark.value.id, followUpId: followUp.value.id };
 }
 
 async function rootCommandMatrix(

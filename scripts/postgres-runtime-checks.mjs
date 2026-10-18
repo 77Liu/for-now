@@ -3,6 +3,9 @@ import {
   attachmentProducerFixtures, runAttachmentProducerPostgresChecks, runAttachmentProducerHttpChecks
 } from "./thought-attachment-postgres-checks.mjs";
 import { runThoughtAiPostgresChecks, runThoughtAiHttpChecks } from "./thought-ai-postgres-checks.mjs";
+import {
+  runThoughtDiscoveryPostgresChecks, runThoughtDiscoveryHttpChecks
+} from "../.build/typescript/thought-db-regression/scripts/thought-discovery-postgres-checks.mjs";
 import { createContentAttachmentService } from "../src/modules/content-attachments/index.mjs";
 import { runThoughtSearchCorpusChecks } from "../.build/typescript/thought-db-regression/scripts/thought-search-corpus-regression.mjs";
 import { thoughtDiscoveryProjection, createThoughtDiscoveryService } from "../src/modules/discovery/index.mjs";
@@ -1304,12 +1307,17 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       removeRoot: (store, id) => createThoughtRecordHarness(pagingRepo).mutations.moveThoughtChainToTrash(store, id) });
     await runThoughtProducerPostgresChecks({
       database,
-      repo: pagingRepo,
+      repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
       account,
       attachmentFixtures: attachmentProducerFixtures,
       attachmentChecks: runAttachmentProducerPostgresChecks,
       aiChecks: runThoughtAiPostgresChecks,
-      createQueries: () => pagingQueries,
+      discoveryChecks: runThoughtDiscoveryPostgresChecks,
+      createQueries: repository => createThoughtQueries({
+        repository, enabled: true, discoveryProjection: thoughtDiscoveryProjection,
+        speechProjection: thoughts => thoughtSpeechProjection(thoughts,
+          value => crypto.createHash("sha256").update(value).digest("hex"))
+      }),
       createService: (repository, queryRuntime) => {
         const now = () => "2026-10-19T00:00:00.000Z";
         const createId = () => crypto.randomUUID();
@@ -1355,6 +1363,9 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
           recordVersion,
           eventTimeFields,
           reanchorAnnotations: createAnnotationService({ createId, now }).reanchorAnnotations
+        });
+        const discovery = createThoughtDiscoveryService({
+          repository: aware, thoughtQueries: () => queryRuntime, now
         });
         const annotations = createAnnotationService({ createId, now });
         const trash = createTrashService({ createId, now, hash, retentionDays: 30 });
@@ -1406,7 +1417,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
           notifications: createNotificationService({ createId, now }),
           targets
         });
-        return { ...service, scheduledTaskIds, cancelledTaskIds, annotationCommands, rootCommands, trashCommands,
+        return { ...service, discovery, scheduledTaskIds, cancelledTaskIds, annotationCommands, rootCommands, trashCommands,
           attachments, contentAi, thoughtService: service, producerRepository: aware };
       }
     });
@@ -2503,6 +2514,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       await restoredMigration.query("ROLLBACK");
     }
     const restoredApp = await startApp("runtime_restored", restoredDir, "postgres", {
+      thoughtPagingEnabled: true,
       recordCommandAllowlist: [
         "notification.read",
         "notification.readAll",
@@ -2534,6 +2546,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       base: restoredApp.base, request, cookie, otherCookie, waitTask,
       attachmentPath: "/attachments/interrupted-present.png"
     });
+    await request(restoredApp.base, "/api/settings", {
+      cookie, method: "POST", body: { automaticAnswers: { thoughtAnswer: false } }
+    });
+    await runThoughtDiscoveryHttpChecks({ base: restoredApp.base, request, cookie, otherCookie });
     assert.equal(providerCalls, 10, "Foreground replay and forbidden requests must not call the provider");
     await assert.rejects(applyPostgresBundle(restoredMigration, bundle), /entered runtime/);
     return ["runtime role validation", ...budgetChecks,
