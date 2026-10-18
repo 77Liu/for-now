@@ -10,6 +10,7 @@ import type { RecordStore } from "../src/shared/persistence/record-command-types
 import type { LocalThoughtInput, LocalThoughtResult } from "../src/modules/thoughts/local-mutations.mjs";
 import type { ThoughtLocalCommands } from "../src/modules/thoughts/local-commands.mjs";
 import type { SqlClient } from "../src/modules/thoughts/query-contracts.mjs";
+import type { createThoughtRecordCommands } from "../src/modules/thoughts/record-commands.mjs";
 
 type Repository = {
   initialize(options: { allowCreate: boolean }): Promise<void>;
@@ -36,6 +37,7 @@ type Context = {
   createService(repo: Repository, queries: Queries): ThoughtLocalCommands & {
     scheduledTaskIds: string[];
     annotationCommands: AnnotationCommands;
+    rootCommands: ReturnType<typeof createThoughtRecordCommands>;
   };
 };
 const accountId = "thought-producer-test";
@@ -72,7 +74,7 @@ async function snapshot(database: SqlClient) {
   return state;
 }
 
-async function failureCase(context: Context, commandId: string, invoke: () => Promise<LocalThoughtResult>) {
+async function failureCase(context: Context, commandId: string, invoke: () => Promise<unknown>) {
   const before = await snapshot(context.database);
   await context.database.query(`ALTER TABLE for_now.record_changes
     ADD CONSTRAINT injected_local_producer_failure CHECK(command_id <> '${commandId}') NOT VALID`);
@@ -208,6 +210,7 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
       id: rootId, followUpId: followUp.value!.id, hasAnswer: true, answer: "失败追问回答"
     }));
     await annotationMatrix(context, service.annotationCommands, queries);
+    await rootCommandMatrix(context, service, queries);
     const afterOthers = (await database.query(`SELECT object_key, version, payload FROM for_now.store_objects
       WHERE account_id=$1 AND id LIKE 'unrelated-%' ORDER BY object_key`, [accountId])).rows;
     assert.deepEqual(afterOthers, beforeOthers);
@@ -215,9 +218,92 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
     assert.ok(transactions.every(transaction => transaction.writes < 100), JSON.stringify(transactions));
     const commands = (await database.query(`SELECT DISTINCT command_id FROM for_now.record_changes
       WHERE account_id=$1 ORDER BY command_id`, [accountId])).rows.map(row => row.command_id);
-    assert.equal(commands.length, 11);
-    console.log("Thought local producer PostgreSQL matrix passed: eleven public commands, document access forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
+    assert.equal(commands.length, 16);
+    console.log("Thought producer PostgreSQL matrix passed: sixteen public commands, document access forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
   });
+}
+
+async function rootCommandMatrix(
+  context: Context,
+  service: ReturnType<Context["createService"]>,
+  queries: Queries
+) {
+  const commands = service.rootCommands;
+  const input = {
+    questionText: "根生产者新增词",
+    tags: ["根生产者标签"],
+    eventTime: { occurredAt: timestamp, occurredOn: "2026-10-19" },
+    clientRequestId: "producer-root-create",
+    requestHash: "producer-root-create-hash",
+    generateAnswer: true
+  };
+  const created = await commands.create(input);
+  const createdRoot = created.items?.find(item => item.type === "question");
+  assert.ok(createdRoot);
+  assert.ok(created.task);
+  assert.equal((await queries.list({ query: "根生产者新增词" })).items[0]?.id, createdRoot.id);
+  assert.equal((await queries.list({ tag: "根生产者标签" })).items[0]?.id, createdRoot.id);
+  const beforeReplay = await snapshot(context.database);
+  assert.equal((await commands.create(input)).duplicate, true);
+  assert.deepEqual(await snapshot(context.database), beforeReplay);
+  await assert.rejects(commands.create({ ...input, requestHash: "changed" }), { code: "IDEMPOTENCY_KEY_REUSED" });
+  await failureCase(context, "thought.create", () => commands.create({
+    ...input, clientRequestId: "producer-root-create-failure"
+  }));
+  await context.repo.update(store => {
+    const sourceKey = JSON.stringify(["thought", createdRoot.id, createdRoot.id, `question:${createdRoot.id}`]);
+    const permission = store.evidencePermissions.find(item => item.sourceKey === sourceKey);
+    assert.ok(permission);
+    permission.learningAllowed = true;
+    permission.revision = Number(permission.revision) + 1;
+  });
+  const scheduledBeforeUpdate = service.scheduledTaskIds.length;
+  await commands.update({
+    id: createdRoot.id, questionText: "根生产者修改词", tags: ["根修改标签"], expectedVersion: 1
+  });
+  assert.equal(service.scheduledTaskIds.length, scheduledBeforeUpdate + 1);
+  assert.equal((await queries.list({ query: "根生产者新增词" })).items.length, 0);
+  assert.equal((await queries.list({ tag: "根修改标签" })).items[0]?.id, createdRoot.id);
+  const scheduledBeforeFailure = [...service.scheduledTaskIds];
+  await failureCase(context, "thought.update", () => commands.update({
+    id: createdRoot.id, questionText: "失败根更新", tags: ["根修改标签"]
+  }));
+  assert.deepEqual(service.scheduledTaskIds, scheduledBeforeFailure);
+  await context.repo.update(store => {
+    const task = store.aiTasks.find(item => item.id === created.task!.id);
+    assert.ok(task);
+    task.status = "running";
+    task.inputVersion = 2;
+    task.subtargetVersion = 0;
+    task.inputHash = "";
+    delete task.deferredInputBinding;
+  });
+  const writeback = {
+    taskId: created.task.id,
+    result: { content: "后台根回答词", reasoningContent: "后台根推理", contextReceipt: { version: 1 } }
+  };
+  await failureCase(context, "thought.aiWriteback", () => commands.writeback(writeback));
+  await failureCase(context, "thought.aiWriteback.failure", () => commands.failWriteback(
+    created.task!.id, { code: "AI_TASK_FAILED", message: "模拟失败" }
+  ));
+  assert.equal((await commands.writeback(writeback))?.status, "succeeded");
+  assert.equal((await queries.list({ query: "后台根回答词" })).items[0]?.id, createdRoot.id);
+  const second = await commands.create({ ...input, clientRequestId: "producer-root-create-second" });
+  await context.repo.update(store => {
+    const task = store.aiTasks.find(item => item.id === second.task!.id);
+    assert.ok(task);
+    task.status = "running";
+  });
+  assert.equal((await commands.failWriteback(second.task!.id, { code: "AI_TASK_FAILED", message: "失败用例" }))?.status, "failed");
+  const scheduledBefore = [...service.scheduledTaskIds];
+  await failureCase(context, "thought.delete", () => commands.remove(createdRoot.id));
+  assert.deepEqual(service.scheduledTaskIds, scheduledBefore);
+  assert.ok(await commands.remove(createdRoot.id));
+  assert.equal(await queries.detail(createdRoot.id), null);
+  assert.equal((await queries.list({ tag: "根修改标签" })).items.length, 0);
+  const lifecycle = (await context.database.query(`SELECT state FROM for_now.resource_lifecycle
+    WHERE account_id=$1 AND resource_id=$2`, [accountId, createdRoot.id])).rows[0];
+  assert.equal(lifecycle?.state, "deleted");
 }
 
 async function annotationMatrix(context: Context, commands: AnnotationCommands, queries: Queries) {

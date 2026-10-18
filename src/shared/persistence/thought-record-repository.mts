@@ -5,7 +5,7 @@
  * 边界：账户短事务内的精确记录闭包；不执行供应商调用或全账户读写。
  */
 import type { ObjectRow, EntityRow, Mapping, StoreMapping, RecordEntity, RecordStore, RecordTransaction } from "./record-command-types.mjs";
-import { entityRow, recordObjectKey } from "./record-command-types.mjs";
+import { entityRow, recordObjectKey, recordBusinessIdentity } from "./record-command-types.mjs";
 /** Binds the graph mapper to typed query/write operations. @since unreleased */
 export function createThoughtRecordRepository(mapping: StoreMapping) {
   const { canonicalJson, mapStoreObjects, rebuildStoreObjects } = mapping;
@@ -168,6 +168,7 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     const previousRows = beforeRows.filter(row => managed.has(row.collection));
     const mappedRows = mapping.objects.filter(row => managed.has(row.collection));
     const before = new Map(previousRows.map(row => [row.objectKey, row]));
+    const beforeIdentity = new Map(previousRows.map(row => [recordBusinessIdentity(row), row]));
     const after = new Map(mappedRows.map(row => [row.objectKey, row]));
     const persistedRows: ObjectRow[] = [];
     const refreshedIndexes = new Set<string>();
@@ -191,7 +192,13 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     }
     const insertedRows = mappedRows
       .filter(row => !before.has(row.objectKey))
-      .map(row => ({ ...row, position: null }));
+      .map(row => {
+        const previous = beforeIdentity.get(recordBusinessIdentity(row));
+        return {
+          ...(previous ? mappedUpdate(previous, row) : row),
+          position: null
+        };
+      });
     await insertRows(ports, mapping, insertedRows);
     await refreshIndexes(ports, mapping, refreshedIndexes);
     return [...persistedRows, ...insertedRows];

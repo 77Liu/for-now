@@ -685,6 +685,7 @@ async function prepareDeferredTaskBinding({ account, repo, created }) {
 async function assertThoughtRecordDatabase(database, beforeCursor, result) {
   const { removed, created, writeback } = result;
   const createdRoot = created.items.find(item => item.type === "question");
+  const createdIdea = created.items.find(item => item.type === "idea");
   const answerId = writeback.task.resultId;
   const createdNotificationId = (await database.query(`
     SELECT id FROM for_now.store_objects
@@ -699,20 +700,40 @@ async function assertThoughtRecordDatabase(database, beforeCursor, result) {
   `, [beforeCursor])).rows.map(row => [
     row.cursor, row.command_id, row.entity_id, row.entity_version, row.operation
   ]);
-  assert.deepEqual(changes, [
+  const expectedChanges = [
     [beforeCursor + 1, "thought.update", "thought-root", 2, "update"],
+    [beforeCursor + 1, "thought.update", "thought-idea", 2, "update"],
+    [beforeCursor + 1, "thought.update", "thought-generated-1", 1, "create"],
+    [beforeCursor + 1, "thought.update", "annotation-1", 2, "update"],
     [beforeCursor + 2, "thought.update", "thought-root", 3, "update"],
+    [beforeCursor + 2, "thought.update", "thought-generated-1", 2, "update"],
+    [beforeCursor + 2, "thought.update", "thought-trash-1", 1, "create"],
+    [beforeCursor + 2, "thought.update", "thought-idea", 3, "delete"],
     [beforeCursor + 3, "thought.delete", "thought-root", 4, "delete"],
     [beforeCursor + 3, "thought.delete", "thought-delete-task", 2, "update"],
     [beforeCursor + 3, "thought.delete", "thought-delete-notification", 2, "update"],
+    [beforeCursor + 3, "thought.delete", "thought-trash-2", 1, "create"],
+    [beforeCursor + 3, "thought.delete", "thought-generated-1", 3, "delete"],
+    [beforeCursor + 3, "thought.delete", "annotation-1", 3, "delete"],
     [beforeCursor + 4, "thought.create", createdRoot.id, 1, "create"],
+    [beforeCursor + 4, "thought.create", createdIdea.id, 1, "create"],
     [beforeCursor + 4, "thought.create", created.task.id, 1, "create"],
     [beforeCursor + 4, "thought.create", createdNotificationId, 1, "create"],
     [beforeCursor + 5, "task.bindInput", created.task.id, 2, "update"],
     [beforeCursor + 6, "thought.aiWriteback", answerId, 1, "create"],
     [beforeCursor + 6, "thought.aiWriteback", "thought-writeback-task", 2, "update"],
     [beforeCursor + 6, "thought.aiWriteback", "thought-writeback-notification", 2, "update"]
-  ]);
+  ];
+  const sortChanges = rows => [...rows].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  assert.deepEqual(sortChanges(changes), sortChanges(expectedChanges));
+  const movedAnnotation = (await database.query(`SELECT operation, entity_version, changed_fields
+    FROM for_now.record_changes WHERE account_id='repo-test' AND cursor=$1
+      AND entity_type='annotation' AND entity_id='annotation-1'`, [beforeCursor + 1])).rows;
+  assert.equal(movedAnnotation.length, 1);
+  assert.equal(movedAnnotation[0].operation, "update");
+  assert.equal(movedAnnotation[0].entity_version, 2);
+  assert.deepEqual([...movedAnnotation[0].changed_fields].sort(),
+    ["originalContext", "driftedAt", "driftReason", "originalTargetKey", "version", "location"].sort());
   assert.equal((await database.query(`
     SELECT current_cursor::int AS cursor FROM for_now.account_sync_heads
     WHERE account_id = 'repo-test'
@@ -1329,7 +1350,19 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
           moveNestedItemToTrash: mutations.moveNestedItemToTrash,
           now
         });
-        return { ...service, scheduledTaskIds, annotationCommands };
+        const rootCommands = createThoughtRecordCommands({
+          unitOfWork: aware.accountUnitOfWork,
+          effects: aware.sourceMutationEffects,
+          thoughts: service,
+          removeChain: mutations.moveThoughtChainToTrash,
+          removeBlock: mutations.moveThoughtBlockToTrash,
+          createTaskInStore: (store, input, options) => background.createInStore(store, input, options),
+          tasks: createTaskLifecycle({ createId, now, hash }),
+          notifications: createNotificationService({ createId, now }),
+          thoughtTarget: createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead }),
+          now
+        });
+        return { ...service, scheduledTaskIds, annotationCommands, rootCommands };
       }
     });
     await account("repo-test", () => pagingQueries.rebuild());
@@ -2520,10 +2553,16 @@ async function runBlockDeletionRemediationChecks({ database, repo, account }) {
     assert.equal(stored.aiTasks[0].status, expected);
     assert.equal(stored.notifications[0].status, expected);
     const changes = (await database.query(`
-      SELECT entity_type, entity_id, cursor FROM for_now.record_changes
+      SELECT entity_type, entity_id, operation, cursor FROM for_now.record_changes
       WHERE account_id=$1 AND cursor > $2 ORDER BY cursor, ordinal
     `, [accountId, cursor])).rows;
-    assert.deepEqual(new Set(changes.map(row => row.entity_type)), new Set(["thoughtChain", "aiTask", "notification"]));
+    assert.deepEqual(new Set(changes.map(row => row.entity_type)),
+      new Set(["thoughtChain", "thoughtBlock", "annotation", "aiTask", "notification", "trash"]));
+    const removedIdentities = changes.filter(row => row.operation === "delete"
+      && ["thoughtBlock", "annotation"].includes(row.entity_type));
+    assert.deepEqual(removedIdentities.map(row => row.entity_id).sort(),
+      ["thought-idea", "annotation-1"].sort());
+    assert.equal(changes.some(row => row.entity_id === "previously-deleted"), false);
     assert.equal(new Set(changes.map(row => row.cursor)).size, 1);
     if (initialStatus === "running") {
       await account(accountId, () => harness.commands.failWriteback("block-task", { code: "AI_TASK_CANCELLED" }));

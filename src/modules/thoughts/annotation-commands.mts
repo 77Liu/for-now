@@ -10,8 +10,7 @@ import type {
 import { AFTER_COMMIT } from "../../shared/persistence/record-command-types.mjs";
 import type { ThoughtRecordRepository } from "../../shared/persistence/thought-record-repository.mjs";
 import type { TrashEntry } from "./record-contracts.mjs";
-import { addThoughtClosureChanges } from "./local-changes.mjs";
-import { ensureThoughtLifecycles, markThoughtLifecycleDeleted } from "./record-lifecycle.mjs";
+import { commitThoughtCommand } from "./command-commit.mjs";
 
 type Result = { value?: RecordEntity; missing?: boolean; invalid?: boolean } | TrashEntry | null;
 type Input = {
@@ -77,20 +76,10 @@ export function createThoughtAnnotationCommands(services: Services) {
         root.version = (Number(root.version) || 1) + 1;
         root.updatedAt = now();
       }
-      await observation?.apply();
-      const rows = await repository.persistMappedClosure(ports, ports.accountId, state.rows, state.store, {
-        refreshIndexesForCollections: ["aiTasks", "notifications"]
+      await commitThoughtCommand(ports, repository, state, root.id, {
+        observation,
+        trashEntries: operation === "remove" && "id" in result ? [result as TrashEntry] : []
       });
-      await ensureThoughtLifecycles(ports.lifecycles, rows.filter(row => row.collection === "thoughts"));
-      if (operation === "remove" && "id" in result) {
-        const keys = new Set(rows.map(row => row.objectKey));
-        await markThoughtLifecycleDeleted(
-          ports.lifecycles,
-          state.rows.filter(row => row.collection === "thoughts" && !keys.has(row.objectKey)),
-          result as TrashEntry
-        );
-      }
-      addThoughtClosureChanges(ports, state.rows, rows, root.id);
       afterCommit = observation?.afterCommit;
       return result;
     });

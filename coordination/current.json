@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 455,
-  "updated_at": "2026-10-18T18:16:18.686Z",
+  "revision": 456,
+  "updated_at": "2026-10-18T18:52:21.745Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -104,7 +104,8 @@
         "scripts/url-history-regression.mjs",
         "src/app/perception.mjs",
         "src/app/record-compressions.mjs",
-        "src/app/source-record-effects.mts"
+        "src/app/source-record-effects.mts",
+        "src/app/runtime-content-http.mjs"
       ],
       "forbidden_write_set": [
         "public/frontend/app/runtime/home-runtime.mjs",
@@ -739,6 +740,26 @@
       "refs": [
         "reviews/2026-10-18-f25154-remediation-result.json",
         "git:533053"
+      ]
+    },
+    {
+      "id": "v0516-stage6-root-producer-verification",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-sync-latency",
+        "baseline": "7e0d4f",
+        "requirement_id": "reczz28ORRaxSFnV"
+      },
+      "conclusion": "阶段6根命令来源副作用与共用提交管道完成；十六公开命令真实PG成功/末尾故障矩阵及稳定PG全套通过。批注漂移保留完整所属业务身份与递增版本，子项和回收项同步变化完整。TC-10仍未关闭。",
+      "limitations": [
+        "独立附件、子项删除恢复、前台/批注AI写回及发现状态矩阵未完成",
+        "关联历史增长与日期SQL实际扫描成本未证实有界",
+        "无新增真实浏览器/真实搜索实验；阶段7未开始"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightRootCommandSubset",
+        "scripts/thought-producer-postgres-checks.mts",
+        "npm run test:postgres:stable"
       ]
     }
   ],

@@ -209,6 +209,42 @@
       "stage6 TC-10 incomplete; stage7 not started"
     ]
   },
+  "nightRootCommandSubset": {
+    "recordedAt": "2026-10-19T02:54:00+08:00",
+    "baselineCommit": "7e0d4f",
+    "status": "PASS_SIXTEEN_COMMAND_SUBSET_STAGE6_PARTIAL",
+    "caseSource": "scripts/thought-producer-postgres-checks.mts",
+    "addedCommands": [
+      "thought.create",
+      "thought.update",
+      "thought.delete",
+      "thought.aiWriteback",
+      "thought.aiWriteback.failure"
+    ],
+    "verified": [
+      "shared commit pipeline for root, local and annotation commands",
+      "root learning-enabled success schedules durable extraction; failed commit schedules nothing",
+      "sixteen public commands each have PG success and commit-time failure rollback",
+      "1000 unrelated roots unchanged; account document access forbidden",
+      "annotation and descendant drift moves retain scoped identity and increasing version",
+      "complete child/trash changes and deleted-annotation list assertions",
+      "npm run test:postgres:stable full terminal PASS",
+      "thought-service and thought-workflows-p00",
+      "content-runtime, backend typecheck, business-identifiers, module-boundaries"
+    ],
+    "resolvedFailures": [
+      "matrix input omitted tags and failed JSON validation before injected failure",
+      "old root and block checks asserted only root/task changes and omitted children",
+      "drifted annotation was previously emitted as create plus delete"
+    ],
+    "limitations": [
+      "independent attachments, nested delete/restore, foreground and annotation AI writes remain",
+      "discovery status per-entry matrix remains",
+      "related-history growth and actual date-selection SQL scan costs remain unverified",
+      "no new browser or real corpus experiment",
+      "existing F9 dirty files preserved; stage6 TC-10 incomplete and stage7 not started"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

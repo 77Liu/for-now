@@ -7,8 +7,7 @@
 import type { AccountUnitOfWork, SourceMutationEffects } from "../../shared/persistence/record-command-types.mjs";
 import { AFTER_COMMIT } from "../../shared/persistence/record-command-types.mjs";
 import type { ThoughtRecordRepository } from "../../shared/persistence/thought-record-repository.mjs";
-import { ensureThoughtLifecycles } from "./record-lifecycle.mjs";
-import { addThoughtClosureChanges } from "./local-changes.mjs";
+import { commitThoughtCommand } from "./command-commit.mjs";
 import type { LocalThoughtInput, LocalThoughtMutations } from "./local-mutations.mjs";
 
 type Services = {
@@ -61,13 +60,8 @@ export function createThoughtLocalCommands({ unitOfWork, repository, mutations, 
       const { store } = state;
       const result = mutations[operation](store, input);
       if (!result.value || result.duplicate) return result;
-      await observation?.apply();
-      const rows = await repository.persistMappedClosure(ports, ports.accountId, state.rows, store, {
-        refreshIndexesForCollections: ["aiTasks", "notifications"]
-      });
-      await ensureThoughtLifecycles(ports.lifecycles, rows);
       const rootId = closure ? JSON.parse(closure.rootKey)[1] : result.value.id;
-      addThoughtClosureChanges(ports, state.rows, rows, rootId);
+      const rows = await commitThoughtCommand(ports, repository, state, rootId, { observation });
       const persisted = rows.find(row => row.id === result.value!.id);
       if (persisted) result.value.version = persisted.version;
       afterCommit = observation?.afterCommit;

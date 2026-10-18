@@ -5,6 +5,7 @@
  * 边界：只解释命令前后已加载行；不读取业务仓库。
  */
 import type { ObjectRow, RecordTransaction } from "../../shared/persistence/record-command-types.mjs";
+import { recordBusinessIdentity } from "../../shared/persistence/record-command-types.mjs";
 
 const entityType = (row: ObjectRow) => {
   if (row.collection === "thoughts" && row.kind === "thought") {
@@ -50,8 +51,10 @@ export function addThoughtClosureChanges(
 ) {
   const before = new Map(beforeRows.map(row => [row.objectKey, row]));
   const after = new Map(afterRows.map(row => [row.objectKey, row]));
+  const beforeIdentity = new Map(beforeRows.map(row => [recordBusinessIdentity(row), row]));
+  const afterIdentity = new Set(afterRows.map(recordBusinessIdentity));
   for (const row of afterRows) {
-    const previous = before.get(row.objectKey);
+    const previous = before.get(row.objectKey) || beforeIdentity.get(recordBusinessIdentity(row));
     if (previous && previous.version === row.version) continue;
     ports.addChange({
       entityType: entityType(row),
@@ -59,12 +62,15 @@ export function addThoughtClosureChanges(
       ...parentIdentity(row, after),
       version: row.version,
       operation: previous ? "update" : "create",
-      changedFields: changedFields(previous, row),
+      changedFields: [
+        ...changedFields(previous, row),
+        ...(previous && previous.objectKey !== row.objectKey ? ["location"] : [])
+      ],
       scopeKeys: scopeKeys(row, rootId)
     });
   }
   for (const row of beforeRows) {
-    if (after.has(row.objectKey)) continue;
+    if (after.has(row.objectKey) || afterIdentity.has(recordBusinessIdentity(row))) continue;
     ports.addChange({
       entityType: entityType(row),
       entityId: row.id,

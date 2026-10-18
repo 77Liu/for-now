@@ -5,7 +5,7 @@
  * 边界：账户短事务内的精确记录闭包；不执行供应商调用或全账户读写。
  */
 import { AFTER_COMMIT } from "../../shared/persistence/record-command-types.mjs";
-import type { RecordEntity, RecordStore, AccountUnitOfWork, CommandError } from "../../shared/persistence/record-command-types.mjs";
+import type { RecordEntity, RecordStore, AccountUnitOfWork, CommandError, SourceMutationEffects } from "../../shared/persistence/record-command-types.mjs";
 import type { ThoughtRecordRepository } from "../../shared/persistence/thought-record-repository.mjs";
 import type { TaskCommandServices, TaskWork } from "../tasks/record-contracts.mjs";
 export type TrashEntry = RecordEntity & {
@@ -50,6 +50,7 @@ export type ThoughtResult = {
 export type ThoughtServices = TaskCommandServices & {
   unitOfWork: AccountUnitOfWork;
   repository: ThoughtRecordRepository;
+  effects?: SourceMutationEffects | null;
   thoughts: {
     createChainInStore(store: RecordStore, input: ThoughtCreateInput): ThoughtResult;
     updateChainInStore(store: RecordStore, input: ThoughtInput & { removeBlock: ThoughtServices["removeBlock"] }): ThoughtResult;

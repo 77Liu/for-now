@@ -170,6 +170,7 @@ export function createContentWorkflows({
   const thoughtRecordCommands = sourceRepository.accountUnitOfWork?.run
     ? createThoughtRecordCommands({
         unitOfWork: sourceRepository.accountUnitOfWork,
+        effects: sourceRepository.sourceMutationEffects,
         thoughts: records.thoughtService,
         removeChain: (store, id) => trashMutations.moveThoughtChainToTrash(store, id),
         removeBlock: (store, id) => trashMutations.moveThoughtBlockToTrash(store, id),

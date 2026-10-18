@@ -75,3 +75,11 @@ export function entityRow(row: ObjectRow): EntityRow {
   return row as EntityRow;
 }
 export const recordObjectKey = (collection: string, id: string) => JSON.stringify([collection, id]);
+
+/** 批注在正文与漂移区之间移动时，业务身份及所属链保持一致。 @since unreleased */
+export function recordBusinessIdentity(row: ObjectRow): string {
+  const parts = JSON.parse(row.objectKey) as string[];
+  return JSON.stringify(parts.map((part, index) => (
+    index >= 2 && index % 2 === 0 && part === "annotationDrift" ? "annotations" : part
+  )));
+}
