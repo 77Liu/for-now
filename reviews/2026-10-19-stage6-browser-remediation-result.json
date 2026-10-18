@@ -430,6 +430,66 @@
       "F9 protected file digests unchanged; TC-10 open and stage7 not started"
     ]
   },
+  "nightClosureSubset": {
+    "recordedAt": "2026-10-19T04:42:00+08:00",
+    "baselineCommit": "a7f8aa",
+    "status": "PASS_CLOSURE_SCALE_SUBSET_STAGE6_PARTIAL",
+    "caseSource": "scripts/thought-closure-postgres-checks.mts",
+    "sourceManifest": [
+      { "path": "src/shared/persistence/account-unit-of-work.mts", "sha256_6": "c73794" },
+      { "path": "src/shared/persistence/record-query-limits.mts", "sha256_6": "a038ee" },
+      { "path": "src/shared/persistence/postgres-schema.sql", "sha256_6": "f1e952" },
+      { "path": "src/shared/persistence/postgres-objects.mjs", "sha256_6": "4b4468" },
+      { "path": "src/shared/persistence/migrations/registry.mts", "sha256_6": "0b6063" },
+      { "path": "src/modules/thoughts/projection.mts", "sha256_6": "5baf04" },
+      { "path": "src/app/source-record-effects.mts", "sha256_6": "579fc7" },
+      { "path": "scripts/thought-closure-postgres-checks.mts", "sha256_6": "34c438" },
+      { "path": "scripts/thought-db-paging-regression.mts", "sha256_6": "81237b" },
+      { "path": "scripts/thought-producer-postgres-checks.mts", "sha256_6": "5eadb5" },
+      { "path": "scripts/postgres-runtime-checks.mjs", "sha256_6": "c36122" },
+      { "path": "tsconfig.thought-db-regression.json", "sha256_6": "53301b" }
+    ],
+    "environment": "PostgreSQL 16.14, signed Node 24.19.0, isolated synthetic database, runtime_data NOSUPERUSER NOBYPASSRLS, ordinary planner settings",
+    "scale": {
+      "objects": [4009, 40009],
+      "relations": [1003, 10003],
+      "scannedRowsBeforeAfter": {
+        "relations": [[6, 2], [6, 2]],
+        "tree": [[1, 0], [1, 0]],
+        "trash": [1, 1],
+        "datesIncludingLockedRows": [[4, 2], [4, 2]]
+      },
+      "dateNoise": "past and future non-overlapping windows",
+      "closureLimit": 5000,
+      "keyBatch": 500
+    },
+    "verified": [
+      "same target with 600 completed historical tasks: domain edit success, no history rewrite, commit-time failure fully atomic",
+      "601-row tree and detail complete; 5001-row tree and detail explicitly reject",
+      "ordinary RLS role EXPLAIN ANALYZE BUFFERS shows stable physical row scans after tenfold unrelated-history growth",
+      "generated query columns derive solely from original payload; explicit business-column writes preserve registration, migration and export",
+      "thirty command matrix preserves original read/write budgets and 1000 unrelated roots",
+      "full stable PostgreSQL suite, backend types and module boundaries PASS"
+    ],
+    "resolvedFailures": [
+      "historical JSON identity join produced full relation scan; explicit paired identity parameters use reverse index",
+      "RLS prevented expected JSON and range expression index use; generated ISO identity/date columns use native text indexes",
+      "outer date locking scanned collection; materialized candidate keys and lateral primary-key lock preserve bounded plan",
+      "new fixture inserted account before existing empty-account assertion; moved after atomic provision rejection check",
+      "candidate/date double-read counting exceeded original producer budget; lateral locked read and existing-source exclusions removed duplication"
+    ],
+    "logs": [
+      "/tmp/for-now-night-closure-postgres-final.log",
+      "/tmp/for-now-night-closure-type-final.log",
+      "/tmp/for-now-night-closure-modules.log"
+    ],
+    "limitations": [
+      "complete producer coverage hard gate and necessary task claim/context/recovery compatibility writes remain open",
+      "scale evidence applies to selected plans and sample; not a general constant-cost proof for every possible interval distribution",
+      "no new actual browser or real-corpus experiment; existing corpus evidence reused",
+      "stage7 not started and F9 protected digests unchanged"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

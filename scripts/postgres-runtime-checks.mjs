@@ -57,6 +57,7 @@ import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
 import "./prompt-test-setup.mjs";
 import { runThoughtDbPagingChecks } from "../.build/typescript/thought-db-regression/scripts/thought-db-paging-regression.mjs";
 import { runThoughtProducerPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-postgres-checks.mjs";
+import { runThoughtClosurePostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-closure-postgres-checks.mjs";
 import { runThoughtTrashHttpChecks } from "../.build/typescript/thought-db-regression/scripts/thought-trash-http-checks.mjs";
 import { createRecordCompressionService, createAnnotationCommands } from "../src/app/index.mjs";
 
@@ -1135,6 +1136,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await database.query("SELECT count(*)::int AS n FROM for_now.accounts")).rows[0].n, 0);
     assert.equal((await database.query("SELECT count(*)::int AS n FROM for_now.store_fields WHERE account_id = 'atomic-user'")).rows[0].n, 0);
     await database.query("DROP TRIGGER reject_provision ON for_now.store_fields");
+    await runThoughtClosurePostgresChecks(database);
 
     await account("repo-test", () => repo.initialize({ allowCreate: true }));
     await account("repo-other", () => repo.initialize({ allowCreate: true }));

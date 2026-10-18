@@ -585,7 +585,12 @@ BEGIN
   INSERT INTO for_now.accounts(account_id, runtime_started_at) VALUES (owner_id, now());
   INSERT INTO for_now.account_sync_heads(account_id) VALUES (owner_id);
   INSERT INTO for_now.store_fields SELECT * FROM jsonb_populate_recordset(NULL::for_now.store_fields, business->'fields');
-  INSERT INTO for_now.store_objects SELECT * FROM jsonb_populate_recordset(NULL::for_now.store_objects, business->'objects');
+  INSERT INTO for_now.store_objects(
+    account_id, object_key, collection, kind, id, parent_key, field, position,
+    child_fields, content, status, author_type, version, payload, lifecycle, tombstone, deleted_at
+  ) SELECT account_id, object_key, collection, kind, id, parent_key, field, position,
+    child_fields, content, status, author_type, version, payload, lifecycle, tombstone, deleted_at
+    FROM jsonb_populate_recordset(NULL::for_now.store_objects, business->'objects');
   INSERT INTO for_now.store_relations SELECT * FROM jsonb_populate_recordset(NULL::for_now.store_relations, business->'relations');
   INSERT INTO for_now.store_attachment_refs SELECT * FROM jsonb_populate_recordset(NULL::for_now.store_attachment_refs, business->'attachmentRefs');
   INSERT INTO for_now.resource_lifecycle SELECT * FROM jsonb_populate_recordset(NULL::for_now.resource_lifecycle, business->'lifecycles');
@@ -666,3 +671,38 @@ DROP POLICY IF EXISTS record_projection_status_account ON for_now.record_project
 CREATE POLICY record_projection_status_account ON for_now.record_projection_status
   USING(account_id=current_setting('app.account_id',true))
   WITH CHECK(account_id=current_setting('app.account_id',true));
+
+-- migration:record-closure-index-v1
+ALTER TABLE for_now.store_objects
+  ADD COLUMN IF NOT EXISTS trash_type text GENERATED ALWAYS AS (payload->>'type') STORED,
+  ADD COLUMN IF NOT EXISTS trash_resource_id text GENERATED ALWAYS AS (payload->>'resourceId') STORED,
+  ADD COLUMN IF NOT EXISTS trash_parent_id text GENERATED ALWAYS AS (payload->'location'->>'parentId') STORED,
+  ADD COLUMN IF NOT EXISTS record_local_date text GENERATED ALWAYS AS (
+    COALESCE(payload->'payload'->>'localDate', payload->>'localDate')
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS record_window_start text GENERATED ALWAYS AS (
+    payload->'payload'->>'windowStart'
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS record_window_end text GENERATED ALWAYS AS (
+    payload->'payload'->>'windowEnd'
+  ) STORED;
+CREATE INDEX IF NOT EXISTS store_objects_parent_idx
+  ON for_now.store_objects(account_id, parent_key)
+  WHERE parent_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS store_relations_target_idx
+  ON for_now.store_relations(account_id, target_key, relation, object_key)
+  WHERE target_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS store_relations_historical_target_idx
+  ON for_now.store_relations(account_id, target_collection, target_id, relation, object_key)
+  WHERE resolution = 'historical';
+CREATE INDEX IF NOT EXISTS store_objects_trash_resource_idx
+  ON for_now.store_objects(
+    account_id, trash_type, trash_resource_id, deleted_at DESC, id DESC
+  ) WHERE collection = 'trash';
+CREATE INDEX IF NOT EXISTS store_objects_local_date_idx
+  ON for_now.store_objects(
+    account_id, collection, record_local_date, status
+  ) WHERE parent_key IS NULL;
+CREATE INDEX IF NOT EXISTS store_objects_date_window_idx
+  ON for_now.store_objects(account_id, collection, record_window_end, record_window_start)
+  WHERE parent_key IS NULL;

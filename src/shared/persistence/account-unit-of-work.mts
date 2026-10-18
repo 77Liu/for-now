@@ -5,6 +5,7 @@
  * 边界：只理解持久化身份、条件行和变化格式，不解释通知、任务、思绪等领域语义。
  */
 import { allocatedRecordBusinessId, bindBusinessIdResponse, withRecordBusinessIdTransaction } from "./business-identifiers.mjs";
+import { RECORD_QUERY_LIMITS, recordKeyBatches } from "./record-query-limits.mjs";
 
 type QueryResult<Row = Record<string, unknown>> = {
   rows: Row[];
@@ -73,7 +74,7 @@ type Transaction = <Result>(
   operation: (client: QueryClient, accountId: string) => Promise<Result>
 ) => Promise<Result>;
 
-const MAX_OBJECT_KEYS = 500;
+const MAX_OBJECT_KEYS = RECORD_QUERY_LIMITS.closureRows;
 const objectColumns = `
   object_key AS "objectKey", collection, kind, id, parent_key AS "parentKey",
   field, position, child_fields AS "childFields", content, status,
@@ -255,14 +256,18 @@ function createObjectPort(
     const keys = [...new Set(objectKeys.map(key => required(key, "objectKey")))];
     if (!keys.length) return [];
     if (keys.length > MAX_OBJECT_KEYS) throw new RangeError("Record command object key limit exceeded");
-    const result = await client.query<ObjectRow>(`
-      SELECT ${objectColumns}
-      FROM for_now.store_objects
-      WHERE account_id = $1 AND object_key = ANY($2::text[])
-      ${lock ? "FOR UPDATE" : ""}
-    `, [accountId, keys]);
-    noteRead(count(result));
-    return structuredClone(result.rows);
+    const rows: ObjectRow[] = [];
+    for (const batch of recordKeyBatches(keys)) {
+      const result = await client.query<ObjectRow>(`
+        SELECT ${objectColumns}
+        FROM for_now.store_objects
+        WHERE account_id = $1 AND object_key = ANY($2::text[])
+        ${lock ? "FOR UPDATE" : ""}
+      `, [accountId, batch]);
+      noteRead(count(result));
+      rows.push(...result.rows);
+    }
+    return structuredClone(rows);
   };
   const findByCollection = async (collection: string, { lock = false } = {}) => {
     const result = await client.query<ObjectRow>(`
@@ -280,8 +285,8 @@ function createObjectPort(
       SELECT ${objectColumns}
       FROM for_now.store_objects
       WHERE account_id = $1 AND collection = 'trash'
-        AND payload->>'type' = $2 AND payload->>'resourceId' = $3
-        AND ($4::text IS NULL OR payload->'location'->>'parentId' = $4)
+        AND trash_type = $2 AND trash_resource_id = $3
+        AND ($4::text IS NULL OR trash_parent_id = $4)
       ORDER BY deleted_at DESC, id DESC
       LIMIT 1 FOR UPDATE
     `, [accountId, required(type, "trashType"), required(resourceId, "resourceId"), parentId]);
@@ -305,29 +310,45 @@ function createObjectPort(
   const findForLocalDates = async (
     collection: string,
     localDates: string[],
-    { runningOnly = false } = {}
+    { runningOnly = false, excludeObjectKeys = [] }: {
+      runningOnly?: boolean;
+      excludeObjectKeys?: string[];
+    } = {}
   ) => {
     const dates = stringList(localDates, "localDates");
     if (!dates.length) return [];
-    if (dates.length > MAX_OBJECT_KEYS || dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+    if (dates.length > RECORD_QUERY_LIMITS.keyBatch || dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
       throw new RangeError("Record command local date selection is invalid");
     }
     const result = await client.query<ObjectRow>(`
-      SELECT ${objectColumns}
-      FROM for_now.store_objects
-      WHERE account_id = $1 AND collection = $2 AND parent_key IS NULL
-        AND (NOT $4::boolean OR status = 'running')
-        AND (
-          COALESCE(payload->'payload'->>'localDate', payload->>'localDate') = ANY($3::text[])
-          OR EXISTS (
-            SELECT 1 FROM unnest($3::text[]) selected_date
-            WHERE selected_date BETWEEN payload->'payload'->>'windowStart'
-              AND payload->'payload'->>'windowEnd'
-          )
-        )
-      FOR UPDATE
-    `, [accountId, required(collection, "collection"), dates, runningOnly]);
+      WITH selected_keys AS MATERIALIZED (
+        SELECT object_key FROM for_now.store_objects
+        WHERE account_id = $1 AND collection = $2 AND parent_key IS NULL
+          AND (NOT $4::boolean OR status = 'running')
+          AND NOT object_key = ANY($6::text[])
+          AND record_local_date = ANY($3::text[])
+        UNION
+        SELECT selected_object.object_key
+        FROM unnest($3::text[]) selected_date
+        JOIN for_now.store_objects selected_object
+          ON selected_object.account_id = $1 AND selected_object.collection = $2
+          AND selected_object.parent_key IS NULL
+          AND (NOT $4::boolean OR selected_object.status = 'running')
+          AND NOT selected_object.object_key = ANY($6::text[])
+          AND selected_object.record_window_start <= selected_date
+          AND selected_object.record_window_end >= selected_date
+        LIMIT $5
+      )
+      SELECT selected_row.* FROM selected_keys
+      CROSS JOIN LATERAL (
+        SELECT ${objectColumns} FROM for_now.store_objects
+        WHERE account_id = $1 AND object_key = selected_keys.object_key
+        LIMIT 1 FOR UPDATE
+      ) selected_row
+    `, [accountId, required(collection, "collection"), dates, runningOnly,
+      MAX_OBJECT_KEYS + 1, excludeObjectKeys]);
     noteRead(count(result));
+    if (result.rows.length > MAX_OBJECT_KEYS) throw new RangeError("Record command date closure limit exceeded");
     return structuredClone(result.rows);
   };
   const findTree = async (
@@ -335,28 +356,35 @@ function createObjectPort(
     { lock = false, rootRows = [] }: { lock?: boolean; rootRows?: ObjectRow[] } = {}
   ) => {
     const provided = new Map(rootRows.map(row => [row.objectKey, row]));
+    const keys = [...new Set(objectKeys)];
+    if (keys.length > MAX_OBJECT_KEYS) throw new RangeError("Record command object tree limit exceeded");
     const roots = [
-      ...objectKeys.flatMap(key => provided.has(key) ? [provided.get(key)!] : []),
-      ...await findMany(objectKeys.filter(key => !provided.has(key)), { lock })
+      ...keys.flatMap(key => provided.has(key) ? [provided.get(key)!] : []),
+      ...await findMany(keys.filter(key => !provided.has(key)), { lock })
     ];
     const rows = [...roots];
     const seen = new Set(rows.map(row => row.objectKey));
     let parents = roots.map(row => row.objectKey);
     while (parents.length) {
-      const result = await client.query<ObjectRow>(`
-        SELECT ${objectColumns}
-        FROM for_now.store_objects
-        WHERE account_id = $1 AND parent_key = ANY($2::text[])
-        ${lock ? "FOR UPDATE" : ""}
-      `, [accountId, parents]);
-      noteRead(count(result));
-      const children = result.rows.filter(row => !seen.has(row.objectKey));
-      if (rows.length + children.length > MAX_OBJECT_KEYS) {
-        throw new RangeError("Record command object tree limit exceeded");
+      const nextParents: string[] = [];
+      for (const batch of recordKeyBatches(parents)) {
+        const result = await client.query<ObjectRow>(`
+          SELECT ${objectColumns}
+          FROM for_now.store_objects
+          WHERE account_id = $1 AND parent_key = ANY($2::text[])
+          LIMIT $3
+          ${lock ? "FOR UPDATE" : ""}
+        `, [accountId, batch, MAX_OBJECT_KEYS - rows.length + 1]);
+        noteRead(count(result));
+        const children = result.rows.filter(row => !seen.has(row.objectKey));
+        if (rows.length + children.length > MAX_OBJECT_KEYS) {
+          throw new RangeError("Record command object tree limit exceeded");
+        }
+        for (const row of children) seen.add(row.objectKey);
+        rows.push(...children);
+        nextParents.push(...children.map(row => row.objectKey));
       }
-      for (const row of children) seen.add(row.objectKey);
-      rows.push(...children);
-      parents = children.map(row => row.objectKey);
+      parents = nextParents;
     }
     return structuredClone(rows);
   };
@@ -467,59 +495,78 @@ function createRelationPort(
   };
   const findSources = async (
     targetKeys: string[],
-    { relation = null, sourceCollection = null, historicalRootId = null }: {
+    { relation = null, sourceCollection = null, historicalRootId = null, excludeSourceKeys = [] }: {
       relation?: string | null;
       sourceCollection?: string | null;
       historicalRootId?: string | null;
+      excludeSourceKeys?: string[];
     } = {}
   ) => {
     const keys = [...new Set(targetKeys.map(key => required(key, "targetKey")))];
     if (!keys.length) return [];
     if (keys.length > MAX_OBJECT_KEYS) throw new RangeError("Record command target key limit exceeded");
-    const result = await client.query<{ objectKey: string }>(`
-      SELECT DISTINCT relation_row.object_key AS "objectKey"
-      FROM for_now.store_relations relation_row
-      JOIN for_now.store_objects source
-        ON source.account_id = relation_row.account_id
-        AND source.object_key = relation_row.object_key
-      WHERE relation_row.account_id = $1
-        AND (
-          relation_row.target_key = ANY($2::text[])
-          OR ($5::text IS NOT NULL AND relation_row.resolution = 'historical'
-            AND EXISTS (
-              SELECT 1 FROM unnest($2::text[]) selected_key
-              WHERE relation_row.target_collection = (selected_key::jsonb->>0)
-                AND relation_row.target_id = (selected_key::jsonb->>-1)
-            )
-            AND (
-              source.payload->'sourceRef'->>'rootId' = $5
-              OR source.payload->'payload'->'sourceRef'->>'rootId' = $5
-              OR (source.collection = 'evidencePermissions'
-                AND (source.payload->>'sourceKey')::jsonb->>2 = $5)
-            ))
+    const sources = new Set<string>();
+    for (const batch of recordKeyBatches(keys)) {
+      const result = await client.query<{ objectKey: string }>(`
+        WITH candidates AS (
+          SELECT object_key, false AS historical
+          FROM for_now.store_relations
+          WHERE account_id = $1 AND target_key = ANY($2::text[])
+            AND ($3::text IS NULL OR relation = $3)
+          UNION ALL
+          SELECT relation_row.object_key, true AS historical
+          FROM unnest($7::text[], $8::text[]) selected(target_collection, target_id)
+          JOIN for_now.store_relations relation_row
+            ON relation_row.account_id = $1
+            AND relation_row.target_collection = selected.target_collection
+            AND relation_row.target_id = selected.target_id
+            AND relation_row.resolution = 'historical'
+            AND ($3::text IS NULL OR relation_row.relation = $3)
+          WHERE $5::text IS NOT NULL
         )
-        AND ($3::text IS NULL OR relation_row.relation = $3)
-        AND ($4::text IS NULL OR source.collection = $4)
-    `, [
-      accountId,
-      keys,
-      relation == null ? null : required(relation, "relation"),
-      sourceCollection == null ? null : required(sourceCollection, "sourceCollection"),
-      historicalRootId == null ? null : required(historicalRootId, "historicalRootId")
-    ]);
-    noteRead(count(result));
-    return result.rows.map(row => row.objectKey);
+        SELECT DISTINCT candidate.object_key AS "objectKey"
+        FROM candidates candidate
+        JOIN for_now.store_objects source
+          ON source.account_id = $1 AND source.object_key = candidate.object_key
+        WHERE ($4::text IS NULL OR source.collection = $4)
+          AND NOT candidate.object_key = ANY($9::text[])
+          AND (NOT candidate.historical OR (
+            source.payload->'sourceRef'->>'rootId' = $5
+            OR source.payload->'payload'->'sourceRef'->>'rootId' = $5
+            OR (source.collection = 'evidencePermissions'
+              AND (source.payload->>'sourceKey')::jsonb->>2 = $5)
+            )
+          )
+        LIMIT $6
+      `, [
+        accountId,
+        batch,
+        relation == null ? null : required(relation, "relation"),
+        sourceCollection == null ? null : required(sourceCollection, "sourceCollection"),
+        historicalRootId == null ? null : required(historicalRootId, "historicalRootId"),
+        MAX_OBJECT_KEYS + 1,
+        batch.map(key => (JSON.parse(key) as string[])[0]),
+        batch.map(key => (JSON.parse(key) as string[]).at(-1)),
+        excludeSourceKeys
+      ]);
+      noteRead(count(result));
+      for (const row of result.rows) sources.add(row.objectKey);
+      if (sources.size > MAX_OBJECT_KEYS) throw new RangeError("Record command source closure limit exceeded");
+    }
+    return [...sources];
   };
   const detachTargets = async (targetKeys: string[]) => {
     const keys = [...new Set(targetKeys.map(key => required(key, "targetKey")))];
     if (!keys.length) return;
     if (keys.length > MAX_OBJECT_KEYS) throw new RangeError("Record command target key limit exceeded");
-    const result = await client.query(`
-      UPDATE for_now.store_relations
-      SET target_key = NULL, resolution = 'historical'
-      WHERE account_id = $1 AND target_key = ANY($2::text[])
-    `, [accountId, keys]);
-    noteWrite(count(result));
+    for (const batch of recordKeyBatches(keys)) {
+      const result = await client.query(`
+        UPDATE for_now.store_relations
+        SET target_key = NULL, resolution = 'historical'
+        WHERE account_id = $1 AND target_key = ANY($2::text[])
+      `, [accountId, batch]);
+      noteWrite(count(result));
+    }
   };
   return Object.freeze({ removeForObject, insert, findSources, detachTargets });
 }
@@ -533,7 +580,7 @@ function createAttachmentPort(
   const findMany = async (paths: string[]) => {
     const selected = stringList(paths, "attachmentPaths");
     if (!selected.length) return [];
-    if (selected.length > MAX_OBJECT_KEYS) throw new RangeError("Attachment path limit exceeded");
+    if (selected.length > RECORD_QUERY_LIMITS.keyBatch) throw new RangeError("Attachment path limit exceeded");
     const result = await client.query<{
       path: string; state: string; bytes: number | null; sha256: string | null;
     }>(`

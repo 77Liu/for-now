@@ -38,8 +38,10 @@ export const storeSqlMapping = mapping => Object.fromEntries(
 export async function writeStoreObjects(client, mapping) {
   for (const [key, [table, columns]] of Object.entries(TABLES)) {
     if (!mapping[key].length) continue;
+    const selectedColumns = Object.values(columns).join(", ");
     await client.query(
-      `INSERT INTO for_now.${table} SELECT * FROM jsonb_populate_recordset(NULL::for_now.${table}, $1::jsonb)`,
+      `INSERT INTO for_now.${table}(${selectedColumns})
+       SELECT ${selectedColumns} FROM jsonb_populate_recordset(NULL::for_now.${table}, $1::jsonb)`,
       [JSON.stringify(sqlRows(mapping[key], columns))]
     );
   }

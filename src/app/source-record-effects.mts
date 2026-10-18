@@ -30,14 +30,15 @@ export function createSourceMutationEffects(dependencies: Dependencies): SourceM
         .map(row => row.objectKey);
       const restored = state.restoredSourceKeys || [];
       const rootId = state.restoredRootId || null;
+      const existing = new Set(state.rows.map(row => row.objectKey));
       const relatedKeys: string[] = [];
       for (const collection of sourceCollections) {
         relatedKeys.push(...await ports.relations.findSources([...new Set([...sourceKeys, ...restored])], {
           sourceCollection: collection,
-          historicalRootId: rootId
+          historicalRootId: rootId,
+          excludeSourceKeys: [...existing]
         }));
       }
-      const existing = new Set(state.rows.map(row => row.objectKey));
       const relatedRows = await ports.objects.findTree(
         [...new Set(relatedKeys)].filter(key => !existing.has(key)),
         { lock: true }
@@ -69,7 +70,10 @@ export function createSourceMutationEffects(dependencies: Dependencies): SourceM
         async apply() {
           const dates = [...new Set([...sourceDates(before), ...sourceDates(state.store)])];
           const compressionRows = await ports.objects.findForLocalDates("recordCompressions", dates);
-          const runningRows = await ports.objects.findForLocalDates("aiTasks", dates, { runningOnly: true });
+          const runningRows = await ports.objects.findForLocalDates("aiTasks", dates, {
+            runningOnly: true,
+            excludeObjectKeys: state.rows.filter(row => row.collection === "aiTasks").map(row => row.objectKey)
+          });
           const loaded = deduplicate([...compressionRows, ...runningRows]);
           state.rows = deduplicate([...state.rows, ...loaded]);
           const selected = repository.rebuildRecordCollections(loaded, ["recordCompressions", "aiTasks"]);

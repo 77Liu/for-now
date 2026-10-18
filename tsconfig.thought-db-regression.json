@@ -15,6 +15,7 @@
   "files": [
     "scripts/thought-db-paging-regression.mts",
     "scripts/thought-producer-postgres-checks.mts",
+    "scripts/thought-closure-postgres-checks.mts",
     "scripts/thought-discovery-postgres-checks.mts",
     "scripts/thought-trash-http-checks.mts",
     "scripts/thought-search-corpus-regression.mts",

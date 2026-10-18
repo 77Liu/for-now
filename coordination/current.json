@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 462,
-  "updated_at": "2026-10-18T20:22:35.008Z",
+  "revision": 463,
+  "updated_at": "2026-10-18T20:42:19.359Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -175,7 +175,7 @@
       ]
     }
   ],
-  "next_action": "继续阶段6 TC-10：关联历史增长与日期/回收/关系SQL物理成本，生产者完整覆盖硬门；发现三入口矩阵已通过，出口真正通过后接续阶段7。",
+  "next_action": "继续阶段6 TC-10：完整生产者覆盖硬门与上下文准备、任务认领、启动恢复必要兼容写审计改造；所列关联历史及物理SQL规模已验证，阶段出口真正通过后接续阶段7。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -842,6 +842,25 @@
       "refs": [
         "reviews/2026-10-19-stage6-browser-remediation-result.json#nightDiscoverySubset",
         "scripts/thought-discovery-postgres-checks.mts",
+        "npm run test:postgres:stable"
+      ]
+    },
+    {
+      "id": "v0516-stage6-closure-scale-verification",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-sync-latency",
+        "baseline": "a7f8aa",
+        "requirement_id": "reczz28ORRaxSFnV"
+      },
+      "conclusion": "普通RLS角色下四类记录SQL在十倍无关历史增长时扫描行保持；600关联终态任务下领域编辑和末尾故障原子回滚、5000统一闭包限制、三十命令原预算与稳定PG全套通过。TC-10仍未关闭。",
+      "limitations": [
+        "计划证据限定当前样本；完整生产者硬门与上下文/任务认领/启动恢复必要兼容写仍待审计",
+        "无新浏览器/真实语料实验；F9保护指纹不变；阶段7未开始"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightClosureSubset",
+        "scripts/thought-closure-postgres-checks.mts",
         "npm run test:postgres:stable"
       ]
     }

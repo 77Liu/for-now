@@ -12,6 +12,7 @@ import type { ThoughtLocalCommands } from "../src/modules/thoughts/local-command
 import type { SqlClient } from "../src/modules/thoughts/query-contracts.mjs";
 import type { createThoughtRecordCommands } from "../src/modules/thoughts/record-commands.mjs";
 import type { ThoughtNestedDeleteInput } from "../src/modules/thoughts/trash-commands.mjs";
+import { runThoughtRelatedHistoryChecks } from "./thought-closure-postgres-checks.mjs";
 
 type Repository = {
   initialize(options: { allowCreate: boolean }): Promise<void>;
@@ -152,6 +153,7 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
     const commands = (await database.query(`SELECT DISTINCT command_id FROM for_now.record_changes
       WHERE account_id=$1 ORDER BY command_id`, [accountId])).rows.map(row => row.command_id);
     assert.equal(commands.length, 30);
+    await runThoughtRelatedHistoryChecks({ database, repo, service });
     console.log("Thought producer PostgreSQL matrix passed: thirty public commands, document mutation forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
   });
 }

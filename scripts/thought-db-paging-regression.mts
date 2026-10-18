@@ -214,12 +214,19 @@ async function verifyScale(context: Context, queries: QueryRuntime) {
   });
   const baseline = await measure();
   await context.database.query(`
-    INSERT INTO for_now.store_objects
-    SELECT (jsonb_populate_record(NULL::for_now.store_objects,to_jsonb(source)||jsonb_build_object(
+    INSERT INTO for_now.store_objects(
+      account_id, object_key, collection, kind, id, parent_key, field, position,
+      child_fields, content, status, author_type, version, payload, lifecycle, tombstone, deleted_at
+    )
+    SELECT mapped.account_id, mapped.object_key, mapped.collection, mapped.kind,
+      mapped.id, mapped.parent_key, mapped.field, mapped.position,
+      mapped.child_fields, mapped.content, mapped.status, mapped.author_type,
+      mapped.version, mapped.payload, mapped.lifecycle, mapped.tombstone, mapped.deleted_at
+    FROM for_now.store_objects source CROSS JOIN generate_series(1,9009) n
+    CROSS JOIN LATERAL jsonb_populate_record(NULL::for_now.store_objects,to_jsonb(source)||jsonb_build_object(
       'id','scale-'||lpad(n::text,5,'0'),
       'object_key','["thoughts","scale-'||lpad(n::text,5,'0')||'"]',
-      'payload',source.payload||jsonb_build_object('id','scale-'||lpad(n::text,5,'0'))))).*
-    FROM for_now.store_objects source CROSS JOIN generate_series(1,9009) n
+      'payload',source.payload||jsonb_build_object('id','scale-'||lpad(n::text,5,'0')))) mapped
     WHERE source.account_id='thought-paging-db' AND source.object_key=$1
   `, [JSON.stringify(["thoughts", fixture(1000).id])]);
   await context.database.query(`

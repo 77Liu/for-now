@@ -12,6 +12,7 @@
  */
 import crypto from "node:crypto";
 import type { ObjectRow } from "../../shared/persistence/account-unit-of-work.mjs";
+import { RECORD_QUERY_LIMITS } from "../../shared/persistence/record-query-limits.mjs";
 import { createThoughtRecordRepository } from "../../shared/persistence/thought-record-repository.mjs";
 import type { ProjectionContext, ThoughtProjection, ThoughtQueryDependencies } from "./query-contracts.mjs";
 import { thoughtSearchGrams, THOUGHT_INDEX_SCHEMA } from "./query-contracts.mjs";
@@ -45,9 +46,11 @@ export async function readThoughtDetailRows(context: ProjectionContext, rootId: 
       JOIN owned parent ON child.parent_key=parent.object_key
       WHERE child.account_id=$1 AND child.collection='thoughts'
     )
-    SELECT ${objectColumns} FROM owned LIMIT 5001
-  `, [accountId, JSON.stringify(["thoughts", rootId])]);
-  if (result.rows.length > 5000) throw Object.assign(unavailable(), { code: "THOUGHT_DETAIL_TOO_LARGE" });
+    SELECT ${objectColumns} FROM owned LIMIT $3
+  `, [accountId, JSON.stringify(["thoughts", rootId]), RECORD_QUERY_LIMITS.closureRows + 1]);
+  if (result.rows.length > RECORD_QUERY_LIMITS.closureRows) {
+    throw Object.assign(unavailable(), { code: "THOUGHT_DETAIL_TOO_LARGE" });
+  }
   return result.rows;
 }
 
