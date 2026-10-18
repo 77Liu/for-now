@@ -15,6 +15,7 @@
   "files": [
     "scripts/thought-producer-gate-regression.mts",
     "scripts/thought-runtime-fixture.mts",
+    "scripts/thought-task-transition-postgres-checks.mts",
     "scripts/thought-db-paging-regression.mts",
     "scripts/thought-producer-postgres-checks.mts",
     "scripts/thought-closure-postgres-checks.mts",

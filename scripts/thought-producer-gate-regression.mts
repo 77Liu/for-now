@@ -30,7 +30,8 @@ function repository(): ThoughtQueryRepository {
       run: async () => { throw new Error("Gate must not mutate"); }
     },
     recordProjectionCoverage: {
-      recordTransactions: true, legacyCommits: true, initialization: true, offlineImportInvalidates: true
+      recordTransactions: true, legacyCommits: true, initialization: true, offlineImportInvalidates: true,
+      legacyMutationGuard: true
     },
     queryRecords: async () => { throw new Error("Prepared query reached SQL"); },
     installRecordProjection() {},
@@ -66,7 +67,7 @@ export async function runThoughtProducerGateChecks(
     })), error => (error as { code: string }).code === code);
   }
   assert.throws(() => createRuntime(configured({ recordCommandConfig: null })), { code });
-  for (const name of ["recordTransactions", "legacyCommits", "initialization", "offlineImportInvalidates"]) {
+  for (const name of ["recordTransactions", "legacyCommits", "initialization", "offlineImportInvalidates", "legacyMutationGuard"]) {
     const repo = repository();
     repo.recordProjectionCoverage = {
       ...repo.recordProjectionCoverage!,

@@ -108,7 +108,10 @@ async function updateTagCounts(context: ProjectionContext, previous: string[], n
  * @partialAuthorization Owner 2026-10-19「继续持续推进开发」。
  * @partialUsage 默认关闭 THOUGHT_PAGING_ENABLED；仅供隔离验收，不开启生产查询。
  */
-export function createThoughtProjection(dependencies: ThoughtQueryDependencies): ThoughtProjection {
+export function createThoughtProjection(
+  dependencies: ThoughtQueryDependencies,
+  { rejectLegacyWrites = false } = {}
+): ThoughtProjection {
   const graph = createThoughtRecordRepository(dependencies);
   const refresh = async (context: ProjectionContext, rootId: string): Promise<void> => {
     const { client, accountId } = context;
@@ -167,6 +170,14 @@ export function createThoughtProjection(dependencies: ThoughtQueryDependencies):
     await updateTagCounts(context, old?.tags || [], tags);
   };
   return {
+    assertLegacyMutation(before, after) {
+      if (!rejectLegacyWrites) return;
+      if (dependencies.canonicalJson(before.thoughts) === dependencies.canonicalJson(after.thoughts)) return;
+      throw Object.assign(new Error("思绪修改必须使用记录命令，兼容写入已拒绝"), {
+        statusCode: 503,
+        code: "THOUGHT_LEGACY_MUTATION_FORBIDDEN"
+      });
+    },
     provisionedVersion: rows => rows.some(row => row.collection === "thoughts"
       && row.parentKey === null && row.payload.type === "question") ? 0 : THOUGHT_INDEX_SCHEMA.version,
     async initialize(context) {

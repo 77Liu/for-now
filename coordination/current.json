@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 464,
-  "updated_at": "2026-10-18T20:55:29.946Z",
+  "revision": 465,
+  "updated_at": "2026-10-18T21:14:10.729Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -175,7 +175,7 @@
       ]
     }
   ],
-  "next_action": "继续阶段6 TC-10：任务认领/等待/恢复的必要记录状态写与兼容入口旁路保护；实际生产者装配硬门已验证，阶段出口真正通过后接续阶段7。",
+  "next_action": "继续阶段6 TC-10：必要任务入队/重试的有界写入与完整调用链终审；认领/等待/恢复及兼容思绪旁路保护已通过，出口完整通过后接续阶段7。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -879,6 +879,25 @@
       "refs": [
         "reviews/2026-10-19-stage6-browser-remediation.md",
         "reviews/2026-10-19-stage6-browser-remediation-result.json#nightProducerGateSubset"
+      ]
+    },
+    {
+      "id": "v0516-stage6-task-transitions",
+      "object": {
+        "kind": "source_manifest",
+        "base_commit": "39ee55",
+        "receipt": "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskTransitionsSubset"
+      },
+      "conclusion": "四类必要任务认领/等待/恢复精准状态事务、兼容思绪写保护通过；PG两行写、末尾故障、竞态和完整HTTP/重启/导出恢复通过。",
+      "limitations": [
+        "入队/重试继续返修，TC-10未关闭，阶段7未开始",
+        "个人上下文事务外读取、其他任务族兼容路径保留",
+        "F9保护指纹未变，无生产写或付费调用"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-browser-remediation.md",
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskTransitionsSubset",
+        "scripts/thought-task-transition-postgres-checks.mts"
       ]
     }
   ],

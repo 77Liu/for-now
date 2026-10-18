@@ -331,6 +331,7 @@ export async function createPostgresRuntime({
     getContext = () => ({})
   }) => {
     const afterCommit = Symbol.for("for-now.after-commit");
+    let assertLegacyMutation = null;
     const hintCommitted = (id, details = {}) => {
       try { void Promise.resolve(onCommitted({ accountId: id, storageScope: "postgres", ...details })).catch(() => {}); } catch {}
     };
@@ -430,6 +431,7 @@ export async function createPostgresRuntime({
       let before = structuredClone(document), revision = initial.revision;
       const commit = async () => {
         assertAccountCommit(before, document, "store");
+        assertLegacyMutation?.(before, document);
         synchronizePersistenceMetadata(before, document, now, { context: getContext() || {} });
         const mapping = mapStoreObjects(id, document);
         const next = await transaction(client, async () => {
@@ -495,7 +497,8 @@ export async function createPostgresRuntime({
         recordTransactions: true,
         legacyCommits: true,
         initialization: true,
-        offlineImportInvalidates: true
+        offlineImportInvalidates: true,
+        legacyMutationGuard: true
       }),
       installRecordProjection(projection) {
         if (recordProjection) throw new Error("Record projection already installed");
@@ -503,6 +506,7 @@ export async function createPostgresRuntime({
           throw new TypeError("Record projection requires changed/rebuild commands");
         }
         recordProjection = projection;
+        assertLegacyMutation = projection.assertLegacyMutation;
       },
       /** Reads only caller-declared collections for legacy domain adapters. @since unreleased */
       readCollections: fields => readAccount(async (client, id) => {

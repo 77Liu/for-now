@@ -22,7 +22,7 @@ import path from "node:path";
 import { deflateSync } from "node:zlib";
 import {
   createPostgresRuntime, initializePostgresSchema, buildPostgresMigrationPlan, applyPostgresMigration,
-  canonicalJson, discoverJsonBundle, applyPostgresBundle,
+  canonicalJson, mapStoreObjects, rebuildStoreObjects, discoverJsonBundle, applyPostgresBundle,
   exportPostgresDirectory, readPostgresBundle, storeContentSha256
 } from "../src/shared/persistence/index.mjs";
 import {
@@ -62,6 +62,7 @@ import { runThoughtTrashHttpChecks } from "../.build/typescript/thought-db-regre
 import { createRecordCompressionService, createAnnotationCommands } from "../src/app/index.mjs";
 import { createThoughtRuntimeFixture } from "../.build/typescript/thought-db-regression/scripts/thought-runtime-fixture.mjs";
 import { runThoughtProducerGateChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-gate-regression.mjs";
+import { runThoughtTaskTransitionPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-transition-postgres-checks.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -1311,9 +1312,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       return runtime;
     }, repository => createThoughtQueries({ repository, enabled: true }));
     const pagingRepo = runtime.createStoreRepository({ normalize: value => value, emptyDocument: empty() });
+    const pagingOnlineRepo = runtime.createStoreRepository({ normalize: value => value, emptyDocument: empty() });
     const pagingQueries = await runThoughtDbPagingChecks({ database, repo: pagingRepo, account,
       createQueries: options => createThoughtRuntimeFixture(createContentRuntime,
-        options.repository, "thought-paging-db").queries,
+        { ...pagingOnlineRepo, queryRecords: options.repository.queryRecords }, "thought-paging-db").queries,
       registerSpeechFixture: async () => {
         await runtime.attachments.record({ path: "/attachments/paging.mp3", storage: "local",
           objectKey: "paging.mp3", bytes: 0, sha256: crypto.createHash("sha256").update("").digest("hex") });
@@ -1328,7 +1330,19 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         now: () => "2026-10-19T00:00:00.000Z" }),
       legacyPage: thoughtChainListPage,
       removeRoot: (store, id) => createThoughtRecordHarness(pagingRepo).mutations.moveThoughtChainToTrash(store, id) });
+    await account("repo-test", async () => {
+      const before = await pagingRepo.read();
+      await assert.rejects(pagingOnlineRepo.update(store => {
+        store.thoughts = [{
+          id: "forbidden-legacy-root", type: "question", content: "兼容旁路必须拒绝"
+        }];
+      }), { code: "THOUGHT_LEGACY_MUTATION_FORBIDDEN" });
+      assert.deepEqual(await pagingRepo.read(), before);
+      await pagingOnlineRepo.update(store => { store.guardProbe = "non-thought"; });
+      assert.equal((await pagingRepo.read()).guardProbe, "non-thought");
+    });
     const producerFixtures = new WeakMap();
+    const producerOnlineRepo = peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() });
     await runThoughtProducerPostgresChecks({
       database,
       repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
@@ -1338,7 +1352,12 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       aiChecks: runThoughtAiPostgresChecks,
       discoveryChecks: runThoughtDiscoveryPostgresChecks,
       createQueries: repository => {
-        const fixture = createThoughtRuntimeFixture(createContentRuntime, repository, "thought-producer-test");
+        const fixture = createThoughtRuntimeFixture(createContentRuntime, {
+          ...producerOnlineRepo,
+          read: repository.read,
+          update: repository.update,
+          accountUnitOfWork: repository.accountUnitOfWork
+        }, "thought-producer-test");
         producerFixtures.set(repository, fixture);
         return fixture.queries;
       },
@@ -1353,6 +1372,14 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         };
       }
     });
+    await account("thought-producer-test", () => runThoughtTaskTransitionPostgresChecks({
+      database,
+      repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
+      mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+      tasks: createTaskLifecycle({ createId: () => crypto.randomUUID(), now: () => new Date().toISOString(),
+        hash: value => crypto.createHash("sha256").update(value).digest("hex") }),
+      notify: createNotificationService({ createId: () => crypto.randomUUID(), now: () => new Date().toISOString() }).upsertTask
+    }));
     await account("repo-test", () => pagingQueries.rebuild());
     const assertProjectionParity = async accountId => account(accountId, async () => {
       const store = await repo.read();

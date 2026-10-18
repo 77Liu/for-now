@@ -25,6 +25,7 @@ export type ThoughtQueryRepository = {
   recordProjectionCoverage?: {
     recordTransactions: boolean; legacyCommits: boolean;
     initialization: boolean; offlineImportInvalidates: boolean;
+    legacyMutationGuard: boolean;
   };
   queryRecords?: <T>(operation: (context: ProjectionContext) => Promise<T>) => Promise<T>;
   installRecordProjection?: (projection: ThoughtProjection) => void;
@@ -83,13 +84,15 @@ export function createThoughtQueryRuntime({ repository, dependencies, enabled }:
   }
   if (enabled) {
     const coverage = repository.recordProjectionCoverage;
-    const missing = (["recordTransactions", "legacyCommits", "initialization", "offlineImportInvalidates"] as const)
+    const missing = (["recordTransactions", "legacyCommits", "initialization", "offlineImportInvalidates", "legacyMutationGuard"] as const)
       .filter(name => coverage?.[name] !== true);
     if (!repository.accountUnitOfWork?.run) missing.push("recordTransactions");
     if (!repository.rebuildRecordProjection) missing.push("initialization");
     if (missing.length) throw incompleteThoughtProducers(missing.map(name => `repository:${name}`));
   }
-  repository.installRecordProjection(createThoughtProjection(dependencies));
+  repository.installRecordProjection(createThoughtProjection(dependencies, {
+    rejectLegacyWrites: enabled
+  }));
   let producersReady = false;
   const assertReady = () => {
     if (enabled && !producersReady) throw incompleteThoughtProducers(["runtime:producerBindings"]);

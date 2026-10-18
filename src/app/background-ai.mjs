@@ -64,6 +64,36 @@ export function createBackgroundAi({
     "task.status",
     recordCommands?.tasks?.cancel
   );
+  const taskTransitions = recordCommands?.enabled?.("task.status")
+    ? recordCommands?.transitions
+    : null;
+  if (taskTransitions && (typeof taskTransitions.supports !== "function"
+    || typeof taskTransitions.transition !== "function")) {
+    throw new TypeError("Task transition record command is invalid");
+  }
+  const transitionTask = async (taskId, action, mutate) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const revision = await repository.accountUnitOfWork.readRevision();
+      const snapshot = await repository.read();
+      if (revision !== await repository.accountUnitOfWork.readRevision()) continue;
+      const task = snapshot.aiTasks.find(item => item.id === taskId);
+      if (!task) return null;
+      if (!taskTransitions?.supports(task)) return repository.update(mutate);
+      try {
+        return await taskTransitions.transition({
+          taskId, action, snapshot, expectedRevision: revision, mutate
+        });
+      } catch (error) {
+        if (error.code !== "VERSION_CONFLICT") throw error;
+      }
+    }
+    throw Object.assign(new Error("任务上下文持续变化，请稍后重试"), {
+      code: "VERSION_CONFLICT", statusCode: 409
+    });
+  };
+  const claimTask = taskId => taskTransitions
+    ? transitionTask(taskId, "claim", store => claimQueuedTask(store, taskId))
+    : repository.update(store => claimQueuedTask(store, taskId));
   const bindTaskInputRecord = [
     "thought.create",
     "thought.aiWriteback",
@@ -311,19 +341,18 @@ export function createBackgroundAi({
     let executed = false;
     let claimedIdentity = null;
     let claimedKind = "";
+    let usesRecordClaim = false;
     try {
       const initial = await repository.read();
-      await beforePrepare(initial.aiTasks.find(item => item.id === taskId));
-      const claimed = await repository.update(store => claimQueuedTask(store, taskId));
+      const requestedTask = initial.aiTasks.find(item => item.id === taskId);
+      usesRecordClaim = Boolean(taskTransitions?.supports(requestedTask));
+      await beforePrepare(requestedTask);
+      const claimed = await claimTask(taskId);
       if (!claimed) return;
       claimedIdentity = claimed.identity;
       claimedKind = claimed.kind;
       executed = true;
       const store = await repository.read(), task = store.aiTasks.find(item => item.id === taskId);
-      if (task) {
-        claimedIdentity = { id: task.id, attempt: task.attempt };
-        claimedKind = task.kind;
-      }
       const work = task && prepareTarget(store, task);
       if (task?.deferredInputBinding === true) {
         if (!bindTaskInputRecord) {
@@ -383,6 +412,7 @@ export function createBackgroundAi({
       }
       await repository.update(value => saveLegacyTaskResult(value, task, work, result));
     } catch (error) {
+      if (usesRecordClaim && !claimedIdentity) throw error;
       if (claimedIdentity && cleanupExistingTask && await cleanupExistingTask(claimedIdentity, error)) return;
       const recordWriteback = recordWritebackFor(claimedKind);
       if (claimedIdentity && recordWriteback) {
@@ -516,42 +546,121 @@ export function createBackgroundAi({
     return { ...result, queuedCount: result.taskIds.length };
   }
 
+  const releaseWaitingTask = (store, task) => {
+    if (task.status !== WAITING_FOR_USER_MODEL_STATUS) return false;
+    if (!taskHasRequiredTarget(store, task)) {
+      stale(store, task, "等待任务的目标当前不可用，任务已终止");
+      return false;
+    }
+    const intent = inspectRequestedIntent(store, task);
+    if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
+      stale(store, task, "等待核心用户模型期间，目标已变化");
+      return false;
+    }
+    if (shouldWaitForModel(store, task)) return false;
+    // 固定一次上下文时刻，使日期敏感的趋势窗口在认领和写回前保持一致。
+    task.contextGeneratedAt = now();
+    const work = prepareTarget(store, task);
+    const promoted = tasks.promoteWaiting(store.aiTasks, task.id, work, intent);
+    if (promoted.queued) {
+      notify(store, task, "queued", "前置整理已结束，任务已进入后台队列");
+      return true;
+    }
+    delete task.contextGeneratedAt;
+    if (promoted.stale) notify(store, task, "stale", task.error);
+    return false;
+  };
   async function releaseWaiting() {
+    const recordScheduled = [];
+    if (taskTransitions) {
+      const snapshot = await repository.read();
+      for (const task of snapshot.aiTasks) {
+        if (task.status !== WAITING_FOR_USER_MODEL_STATUS || !taskTransitions.supports(task)) continue;
+        const promoted = await transitionTask(task.id, "releaseWaiting", store => {
+          const current = store.aiTasks.find(item => item.id === task.id);
+          return current ? releaseWaitingTask(store, current) : false;
+        });
+        if (promoted) {
+          recordScheduled.push(task.id);
+          schedule(task.id);
+        }
+      }
+      if (!snapshot.aiTasks.some(task => task.status === WAITING_FOR_USER_MODEL_STATUS
+        && !taskTransitions.supports(task))) return recordScheduled.length;
+    }
     const scheduledIds = await repository.update(store => {
       const scheduled = [];
       for (const task of store.aiTasks) {
-        if (task.status !== WAITING_FOR_USER_MODEL_STATUS) continue;
-        if (!taskHasRequiredTarget(store, task)) {
-          stale(store, task, "等待任务的目标当前不可用，任务已终止");
-          continue;
-        }
-        const intent = inspectRequestedIntent(store, task);
-        if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
-          stale(store, task, "等待核心用户模型期间，目标已变化");
-          continue;
-        }
-        if (shouldWaitForModel(store, task)) continue;
-        // Every task in this branch was held behind the core-model gate. Fix a
-        // single context timestamp at release so date-sensitive trend windows
-        // do not drift between promotion, retry, and the eventual save check.
-        task.contextGeneratedAt = now();
-        const work = prepareTarget(store, task);
-        const promoted = tasks.promoteWaiting(store.aiTasks, task.id, work, intent);
-        if (promoted.queued) {
-          notify(store, task, "queued", "前置整理已结束，任务已进入后台队列");
-          scheduled.push(task.id);
-        } else if (promoted.stale) {
-          delete task.contextGeneratedAt;
-          notify(store, task, "stale", task.error);
-        } else {
-          delete task.contextGeneratedAt;
-        }
+        if (taskTransitions?.supports(task)) continue;
+        if (releaseWaitingTask(store, task)) scheduled.push(task.id);
       }
       return scheduled;
     });
     for (const id of scheduledIds) schedule(id);
-    return scheduledIds.length;
+    return recordScheduled.length + scheduledIds.length;
   }
+
+  const queuedTaskReady = (store, task) => {
+    if (task.status !== "queued") return false;
+    if (!task.inputHash && task.deferredInputBinding !== true
+      && task.kind !== RECORD_COMPRESSION_TASK_KIND) {
+      stale(store, task, "旧排队任务缺少可验证输入绑定，未调用模型");
+      return false;
+    }
+    if (!taskHasRequiredTarget(store, task)) {
+      stale(store, task, "排队任务的目标当前不可用，任务已终止");
+      return false;
+    }
+    return true;
+  };
+  async function resumeRecordTasks() {
+    if (!taskTransitions) return { ids: [], hasLegacy: true };
+    const snapshot = await repository.read();
+    const ids = [];
+    for (const task of snapshot.aiTasks) {
+      if (!taskTransitions.supports(task) || !["queued", "running"].includes(task.status)) continue;
+      const ready = await transitionTask(task.id, "recover", store => {
+        const current = store.aiTasks.find(item => item.id === task.id);
+        if (!current) return false;
+        if (current.status === "running") {
+          tasks.recover([current]);
+          targetFor(current).fail?.(store, current, { code: "TASK_INTERRUPTED" });
+          notify(store, current, "failed", current.error);
+        }
+        return queuedTaskReady(store, current);
+      });
+      if (ready) {
+        ids.push(task.id);
+        schedule(task.id);
+      }
+    }
+    return {
+      ids,
+      hasLegacy: snapshot.aiTasks.some(task => !taskTransitions.supports(task)
+        && ["queued", "running"].includes(task.status))
+    };
+  }
+  const recoverLegacyTasks = store => {
+    const legacy = store.aiTasks.filter(task => !taskTransitions?.supports(task));
+    const { interrupted } = tasks.recover(legacy);
+    for (const task of interrupted) {
+      targetFor(task).fail?.(store, task, { code: "TASK_INTERRUPTED" });
+      notify(store, task, "failed", task.error);
+      const recoveryAttempt = Math.max(0, Math.round(Number(task.recoveryAttempt) || 0));
+      if (!isInternalAiTask(task) || task.kind === RECORD_COMPRESSION_TASK_KIND
+        || (task.kind === "importanceScoring" && task.clientRequestId?.startsWith("importance-range:"))
+        || !taskHasRequiredTarget(store, task)
+        || recoveryAttempt >= INTERNAL_RECOVERY_LIMIT) continue;
+      const retry = notifyCreated(store, tasks.retry(
+        store.aiTasks, task.id, candidate => prepareTarget(store, candidate)
+      ));
+      if (!retry.duplicate && retry.task?.status === "queued") {
+        retry.task.recoveryAttempt = recoveryAttempt + 1;
+      }
+    }
+    return store.aiTasks.filter(task => !taskTransitions?.supports(task)
+      && queuedTaskReady(store, task)).map(task => task.id);
+  };
 
   return {
     registerRecordCommand(name, handler) {
@@ -570,6 +679,9 @@ export function createBackgroundAi({
       return true;
     },
     assertRecordCommandsReady() {
+      if (recordCommands?.enabled?.("thought.aiWriteback") && !taskTransitions) {
+        throw new TypeError("Thought AI writeback requires task transition record commands");
+      }
       if (recordCommands?.enabled?.("thought.aiWriteback")) {
         for (const name of ["thought.aiWriteback", "content.aiWriteback"]) {
           if (!dynamicRecordCommands.has(name)) {
@@ -653,48 +765,9 @@ export function createBackgroundAi({
     },
     async resume() {
       await beforePrepare({ kind: "importanceScoring" });
-      const ids = await repository.update(store => {
-        const { interrupted } = tasks.recover(store.aiTasks);
-        for (const task of interrupted) {
-          targetFor(task).fail?.(store, task, { code: "TASK_INTERRUPTED" });
-          notify(store, task, "failed", task.error);
-          const recoveryAttempt = Math.max(0, Math.round(Number(task.recoveryAttempt) || 0));
-          if (isInternalAiTask(task)
-            && task.kind !== RECORD_COMPRESSION_TASK_KIND
-            && !(task.kind === "importanceScoring" && task.clientRequestId?.startsWith("importance-range:"))
-            && taskHasRequiredTarget(store, task)
-            && recoveryAttempt < INTERNAL_RECOVERY_LIMIT) {
-            const retry = notifyCreated(
-              store,
-              tasks.retry(
-                store.aiTasks,
-                task.id,
-                candidate => prepareTarget(store, candidate)
-              )
-            );
-            if (!retry.duplicate && retry.task?.status === "queued") {
-              retry.task.recoveryAttempt = recoveryAttempt + 1;
-            }
-          }
-        }
-        const queued = [];
-        for (const task of store.aiTasks) {
-          if (task.status !== "queued") continue;
-          if (!task.inputHash
-            && task.deferredInputBinding !== true
-            && task.kind !== RECORD_COMPRESSION_TASK_KIND) {
-            stale(store, task, "旧排队任务缺少可验证输入绑定，未调用模型");
-            continue;
-          }
-          if (!taskHasRequiredTarget(store, task)) {
-            stale(store, task, "排队任务的目标当前不可用，任务已终止");
-            continue;
-          }
-          queued.push(task.id);
-        }
-        return queued;
-      });
-      for (const id of ids) schedule(id);
+      const records = await resumeRecordTasks();
+      const legacyIds = records.hasLegacy ? await repository.update(recoverLegacyTasks) : [];
+      for (const id of legacyIds) schedule(id);
       await releaseWaiting();
     },
     releaseWaiting,

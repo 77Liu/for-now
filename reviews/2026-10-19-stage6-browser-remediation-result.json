@@ -537,6 +537,51 @@
       "no new browser or real corpus experiment; stage7 not started; F9 protected digests unchanged"
     ]
   },
+  "nightTaskTransitionsSubset": {
+    "recordedAt": "2026-10-19T05:15:00+08:00",
+    "baselineCommit": "39ee55",
+    "status": "PASS_TASK_TRANSITION_SUBSET_STAGE6_PARTIAL",
+    "sourceManifest": [
+      { "path": "src/app/record-commands/task-transitions.mts", "sha256_6": "6810b9" },
+      { "path": "src/app/background-ai.mjs", "sha256_6": "5cda02" },
+      { "path": "src/app/content/background.mjs", "sha256_6": "ea5fe0" },
+      { "path": "src/modules/thoughts/projection.mts", "sha256_6": "f960a8" },
+      { "path": "src/modules/thoughts/query-runtime.mts", "sha256_6": "050260" },
+      { "path": "src/modules/thoughts/query-contracts.mts", "sha256_6": "077298" },
+      { "path": "src/shared/persistence/postgres-runtime.mjs", "sha256_6": "00e6ec" },
+      { "path": "scripts/thought-task-transition-postgres-checks.mts", "sha256_6": "a8594f" },
+      { "path": "scripts/postgres-runtime-checks.mjs", "sha256_6": "ad229e" },
+      { "path": "scripts/thought-producer-gate-regression.mts", "sha256_6": "24c259" },
+      { "path": "tsconfig.backend.json", "sha256_6": "80472a" },
+      { "path": "tsconfig.thought-db-regression.json", "sha256_6": "0d2945" }
+    ],
+    "verified": [
+      "four required AI task kinds use task/notification record transitions for claim, waiting release and startup recovery",
+      "PostgreSQL matrix reads at most three rows and writes at most two, source data unchanged",
+      "commit-tail failures roll back task, notification, projection, changes and revision; stale revision rejects without writes",
+      "source mutation from transition hooks rejected; no-op preserves task version and sync cursor",
+      "paging-enabled repository rejects compatibility thought writes before database mutation; non-thought compatibility remains",
+      "paging assembly requires legacyMutationGuard repository coverage",
+      "stable PG 16.14 suite, formal HTTP, restart/export/recovery PASS; types/modules/content/background gate PASS"
+    ],
+    "resolvedFailures": [
+      "guard test read synthetic scale fixtures with deliberately duplicated positions; moved guard check to normal account",
+      "new task fixture omitted notification readAt and required follow-up subtarget; completed formal fixture identities",
+      "partial task mapping cannot resolve source targets; status command now updates exact rows while preserving relationship identity"
+    ],
+    "logs": [
+      "/tmp/for-now-night-task-transitions-postgres-verified.log",
+      "/tmp/for-now-night-task-modules-final.log",
+      "/tmp/for-now-night-task-model-final.log",
+      "/tmp/for-now-night-task-content-final.log"
+    ],
+    "limitations": [
+      "enqueue and retry remain compatibility updater paths; TC-10 remains open",
+      "personal context still read outside short transaction; other task kinds retain existing compatibility lifecycle",
+      "initialization and offline import remain explicit maintenance boundaries",
+      "no new browser or real corpus experiment; stage7 not started; F9 digests unchanged"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

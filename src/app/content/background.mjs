@@ -17,6 +17,8 @@ import { createAiTaskTargets } from "../ai-task-targets.mjs";
 import { createBackgroundAi } from "../background-ai.mjs";
 import { createNotificationRecordCommands } from "../record-commands/notifications.mjs";
 import { createContentAiRecordCommands } from "../record-commands/content-ai.mjs";
+import { createTaskTransitionCommands } from "../../../.build/typescript/backend/app/record-commands/task-transitions.mjs";
+import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../../shared/persistence/index.mjs";
 import { createTaskRecordCommands } from "../../modules/tasks/index.mjs";
 import { userModelRequiresCoreReady } from "../user-model.mjs";
 import { prepareReferenceRequest, verifyReferenceAnswer } from "../answer-citations.mjs";
@@ -146,7 +148,13 @@ export function createContentBackground({
     recordCommands: {
       enabled: name => recordCommandConfig?.enabled?.(name) === true,
       notifications: notificationRecordCommands,
-      tasks: taskRecordCommands
+      tasks: taskRecordCommands,
+      transitions: repository.accountUnitOfWork?.run
+        ? createTaskTransitionCommands({
+            unitOfWork: repository.accountUnitOfWork,
+            mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects }
+          })
+        : null
     },
     now,
     targets: taskTargets,

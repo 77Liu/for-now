@@ -20,6 +20,7 @@ export type SqlClient = {
 };
 export type ProjectionContext = { client: SqlClient; accountId: string };
 export type ThoughtProjection = {
+  assertLegacyMutation?(before: Record<string, unknown>, after: Record<string, unknown>): void;
   provisionedVersion(rows: ObjectRow[]): number;
   initialize(context: ProjectionContext): Promise<void>;
   changed(context: ProjectionContext, rows: ObjectRow[]): Promise<void>;
