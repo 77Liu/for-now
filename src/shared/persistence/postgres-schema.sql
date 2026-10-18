@@ -440,6 +440,61 @@ CREATE TABLE IF NOT EXISTS for_now_auth.migration_state (
   imported_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- migration:record-commands-v1
+DROP INDEX IF EXISTS for_now.store_objects_position_idx;
+ALTER TABLE for_now.store_objects ALTER COLUMN position DROP NOT NULL;
+ALTER TABLE for_now.store_objects DROP CONSTRAINT IF EXISTS store_objects_position_check;
+CREATE INDEX IF NOT EXISTS store_objects_stable_order_idx
+  ON for_now.store_objects(
+    account_id,
+    collection,
+    COALESCE(parent_key, ''),
+    COALESCE(payload->>'occurredAt', payload->>'createdAt', ''),
+    id
+  );
+
+DROP INDEX IF EXISTS for_now.resource_lifecycle_position_idx;
+ALTER TABLE for_now.resource_lifecycle ALTER COLUMN position DROP NOT NULL;
+CREATE INDEX IF NOT EXISTS resource_lifecycle_stable_order_idx
+  ON for_now.resource_lifecycle(account_id, updated_at, resource_key);
+
+DROP INDEX IF EXISTS for_now.idempotency_ledger_position_idx;
+ALTER TABLE for_now.idempotency_ledger ALTER COLUMN position DROP NOT NULL;
+CREATE INDEX IF NOT EXISTS idempotency_ledger_expiry_idx
+  ON for_now.idempotency_ledger(account_id, expires_at, scope, idempotency_key);
+
+CREATE TABLE IF NOT EXISTS for_now.account_sync_heads (
+  account_id text PRIMARY KEY REFERENCES for_now.accounts(account_id) ON DELETE CASCADE,
+  current_cursor bigint NOT NULL DEFAULT 0 CHECK (current_cursor >= 0)
+);
+INSERT INTO for_now.account_sync_heads(account_id)
+SELECT account_id FROM for_now.accounts
+ON CONFLICT (account_id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS for_now.record_changes (
+  account_id text NOT NULL REFERENCES for_now.accounts(account_id) ON DELETE CASCADE,
+  cursor bigint NOT NULL CHECK (cursor > 0),
+  ordinal integer NOT NULL CHECK (ordinal >= 0),
+  command_id text NOT NULL,
+  entity_type text NOT NULL,
+  entity_id text NOT NULL,
+  parent_type text,
+  parent_id text,
+  entity_version integer NOT NULL CHECK (entity_version > 0),
+  operation text NOT NULL CHECK (operation IN ('create', 'update', 'delete')),
+  changed_fields jsonb NOT NULL CHECK (jsonb_typeof(changed_fields) = 'array'),
+  scope_keys jsonb NOT NULL CHECK (jsonb_typeof(scope_keys) = 'array'),
+  summary jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (account_id, cursor, ordinal),
+  CHECK ((parent_type IS NULL) = (parent_id IS NULL)),
+  CHECK (summary IS NULL OR jsonb_typeof(summary) = 'object')
+);
+CREATE INDEX IF NOT EXISTS record_changes_entity_idx
+  ON for_now.record_changes(account_id, entity_type, entity_id, cursor DESC);
+CREATE INDEX IF NOT EXISTS record_changes_created_idx
+  ON for_now.record_changes(account_id, created_at, cursor);
+
 CREATE INDEX IF NOT EXISTS migration_runs_account_started_idx
   ON for_now.migration_runs (account_id, started_at DESC);
 
@@ -471,7 +526,9 @@ BEGIN
     'ai_request_audit',
     'ai_usage_attempts',
     'ai_usage_aggregates',
-    'attachment_inventory'
+    'attachment_inventory',
+    'account_sync_heads',
+    'record_changes'
   ]
   LOOP
     EXECUTE format('ALTER TABLE for_now.%I ENABLE ROW LEVEL SECURITY', target_table);
@@ -522,6 +579,7 @@ BEGIN
   ) THEN RAISE EXCEPTION 'Provisioning account mismatch'; END IF;
   PERFORM set_config('app.account_id', owner_id, true);
   INSERT INTO for_now.accounts(account_id, runtime_started_at) VALUES (owner_id, now());
+  INSERT INTO for_now.account_sync_heads(account_id) VALUES (owner_id);
   INSERT INTO for_now.store_fields SELECT * FROM jsonb_populate_recordset(NULL::for_now.store_fields, business->'fields');
   INSERT INTO for_now.store_objects SELECT * FROM jsonb_populate_recordset(NULL::for_now.store_objects, business->'objects');
   INSERT INTO for_now.store_relations SELECT * FROM jsonb_populate_recordset(NULL::for_now.store_relations, business->'relations');

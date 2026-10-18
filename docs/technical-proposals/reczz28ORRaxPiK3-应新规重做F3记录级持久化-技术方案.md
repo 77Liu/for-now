@@ -455,6 +455,65 @@ operationId+scope 为业务唯一键，fingerprint 防止异请求复用。实�
 
 ## 4.1 开发明细（必填；评审时留空，开发结束后填写）
 
+实施日期：2026-10-18。开发分支为
+`feat/v0.5.16-sync-latency`，审查基线为 `b1a62a`。本节记录当前工作树
+的实际实现与验证，不回写两份审查报告所绑定的历史快照，也不代表发布 GO。
+
+|实现项|实际落点与结果|
+|---|---|
+|记录级事务底座|`account-unit-of-work.mts` 实现账户短事务、目标对象/关系/附件/生命周期端口、幂等回执、独立 sync head 和显式 `record_changes`；业务写与 ChangeSet 同事务，空 ChangeSet 不推进 cursor。|
+|schema 与运行时|`record-commands-v1` 迁移允许在线对象、生命周期和幂等记录不维护连续 position；`postgres-runtime.mjs` 装配 UoW，`RECORD_COMMAND_ALLOWLIST` 默认空，row 命令失败不回退 legacy。|
+|首批领域命令|通知单条/全部已读、任务取消/输入绑定、思绪创建/更新/删除及 AI 写回接入记录级路径；模型调用和输入准备仍在事务外，写回使用账户 revision 与实体版本守卫。|
+|同步生产事实|每次命令显式追加实体类型、ID、版本、操作、变化字段和 scope；思绪链删除同时记录被取消的任务和通知，不再只记录根删除。|
+|查询闭包|任务取消和思绪 AI 写回通过 `notification -> task` 关系定位通知，只锁目标任务、目标通知和必要思绪闭包；通知“全部已读”保留集合读取，因为其业务目标就是全部可见通知。|
+|排序与生命周期|重建允许删除后留下的稀疏 position，仍拒绝重复 position；混合空 position 使用稳定时间/ID tuple。思绪生命周期确保和删除均按完整 `resourceKey` 锁定，不再假设子 ID 跨父对象唯一。|
+|审查返修|同时关闭阶段 1 用量恢复载荷、阶段 2 撤销会话改密与认证锁序、统计用户时区三类横切缺陷；旧 UTC 日额度聚合保持不变。|
+|模块边界|通知、任务和思绪命令工厂经 `src/app/index.mjs` 公开；回归脚本不再深层导入 app 私有文件。|
+
+两份审查报告的 8 项问题均已在当前候选关闭：
+
+|问题|状态|实现与回归证据|
+|---|---|---|
+|F3-01 删除后记录不可读|已修复|重建按稀疏整数 position 排序；覆盖删除旧首项、中项、末项、混合空 position、元数据空洞和重复 position 拒绝。|
+|F3-02 跨父生命周期误写|已修复|UoW 新增完整 `resourceKey` 查询；真实 PostgreSQL 中两条思绪链使用相同批注 ID，删除一条后另一条保持 active。|
+|阶段 2 撤销会话仍可改密|已修复|document 与 row 提交均复验 session/user/snapshot 世代；旧会话配新凭据快照返回失败，密码不变。|
+|阶段 1 用量失败后重启不恢复|已修复|DeepSeek 与通用 provider 在 usage pending 时写完整 `usageRecovery`；实际 producer 日志由新 runtime 恢复两次仍只记一条。数据库模式继续以 attempt 表和内存有限重试为事实源，不读取兼容文件。|
+|F3-03 单任务扫描全部通知|已修复|通过关系索引取得通知 object key，再 `findMany(..., FOR UPDATE)`；SQL trace 证明取消和写回均无通知集合查询。|
+|F3-04 删除 ChangeSet 漏任务/通知|已修复|按持久化前后版本与业务字段追加关联任务、通知 update；真实 PG 同 cursor 同时出现根 delete、task update、notification update。|
+|阶段 2 并发改密死锁|已修复|认证命令统一先确定 userId、锁 user、再锁并复验 session；两个真实连接并发改密仅一个提交，另一个返回失效，无 `40P01`。|
+|阶段 1 统计时区错位|已修复|统计 SQL、费用计划读取和看板分桶统一使用当前用户 `recordTimezone`；上海 00:00 边界 PG/HTTP 用例返回 1，UTC 对照返回 0；UTC 日额度路径未改。|
+
+验证期间保留并关闭了以下失败，没有把旧失败直接改记为通过：
+
+1. 稀疏 position 最小复现最初返回
+   `Non-contiguous positions: captures`；修复后首/中/末删除与混合排序通过。
+2. PostgreSQL 首轮在内容块删除后得到根版本 4、预期 3。领域契约明确一次
+   `updateChainInStore` 只推进一次聚合版本；修复复用回收逻辑造成的重复推进后，
+   保留预期 3。
+3. PostgreSQL 次轮发现思绪来源 capture 被合法保留，后续并发写测试仍硬编码空基线
+   12。断言改为“实际进入测试前基线 + 12”，未删除合法来源数据。
+4. 新增认证并发夹具最初把两条带参数 SQL 放入同一 prepared statement；
+   拆成两次插入后执行真实并发断言。
+
+|验证|实际结果与边界|
+|---|---|
+|稳定 PostgreSQL|`npm run test:postgres:stable --silent` PASS，PostgreSQL 16.14、非 owner/NOSUPERUSER/NOBYPASSRLS；包含双连接改密、跨父同 ID 生命周期、通知精准闭包、删除 ChangeSet、上海午夜统计、重启、导出恢复、生命周期/幂等和压缩回滚。|
+|静态与构建|`npm run check` PASS；129 个 active modules、243 条 owned routes，无深层导入或循环依赖；后端及运行时 TypeScript 构建通过，`git diff --check` PASS。|
+|主回归|`npm test --silent` PASS。|
+|专项|AI domain/runtime、认证 role/HTTP、思绪 service、reviews/chat、HTTP orchestration、persistence、record-command producer coverage 均 PASS。|
+|生产者覆盖边界|`notification`、`aiTask`、`thoughtChain` 仍有 legacy/partial 写入口，`f9Ready=false`；本阶段只证明首批 allowlist 命令，不开放 F9 v2 消费。|
+
+出口重新核定：
+
+- 阶段 5 F3 当前实现与 8 项返修满足本地研发出口，可以形成隔离提交；这不是发布
+  GO，`RECORD_COMMAND_ALLOWLIST` 仍默认空。
+- 阶段 1 AI 审计和阶段 2 认证在当前候选上完成受影响失败路径复验；原
+  `1bf34d`、`675408` 的历史审查快照不改写，当前修复随阶段 5 候选追溯。
+- 阶段 5 不解锁 F9 v2：生产者覆盖门仍明确为 false。新 F4 仅可在本提交及控制面
+  登记完成后按严格串行规则进入准备。
+- 未执行生产部署、生产数据写入、真实付费 provider、Safari/PWA/iOS 真机或生产
+  容量观测；这些限制不得由本地 PostgreSQL 与 mock 回归外推。
+
 ## 4.2 测试方案（必填）
 
 |用例编号 / 对应需求|环境与前置条件|输入 / 操作 / 故障注入|预期输出 / 持久化 / 用户行为|监控与通过标准|

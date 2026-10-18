@@ -435,18 +435,39 @@ export function rebuildStoreObjects({ fields, objects, lifecycles = [], idempote
     children.get(group).push(row);
   }
   const visited = new Set();
+  const stableTuple = row => [
+    String(row.payload?.occurredAt || row.payload?.occurredOn || row.payload?.createdAt || row.payload?.updatedAt || ""),
+    String(row.id || row.resourceKey || row.key || "")
+  ];
+  const stableCompare = (left, right, descending = false) => {
+    const a = stableTuple(left), b = stableTuple(right);
+    const comparison = a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]);
+    return descending ? -comparison : comparison;
+  };
+  const positionCompare = (left, right) => (
+    left.position - right.position || stableCompare(left, right)
+  );
+  const assertUniquePositions = (rows, field) => {
+    for (let index = 1; index < rows.length; index += 1) {
+      if (rows[index - 1].position === rows[index].position) {
+        throw new Error(`Duplicate positions: ${field}`);
+      }
+    }
+  };
   const ordered = (parentKey, field) => {
-    const rows = (children.get(keyOf([parentKey, field])) || []).sort((a, b) => a.position - b.position);
-    rows.forEach((row, index) => {
-      if (row.position !== index) throw new Error(`Non-contiguous positions: ${field}`);
-    });
+    const rows = children.get(keyOf([parentKey, field])) || [];
+    const positioned = rows.every(row => Number.isInteger(row.position));
+    rows.sort(positioned
+      ? positionCompare
+      : (a, b) => stableCompare(a, b, parentKey === null));
+    if (positioned) assertUniquePositions(rows, field);
     return rows;
   };
   const orderedMetadata = (rows, field) => {
-    const result = [...rows].sort((a, b) => a.position - b.position);
-    result.forEach((row, index) => {
-      if (row.position !== index) throw new Error(`Non-contiguous positions: ${field}`);
-    });
+    const result = [...rows];
+    const positioned = result.every(row => Number.isInteger(row.position));
+    result.sort(positioned ? positionCompare : stableCompare);
+    if (positioned) assertUniquePositions(result, field);
     return result;
   };
   const rebuild = row => {

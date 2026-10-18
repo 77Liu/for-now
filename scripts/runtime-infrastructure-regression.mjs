@@ -36,6 +36,21 @@ assert.equal(defaults.aiQueue.enabled, false);
 assert.ok(Object.isFrozen(defaults.aiQueue));
 assert.throws(() => config({ AI_QUEUE_ENABLED: "1", AI_QUEUE_MAX_OUTSTANDING: "1", AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT: "2" }), /must not exceed/);
 assert.throws(() => config({ AI_QUEUE_MAX_QUEUE_WAIT_MS: "0" }), /positive integer/);
+assert.deepEqual(defaults.recordCommands.allowlist, []);
+assert.equal(defaults.recordCommands.enabled("notification.read"), false);
+assert.equal(config({
+  PERSISTENCE_BACKEND: "postgres",
+  RECORD_COMMAND_ALLOWLIST: "notification.read,thought.update"
+}).recordCommands.enabled("thought.update"), true);
+assert.throws(() => config({ RECORD_COMMAND_ALLOWLIST: "notification.read" }), /requires PERSISTENCE_BACKEND=postgres/);
+assert.throws(() => config({
+  PERSISTENCE_BACKEND: "postgres",
+  RECORD_COMMAND_ALLOWLIST: "unknown.command"
+}), /Unknown RECORD_COMMAND_ALLOWLIST/);
+assert.throws(() => config({
+  PERSISTENCE_BACKEND: "postgres",
+  RECORD_COMMAND_ALLOWLIST: "notification.read,notification.read"
+}), /must not contain duplicates/);
 assert.equal(defaults.features.incrementalSync, true);
 assert.equal(defaults.features.thoughtPaging.enabled, false);
 assert.equal(config({ INCREMENTAL_SYNC_ENABLED: "0" }).features.incrementalSync, false);

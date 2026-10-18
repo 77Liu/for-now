@@ -44,10 +44,29 @@ export function createThoughtWorkflows({
   getRecentTrend = () => null,
   getImportanceModelSnapshot = () => null,
   materializeAttachmentFiles = async () => [],
+  recordCommands = null,
   contextKey,
   now = () => new Date().toISOString()
 }) {
   const activeAnswers = new Map();
+  const createChainRecord = recordCommands?.enabled?.("thought.create")
+    ? recordCommands?.thoughts?.create
+    : null;
+  const updateChainRecord = recordCommands?.enabled?.("thought.update")
+    ? recordCommands?.thoughts?.update
+    : null;
+  const removeChainRecord = recordCommands?.enabled?.("thought.delete")
+    ? recordCommands?.thoughts?.remove
+    : null;
+  if (recordCommands?.enabled?.("thought.create") && typeof createChainRecord !== "function") {
+    throw new TypeError("Record command thought.create is enabled without an implementation");
+  }
+  if (recordCommands?.enabled?.("thought.update") && typeof updateChainRecord !== "function") {
+    throw new TypeError("Record command thought.update is enabled without an implementation");
+  }
+  if (recordCommands?.enabled?.("thought.delete") && typeof removeChainRecord !== "function") {
+    throw new TypeError("Record command thought.delete is enabled without an implementation");
+  }
   const escapedPromptJson = value => JSON.stringify(value)
     .replace(/</g, "\\u003c")
     .replace(/>/g, "\\u003e")
@@ -349,6 +368,14 @@ export function createThoughtWorkflows({
         sourceRef: input.sourceRef,
         generateAnswer: input.generateAnswer
       }));
+      if (createChainRecord) {
+        const created = await createChainRecord({ ...input, requestHash });
+        if (!created.duplicate && created.task) backgroundAi.schedule(created.task.id);
+        return {
+          ...created,
+          task: created.task ? publicTask(created.task) : null
+        };
+      }
       const createInStore = store => {
         const result = thoughts.createChainInStore(store, { ...input, requestHash });
         if (result.conflict) return result;
@@ -381,6 +408,7 @@ export function createThoughtWorkflows({
     },
 
     updateChain(input) {
+      if (updateChainRecord) return updateChainRecord(input);
       return repository.update(store => thoughts.updateChainInStore(store, {
         ...input,
         removeBlock
@@ -388,6 +416,7 @@ export function createThoughtWorkflows({
     },
 
     removeChain(id, expectedVersion = null) {
+      if (removeChainRecord) return removeChainRecord(id, expectedVersion);
       return repository.update(store => {
         const root = store.thoughts.find(item => item.id === id && item.type === "question");
         if (!root) return removeChain(store, id);

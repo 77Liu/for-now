@@ -244,6 +244,7 @@ const documentSetRecordTimezone = transact => command => transact(auth => {
 const documentChangePassword = transact => command => transact(auth => {
   const pair = authenticationFromDocument(auth, command.tokenHash);
   if (!pair || Date.parse(pair.session.expiresAt) <= command.nowMs
+    || versionOf(pair.session.sessionVersion) !== versionOf(pair.user.sessionVersion)
     || !sameCredentials(pair.user, command.snapshot)) {
     return { value: null, change: null };
   }

@@ -146,22 +146,31 @@ async function lockedAuthentication(
   client: PgQueryClient,
   tokenHash: string
 ): Promise<Authentication | null> {
-  const sessionResult = await client.query(`
-    SELECT ${SESSION_COLUMNS}
+  const ownerResult = await client.query(`
+    SELECT user_id AS "userId"
     FROM for_now_auth.sessions
     WHERE token_hash = $1
-    FOR UPDATE
   `, [tokenHash]);
-  if (!sessionResult.rows[0]) return null;
-  const session = sessionFromRow(sessionResult.rows[0]);
+  const userId = String(ownerResult.rows[0]?.userId || "");
+  if (!userId) return null;
   const userResult = await client.query(`
     SELECT ${PUBLIC_USER_COLUMNS}
     FROM for_now_auth.users
     WHERE id = $1
     FOR UPDATE
-  `, [session.userId]);
+  `, [userId]);
   if (!userResult.rows[0]) return null;
-  return { session, user: userFromRow(userResult.rows[0]) };
+  const sessionResult = await client.query(`
+    SELECT ${SESSION_COLUMNS}
+    FROM for_now_auth.sessions
+    WHERE token_hash = $1 AND user_id = $2
+    FOR UPDATE
+  `, [tokenHash, userId]);
+  if (!sessionResult.rows[0]) return null;
+  return {
+    session: sessionFromRow(sessionResult.rows[0]),
+    user: userFromRow(userResult.rows[0])
+  };
 }
 
 async function lockedUserById(
@@ -491,7 +500,8 @@ export async function changeAuthPassword(
 ): Promise<{ before: AuthUser; after: AuthUser } | null> {
   const authentication = await lockedAuthentication(client, tokenHash);
   if (!authentication || Date.parse(authentication.session.expiresAt) <= nowMs) return null;
-  const { user } = authentication;
+  const { session, user } = authentication;
+  if (session.sessionVersion !== user.sessionVersion) return null;
   const credential = await lockedCredentialById(client, user.id);
   if (!credential
     || credential.id !== snapshot.id

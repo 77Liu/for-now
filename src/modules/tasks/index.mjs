@@ -35,7 +35,12 @@ const PUBLIC_RESOURCE_TYPES = Object.freeze({
 });
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running"]);
 const REUSABLE_EXTRACTION_STATUSES = new Set(["queued", "running", "succeeded"]);
+const INTERNAL_TASK_KINDS = new Set(["perceptionExtraction", "recordCompression"]);
 export const WAITING_FOR_BUDGET_STATUS = "waitingBudget";
+
+export const isInternalAiTask = task => (
+  task?.internal === true || INTERNAL_TASK_KINDS.has(task?.kind)
+);
 
 export function publicAiTask(task) {
   return {
@@ -249,6 +254,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
 
   function create(tasks, input, inspectTarget, {
     deferTargetInspection = false,
+    deferInputBinding = false,
     requestedIntent = null,
     waitingBudget = false,
     allocateIdentity = null
@@ -280,11 +286,19 @@ export function createTaskLifecycle({ createId, now, hash }) {
     )) return { missing: true };
     const createdAt = now();
     const inspectionInput = { ...normalized, createdAt };
-    const work = deferTargetInspection ? null : inspectTarget(inspectionInput);
-    if (!deferTargetInspection && !work) return { missing: true };
+    const work = deferTargetInspection || deferInputBinding
+      ? null
+      : inspectTarget(inspectionInput);
+    if (!deferTargetInspection && !deferInputBinding && !work) return { missing: true };
     if (work?.alreadyAnswered) return { alreadyAnswered: true };
-    if (!deferTargetInspection && requestedInputVersion && requestedInputVersion !== work.inputVersion) return { versionConflict: true, currentVersion: work.inputVersion };
-    if (!deferTargetInspection && requestedSubtargetVersion && requestedSubtargetVersion !== work.subtargetVersion) return { subtargetVersionConflict: true, currentVersion: work.subtargetVersion };
+    if (!deferTargetInspection && !deferInputBinding
+      && requestedInputVersion && requestedInputVersion !== work.inputVersion) {
+      return { versionConflict: true, currentVersion: work.inputVersion };
+    }
+    if (!deferTargetInspection && !deferInputBinding
+      && requestedSubtargetVersion && requestedSubtargetVersion !== work.subtargetVersion) {
+      return { subtargetVersionConflict: true, currentVersion: work.subtargetVersion };
+    }
     const intentInputVersion = Math.max(0, Number(requestedIntent?.inputVersion) || 0);
     const intentSubtargetVersion = Math.max(0, Number(requestedIntent?.subtargetVersion) || 0);
     if (deferTargetInspection && requestedIntent) {
@@ -330,26 +344,29 @@ export function createTaskLifecycle({ createId, now, hash }) {
     }
     const task = {
       id: createId(), kind, resourceType, targetId, subtargetId,
-      inputVersion: deferTargetInspection
+      inputVersion: deferTargetInspection || deferInputBinding
         ? (intentInputVersion || requestedInputVersion)
         : work.inputVersion || 0,
-      subtargetVersion: deferTargetInspection
+      subtargetVersion: deferTargetInspection || deferInputBinding
         ? (intentSubtargetVersion || requestedSubtargetVersion)
         : work.subtargetVersion || 0,
-      inputHash: deferTargetInspection ? "" : work.inputHash,
-      requestedInputVersion: deferTargetInspection
+      inputHash: deferTargetInspection || deferInputBinding ? "" : work.inputHash,
+      requestedInputVersion: deferTargetInspection || deferInputBinding
         ? (intentInputVersion || requestedInputVersion)
         : work.inputVersion || 0,
-      requestedSubtargetVersion: deferTargetInspection
+      requestedSubtargetVersion: deferTargetInspection || deferInputBinding
         ? (intentSubtargetVersion || requestedSubtargetVersion)
         : work.subtargetVersion || 0,
-      ...(!deferTargetInspection ? { requestedInputHash: work.inputHash || "" } : {}),
+      ...(!deferTargetInspection && !deferInputBinding
+        ? { requestedInputHash: work.inputHash || "" }
+        : {}),
       ...(deferTargetInspection && requestedIntent ? {
         requestedIntentInputVersion: intentInputVersion,
         requestedIntentSubtargetVersion: intentSubtargetVersion,
         requestedIntentInputHash: String(requestedIntent.inputHash ?? "")
       } : {}),
       payload, clientRequestId, requestHash: inputRequestHash,
+      ...(deferInputBinding ? { deferredInputBinding: true } : {}),
       ...((work?.contextReceipt?.importanceSelectionPlan || work?.contextReceipt?.importanceReferences?.plan)
         ? { importanceSelectionPlan: structuredClone(work.contextReceipt.importanceSelectionPlan || work.contextReceipt.importanceReferences?.plan) } : {}),
       status: deferTargetInspection
@@ -359,7 +376,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
       ...(["perceptionExtraction", "recordCompression", "importanceScoring"].includes(kind) ? { internal: true } : {})
     };
     tasks.unshift(task);
-    if (!waitingBudget) work?.markQueued?.(task);
+    if (!waitingBudget && !deferInputBinding) work?.markQueued?.(task);
     return { task, duplicate: false };
   }
 

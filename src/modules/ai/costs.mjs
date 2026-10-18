@@ -1,5 +1,9 @@
 import { safeIso, numberOrFallback } from "../../shared/validation/index.mjs";
-import { localDateKey, shiftDateKey } from "../../shared/time/index.mjs";
+import {
+  dateKeyInTimezone,
+  localDateKey,
+  shiftDateKey
+} from "../../shared/time/index.mjs";
 import { LLM_MODELS, LLM_SCENARIOS, normalizeLlmSettings, llmSettingsForScene } from "./settings.mjs";
 import { DEEPSEEK_PRICING } from "./usage.mjs";
 import { OFFICIAL_PROVIDER_PRICING } from "./provider-pricing.mjs";
@@ -41,10 +45,20 @@ const AI_COST_SCENARIO_DEFAULTS = {
   recordCompression: { callsPerMonth: 14, avgInputTokens: 12000, cacheHitPct: 0, avgReasoningTokens: 0, avgAnswerTokens: 900 }
 };
 
-export function defaultAiCostPlan(settings, usage, { date = localDateKey(), cnyPerUsd } = {}) {
+const usageDateKey = (value, timezone) => timezone
+  ? dateKeyInTimezone(value, timezone)
+  : localDateKey(value);
+
+export function defaultAiCostPlan(
+  settings,
+  usage,
+  { date = localDateKey(), cnyPerUsd, timezone } = {}
+) {
   const normalizedSettings = normalizeLlmSettings(settings);
   const from = shiftDateKey(date, -29);
-  const recentEntries = (usage?.entries || []).filter(item => localDateKey(item.createdAt) >= from);
+  const recentEntries = (usage?.entries || []).filter(item => (
+    usageDateKey(item.createdAt, timezone) >= from
+  ));
   return {
     version: AI_COST_PLAN_VERSION,
     updatedAt: "",
@@ -107,14 +121,30 @@ export function normalizeAiCostPlan(value, settings, usage, options) {
   };
 }
 
-export function createAiCostService({ repository, readSettings, readUsage, cnyPerUsd, now = () => new Date().toISOString() }) {
+export function createAiCostService({
+  repository,
+  readSettings,
+  readUsage,
+  cnyPerUsd,
+  now = () => new Date().toISOString(),
+  getTimezone = () => undefined
+}) {
   const normalize = async value => {
-    const date = localDateKey(now());
+    const timezone = getTimezone();
+    const date = usageDateKey(now(), timezone);
     const [settings, usage] = await Promise.all([
       readSettings(),
-      readUsage({ from: shiftDateKey(date, -29), to: date })
+      readUsage({
+        from: shiftDateKey(date, -29),
+        to: date,
+        ...(timezone ? { timezone } : {})
+      })
     ]);
-    return normalizeAiCostPlan(value, settings, usage, { date, cnyPerUsd });
+    return normalizeAiCostPlan(value, settings, usage, {
+      date,
+      cnyPerUsd,
+      timezone
+    });
   };
   return {
     normalize,
@@ -124,7 +154,13 @@ export function createAiCostService({ repository, readSettings, readUsage, cnyPe
       await repository.write(plan, normalize);
       return plan;
     },
-    dashboard: (usage, from, to, rate = cnyPerUsd) => usageDashboard(usage, from, to, rate, cnyPerUsd)
+    dashboard: (
+      usage,
+      from,
+      to,
+      rate = cnyPerUsd,
+      timezone = getTimezone()
+    ) => usageDashboard(usage, from, to, rate, cnyPerUsd, timezone)
   };
 }
 
@@ -215,11 +251,18 @@ function serviceAggregate(entries) {
   };
 }
 
-export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cnyPerUsd) {
+export function usageDashboard(
+  usage,
+  from,
+  to,
+  cnyPerUsd,
+  defaultCnyPerUsd = cnyPerUsd,
+  timezone
+) {
   const dayCount = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
   const days = Array.from({ length: dayCount }, (_, index) => shiftDateKey(from, index));
   const entries = usage.entries.filter(item => {
-    const date = localDateKey(item.createdAt);
+    const date = usageDateKey(item.createdAt, timezone);
     return date >= from && date <= to;
   });
   const extraServices = [...new Set(entries.map(usageServiceKey))]
@@ -237,7 +280,7 @@ export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cn
   const serviceDefinitions = [...AI_SERVICE_DEFINITIONS, ...extraServices];
   const summary = entries.reduce(addUsageAggregate, blankUsageAggregate());
   const daily = days.map(date => {
-    const matching = entries.filter(item => localDateKey(item.createdAt) === date);
+    const matching = entries.filter(item => usageDateKey(item.createdAt, timezone) === date);
     const models = Object.fromEntries(LLM_MODELS.map(model => [model, matching.filter(item => item.model === model).reduce(addUsageAggregate, blankUsageAggregate())]));
     const services = Object.fromEntries(serviceDefinitions.map(service => [
       service.key,

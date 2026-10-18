@@ -23,7 +23,10 @@ import {
   commercializationOwnerSurface
 } from "../modules/owner-surfaces/index.mjs";
 import { errorMetadata, pruneLogs } from "../shared/observability/index.mjs";
-import { eventTimeFields } from "../shared/time/index.mjs";
+import {
+  dateKeyInTimezone,
+  eventTimeFields
+} from "../shared/time/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 import {
   recordCompressionAccountQueueAllowance,
@@ -177,6 +180,10 @@ export function createRuntimeHttpWiring({
   const { now, today } = clock;
   const { createId } = identifiers;
   const { requestStorage, logEvent } = observability;
+  const recordTimezone = () => (
+    requestStorage.getStore()?.user?.recordTimezone
+    || DEFAULT_RECORD_TIMEZONE
+  );
   const {
     storeRepository,
     storagePaths,
@@ -245,10 +252,11 @@ export function createRuntimeHttpWiring({
     ensureAiUsage,
     readAiUsage,
     logsDirectory: () => storagePaths().logsDir,
-    aiDashboard: (usage, from, to, cnyPerUsd) => (
-      aiCosts.dashboard(usage, from, to, cnyPerUsd)
+    aiDashboard: (usage, from, to, cnyPerUsd, timezone) => (
+      aiCosts.dashboard(usage, from, to, cnyPerUsd, timezone)
     ),
-    today
+    today: timezone => dateKeyInTimezone(now(), timezone || recordTimezone()),
+    getTimezone: recordTimezone
   });
   const ownerHttp = createOwnerHttp({
     architectureSurface: architectureOwnerSurface,

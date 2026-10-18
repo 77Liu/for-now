@@ -44,6 +44,7 @@ import {
 import {
   documentSqlMapping, readAccountDocument, writeAccountDocument, readAuthDocument, writeAuthDocument
 } from "./postgres-documents.mjs";
+import { createAccountUnitOfWork } from "../../../.build/typescript/backend/shared/persistence/account-unit-of-work.mjs";
 
 const accountKey = id => `for-now-account:${id}`;
 const invalid = message => Object.assign(new Error(message), { code: "STORAGE_CONFIGURATION_INVALID" });
@@ -328,9 +329,18 @@ export async function createPostgresRuntime({
     getContext = () => ({})
   }) => {
     const afterCommit = Symbol.for("for-now.after-commit");
-    const hintCommitted = id => {
-      try { void Promise.resolve(onCommitted({ accountId: id, storageScope: "postgres" })).catch(() => {}); } catch {}
+    const hintCommitted = (id, details = {}) => {
+      try { void Promise.resolve(onCommitted({ accountId: id, storageScope: "postgres", ...details })).catch(() => {}); } catch {}
     };
+    const accountUnitOfWork = createAccountUnitOfWork({
+      transaction: accountTransaction,
+      onCommitted: event => hintCommitted(event.accountId, {
+        cursor: event.cursor,
+        commandId: event.commandId
+      }),
+      getContext,
+      now
+    });
     const readRaw = async (client, id) => {
       const mapping = await readPostgresStoreObjects(client, id);
       try { return rebuildStoreObjects(mapping); }
@@ -508,6 +518,8 @@ export async function createPostgresRuntime({
         const snapshot = metadata ? { metadata } : await fullSyncSnapshot(client, id);
         return structuredClone(snapshot.metadata.sync.operations.find(item => item.operationId === operationId));
       }),
+      /** 记录级命令只经该短事务端口访问；默认配置为空时没有业务消费者。 @since unreleased */
+      accountUnitOfWork,
       initialize: ({ allowCreate = false } = {}) => {
         const id = accountId();
         return accountTransaction(async (client, id) => {
@@ -515,6 +527,10 @@ export async function createPostgresRuntime({
         if (!exists && !allowCreate) throw invalid("Missing migrated account; refusing empty initialization");
         if (!exists) {
           await client.query("INSERT INTO for_now.accounts(account_id) VALUES ($1)", [id]);
+          await client.query(
+            "INSERT INTO for_now.account_sync_heads(account_id) VALUES ($1)",
+            [id]
+          );
           await writeStoreObjects(client, mapStoreObjects(id, preparePersistenceDocument(
             normalize(structuredClone(emptyDocument)),
             now

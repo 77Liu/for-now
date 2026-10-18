@@ -423,7 +423,11 @@ export async function createAiRuntime({
     readSettings: readLlmSettings,
     readUsage: readAiUsage,
     cnyPerUsd,
-    now
+    now,
+    getTimezone: () => (
+      requestStorage.getStore()?.user?.recordTimezone
+      || DEFAULT_RECORD_TIMEZONE
+    )
   });
 
   let readModelRuntimeSettings = readLlmSettings;

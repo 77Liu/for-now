@@ -13,10 +13,27 @@ import {
   canonicalJson, discoverJsonBundle, applyPostgresBundle,
   exportPostgresDirectory, readPostgresBundle, storeContentSha256
 } from "../src/shared/persistence/index.mjs";
-import { createEmptyStore, createStoreNormalizer, createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep, userModelCoreReadiness, createPerceptionAwareRepository, createPerceptionRuntime } from "../src/app/index.mjs";
+import {
+  createBackgroundAi, createEmptyStore, createStoreNormalizer,
+  createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep,
+  userModelCoreReadiness, createPerceptionAwareRepository, createPerceptionRuntime,
+  createNotificationRecordCommands, createTaskRecordCommands,
+  createThoughtRecordCommands, createTrashMutations
+} from "../src/app/index.mjs";
 import { createCaptureRecords } from "../src/modules/captures/index.mjs";
+import { createAnnotationService } from "../src/modules/annotations/index.mjs";
+import { createNotificationService } from "../src/modules/notifications/index.mjs";
+import { createTaskLifecycle } from "../src/modules/tasks/index.mjs";
+import {
+  createThoughtService,
+  createThoughtTaskTarget,
+  stripThoughtAnswerLead
+} from "../src/modules/thoughts/index.mjs";
 import { evidenceSourceKey } from "../src/modules/user-model/index.mjs";
 import { onboardingV2Schema } from "../src/modules/onboarding/index.mjs";
+import { eventTimeFields } from "../src/shared/time/index.mjs";
+import { recordVersion } from "../src/shared/validation/index.mjs";
+import { createTrashService } from "../src/modules/trash/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
 import { createAccountCommitNotifier } from "../src/shared/concurrency/index.mjs";
 import { createSyncHttp } from "../src/http/index.mjs";
@@ -65,7 +82,7 @@ const syntheticPng = (width = 128, height = 96) => {
   ]);
 };
 
-async function runAuthRowChecks({ database, runtime, app, request, ownerCookie }) {
+async function runAuthRowChecks({ database, runtime, peer, app, request, ownerCookie }) {
   const scale = 100_000;
   const ownerToken = decodeURIComponent(ownerCookie.split("=").slice(1).join("="));
   const ownerTokenHash = crypto.createHash("sha256").update(ownerToken).digest("hex");
@@ -151,7 +168,743 @@ async function runAuthRowChecks({ database, runtime, app, request, ownerCookie }
     WHERE position IS NOT NULL
   `)).rows[0].count, 0);
   await database.query("DELETE FROM for_now_auth.users WHERE id LIKE 'f1-scale-%'");
-  return { scale, tracedStatements: trace.length, pageRows: 200 };
+  const raceUserId = "auth-password-race";
+  const raceTokens = ["auth-password-race-a", "auth-password-race-b"]
+    .map(value => crypto.createHash("sha256").update(value).digest("hex"));
+  await database.query(`
+    INSERT INTO for_now_auth.users(
+      id, username, username_key, password_hash, role, session_version,
+      record_timezone, created_at, payload, position
+    ) VALUES ($1,$1,$1,$2,'user',1,'Asia/Shanghai',now(),'{}'::jsonb,NULL)
+  `, [raceUserId, passwordHash]);
+  for (const tokenHash of raceTokens) {
+    await database.query(`
+      INSERT INTO for_now_auth.sessions(
+        token_hash, user_id, session_version, created_at, expires_at, payload, position
+      ) VALUES ($1,$2,1,now(),now() + interval '1 day','{}'::jsonb,NULL)
+    `, [tokenHash, raceUserId]);
+  }
+  const raceSnapshot = await runtime.auth.row.findCredentialByUserId(raceUserId);
+  const raceCommand = tokenHash => ({
+    tokenHash,
+    snapshot: raceSnapshot,
+    passwordHash,
+    updatedAt: "2026-10-18T06:00:00.000Z",
+    nowMs: Date.parse("2026-10-18T06:00:00.000Z")
+  });
+  const raced = await Promise.race([
+    Promise.all([
+      runtime.auth.row.changePasswordAndRevokeSessions(raceCommand(raceTokens[0])),
+      peer.auth.row.changePasswordAndRevokeSessions(raceCommand(raceTokens[1]))
+    ]),
+    pause(5000).then(() => {
+      throw new Error("Concurrent password changes deadlocked");
+    })
+  ]);
+  assert.equal(raced.filter(Boolean).length, 1);
+  assert.equal((await database.query(
+    "SELECT count(*)::int AS count FROM for_now_auth.sessions WHERE user_id = $1",
+    [raceUserId]
+  )).rows[0].count, 0);
+  await database.query("DELETE FROM for_now_auth.users WHERE id = $1", [raceUserId]);
+
+  const staleUserId = "auth-password-stale-session";
+  const staleTokenHash = crypto.createHash("sha256")
+    .update("auth-password-stale-session")
+    .digest("hex");
+  await database.query(`
+    INSERT INTO for_now_auth.users(
+      id, username, username_key, password_hash, role, session_version,
+      record_timezone, created_at, payload, position
+    ) VALUES ($1,$1,$1,$2,'user',2,'Asia/Shanghai',now(),'{}'::jsonb,NULL);
+  `, [staleUserId, passwordHash]);
+  await database.query(`
+    INSERT INTO for_now_auth.sessions(
+      token_hash, user_id, session_version, created_at, expires_at, payload, position
+    ) VALUES ($1,$2,1,now(),now() + interval '1 day','{}'::jsonb,NULL)
+  `, [staleTokenHash, staleUserId]);
+  const staleSnapshot = await runtime.auth.row.findCredentialByUserId(staleUserId);
+  assert.equal(await runtime.auth.row.changePasswordAndRevokeSessions({
+    tokenHash: staleTokenHash,
+    snapshot: staleSnapshot,
+    passwordHash,
+    updatedAt: "2026-10-18T06:01:00.000Z",
+    nowMs: Date.parse("2026-10-18T06:01:00.000Z")
+  }), null);
+  assert.equal((await database.query(
+    "SELECT session_version AS version FROM for_now_auth.users WHERE id = $1",
+    [staleUserId]
+  )).rows[0].version, 2);
+  await database.query("DELETE FROM for_now_auth.sessions WHERE user_id = $1", [staleUserId]);
+  await database.query("DELETE FROM for_now_auth.users WHERE id = $1", [staleUserId]);
+  return {
+    scale,
+    tracedStatements: trace.length,
+    pageRows: 200,
+    passwordRaceCommitted: raced.filter(Boolean).length
+  };
+}
+
+function notificationRecordFixtures() {
+  const visibleTask = {
+    id: "notification-task", kind: "thoughtAnswer", resourceType: "thought",
+    targetId: "notification-target", status: "succeeded",
+    createdAt: "2026-10-18T01:00:00.000Z", updatedAt: "2026-10-18T01:00:00.000Z"
+  };
+  const internalTask = {
+    id: "notification-internal-task", kind: "recordCompression",
+    resourceType: "recordCompression", targetId: "internal-target",
+    status: "failed", internal: true, payload: { operation: "daily" },
+    createdAt: "2026-10-18T01:00:00.000Z", updatedAt: "2026-10-18T01:00:00.000Z"
+  };
+  const cancellableTask = {
+    id: "notification-cancellable-task", kind: "thoughtDraft",
+    resourceType: "thought", targetId: "draft-target",
+    status: "queued", payload: {}, attempt: 0,
+    createdAt: "2026-10-18T01:00:00.000Z", updatedAt: "2026-10-18T01:00:00.000Z"
+  };
+  const notices = Array.from({ length: 105 }, (_, index) => ({
+    id: `notice-${String(index).padStart(3, "0")}`,
+    taskId: visibleTask.id,
+    kind: "aiTask",
+    targetId: visibleTask.targetId,
+    status: "succeeded",
+    title: "思绪回答",
+    message: `通知 ${index}`,
+    createdAt: `2026-10-18T01:${String(index % 60).padStart(2, "0")}:00.000Z`,
+    updatedAt: "2026-10-18T01:00:00.000Z",
+    readAt: ""
+  }));
+  const cancellableNotice = {
+    ...notices[0],
+    id: "notice-cancellable",
+    taskId: cancellableTask.id,
+    targetId: cancellableTask.targetId,
+    status: "queued",
+    readAt: "2026-10-18T01:30:00.000Z"
+  };
+  return { visibleTask, internalTask, cancellableTask, cancellableNotice, notices };
+}
+
+async function runNotificationRecordCommandChecks({ database, repo, account }) {
+  const {
+    visibleTask, internalTask, cancellableTask, cancellableNotice, notices
+  } = notificationRecordFixtures();
+  await account("repo-test", () => repo.update(store => {
+    store.aiTasks = [visibleTask, internalTask, cancellableTask];
+    store.notifications = [...notices, {
+      ...notices[0],
+      id: "notice-internal",
+      taskId: internalTask.id,
+      targetId: internalTask.targetId
+    }, cancellableNotice];
+  }));
+  const beforeCursor = Number((await database.query(`
+    SELECT current_cursor FROM for_now.account_sync_heads WHERE account_id = 'repo-test'
+  `)).rows[0].current_cursor);
+  const notificationService = createNotificationService({
+    createId: () => "unused",
+    now: () => "2026-10-18T02:00:00.000Z"
+  });
+  const notificationCommands = createNotificationRecordCommands({
+    unitOfWork: repo.accountUnitOfWork,
+    notifications: notificationService
+  });
+  const taskCommands = createTaskRecordCommands({
+    unitOfWork: repo.accountUnitOfWork,
+    tasks: createTaskLifecycle({
+      createId: () => "unused",
+      now: () => "2026-10-18T02:00:00.000Z",
+      hash: value => crypto.createHash("sha256").update(value).digest("hex")
+    }),
+    notifications: notificationService
+  });
+  const background = createBackgroundAi({
+    repository: repo,
+    tasks: {},
+    notifications: notificationService,
+    targets: {},
+    generate: async () => null,
+    dispatch: () => {},
+    contextKey: () => "repo-test",
+    onError: () => {},
+    recordCommands: {
+      enabled: name => ["notification.read", "notification.readAll", "task.status"].includes(name),
+      notifications: notificationCommands,
+      tasks: taskCommands
+    }
+  });
+  const originalQuery = pg.Client.prototype.query;
+  const trace = [];
+  let phase = "";
+  pg.Client.prototype.query = function (...args) {
+    const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+    if (String(sql || "").includes("for_now.")) {
+      trace.push({ phase, sql: String(sql) });
+    }
+    return originalQuery.apply(this, args);
+  };
+  let first, internal, cancelled, updated;
+  try {
+    await account("repo-test", async () => {
+      phase = "read";
+      first = await background.readNotification("notice-000");
+      internal = await background.readNotification("notice-internal");
+      phase = "cancel";
+      cancelled = await background.cancelPersisted(cancellableTask.id);
+      phase = "readAll";
+      updated = await background.readAllNotifications();
+    });
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  assert.equal(first.readAt, "2026-10-18T02:00:00.000Z");
+  assert.equal(first.version, 2);
+  assert.equal(internal, null);
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.error, "用户取消了本次生成");
+  assert.equal(updated, 105);
+  assert.ok(trace.some(row => /object_key = \$2/.test(row.sql)));
+  assert.ok(trace.some(row => /collection = \$2 AND parent_key IS NULL/.test(row.sql)));
+  const cancelTrace = trace.filter(row => row.phase === "cancel").map(row => row.sql);
+  assert.ok(cancelTrace.some(sql => /target_key = ANY/.test(sql)));
+  assert.ok(cancelTrace.every(sql => !/collection = \$2 AND parent_key IS NULL/.test(sql)));
+  assert.ok(trace.every(row => (
+    !/FROM for_now\.store_fields|DELETE FROM for_now\.store_objects/.test(row.sql)
+  )));
+  const stored = await account("repo-test", () => repo.read());
+  assert.equal(stored.notifications.filter(item => item.taskId === visibleTask.id && item.readAt).length, 105);
+  assert.equal(stored.notifications.find(item => item.id === "notice-internal").readAt, "");
+  assert.equal(stored.notifications.find(item => item.id === "notice-cancellable").status, "cancelled");
+  assert.equal(stored.aiTasks.find(item => item.id === cancellableTask.id).status, "cancelled");
+  const changes = (await database.query(`
+    SELECT cursor::int, count(*)::int AS count
+    FROM for_now.record_changes
+    WHERE account_id = 'repo-test' AND entity_type = 'notification'
+    GROUP BY cursor ORDER BY cursor
+  `)).rows;
+  assert.deepEqual(changes, [
+    { cursor: beforeCursor + 1, count: 1 },
+    { cursor: beforeCursor + 2, count: 1 },
+    { cursor: beforeCursor + 3, count: 105 }
+  ]);
+  assert.deepEqual((await database.query(`
+    SELECT cursor::int, count(*)::int AS count
+    FROM for_now.record_changes
+    WHERE account_id = 'repo-test' AND entity_type = 'aiTask'
+    GROUP BY cursor ORDER BY cursor
+  `)).rows, [{ cursor: beforeCursor + 2, count: 1 }]);
+  const isolated = await account("repo-other", () => repo.accountUnitOfWork.run({
+    commandId: "notification.cross-account"
+  }, ({ objects }) => objects.find(JSON.stringify(["notifications", "notice-000"]))));
+  assert.equal(isolated.value, null);
+}
+
+function thoughtRecordFixtures() {
+  return [{
+    id: "thought-root",
+    type: "question",
+    content: "前文关键后文",
+    occurredAt: "2026-10-18T03:00:00.000Z",
+    occurredOn: "2026-10-18",
+    createdAt: "2026-10-18T03:00:00.000Z",
+    tags: ["原标签"],
+    relatedTo: null,
+    disposition: "kept",
+    remarks: [],
+    followUps: [],
+    annotations: [{
+      id: "annotation-1",
+      kind: "comment",
+      targetKey: "question:thought-root",
+      quote: "关键",
+      start: 2,
+      end: 4,
+      text: "保留批注",
+      createdAt: "2026-10-18T03:01:00.000Z",
+      version: 1,
+      replies: [],
+      shenji: []
+    }],
+    annotationDrift: [],
+    origin: "manual",
+    authorType: "user",
+    version: 1
+  }, {
+    id: "thought-idea",
+    type: "idea",
+    content: "旧想法",
+    occurredAt: "2026-10-18T03:00:00.000Z",
+    occurredOn: "2026-10-18",
+    createdAt: "2026-10-18T03:02:00.000Z",
+    tags: ["原标签"],
+    relatedTo: "thought-root",
+    disposition: "kept",
+    remarks: [],
+    origin: "manual",
+    authorType: "user",
+    version: 1
+  }, {
+    id: "thought-sibling",
+    type: "question",
+    content: "另一条思绪链保留同名批注",
+    occurredAt: "2026-10-18T03:03:00.000Z",
+    occurredOn: "2026-10-18",
+    createdAt: "2026-10-18T03:03:00.000Z",
+    tags: [],
+    relatedTo: null,
+    disposition: "kept",
+    remarks: [],
+    followUps: [],
+    annotations: [{
+      id: "annotation-1",
+      kind: "comment",
+      targetKey: "question:thought-sibling",
+      quote: "同名批注",
+      start: 8,
+      end: 12,
+      text: "不能被另一条链误删",
+      createdAt: "2026-10-18T03:04:00.000Z",
+      version: 1,
+      replies: [],
+      shenji: []
+    }],
+    annotationDrift: [],
+    origin: "manual",
+    authorType: "user",
+    version: 1
+  }];
+}
+
+function createThoughtRecordHarness(repo) {
+  let sequence = 0;
+  const now = () => "2026-10-18T04:00:00.000Z";
+  const annotations = createAnnotationService({
+    createId: () => `annotation-generated-${++sequence}`,
+    now
+  });
+  const thoughts = createThoughtService({
+    repository: repo,
+    createId: () => `thought-generated-${++sequence}`,
+    now,
+    recordVersion,
+    eventTimeFields,
+    reanchorAnnotations: annotations.reanchorAnnotations
+  });
+  let trashSequence = 0;
+  const trash = createTrashService({
+    createId: () => `thought-trash-${++trashSequence}`,
+    now,
+    hash: value => crypto.createHash("sha256").update(value).digest("hex"),
+    retentionDays: 30
+  });
+  const cancelledTasks = [];
+  const mutations = createTrashMutations({
+    trash,
+    annotations,
+    now,
+    getAccountId: () => "repo-test",
+    cancelTask: id => cancelledTasks.push(id)
+  });
+  const tasks = createTaskLifecycle({
+    createId: () => `task-generated-${++sequence}`,
+    now,
+    hash: value => crypto.createHash("sha256").update(value).digest("hex")
+  });
+  const notifications = createNotificationService({
+    createId: () => `notification-generated-${++sequence}`,
+    now
+  });
+  const thoughtTarget = createThoughtTaskTarget({
+    createId: () => `thought-generated-${++sequence}`,
+    now,
+    stripThoughtAnswerLead
+  });
+  const taskCommands = createTaskRecordCommands({
+    unitOfWork: repo.accountUnitOfWork,
+    tasks,
+    notifications
+  });
+  const commands = createThoughtRecordCommands({
+    unitOfWork: repo.accountUnitOfWork,
+    thoughts,
+    removeChain: (store, id) => mutations.moveThoughtChainToTrash(store, id),
+    removeBlock: (store, id) => mutations.moveThoughtBlockToTrash(store, id),
+    createTaskInStore: (store, input, options) => {
+      const created = tasks.create(
+        store.aiTasks,
+        input,
+        () => null,
+        options
+      );
+      if (created.task && !created.duplicate) {
+        notifications.upsertTask(
+          store.notifications,
+          created.task,
+          "queued",
+          "已进入后台队列"
+        );
+      }
+      return created;
+    },
+    tasks,
+    notifications,
+    thoughtTarget,
+    now
+  });
+  return { commands, taskCommands, cancelledTasks };
+}
+
+const thoughtUpdateInput = Object.freeze({
+  id: "thought-root",
+  questionText: "完全不同的问题",
+  tags: ["新标签"],
+  changesEventTime: false,
+  eventTimeInput: {},
+  idea: "新想法",
+  answer: "新结论",
+  hasIdea: true,
+  hasAnswer: true,
+  expectedVersion: 1,
+  attachmentPaths: [],
+  hasAttachmentPaths: true
+});
+
+const thoughtCreateInput = Object.freeze({
+  questionText: "记录级新问题",
+  eventTime: {
+    occurredAt: "2026-10-18T05:00:00.000Z",
+    occurredOn: "2026-10-18"
+  },
+  tags: ["创建"],
+  clientRequestId: "thought-create-record-command",
+  requestHash: "thought-create-record-command-v1",
+  generateAnswer: true,
+  attachmentPaths: [],
+  idea: "记录级新想法",
+  answer: "",
+  modelDraft: "",
+  modelReasoning: "",
+  sourceRef: {
+    type: "capture",
+    id: "thought-record-source",
+    version: 1
+  }
+});
+
+async function executeThoughtRecordCommands({ account, commands }) {
+  const updated = await account("repo-test", () => commands.update(thoughtUpdateInput));
+  const pruned = await account("repo-test", () => commands.update({
+    ...thoughtUpdateInput,
+    questionText: updated.value.content,
+    idea: "",
+    expectedVersion: 2
+  }));
+  const removed = await account("repo-test", () => commands.remove("thought-root", 3));
+  const created = await account("repo-test", () => commands.create(thoughtCreateInput));
+  const replayed = await account("repo-test", () => commands.create(thoughtCreateInput));
+  return { updated, pruned, removed, created, replayed };
+}
+
+async function prepareThoughtWriteback({ account, repo, created }) {
+  const root = created.items.find(item => item.type === "question");
+  const task = {
+    id: "thought-writeback-task",
+    kind: "thoughtAnswer",
+    resourceType: "thought",
+    targetId: root.id,
+    subtargetId: "",
+    inputVersion: root.version,
+    subtargetVersion: 0,
+    inputHash: "",
+    payload: {},
+    clientRequestId: "thought-writeback-request",
+    requestHash: "thought-writeback-request-v1",
+    status: "running",
+    createdAt: "2026-10-18T05:10:00.000Z",
+    startedAt: "2026-10-18T05:11:00.000Z",
+    updatedAt: "2026-10-18T05:11:00.000Z",
+    attempt: 1
+  };
+  await account("repo-test", () => repo.update(store => {
+    store.aiTasks.unshift(task);
+    store.notifications.unshift({
+      id: "thought-writeback-notification",
+      taskId: task.id,
+      kind: "aiTask",
+      resourceType: "thought",
+      targetId: root.id,
+      subtargetId: "",
+      status: "running",
+      title: "思绪回答",
+      message: "正在生成",
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      readAt: ""
+    });
+  }));
+  const revision = await account(
+    "repo-test",
+    () => repo.accountUnitOfWork.readRevision()
+  );
+  return {
+    taskId: task.id,
+    expectedRevision: revision,
+    result: {
+      content: "记录级 AI 回答",
+      reasoningContent: "记录级推理",
+      contextReceipt: { version: 1 }
+    }
+  };
+}
+
+async function prepareDeferredTaskBinding({ account, repo, created }) {
+  await account("repo-test", () => repo.update(store => {
+    const task = store.aiTasks.find(item => item.id === created.task.id);
+    task.status = "running";
+    task.startedAt = "2026-10-18T05:06:00.000Z";
+    task.updatedAt = task.startedAt;
+    task.attempt = 1;
+  }));
+  return {
+    inputVersion: created.items.find(item => item.type === "question").version,
+    subtargetVersion: 0,
+    inputHash: "bound-auto-answer-input"
+  };
+}
+
+async function assertThoughtRecordDatabase(database, beforeCursor, result) {
+  const { removed, created, writeback } = result;
+  const createdRoot = created.items.find(item => item.type === "question");
+  const answerId = writeback.task.resultId;
+  const createdNotificationId = (await database.query(`
+    SELECT id FROM for_now.store_objects
+    WHERE account_id = 'repo-test' AND collection = 'notifications'
+      AND payload->>'taskId' = $1
+  `, [created.task.id])).rows[0].id;
+  const changes = (await database.query(`
+    SELECT cursor::int, command_id, entity_id, entity_version, operation
+    FROM for_now.record_changes
+    WHERE account_id = 'repo-test' AND cursor > $1
+    ORDER BY cursor, ordinal
+  `, [beforeCursor])).rows.map(row => [
+    row.cursor, row.command_id, row.entity_id, row.entity_version, row.operation
+  ]);
+  assert.deepEqual(changes, [
+    [beforeCursor + 1, "thought.update", "thought-root", 2, "update"],
+    [beforeCursor + 2, "thought.update", "thought-root", 3, "update"],
+    [beforeCursor + 3, "thought.delete", "thought-root", 4, "delete"],
+    [beforeCursor + 3, "thought.delete", "thought-delete-task", 2, "update"],
+    [beforeCursor + 3, "thought.delete", "thought-delete-notification", 2, "update"],
+    [beforeCursor + 4, "thought.create", createdRoot.id, 1, "create"],
+    [beforeCursor + 4, "thought.create", created.task.id, 1, "create"],
+    [beforeCursor + 4, "thought.create", createdNotificationId, 1, "create"],
+    [beforeCursor + 5, "task.bindInput", created.task.id, 2, "update"],
+    [beforeCursor + 6, "thought.aiWriteback", answerId, 1, "create"],
+    [beforeCursor + 6, "thought.aiWriteback", "thought-writeback-task", 2, "update"],
+    [beforeCursor + 6, "thought.aiWriteback", "thought-writeback-notification", 2, "update"]
+  ]);
+  assert.equal((await database.query(`
+    SELECT current_cursor::int AS cursor FROM for_now.account_sync_heads
+    WHERE account_id = 'repo-test'
+  `)).rows[0].cursor, beforeCursor + 6);
+  assert.equal((await database.query(`
+    SELECT count(*)::int AS count FROM for_now.store_objects
+    WHERE account_id = 'repo-test' AND object_key = ANY($1::text[])
+  `, [[
+    JSON.stringify(["thoughts", "thought-root", "annotations", "annotation-1"]),
+    JSON.stringify(["thoughts", "thought-root", "annotationDrift", "annotation-1"])
+  ]])).rows[0].count, 0);
+  assert.equal((await database.query(`
+    SELECT count(*)::int AS count FROM for_now.resource_lifecycle
+    WHERE account_id = 'repo-test' AND resource_id = ANY($1::text[])
+      AND state = 'deleted' AND tombstone = true AND trash_id = $2
+  `, [["thought-root", "thought-generated-1", "annotation-1"], removed.id]))
+    .rows[0].count, 3);
+  assert.deepEqual((await database.query(`
+    SELECT state, tombstone, trash_id AS "trashId"
+    FROM for_now.resource_lifecycle
+    WHERE account_id = 'repo-test'
+      AND resource_key = 'thoughtChain:thought-sibling/annotation:annotation-1'
+  `)).rows, [{
+    state: "active",
+    tombstone: false,
+    trashId: ""
+  }]);
+  assert.deepEqual((await database.query(`
+    SELECT state, tombstone, trash_id AS "trashId"
+    FROM for_now.resource_lifecycle
+    WHERE account_id = 'repo-test' AND resource_id = 'thought-idea'
+  `)).rows, [{
+    state: "deleted",
+    tombstone: true,
+    trashId: "thought-trash-1"
+  }]);
+  assert.equal((await database.query(`
+    SELECT count(*)::int AS count FROM for_now.resource_lifecycle
+    WHERE account_id = 'repo-test' AND resource_id = ANY($1::text[])
+      AND state = 'active' AND tombstone = false
+  `, [[...created.items.map(item => item.id), answerId]])).rows[0].count,
+  created.items.length + 1);
+  assert.deepEqual((await database.query(`
+    SELECT relation, target_key AS "targetKey", resolution
+    FROM for_now.store_relations
+    WHERE account_id = 'repo-test'
+      AND object_key = $1 AND relation = 'result'
+  `, [JSON.stringify(["aiTasks", "thought-writeback-task"])])).rows, [{
+    relation: "result",
+    targetKey: JSON.stringify(["thoughts", answerId]),
+    resolution: "live"
+  }]);
+  assert.deepEqual((await database.query(`
+    SELECT relation, target_key AS "targetKey", resolution
+    FROM for_now.store_relations
+    WHERE account_id = 'repo-test'
+      AND object_key = $1 AND relation = 'source'
+  `, [JSON.stringify(["thoughts", createdRoot.id])])).rows, [{
+    relation: "source",
+    targetKey: JSON.stringify(["captures", "thought-record-source"]),
+    resolution: "live"
+  }]);
+}
+
+async function runThoughtRecordCommandChecks({ database, repo, account }) {
+  await account("repo-test", () => repo.update(store => {
+    store.thoughts = thoughtRecordFixtures();
+    store.trash ||= [];
+    store.aiTasks.push({
+      id: "thought-delete-task",
+      kind: "thoughtAnswer",
+      resourceType: "thought",
+      targetId: "thought-root",
+      subtargetId: "",
+      status: "queued",
+      payload: {},
+      attempt: 0,
+      createdAt: "2026-10-18T03:05:00.000Z",
+      updatedAt: "2026-10-18T03:05:00.000Z"
+    });
+    store.notifications.push({
+      id: "thought-delete-notification",
+      taskId: "thought-delete-task",
+      kind: "aiTask",
+      resourceType: "thought",
+      targetId: "thought-root",
+      subtargetId: "",
+      status: "queued",
+      title: "思绪回答",
+      message: "已进入后台队列",
+      createdAt: "2026-10-18T03:05:00.000Z",
+      updatedAt: "2026-10-18T03:05:00.000Z",
+      readAt: ""
+    });
+    store.captures.push({
+      id: "thought-record-source",
+      content: "来源念起",
+      occurredAt: "2026-10-18T02:30:00.000Z",
+      occurredOn: "2026-10-18",
+      createdAt: "2026-10-18T02:30:00.000Z",
+      version: 1
+    });
+  }));
+  const beforeCursor = Number((await database.query(`
+    SELECT current_cursor FROM for_now.account_sync_heads WHERE account_id = 'repo-test'
+  `)).rows[0].current_cursor);
+  const harness = createThoughtRecordHarness(repo);
+  const originalQuery = pg.Client.prototype.query;
+  const trace = [];
+  pg.Client.prototype.query = function (...args) {
+    const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+    if (String(sql || "").includes("for_now.")) trace.push(String(sql));
+    return originalQuery.apply(this, args);
+  };
+  let result;
+  try {
+    result = await executeThoughtRecordCommands({
+      account,
+      commands: harness.commands
+    });
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  const deferredWork = await prepareDeferredTaskBinding({
+    account,
+    repo,
+    created: result.created
+  });
+  try {
+    pg.Client.prototype.query = function (...args) {
+      const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+      if (String(sql || "").includes("for_now.")) trace.push(String(sql));
+      return originalQuery.apply(this, args);
+    };
+    result.boundTask = await account(
+      "repo-test",
+      () => harness.taskCommands.bindInput(result.created.task.id, deferredWork)
+    );
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  const writebackInput = await prepareThoughtWriteback({
+    account,
+    repo,
+    created: result.created
+  });
+  const writebackTrace = [];
+  try {
+    pg.Client.prototype.query = function (...args) {
+      const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+      if (String(sql || "").includes("for_now.")) {
+        trace.push(String(sql));
+        writebackTrace.push(String(sql));
+      }
+      return originalQuery.apply(this, args);
+    };
+    result.writeback = await account(
+      "repo-test",
+      () => harness.commands.writeback(writebackInput)
+    );
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  const { updated, pruned, removed, created, replayed } = result;
+  assert.equal(updated.value.version, 2);
+  assert.equal(updated.value.content, "完全不同的问题");
+  assert.equal(updated.value.annotations.length, 0);
+  assert.equal(updated.value.annotationDrift[0].id, "annotation-1");
+  assert.equal(pruned.value.version, 3);
+  assert.equal(pruned.trashId, undefined);
+  assert.equal(removed.id, "thought-trash-2");
+  assert.deepEqual(harness.cancelledTasks, []);
+  assert.equal(created.duplicate, false);
+  assert.equal(created.task.status, "queued");
+  assert.equal(created.task.deferredInputBinding, true);
+  assert.equal(replayed.duplicate, true);
+  assert.equal(replayed.task.id, created.task.id);
+  assert.equal(result.boundTask.inputHash, deferredWork.inputHash);
+  assert.equal(Object.hasOwn(result.boundTask, "deferredInputBinding"), false);
+  assert.deepEqual(replayed.items.map(item => item.id), created.items.map(item => item.id));
+  assert.equal(result.writeback.status, "succeeded");
+  assert.ok(trace.some(sql => /target_key = ANY/.test(sql)));
+  assert.ok(writebackTrace.some(sql => /target_key = ANY/.test(sql)));
+  assert.ok(writebackTrace.every(sql => (
+    !/collection = \$2 AND parent_key IS NULL/.test(sql)
+  )));
+  assert.ok(trace.every(sql => !/FROM for_now\.store_fields|DELETE FROM for_now\.store_objects WHERE account_id = \$1\\s*$/.test(sql)));
+  const stored = await account("repo-test", () => repo.read());
+  assert.equal(stored.thoughts.some(item => (
+    item.id === "thought-root" || item.relatedTo === "thought-root"
+  )), false);
+  const createdRoot = created.items.find(item => item.type === "question");
+  assert.equal(stored.thoughts.find(item => item.id === createdRoot.id).content, "记录级新问题");
+  assert.equal(stored.trash.find(item => item.id === "thought-trash-1").payload.id, "thought-idea");
+  assert.equal(stored.trash.find(item => item.id === removed.id).payload.items.length, 2);
+  assert.equal(stored.aiTasks.find(item => item.id === "thought-delete-task").status, "cancelled");
+  assert.equal(
+    stored.notifications.find(item => item.id === "thought-delete-notification").status,
+    "cancelled"
+  );
+  await assertThoughtRecordDatabase(database, beforeCursor, result);
 }
 
 export async function runRuntimeChecks({ admin, connect, temporary, password, port, freePort }) {
@@ -231,7 +984,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     db = "runtime_test",
     directory = dataDir,
     backend = "postgres",
-    { accountRecoveryEnabled = false } = {}
+    {
+      accountRecoveryEnabled = false,
+      recordCommandAllowlist = ""
+    } = {}
   ) => {
     const appPort = await freePort();
     const child = spawn(process.execPath, ["server.mjs"], {
@@ -240,6 +996,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         ...process.env, NODE_ENV: "test", PERSISTENCE_BACKEND: backend, DATA_DIR: directory,
         PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*",
         ACCOUNT_RECOVERY_ENABLED: accountRecoveryEnabled ? "1" : "0",
+        RECORD_COMMAND_ALLOWLIST: recordCommandAllowlist,
         SYNC_ACCOUNT_WAKE_ENABLED: "1",
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
@@ -329,11 +1086,162 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
 
     await account("repo-test", () => repo.initialize({ allowCreate: true }));
     await account("repo-other", () => repo.initialize({ allowCreate: true }));
+    const recordKey = JSON.stringify(["captures", "row-command"]);
+    const idempotency = {
+      scope: "record-command.fixture",
+      key: "create",
+      requestHash: "fixture-create-v1",
+      expiresAt: "2027-10-18T00:00:00.000Z"
+    };
     await account("repo-test", async () => {
+      const created = await repo.accountUnitOfWork.run({
+        commandId: "fixture.create",
+        idempotency
+      }, async ({ objects, addChange }) => {
+        await objects.insert({
+          objectKey: recordKey,
+          collection: "captures",
+          kind: "capture",
+          id: "row-command",
+          parentKey: null,
+          field: "captures",
+          position: null,
+          childFields: [],
+          content: "记录级创建",
+          status: "",
+          authorType: "user",
+          version: 1,
+          payload: {
+            id: "row-command",
+            content: "记录级创建",
+            createdAt: "2026-10-18T00:00:00.000Z",
+            version: 1
+          }
+        });
+        addChange({
+          entityType: "capture",
+          entityId: "row-command",
+          version: 1,
+          operation: "create",
+          changedFields: ["content", "createdAt", "version"],
+          scopeKeys: ["capture:list"]
+        });
+        return { id: "row-command", version: 1 };
+      });
+      assert.equal(created.cursor, "1");
+      assert.equal(created.writes, 1);
+      assert.equal(created.replayed, false);
+      const replay = await repo.accountUnitOfWork.run({
+        commandId: "fixture.create",
+        idempotency
+      }, async () => {
+        throw new Error("idempotency replay must not execute the operation");
+      });
+      assert.equal(replay.replayed, true);
+      assert.deepEqual(replay.value, created.value);
+      await assert.rejects(repo.accountUnitOfWork.run({
+        commandId: "fixture.create",
+        idempotency: { ...idempotency, requestHash: "different" }
+      }, async () => null), { code: "IDEMPOTENCY_KEY_REUSED" });
+      const unchanged = await repo.accountUnitOfWork.run({
+        commandId: "fixture.no-change"
+      }, async () => ({ unchanged: true }));
+      assert.equal(unchanged.cursor, null);
+      assert.equal(unchanged.writes, 0);
+      await assert.rejects(repo.accountUnitOfWork.run({
+        commandId: "fixture.missing-change"
+      }, async ({ objects }) => {
+        const row = await objects.find(recordKey, { lock: true });
+        row.version = 2;
+        row.payload.version = 2;
+        await objects.update(row, 1);
+      }), /writes and ChangeSet/);
+      assert.equal((await repo.accountUnitOfWork.run({
+        commandId: "fixture.read-after-rollback"
+      }, async ({ objects }) => objects.find(recordKey))).value.version, 1);
+      const updated = await repo.accountUnitOfWork.run({
+        commandId: "fixture.update"
+      }, async ({ objects, addChange }) => {
+        const row = await objects.find(recordKey, { lock: true });
+        row.version = 2;
+        row.content = "记录级更新";
+        row.payload = { ...row.payload, content: row.content, version: 2 };
+        assert.equal(await objects.update(row, 1), true);
+        addChange({
+          entityType: "capture",
+          entityId: "row-command",
+          version: 2,
+          operation: "update",
+          changedFields: ["content", "version"],
+          scopeKeys: ["capture:list", "capture:row-command"]
+        });
+        return row.payload;
+      });
+      assert.equal(updated.cursor, "2");
+      assert.equal((await repo.read()).captures.find(item => item.id === "row-command").content, "记录级更新");
+    });
+    await account("repo-other", async () => {
+      const isolated = await repo.accountUnitOfWork.run({
+        commandId: "fixture.cross-account-read"
+      }, async ({ objects }) => objects.find(recordKey));
+      assert.equal(isolated.value, null);
+    });
+    assert.deepEqual((await database.query(`
+      SELECT current_cursor::text AS cursor
+      FROM for_now.account_sync_heads
+      WHERE account_id = 'repo-test'
+    `)).rows, [{ cursor: "2" }]);
+    assert.deepEqual((await database.query(`
+      SELECT cursor::text, ordinal, command_id AS "commandId",
+        entity_type AS "entityType", entity_id AS "entityId",
+        entity_version AS version, operation
+      FROM for_now.record_changes
+      WHERE account_id = 'repo-test'
+      ORDER BY cursor, ordinal
+    `)).rows, [
+      { cursor: "1", ordinal: 0, commandId: "fixture.create", entityType: "capture", entityId: "row-command", version: 1, operation: "create" },
+      { cursor: "2", ordinal: 0, commandId: "fixture.update", entityType: "capture", entityId: "row-command", version: 2, operation: "update" }
+    ]);
+    assert.equal((await database.query(`
+      SELECT position FROM for_now.store_objects
+      WHERE account_id = 'repo-test' AND object_key = $1
+    `, [recordKey])).rows[0].position, null);
+    await account("repo-test", async () => {
+      const removed = await repo.accountUnitOfWork.run({
+        commandId: "fixture.delete"
+      }, async ({ objects, addChange }) => {
+        assert.equal(await objects.remove(recordKey, 2), true);
+        addChange({
+          entityType: "capture",
+          entityId: "row-command",
+          version: 3,
+          operation: "delete",
+          changedFields: [],
+          scopeKeys: ["capture:list", "capture:row-command"]
+        });
+        return { id: "row-command", version: 3 };
+      });
+      assert.equal(removed.cursor, "3");
+      assert.equal((await repo.read()).captures.some(item => item.id === "row-command"), false);
+    });
+    assert.equal((await database.query(`
+      SELECT current_cursor::text AS cursor
+      FROM for_now.account_sync_heads
+      WHERE account_id = 'repo-test'
+    `)).rows[0].cursor, "3");
+    assert.deepEqual((await database.query(`
+      SELECT cursor::text, entity_version AS version, operation
+      FROM for_now.record_changes
+      WHERE account_id = 'repo-test' AND cursor = 3
+    `)).rows, [{ cursor: "3", version: 3, operation: "delete" }]);
+    await runNotificationRecordCommandChecks({ database, repo, account });
+    await runThoughtRecordCommandChecks({ database, repo, account });
+    await account("repo-test", async () => {
+      const captureBaseline = (await repo.read()).captures.length;
       await Promise.all(Array.from({ length: 12 }, (_, index) => (index % 2 ? repo : peerRepo).update(value => {
         value.captures.push({ id: `parallel-${index}`, content: `并发 ${index}` });
       })));
-      assert.equal((await repo.read()).captures.length, 12);
+      assert.equal((await repo.read()).captures.length, captureBaseline + 12);
       const before = await repo.read();
       await assert.rejects(repo.update(value => {
         value.captures.push({ id: "rolled-back", content: "不保存" });
@@ -784,6 +1692,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const authRowMetrics = await runAuthRowChecks({
       database,
       runtime,
+      peer,
       app,
       request,
       ownerCookie: cookie
@@ -949,6 +1858,41 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       "SELECT count(*)::int AS count FROM for_now.ai_usage_attempts WHERE account_id=$1",
       [id]
     )).rows[0].count, 1);
+    await account(id, () => runtime.aiUsage.recordAttempt({
+      id: "timezone-midnight",
+      callId: "timezone-midnight",
+      createdAt: "2026-01-01T18:00:00.000Z",
+      provider: "deepseek",
+      service: "chat-completions",
+      scene: "thoughtAnswer",
+      model: "deepseek-flash",
+      status: "success",
+      usageKnown: true,
+      costKnown: true,
+      costCny: 0.01
+    }));
+    const [utcUsage, shanghaiUsage] = await account(id, () => Promise.all([
+      runtime.aiUsage.read({
+        from: "2026-01-02",
+        to: "2026-01-02",
+        timezone: "UTC"
+      }),
+      runtime.aiUsage.read({
+        from: "2026-01-02",
+        to: "2026-01-02",
+        timezone: "Asia/Shanghai"
+      })
+    ]));
+    assert.equal(utcUsage.entries.length, 0);
+    assert.equal(shanghaiUsage.entries.length, 1);
+    const timezoneStatistics = await request(
+      app.base,
+      "/api/statistics?from=2026-01-02&to=2026-01-02",
+      { cookie }
+    );
+    assert.equal(timezoneStatistics.status, 200, JSON.stringify(timezoneStatistics.body));
+    assert.equal(timezoneStatistics.body.ai.summary.calls, 1);
+    assert.equal(timezoneStatistics.body.ai.daily[0].calls, 1);
     assert.equal((await request(app.base, `/api/ai-tasks/${backgroundTask.id}`, { cookie: otherCookie })).status, 404);
     const resultState = await account(id, () => repo.read());
     const generatedAnswer = resultState.thoughts.find(item => item.sourceTaskId === backgroundTask.id);
@@ -1323,7 +2267,18 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     } finally {
       await restoredMigration.query("ROLLBACK");
     }
-    const restoredApp = await startApp("runtime_restored", restoredDir);
+    const restoredApp = await startApp("runtime_restored", restoredDir, "postgres", {
+      recordCommandAllowlist: [
+        "notification.read",
+        "notification.readAll",
+        "task.status",
+        "thought.update",
+        "thought.delete",
+        "thought.create",
+        "thought.aiWriteback"
+      ].join(",")
+    });
+    assert.equal((await request(restoredApp.base, "/readyz")).status, 200);
     assert.equal((await request(restoredApp.base, "/api/state", { cookie })).body.captures.length, 6);
     assert.equal((await request(restoredApp.base, "/api/auth/me", { cookie })).body.user.id, id);
     assert.equal((await request(restoredApp.base, "/api/ai-cost-plan", { cookie })).body.monthlyBudgetCny, 81);

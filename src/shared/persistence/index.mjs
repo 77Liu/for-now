@@ -1,5 +1,6 @@
 export { createJsonStoreRepository } from "./json-repository.mjs";
 export { createAccountDocumentRepository } from "./account-document-repository.mjs";
+export { createAccountUnitOfWork } from "../../../.build/typescript/backend/shared/persistence/account-unit-of-work.mjs";
 export { AI_BUDGET_DOCUMENT_FILE, createAiBudgetRepository } from "./ai-budget-repository.mjs";
 export { createAuthRepository, createDocumentAuthPort } from "./auth-repository.mjs";
 export { createPostgresRuntime } from "./postgres-runtime.mjs";

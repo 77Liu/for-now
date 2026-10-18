@@ -52,6 +52,36 @@ export function loadPgIoConfig(env = process.env) {
   return Object.freeze({ syncReadMode, accountAllowlist: Object.freeze(accountAllowlist) });
 }
 
+const RECORD_COMMANDS = new Set([
+  "notification.read",
+  "notification.readAll",
+  "task.status",
+  "thought.update",
+  "thought.delete",
+  "thought.create",
+  "thought.aiWriteback"
+]);
+
+/** 解析记录级命令白名单；空值保持旧路径，未知命令拒绝启动且运行中不回退。
+ * @since unreleased
+ */
+export function loadRecordCommandConfig(env = process.env) {
+  const allowlist = String(env.RECORD_COMMAND_ALLOWLIST || "")
+    .split(",")
+    .map(value => value.trim())
+    .filter(Boolean);
+  if (new Set(allowlist).size !== allowlist.length) {
+    throw new Error("RECORD_COMMAND_ALLOWLIST must not contain duplicates");
+  }
+  const unknown = allowlist.find(command => !RECORD_COMMANDS.has(command));
+  if (unknown) throw new Error(`Unknown RECORD_COMMAND_ALLOWLIST command: ${unknown}`);
+  const commands = Object.freeze([...allowlist]);
+  return Object.freeze({
+    allowlist: commands,
+    enabled: command => commands.includes(command)
+  });
+}
+
 export function loadAttachmentConfig(env = process.env) {
   return Object.freeze({
     mode: env.ATTACHMENT_STORAGE || "local",
@@ -142,6 +172,10 @@ export function loadAppConfig({ rootDir, env = process.env }) {
   if (persistenceBackend === "postgres" && (env.LOCAL_TEST_MODE === "1" || upstreamOrigin)) {
     throw new Error("PostgreSQL runtime requires a standalone data source; local-test/upstream proxy is unsupported");
   }
+  const recordCommands = loadRecordCommandConfig(env);
+  if (recordCommands.allowlist.length && persistenceBackend !== "postgres") {
+    throw new Error("RECORD_COMMAND_ALLOWLIST requires PERSISTENCE_BACKEND=postgres");
+  }
   const inviteCodeHash = String(env.INVITE_CODE_HASH || "").toLowerCase();
   const authRequired = env.AUTH_REQUIRED === "1" || Boolean(inviteCodeHash);
   if (authRequired && !/^[a-f0-9]{64}$/.test(inviteCodeHash)) throw new Error("AUTH_REQUIRED=1 requires a 64-character SHA-256 INVITE_CODE_HASH");
@@ -214,6 +248,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     accountRecovery: loadAccountRecoveryConfig(env),
     aiQueue: loadAiQueueConfig(env),
     pgIo: loadPgIoConfig(env),
+    recordCommands,
     syncAccountWakeEnabled: env.SYNC_ACCOUNT_WAKE_ENABLED === "1",
     dataDir: path.resolve(rootDir, env.DATA_DIR || "data"),
     port: Number(env.PORT || 4173),

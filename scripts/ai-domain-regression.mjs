@@ -318,6 +318,31 @@ assert.deepEqual(providerDashboard.services.find(item => item.key === "volcengin
 assert.equal(providerDashboard.daily[0].services.volcengineAsr.calls, 1);
 assert.equal(providerDashboard.daily[0].services.volcengineOcr.calls, 1);
 assert.equal(providerDashboard.pricing.providerRates.length, 6);
+const midnightUsage = normalizeAiUsage({
+  trackingStartedAt: "2026-10-17T18:00:00.000Z",
+  entries: [{
+    ...peak,
+    id: "shanghai-midnight",
+    callId: "shanghai-midnight",
+    createdAt: "2026-10-17T18:00:00.000Z"
+  }]
+});
+assert.equal(
+  usageDashboard(
+    midnightUsage,
+    "2026-10-18",
+    "2026-10-18",
+    7.2,
+    7.2,
+    "Asia/Shanghai"
+  ).summary.calls,
+  1
+);
+assert.equal(
+  usageDashboard(midnightUsage, "2026-10-18", "2026-10-18", 7.2, 7.2, "UTC")
+    .summary.calls,
+  0
+);
 assert.ok(providerDashboard.pricing.providerRates.every(item => (
   item.priceCny > 0
   && item.checkedAt === "2026-10-02"
@@ -431,6 +456,7 @@ try {
   });
 
   let costSettingsFail = false, costReads = 0, costWrites = 0;
+  const costUsageQueries = [];
   const costRepository = createAccountDocumentRepository({
     name: "costPlan", getFile: () => path.join(directory, `${context.getStore().account}-cost.json`),
     readDocument, writeDocument: async (...args) => { costWrites += 1; await writeDocument(...args); },
@@ -440,7 +466,11 @@ try {
   const costs = createAiCostService({
     repository: costRepository, cnyPerUsd: 7.2, now,
     readSettings: async () => { costReads += 1; if (costSettingsFail && costReads % 2 === 0) throw new Error("settings read failed"); return initial; },
-    readUsage: async () => sampleUsage
+    readUsage: async options => {
+      costUsageQueries.push(options);
+      return sampleUsage;
+    },
+    getTimezone: () => "Asia/Shanghai"
   });
   const unchangedSettings = structuredClone(initial), unchangedUsage = structuredClone(sampleUsage);
   await Promise.all(["a", "b"].map((account, index) => run(account, () => costs.save({ monthlyBudgetCny: 50 + index }))));
@@ -455,6 +485,7 @@ try {
   assert.equal(changes.length, previousChanges);
   costSettingsFail = false;
   assert.equal((await run("a", costs.read)).monthlyBudgetCny, 30);
+  assert.ok(costUsageQueries.every(query => query.timezone === "Asia/Shanghai"));
   assert.deepEqual(initial, unchangedSettings);
   assert.deepEqual(sampleUsage, unchangedUsage);
 
@@ -617,7 +648,7 @@ try {
   assert.equal(recoveredAudits[0].entry.usage.costCny, recoveredUsage[0].costCny);
   assert.deepEqual(recoveredAudits[0].entry.usage.ratesCnyPerMillion, recoveredUsage[0].ratesCnyPerMillion);
   assert.deepEqual(recoveredAudits[0].entry.usage.costsCny, recoveredUsage[0].costsCny);
-  assert.equal(usageEntryFromAudit(recoveredAudits[0].entry), null);
+  assert.deepEqual(usageEntryFromAudit(recoveredAudits[0].entry), recoveredUsage[0]);
 
   const databaseRows = new Map();
   const databaseUsage = new Map();

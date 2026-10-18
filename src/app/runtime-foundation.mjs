@@ -415,6 +415,7 @@ export async function createRuntimeFoundation({
     recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,
     recordCompressionMaxBackfillDatesPerScan: appConfig.recordCompressionMaxBackfillDatesPerScan,
     recordCompressionStartDate: appConfig.recordCompressionStartDate,
+    recordCommandConfig: appConfig.recordCommands,
     now,
     today,
     currentTime: () => Date.now(),

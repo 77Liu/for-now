@@ -15,6 +15,8 @@ import {
 } from "../../modules/thoughts/index.mjs";
 import { createAiTaskTargets } from "../ai-task-targets.mjs";
 import { createBackgroundAi } from "../background-ai.mjs";
+import { createNotificationRecordCommands } from "../record-commands/notifications.mjs";
+import { createTaskRecordCommands } from "../record-commands/tasks.mjs";
 import { userModelRequiresCoreReady } from "../user-model.mjs";
 import { prepareReferenceRequest, verifyReferenceAnswer } from "../answer-citations.mjs";
 
@@ -87,6 +89,7 @@ export function createContentBackground({
   now,
   createId,
   createBusinessId = createId,
+  recordCommandConfig = null,
   hash,
   logEvent,
   debugServerUrl,
@@ -111,11 +114,38 @@ export function createContentBackground({
     hash,
     now
   });
+  const notificationService = createNotificationService({
+    createId: createBusinessId,
+    now
+  });
+  const taskService = createTaskLifecycle({
+    createId: createBusinessId,
+    now,
+    hash
+  });
+  const notificationRecordCommands = repository.accountUnitOfWork?.run
+    ? createNotificationRecordCommands({
+        unitOfWork: repository.accountUnitOfWork,
+        notifications: notificationService
+      })
+    : null;
+  const taskRecordCommands = repository.accountUnitOfWork?.run
+    ? createTaskRecordCommands({
+        unitOfWork: repository.accountUnitOfWork,
+        tasks: taskService,
+        notifications: notificationService
+      })
+    : null;
   const backgroundAi = createBackgroundAi({
     repository,
     cleanupExistingTask,
-    tasks: createTaskLifecycle({ createId: createBusinessId, now, hash }),
-    notifications: createNotificationService({ createId: createBusinessId, now }),
+    tasks: taskService,
+    notifications: notificationService,
+    recordCommands: {
+      enabled: name => recordCommandConfig?.enabled?.(name) === true,
+      notifications: notificationRecordCommands,
+      tasks: taskRecordCommands
+    },
     now,
     targets: taskTargets,
     beforePrepare: async input => {

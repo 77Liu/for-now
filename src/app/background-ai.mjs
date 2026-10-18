@@ -1,4 +1,5 @@
 import {
+  isInternalAiTask,
   taskInputMatches,
   publicAiTask,
   WAITING_FOR_BUDGET_STATUS,
@@ -27,13 +28,43 @@ export function createBackgroundAi({
   shouldWaitForModel = () => false,
   beforePrepare = async () => {},
   inspectIntent = targets?.inspectIntent,
-  cleanupExistingTask = null
+  cleanupExistingTask = null,
+  recordCommands = null
 }) {
   const internalKinds = new Set(["perceptionExtraction", RECORD_COMPRESSION_TASK_KIND]);
-  const isInternalTask = task => task?.internal === true || internalKinds.has(task?.kind);
   const taskHandlers = new Map();
+  const dynamicRecordCommands = new Map();
   const running = new Set();
   const controllers = new Map();
+  const enabledRecordCommand = (name, command) => {
+    if (!recordCommands?.enabled?.(name)) return null;
+    if (typeof command !== "function") {
+      throw new TypeError(`Record command ${name} is enabled without an implementation`);
+    }
+    return command;
+  };
+  const readNotificationRecord = enabledRecordCommand(
+    "notification.read",
+    recordCommands?.notifications?.read
+  );
+  const readAllNotificationsRecord = enabledRecordCommand(
+    "notification.readAll",
+    recordCommands?.notifications?.readAll
+  );
+  const cancelTaskRecord = enabledRecordCommand(
+    "task.status",
+    recordCommands?.tasks?.cancel
+  );
+  const bindTaskInputRecord = [
+    "thought.create",
+    "thought.aiWriteback",
+    "task.status"
+  ].some(name => recordCommands?.enabled?.(name))
+    ? recordCommands?.tasks?.bindInput
+    : null;
+  if (bindTaskInputRecord !== null && typeof bindTaskInputRecord !== "function") {
+    throw new TypeError("Deferred task input binding is enabled without an implementation");
+  }
   const notify = (store, task, status, message) => (
     task.internal === true
       ? null
@@ -53,7 +84,7 @@ export function createBackgroundAi({
   };
   const visibleNotifications = store => {
     const internalTaskIds = new Set((store.aiTasks || [])
-      .filter(isInternalTask)
+      .filter(isInternalAiTask)
       .map(task => task.id));
     return (store.notifications || []).filter(item => !internalTaskIds.has(item.taskId));
   };
@@ -106,7 +137,11 @@ export function createBackgroundAi({
     return "matched";
   };
   const requestedIntentMatches = (task, intent) => requestedIntentMatchState(task, intent) === "matched";
-  const createInStore = (store, input = {}, { waitingBudget = false } = {}) => {
+  const createInStore = (
+    store,
+    input = {},
+    { waitingBudget = false, deferInputBinding = false } = {}
+  ) => {
     if (waitingBudget) {
       const existing = store.aiTasks.find(task => task.clientRequestId === input?.clientRequestId);
       const pending = store.aiTasks.filter(task => task.kind === RECORD_COMPRESSION_TASK_KIND
@@ -122,7 +157,11 @@ export function createBackgroundAi({
       store.aiTasks,
       input,
       task => prepareTarget(store, task),
-      { deferTargetInspection: waiting, requestedIntent, waitingBudget,
+      {
+        deferTargetInspection: waiting,
+        deferInputBinding: deferInputBinding && !waiting,
+        requestedIntent,
+        waitingBudget,
         allocateIdentity: task => targetFor(task).allocateIdentity?.(store, task) }
     ));
   };
@@ -159,6 +198,26 @@ export function createBackgroundAi({
       && expectedWork.contextFingerprint !== work?.contextFingerprint) return null;
     return work;
   };
+  const stableTaskWriteback = async (taskId, expectedWork) => {
+    const unitOfWork = repository.accountUnitOfWork;
+    if (!unitOfWork?.readRevision) {
+      throw new TypeError("Thought AI writeback requires AccountUnitOfWork revision reads");
+    }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const before = await unitOfWork.readRevision();
+      const store = await repository.read();
+      const after = await unitOfWork.readRevision();
+      if (before !== after) continue;
+      const task = store.aiTasks.find(item => item.id === taskId);
+      const work = task && prepareTarget(store, task);
+      const contextChanged = expectedWork.contextFingerprint
+        && expectedWork.contextFingerprint !== work?.contextFingerprint;
+      if (!task || task.status !== "running"
+        || !taskInputMatches(task, work) || contextChanged) return null;
+      return { revision: after };
+    }
+    return null;
+  };
 
   async function run(taskId) {
     const key = `${contextKey()}:${taskId}`;
@@ -168,12 +227,14 @@ export function createBackgroundAi({
     controllers.set(key, controller);
     let executed = false;
     let claimedIdentity = null;
+    let claimedKind = "";
     try {
       const initial = await repository.read();
       await beforePrepare(initial.aiTasks.find(item => item.id === taskId));
       const claimed = await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task || task.status !== "queued") return false;
+        claimedKind = task.kind;
         if (shouldWaitForModel(store, task)) {
           const intent = inspectRequestedIntent(store, task);
           if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
@@ -198,8 +259,23 @@ export function createBackgroundAi({
       if (!claimed) return;
       executed = true;
       const store = await repository.read(), task = store.aiTasks.find(item => item.id === taskId);
-      if (task) claimedIdentity = { id: task.id, attempt: task.attempt };
+      if (task) {
+        claimedIdentity = { id: task.id, attempt: task.attempt };
+        claimedKind = task.kind;
+      }
       const work = task && prepareTarget(store, task);
+      if (task?.deferredInputBinding === true) {
+        if (!bindTaskInputRecord) {
+          throw new TypeError("Deferred task input binding has no record command");
+        }
+        const bound = await bindTaskInputRecord(task.id, work);
+        if (!bound) {
+          throw Object.assign(new Error("目标已变化，未调用外部模型"), {
+            code: "AI_TASK_STALE"
+          });
+        }
+        Object.assign(task, bound);
+      }
       if (!task || !taskInputMatches(task, work)) {
         await repository.update(value => {
           const current = value.aiTasks.find(item => item.id === taskId);
@@ -219,6 +295,23 @@ export function createBackgroundAi({
           ...(generated.referenceReceipt ? { referenceRequest: structuredClone(generated.referenceReceipt) } : {}) } }
         : generated;
       if (task.kind === "importanceScoring") await beforePrepare({ kind: task.kind });
+      const thoughtWriteback = dynamicRecordCommands.get("thought.aiWriteback");
+      if (thoughtWriteback && ["thoughtAnswer", "followUpAnswer"].includes(task.kind)) {
+        const current = await stableTaskWriteback(taskId, work);
+        if (!current) {
+          await thoughtWriteback.failWriteback(taskId, Object.assign(
+            new Error("目标已变化，结果未写入"),
+            { code: "AI_TASK_STALE" }
+          ));
+          return;
+        }
+        await thoughtWriteback.writeback({
+          taskId,
+          result,
+          expectedRevision: current.revision
+        });
+        return;
+      }
       await repository.update(value => {
         const currentTask = value.aiTasks.find(item => item.id === taskId);
         if (!currentTask) return false;
@@ -242,6 +335,15 @@ export function createBackgroundAi({
       });
     } catch (error) {
       if (claimedIdentity && cleanupExistingTask && await cleanupExistingTask(claimedIdentity, error)) return;
+      const thoughtWriteback = dynamicRecordCommands.get("thought.aiWriteback");
+      if (claimedIdentity && thoughtWriteback
+        && ["thoughtAnswer", "followUpAnswer"].includes(claimedKind)) {
+        const terminalError = error?.code === "VERSION_CONFLICT"
+          ? Object.assign(new Error("目标已变化，结果未写入"), { code: "AI_TASK_STALE" })
+          : error;
+        await thoughtWriteback.failWriteback(taskId, terminalError);
+        return;
+      }
       await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task) return;
@@ -289,7 +391,7 @@ export function createBackgroundAi({
   async function retryTask(id, { includeInternal = false } = {}) {
     const created = await repository.update(store => {
       const source = store.aiTasks.find(item => item.id === id);
-      if (isInternalTask(source)
+      if (isInternalAiTask(source)
         && (!includeInternal || source.kind === RECORD_COMPRESSION_TASK_KIND)) {
         return { missing: true };
       }
@@ -440,6 +542,27 @@ export function createBackgroundAi({
   }
 
   return {
+    registerRecordCommand(name, handler) {
+      if (!recordCommands?.enabled?.(name)) return false;
+      if (name !== "thought.aiWriteback"
+        || !handler?.writeback
+        || !handler?.failWriteback) {
+        throw new TypeError(`Record command ${name} implementation is invalid`);
+      }
+      const existing = dynamicRecordCommands.get(name);
+      if (existing && existing !== handler) {
+        throw new Error(`A record command is already registered for ${name}`);
+      }
+      dynamicRecordCommands.set(name, handler);
+      return true;
+    },
+    assertRecordCommandsReady() {
+      if (recordCommands?.enabled?.("thought.aiWriteback")
+        && !dynamicRecordCommands.has("thought.aiWriteback")) {
+        throw new TypeError("Record command thought.aiWriteback is enabled without an implementation");
+      }
+      return true;
+    },
     registerHandler(kind, handler) {
       if (!kind || !handler?.prepare || !handler?.save || !handler?.result) {
         throw new TypeError("A background task handler requires prepare(), save(), and result()");
@@ -480,6 +603,13 @@ export function createBackgroundAi({
       return true;
     },
     async cancelPersisted(taskId) {
+      if (cancelTaskRecord) {
+        const task = await cancelTaskRecord(taskId);
+        const controller = controllers.get(`${contextKey()}:${taskId}`);
+        controller?.abort();
+        if (task?.kind === "onboardingClaimExtraction") await releaseWaiting();
+        return task ? publicAiTask(task) : null;
+      }
       const value = await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task || !["queued", "running", WAITING_FOR_USER_MODEL_STATUS].includes(task.status)) return null;
@@ -512,7 +642,7 @@ export function createBackgroundAi({
           targetFor(task).fail?.(store, task, { code: "TASK_INTERRUPTED" });
           notify(store, task, "failed", task.error);
           const recoveryAttempt = Math.max(0, Math.round(Number(task.recoveryAttempt) || 0));
-          if (isInternalTask(task)
+          if (isInternalAiTask(task)
             && task.kind !== RECORD_COMPRESSION_TASK_KIND
             && !(task.kind === "importanceScoring" && task.clientRequestId?.startsWith("importance-range:"))
             && taskHasRequiredTarget(store, task)
@@ -533,7 +663,9 @@ export function createBackgroundAi({
         const queued = [];
         for (const task of store.aiTasks) {
           if (task.status !== "queued") continue;
-          if (!task.inputHash && task.kind !== RECORD_COMPRESSION_TASK_KIND) {
+          if (!task.inputHash
+            && task.deferredInputBinding !== true
+            && task.kind !== RECORD_COMPRESSION_TASK_KIND) {
             stale(store, task, "旧排队任务缺少可验证输入绑定，未调用模型");
             continue;
           }
@@ -553,18 +685,18 @@ export function createBackgroundAi({
     async list() {
       return {
         items: (await repository.read()).aiTasks
-          .filter(task => !isInternalTask(task))
+          .filter(task => !isInternalAiTask(task))
           .map(publicAiTask)
       };
     },
     async get(id) {
       const task = (await repository.read()).aiTasks.find(item => item.id === id);
-      return task && !isInternalTask(task) ? publicAiTask(task) : null;
+      return task && !isInternalAiTask(task) ? publicAiTask(task) : null;
     },
     async getResult(id) {
       const store = await repository.read();
       const task = store.aiTasks.find(item => item.id === id);
-      if (!task || isInternalTask(task)) return null;
+      if (!task || isInternalAiTask(task)) return null;
       return { task: publicAiTask(task), result: task.status === "succeeded" ? targetFor(task).result(store, task) : null };
     },
     async listNotifications() {
@@ -573,6 +705,7 @@ export function createBackgroundAi({
       return { unread: notificationUnread(items), items };
     },
     readNotification(id) {
+      if (readNotificationRecord) return readNotificationRecord(id);
       return repository.update(store => {
         const item = (store.notifications || []).find(value => value.id === id);
         if (!item || visibleNotifications(store).every(value => value.id !== id)) return null;
@@ -580,6 +713,7 @@ export function createBackgroundAi({
       });
     },
     readAllNotifications() {
+      if (readAllNotificationsRecord) return readAllNotificationsRecord();
       return repository.update(store => notifications.readAll(visibleNotifications(store)));
     }
   };

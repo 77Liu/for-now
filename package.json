@@ -96,6 +96,7 @@
     "test:postgres:stable": "node scripts/postgres-test-preflight.mjs --run",
     "test:postgres-preflight": "node scripts/postgres-test-preflight-regression.mjs",
     "test:postgres": "npm run build:runtime --silent && npm run build:ai-migrations --silent && node scripts/ai-budget-postgres-regression.mjs && node scripts/postgres-integration.mjs && node scripts/persistence-ledger-postgres-regression.mjs && node scripts/postgres-record-compression-rollback-regression.mjs",
+    "test:record-commands": "npm run build:runtime --silent && node scripts/record-command-producer-coverage-regression.mjs",
     "test:backend": "node scripts/system-test.mjs backend",
     "test:load": "npm run build:runtime --silent && node scripts/system-test.mjs load",
     "test:memory-soak": "npm run build:runtime --silent && node scripts/memory-soak-regression.mjs",

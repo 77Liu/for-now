@@ -44,6 +44,7 @@ export function createContentRuntime({
   recordCompressionPerCallBudgetCny = 0,
   recordCompressionMaxBackfillDatesPerScan = 1,
   recordCompressionStartDate = "",
+  recordCommandConfig = null,
   now = () => new Date().toISOString(),
   today,
   currentTime = () => Date.now(),
@@ -231,6 +232,7 @@ export function createContentRuntime({
     runDeepSeek: observedRunDeepSeek,
     now,
     createId,
+    recordCommandConfig,
     hash,
     logEvent,
     debugServerUrl,
@@ -262,10 +264,12 @@ export function createContentRuntime({
     workflowContextKey,
     getRecentTrend,
     getImportanceModelSnapshot,
+    recordCommandConfig,
     now,
     today,
     currentTime,
     createId,
+    createBusinessId,
     hash,
     logEvent
   });

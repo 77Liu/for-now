@@ -298,6 +298,9 @@ function createDeepSeekAttemptRecorder({ usagePersistence, persistence, endUninv
       ...audit,
       dispatchState: "invoked",
       persistence: { usage: usagePersisted ? "persisted" : "pending" },
+      ...(usagePersisted ? {} : {
+        usageRecovery: structuredClone(usageEntry)
+      }),
       usage: {
         known: usageEntry.usageKnown,
         normalized: usageEntry.tokens,
@@ -405,6 +408,9 @@ async function finalizeProviderAttempt({
     response,
     error: failure ? errorMetadata(failure) : null,
     persistence: { usage: usagePersisted ? "persisted" : "pending" },
+    ...(usagePersisted ? {} : {
+      usageRecovery: structuredClone(usageEntry)
+    }),
     usage: {
       known: usageEntry.usageKnown,
       unitType: usageEntry.unitType,

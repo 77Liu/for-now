@@ -25,6 +25,9 @@ export {
 } from "./runtime-http-wiring.mjs";
 export { createBackgroundAi } from "./background-ai.mjs";
 export { createContentBackground } from "./content/background.mjs";
+export { createNotificationRecordCommands } from "./record-commands/notifications.mjs";
+export { createTaskRecordCommands } from "./record-commands/tasks.mjs";
+export { createThoughtRecordCommands } from "./record-commands/thoughts.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";
 export { createAttachmentCleanup } from "./attachment-cleanup.mjs";
 export {

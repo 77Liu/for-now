@@ -23,6 +23,7 @@
     "src/shared/persistence/ai-audit-repository.mts",
     "src/shared/persistence/ai-usage-repository.mts",
     "src/shared/persistence/postgres-auth.mts",
+    "src/shared/persistence/account-unit-of-work.mts",
     "src/shared/persistence/migrations/registry.mts",
     "src/shared/testing/authenticated-runtime.mts",
     "src/modules/record-compressions/windows.mts",

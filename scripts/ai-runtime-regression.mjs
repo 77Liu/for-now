@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createAiRuntime } from "../src/app/index.mjs";
+import { createAiAudit } from "../src/modules/ai/index.mjs";
 
 const clone = value => structuredClone(value);
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -617,6 +618,52 @@ const deepSeekGeneratorDouble = (options, { events }) => async () => (
       reservationId: "reservation-no-provider-io",
       reason: "completed_without_io"
     }
+  );
+}
+
+{
+  const lines = [];
+  const producer = createAiAudit({
+    textLimit: 10_000,
+    getContext: () => ({
+      user: { id: "member" },
+      traceId: "usage-restart-trace",
+      secrets: []
+    }),
+    append: async (_day, entry) => {
+      lines.push(JSON.stringify(entry));
+    },
+    updateUsage: async () => {
+      throw new Error("usage document unavailable");
+    },
+    logEvent: async () => {},
+    now: () => "2026-10-06T00:00:00.000Z",
+    createId: () => "provider-restart-recovery"
+  });
+  await producer.providerCall({
+    provider: "volcengine",
+    service: "vision",
+    scene: "visionOcr",
+    action: "OCRNormal",
+    costKnown: true,
+    costCny: 0.005
+  }, async () => ({ requestId: "provider-restart-request" }));
+  const terminal = lines.map(line => JSON.parse(line))
+    .find(entry => entry.callId === "provider-restart-recovery" && entry.status === "success");
+  assert.equal(terminal.persistence.usage, "pending");
+  assert.equal(terminal.usageRecovery.callId, "provider-restart-recovery");
+
+  const files = new Map([[
+    "/accounts/member/logs/ai-audit-2026-10-06.ndjson",
+    lines.join("\n")
+  ]]);
+  const restarted = createHarness({ files });
+  const runtime = await restarted.create();
+  await runtime.ensureAuditLogs();
+  await runtime.ensureAuditLogs();
+  assert.deepEqual(
+    restarted.documents.get("usage").entries.map(entry => entry.callId),
+    ["provider-restart-recovery"]
   );
 }
 

@@ -537,6 +537,10 @@ export function createThoughtService({
           });
         } else if (first) removeBlock(store, first.id);
       }
+      // A chain update advances the aggregate once; standalone block deletion
+      // may touch the same root through its reusable trash mutation.
+      question.updatedAt = updatedAt;
+      question.version = currentVersion + 1;
       const result = { value: question, ...(reconciled?.trashId ? { trashId: reconciled.trashId } : {}) };
       if (reconciled?.[AFTER_COMMIT]) Object.defineProperty(result, AFTER_COMMIT, { value: reconciled[AFTER_COMMIT] });
       return result;
