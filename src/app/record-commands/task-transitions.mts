@@ -25,6 +25,12 @@ type Input<Result> = {
   expectedRevision: string;
   mutate(store: RecordStore): Result;
 };
+type CleanupInput<Result> = {
+  taskId: string;
+  attempt: number;
+  mutate(store: RecordStore): Result;
+  assertCommit(before: RecordStore, after: RecordStore): void;
+};
 const conflict = () => Object.assign(new Error("任务上下文已变化，请重新校验"), {
   statusCode: 409,
   code: "VERSION_CONFLICT"
@@ -126,5 +132,47 @@ export function createTaskTransitionCommands({
     });
     return committed.value;
   };
-  return Object.freeze({ supports, transition });
+  /** 隔离收尾只读本任务与通知；权限差分在写入版本前核验。 @since unreleased */
+  const cleanup = async <Result,>(input: CleanupInput<Result>) => {
+    if (!Number.isSafeInteger(input.attempt) || typeof input.assertCommit !== "function") {
+      throw new TypeError("Account task cleanup identity and commit guard are required");
+    }
+    const committed = await unitOfWork.run({
+      commandId: "task.accountRecoveryCleanup"
+    }, async ports => {
+      const repository = createTaskRecordRepository(ports);
+      const taskRow = await repository.find(input.taskId);
+      if (!taskRow) return null;
+      if (!supports(taskRow.payload)) throw new TypeError("Task cleanup kind is unsupported");
+      if (taskRow.payload.attempt !== input.attempt
+        || !["queued", "running", "cancelling"].includes(taskRow.status)) return false;
+      const notification = await repository.notification(taskRow);
+      const rows = [taskRow, ...(notification ? [notification] : [])];
+      const before = {
+        aiTasks: [structuredClone(taskRow.payload)],
+        notifications: notification ? [structuredClone(notification.payload)] : []
+      } as RecordStore;
+      const context = structuredClone(before);
+      const result = input.mutate(context);
+      input.assertCommit(before, context);
+      if (context.aiTasks.length !== 1 || context.aiTasks[0].id !== input.taskId
+        || context.notifications.length !== (notification ? 1 : 0)
+        || (notification && context.notifications[0].id !== notification.id)) {
+        throw new TypeError("Task cleanup must preserve task and notification identities");
+      }
+      await updateStatusRows(ports, rows, [...context.aiTasks, ...context.notifications], mapping);
+      return result;
+    });
+    return committed.value;
+  };
+  return Object.freeze({
+    supports,
+    transition,
+    cleanup,
+    prepareSnapshot(snapshot: RecordStore): RecordStore {
+      const context = structuredClone(snapshot);
+      freezeContext(context);
+      return context;
+    }
+  });
 }

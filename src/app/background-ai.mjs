@@ -1,5 +1,6 @@
 import {
   isInternalAiTask,
+  cancelExistingTaskForAccountRecovery,
   taskInputMatches,
   publicAiTask,
   WAITING_FOR_BUDGET_STATUS,
@@ -68,7 +69,9 @@ export function createBackgroundAi({
     ? recordCommands?.transitions
     : null;
   if (taskTransitions && (typeof taskTransitions.supports !== "function"
-    || typeof taskTransitions.transition !== "function")) {
+    || typeof taskTransitions.transition !== "function"
+    || typeof taskTransitions.cleanup !== "function"
+    || typeof taskTransitions.prepareSnapshot !== "function")) {
     throw new TypeError("Task transition record command is invalid");
   }
   const taskCreation = recordCommands?.enabled?.("task.status") ? recordCommands?.creation : null;
@@ -78,7 +81,7 @@ export function createBackgroundAi({
     || typeof tasks.normalizeRequest !== "function")) {
     throw new TypeError("Task creation record command is invalid");
   }
-  const transitionTask = async (taskId, action, mutate) => {
+  const transitionTask = async (taskId, action, mutate, prepare = null) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const revision = await repository.accountUnitOfWork.readRevision();
       const snapshot = await repository.read();
@@ -86,9 +89,14 @@ export function createBackgroundAi({
       const task = snapshot.aiTasks.find(item => item.id === taskId);
       if (!task) return null;
       if (!taskTransitions?.supports(task)) return repository.update(mutate);
+      const context = prepare ? taskTransitions.prepareSnapshot(snapshot) : null;
+      const prepared = prepare
+        ? prepare(context, context.aiTasks.find(item => item.id === taskId))
+        : null;
       try {
         return await taskTransitions.transition({
-          taskId, action, snapshot, expectedRevision: revision, mutate
+          taskId, action, snapshot, expectedRevision: revision,
+          mutate: store => mutate(store, prepared)
         });
       } catch (error) {
         if (error.code !== "VERSION_CONFLICT") throw error;
@@ -98,8 +106,14 @@ export function createBackgroundAi({
       code: "VERSION_CONFLICT", statusCode: 409
     });
   };
+  const prepareClaim = (store, task) => {
+    const waiting = task.status === "queued" && Boolean(shouldWaitForModel(store, task));
+    return { waiting, intent: waiting ? inspectRequestedIntent(store, task) : null };
+  };
   const claimTask = taskId => taskTransitions
-    ? transitionTask(taskId, "claim", store => claimQueuedTask(store, taskId))
+    ? transitionTask(
+        taskId, "claim", (store, prepared) => claimQueuedTask(store, taskId, prepared), prepareClaim
+      )
     : repository.update(store => claimQueuedTask(store, taskId));
   const bindTaskInputRecord = [
     "thought.create",
@@ -265,11 +279,12 @@ export function createBackgroundAi({
     }
     return null;
   };
-  const claimQueuedTask = (store, taskId) => {
+  const claimQueuedTask = (store, taskId, prepared = null) => {
     const task = store.aiTasks.find(item => item.id === taskId);
     if (!task || task.status !== "queued") return null;
-    if (shouldWaitForModel(store, task)) {
-      const intent = inspectRequestedIntent(store, task);
+    const waiting = prepared ? prepared.waiting : Boolean(shouldWaitForModel(store, task));
+    if (waiting) {
+      const intent = prepared ? prepared.intent : inspectRequestedIntent(store, task);
       if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
         stale(store, task, "等待核心用户模型期间，目标已变化");
         return null;
@@ -286,7 +301,10 @@ export function createBackgroundAi({
     if (!claimedTask) return null;
     targetFor(claimedTask).started?.(store, claimedTask);
     notify(store, claimedTask, "running", "正在生成");
-    return { identity: { id: claimedTask.id, attempt: claimedTask.attempt }, kind: claimedTask.kind };
+    return {
+      identity: { id: claimedTask.id, attempt: claimedTask.attempt, kind: claimedTask.kind },
+      kind: claimedTask.kind
+    };
   };
   const saveLegacyTaskResult = (value, task, work, result) => {
     const currentTask = value.aiTasks.find(item => item.id === task.id);
@@ -610,22 +628,38 @@ export function createBackgroundAi({
     return { ...result, queuedCount: result.taskIds.length };
   }
 
-  const releaseWaitingTask = (store, task) => {
+  const prepareWaitingRelease = (store, task) => {
+    if (task.status !== WAITING_FOR_USER_MODEL_STATUS) return { ready: false };
+    if (!taskHasRequiredTarget(store, task)) return { missing: true };
+    const intent = inspectRequestedIntent(store, task);
+    if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
+      return { changed: true };
+    }
+    if (shouldWaitForModel(store, task)) return { ready: false };
+    const contextGeneratedAt = now();
+    const candidate = { ...task, contextGeneratedAt };
+    return {
+      ready: true,
+      contextGeneratedAt,
+      intent,
+      work: prepareTarget(store, candidate)
+    };
+  };
+  const releaseWaitingTask = (store, task, prepared = null) => {
     if (task.status !== WAITING_FOR_USER_MODEL_STATUS) return false;
-    if (!taskHasRequiredTarget(store, task)) {
+    const release = prepared || prepareWaitingRelease(store, task);
+    if (release.missing) {
       stale(store, task, "等待任务的目标当前不可用，任务已终止");
       return false;
     }
-    const intent = inspectRequestedIntent(store, task);
-    if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
+    if (release.changed) {
       stale(store, task, "等待核心用户模型期间，目标已变化");
       return false;
     }
-    if (shouldWaitForModel(store, task)) return false;
+    if (!release.ready) return false;
     // 固定一次上下文时刻，使日期敏感的趋势窗口在认领和写回前保持一致。
-    task.contextGeneratedAt = now();
-    const work = prepareTarget(store, task);
-    const promoted = tasks.promoteWaiting(store.aiTasks, task.id, work, intent);
+    task.contextGeneratedAt = release.contextGeneratedAt;
+    const promoted = tasks.promoteWaiting(store.aiTasks, task.id, release.work, release.intent);
     if (promoted.queued) {
       notify(store, task, "queued", "前置整理已结束，任务已进入后台队列");
       return true;
@@ -640,10 +674,10 @@ export function createBackgroundAi({
       const snapshot = await repository.read();
       for (const task of snapshot.aiTasks) {
         if (task.status !== WAITING_FOR_USER_MODEL_STATUS || !taskTransitions.supports(task)) continue;
-        const promoted = await transitionTask(task.id, "releaseWaiting", store => {
+        const promoted = await transitionTask(task.id, "releaseWaiting", (store, prepared) => {
           const current = store.aiTasks.find(item => item.id === task.id);
-          return current ? releaseWaitingTask(store, current) : false;
-        });
+          return current ? releaseWaitingTask(store, current, prepared) : false;
+        }, prepareWaitingRelease);
         if (promoted) {
           recordScheduled.push(task.id);
           schedule(task.id);
@@ -794,6 +828,25 @@ export function createBackgroundAi({
       };
     },
     createInStore,
+    /** 账户隔离只收尾同一任务尝试及已有通知，不准备上下文或触发调度。 */
+    cleanupForAccountRecovery(identity, assertCommit) {
+      const mutate = store => {
+        if (!cancelExistingTaskForAccountRecovery(store.aiTasks, identity.id, identity.attempt, now)) {
+          return false;
+        }
+        const current = store.aiTasks.find(task => task.id === identity.id);
+        if (store.notifications.some(item => item.taskId === identity.id)) {
+          notify(store, current, "cancelled", current.error);
+        }
+        return true;
+      };
+      if (taskTransitions?.supports(identity)) {
+        return taskTransitions.cleanup({
+          taskId: identity.id, attempt: identity.attempt, mutate, assertCommit
+        });
+      }
+      return repository.update(mutate);
+    },
     schedule,
     run,
     cancel(taskId) {

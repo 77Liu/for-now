@@ -1,8 +1,6 @@
 import { thoughtSpeechProjection } from "./speech-cache.mjs";
 import { thoughtDiscoveryProjection } from "../modules/discovery/index.mjs";
 import { createThoughtQueries, assertThoughtProducerFlags } from "../modules/thoughts/index.mjs";
-import { createNotificationService } from "../modules/notifications/index.mjs";
-import { cancelExistingTaskForAccountRecovery } from "../modules/tasks/index.mjs";
 import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
 import { createImportanceService } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import { legalImportanceMaterial, legalImportanceSources } from "./task-context.mjs";
@@ -228,14 +226,16 @@ export function createContentRuntime({
   const background = createContentBackground({
     createBusinessId,
     cleanupExistingTask: accountRuntime?.enabled ? async task => {
-      try { accountRuntime.authorize(); return false; } catch (error) { if (!String(error.code || "").startsWith("ACCOUNT_")) throw error; }
-      await accountRuntime.cleanupTask(task, () => repository.update(store => {
-        if (!cancelExistingTaskForAccountRecovery(store.aiTasks, task.id, task.attempt, now)) return;
-        const current = store.aiTasks.find(item => item.id === task.id);
-        if (store.notifications.some(item => item.taskId === task.id)) {
-          createNotificationService({ createId: createBusinessId, now }).upsertTask(store.notifications, current, "cancelled", current.error);
-        }
-      }));
+      try {
+        accountRuntime.authorize();
+        return false;
+      } catch (error) {
+        if (!String(error.code || "").startsWith("ACCOUNT_")) throw error;
+      }
+      await accountRuntime.cleanupTask(task, () => backgroundAi.cleanupForAccountRecovery(
+        task,
+        (before, after) => accountRuntime.assertCommit(before, after)
+      ));
       return true;
     } : null,
     repository: contentRepository,

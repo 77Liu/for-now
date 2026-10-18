@@ -637,6 +637,46 @@
       "no new browser, real corpus, production or paid experiment; stage7 not started; protected F9 hashes unchanged"
     ]
   },
+  "nightTaskLifecycleSubset": {
+    "status": "PASS",
+    "baseCommit": "274a7a",
+    "verifiedAt": "2026-10-19T05:52:07+08:00",
+    "sourceManifest": [
+      { "path": "src/app/background-ai.mjs", "sha256_6": "da4d3b" },
+      { "path": "src/app/content-runtime.mjs", "sha256_6": "658d5e" },
+      { "path": "src/app/record-commands/task-transitions.mts", "sha256_6": "c8840a" },
+      { "path": "src/modules/thoughts/producer-coverage.mts", "sha256_6": "dfade6" },
+      { "path": "scripts/thought-task-lifecycle-postgres-checks.mts", "sha256_6": "4ebe78" },
+      { "path": "scripts/postgres-runtime-checks.mjs", "sha256_6": "d02b26" },
+      { "path": "tsconfig.thought-db-regression.json", "sha256_6": "c28ec0" }
+    ],
+    "verified": [
+      "four waiting releases compile context and readiness outside write transactions with frozen sources and fixed time",
+      "source revision race rejects stale prepared work before scheduling; committed queued releases dispatch once",
+      "formal content runtime quarantine callback cancels the existing claimed attempt with precise task+notification command",
+      "four cleanup kinds reject stale attempts, terminal replay and forbidden fields; commit-tail failure restores all rows/revision/sync head",
+      "status commands preserve source/relationships/projection and read at most three/write at most two rows",
+      "complete PG16.14 HTTP/restart/export restore and model/content/account/record/modules PASS"
+    ],
+    "resolvedFailures": [
+      "fixture enabled notification commands without implementation; narrowed flag to task.status with rejecting cancel/bind ports",
+      "previous synthetic waiting candidates had unrelated sources; lifecycle fixture isolates its own candidates",
+      "two-row status budget included enqueue; measurements now bind command IDs to applicable budgets"
+    ],
+    "logs": [
+      "/tmp/for-now-night-task-lifecycle-postgres-budget.log",
+      "/tmp/for-now-night-task-lifecycle-model-final.log",
+      "/tmp/for-now-night-task-lifecycle-content-final.log",
+      "/tmp/for-now-night-task-lifecycle-account.log",
+      "/tmp/for-now-night-task-lifecycle-record.log",
+      "/tmp/for-now-night-task-lifecycle-modules.log"
+    ],
+    "limitations": [
+      "TC10 full producer call chain final audit pending; stage7 not started",
+      "personal context full snapshot reads remain outside short transactions; other task families retain legacy lifecycle",
+      "original real search/browser evidence reused; no production write or paid call; protected F9 fingerprints unchanged"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

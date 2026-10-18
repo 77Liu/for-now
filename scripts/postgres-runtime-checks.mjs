@@ -64,6 +64,7 @@ import { createThoughtRuntimeFixture } from "../.build/typescript/thought-db-reg
 import { runThoughtProducerGateChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-gate-regression.mjs";
 import { runThoughtTaskTransitionPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-transition-postgres-checks.mjs";
 import { runThoughtTaskCreationPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-creation-postgres-checks.mjs";
+import { runThoughtTaskLifecyclePostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-lifecycle-postgres-checks.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -1395,6 +1396,26 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
           // 该运行时已安装唯一投影；此夹具只验正式后台装配，不重复安装查询。
           thoughtPagingConfig: { enabled: false },
           dispatchBackground: dispatch
+        }).backgroundAi
+      });
+      await runThoughtTaskLifecyclePostgresChecks({
+        database,
+        repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
+        mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+        tasks: createTaskLifecycle({
+          createId: () => crypto.randomUUID(), now: () => "2026-10-19T00:00:00.000Z",
+          hash: value => crypto.createHash("sha256").update(value).digest("hex")
+        }),
+        notifications: createNotificationService({
+          createId: () => crypto.randomUUID(), now: () => "2026-10-19T00:00:00.000Z"
+        }),
+        createBackground: createBackgroundAi,
+        createRuntime: overrides => createThoughtRuntimeFixture(createContentRuntime, {
+          ...overrides.repository, queryRecords: undefined, installRecordProjection: undefined
+        }, "thought-producer-test", {
+          ...overrides,
+          repository: { ...overrides.repository, queryRecords: undefined, installRecordProjection: undefined },
+          thoughtPagingConfig: { enabled: false }
         }).backgroundAi
       });
     });

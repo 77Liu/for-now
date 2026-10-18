@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 467,
-  "updated_at": "2026-10-18T21:38:58.991Z",
+  "revision": 468,
+  "updated_at": "2026-10-18T21:54:33.741Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -171,15 +171,15 @@
       "status": "OPEN",
       "owner": "主控",
       "blocks": "阶段6出口及阶段7实施",
-      "reason": "阶段6必要生产者已完成局部/root/删除恢复/附件/AI/发现及任务入队重试状态事务矩阵；等待释放完整上下文仍在状态事务中，账户恢复清理回调及完整调用链终审未完成，TC10保持OPEN。",
+      "reason": "四类必要任务的入队/重试/认领/等待释放/恢复及账户隔离收尾均接入局部记录事务；上下文与等待资格在事务外准备。全部生产者调用链和维护边界的最终审计未完成，TC10保持OPEN。",
       "evidence": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskCreationSubset",
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskLifecycleSubset",
         "reviews/2026-10-19-stage6-browser-remediation.md"
       ]
     }
   ],
   "next_action": {
-    "description": "继续阶段6等待释放事务外准备、账户恢复清理和完整生产者闭包终审；出口通过后沿唯一串行路径推进，08:30收尾Owner评审表。",
+    "description": "继续阶段6全部生产者调用链和维护边界终审；完整出口通过后沿唯一串行路径推进，08:30收尾Owner评审表。",
     "owner": "主控",
     "requires_owner": false
   },
@@ -923,6 +923,25 @@
       "refs": [
         "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskCreationSubset",
         "reviews/2026-10-19-stage6-browser-remediation.md"
+      ]
+    },
+    {
+      "id": "v0516-stage6-task-lifecycle",
+      "object": {
+        "kind": "source_manifest",
+        "base_commit": "274a7a",
+        "receipt": "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskLifecycleSubset"
+      },
+      "conclusion": "四类等待释放与认领资格事务外准备、修订绑定和固定上下文时刻；账户隔离真实回调精确两行收尾。真实PG四类成功/末尾回滚/旧尝试/权限拒绝/竞态及全套HTTP/重启/导出恢复通过。",
+      "limitations": [
+        "TC10完整调用链终审未完成；阶段7未开始",
+        "个人上下文事务外全量读取与其他任务族兼容路径保留",
+        "复用真实搜索和浏览器证据；无生产写或付费调用；F9保护指纹保持"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskLifecycleSubset",
+        "reviews/2026-10-19-stage6-browser-remediation.md",
+        "scripts/thought-task-lifecycle-postgres-checks.mts"
       ]
     }
   ],

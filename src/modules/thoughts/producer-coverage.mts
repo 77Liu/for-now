@@ -28,7 +28,7 @@ const requiredCommands = {
   attachments: ["run"],
   contentAi: ["writeback", "failWriteback"],
   taskCreation: ["supports", "prepareSnapshot", "create"],
-  taskTransitions: ["supports", "transition"]
+  taskTransitions: ["supports", "prepareSnapshot", "transition", "cleanup"]
 } as const;
 
 export function incompleteThoughtProducers(missing: string[]) {
