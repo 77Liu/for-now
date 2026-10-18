@@ -35,7 +35,9 @@ export const contentAttachmentPaths = Object.freeze({
   "/content-attachments/{targetType}/{targetId}": {
     parameters: [
       parameter("ContentAttachmentTargetType"),
-      parameter("ContentAttachmentTargetId")
+      parameter("ContentAttachmentTargetId"),
+      parameter("ContentAttachmentOwnerCollection"),
+      parameter("ContentAttachmentOwnerId")
     ],
     get: {
       operationId: "getContentAttachments",
@@ -73,6 +75,8 @@ export const contentAttachmentPaths = Object.freeze({
         parameter("ContentAttachmentTargetType"),
         parameter("ContentAttachmentTargetId"),
         parameter("ContentAttachmentName"),
+        parameter("ContentAttachmentOwnerCollection"),
+        parameter("ContentAttachmentOwnerId"),
         parameter("IfMatch")
       ],
       responses: {
@@ -123,6 +127,15 @@ export const contentAttachmentPaths = Object.freeze({
 
 export const contentAttachmentComponents = Object.freeze({
   parameters: {
+    ContentAttachmentOwnerCollection: {
+      name: "ownerCollection", in: "query", required: false,
+      description: "批注的所属集合；与 ownerId 一起提供。同名批注必须指定所属。",
+      schema: { type: "string", enum: ["thoughts", "captures", "journals", "chats", "analyses", "books", "quotes"] }
+    },
+    ContentAttachmentOwnerId: {
+      name: "ownerId", in: "query", required: false,
+      schema: { type: "string", minLength: 1, maxLength: 100 }
+    },
     ContentAttachmentTargetType: {
       name: "targetType",
       in: "path",
@@ -149,6 +162,13 @@ export const contentAttachmentComponents = Object.freeze({
     }
   },
   schemas: {
+    ContentAttachmentOwner: {
+      type: "object", required: ["collection", "id"], additionalProperties: false,
+      properties: {
+        collection: { type: "string", enum: ["thoughts", "captures", "journals", "chats", "analyses", "books", "quotes"] },
+        id: { type: "string", minLength: 1, maxLength: 100 }
+      }
+    },
     ContentAttachmentTargetType: {
       type: "string",
       enum: ["comment", "capture", "thoughtRoot", "thoughtBlock"]
@@ -221,6 +241,7 @@ export const contentAttachmentComponents = Object.freeze({
       type: "object",
       required: ["attachmentPaths"],
       properties: {
+        owner: { $ref: "#/components/schemas/ContentAttachmentOwner" },
         attachmentPaths: {
           type: "array",
           maxItems: 2,
@@ -234,6 +255,7 @@ export const contentAttachmentComponents = Object.freeze({
       type: "object",
       required: ["targetType", "targetId", "inputVersion", "attachmentPaths"],
       properties: {
+        owner: { $ref: "#/components/schemas/ContentAttachmentOwner" },
         targetType: { $ref: "#/components/schemas/ContentAttachmentTargetType" },
         targetId: { type: "string", maxLength: 100 },
         inputVersion: { type: "integer", minimum: 1 },

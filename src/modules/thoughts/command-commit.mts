@@ -36,17 +36,19 @@ export async function commitThoughtCommand(
   {
     observation,
     trashEntries = [],
-    restoredAt = ""
+    restoredAt = "",
+    includeCaptures = false
   }: {
     observation?: Observation;
     trashEntries?: RecordEntity[];
     restoredAt?: string;
+    includeCaptures?: boolean;
   } = {}
 ) {
   await observation?.apply();
   // capture 仅供创建时校验来源；观察新增集合后再确定实际写集。
   const managed = new Set(Object.keys(state.store)
-    .filter(collection => collection !== "captures"));
+    .filter(collection => includeCaptures || collection !== "captures"));
   const beforeRows = state.rows.filter(row => managed.has(row.collection));
   const rows = await repository.persistMappedClosure(
     ports, ports.accountId, beforeRows, state.store, {

@@ -1,4 +1,8 @@
 import { holdThoughtBrowserProbe } from "../.build/typescript/thought-db-regression/scripts/thought-browser-probe.mjs";
+import {
+  attachmentProducerFixtures, runAttachmentProducerPostgresChecks, runAttachmentProducerHttpChecks
+} from "./thought-attachment-postgres-checks.mjs";
+import { createContentAttachmentService } from "../src/modules/content-attachments/index.mjs";
 import { runThoughtSearchCorpusChecks } from "../.build/typescript/thought-db-regression/scripts/thought-search-corpus-regression.mjs";
 import { thoughtDiscoveryProjection, createThoughtDiscoveryService } from "../src/modules/discovery/index.mjs";
 import { thoughtSpeechProjection, readThoughtSpeechAssets } from "../src/app/index.mjs";
@@ -22,7 +26,7 @@ import {
   createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep,
   userModelCoreReadiness, createPerceptionAwareRepository, createPerceptionRuntime,
   createNotificationRecordCommands, createTaskRecordCommands,
-  createThoughtRecordCommands, createTrashMutations, createTrashCommands
+  createThoughtRecordCommands, createTrashMutations, createTrashCommands, createContentAttachmentRecordCommands
 } from "../src/app/index.mjs";
 import { createCaptureRecords } from "../src/modules/captures/index.mjs";
 import { createAnnotationService } from "../src/modules/annotations/index.mjs";
@@ -1290,12 +1294,15 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       database,
       repo: pagingRepo,
       account,
+      attachmentFixtures: attachmentProducerFixtures,
+      attachmentChecks: runAttachmentProducerPostgresChecks,
       createQueries: () => pagingQueries,
       createService: (repository, queryRuntime) => {
         const now = () => "2026-10-19T00:00:00.000Z";
         const createId = () => crypto.randomUUID();
         const hash = value => crypto.createHash("sha256").update(value).digest("hex");
         const scheduledTaskIds = [];
+        const cancelledTaskIds = [];
         const perception = createPerceptionRuntime({ getAccountId: () => "thought-producer-test", createId, now, hash });
         const compression = createRecordCompressionService({
           repository,
@@ -1366,7 +1373,15 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         const trashCommands = createTrashCommands({
           repository: aware, trash, mutations, cleanup: null, now
         });
-        return { ...service, scheduledTaskIds, annotationCommands, rootCommands, trashCommands };
+        const attachments = createContentAttachmentService({
+          repository: aware,
+          recordCommands: createContentAttachmentRecordCommands(aware),
+          trash,
+          attachmentInventory: () => { throw new Error("Attachment producer must not enumerate inventory"); },
+          cancelTask: taskId => cancelledTaskIds.push(taskId),
+          getAccountId: () => "thought-producer-test", now, createId
+        });
+        return { ...service, scheduledTaskIds, cancelledTaskIds, annotationCommands, rootCommands, trashCommands, attachments };
       }
     });
     await account("repo-test", () => pagingQueries.rebuild());
@@ -2215,6 +2230,15 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await request(app.base, `/api/trash/${trash.body.items[0].id}/restore`, { method: "POST", cookie, body: {} })).status, 200);
     assert.equal((await request(app.base, "/api/state", { cookie })).body.captures.find(item => item.id === captureId).version, state.body.captures[0].version + 1);
     await runThoughtTrashHttpChecks({ base: app.base, request, cookie, otherCookie });
+    const attachmentUpload = await request(app.base, "/api/images/upload", {
+      method: "POST", cookie: otherCookie,
+      body: { image: `data:image/png;base64,${png.toString("base64")}` }
+    });
+    assert.equal(attachmentUpload.status, 201);
+    await runAttachmentProducerHttpChecks({
+      base: app.base, request, cookie: otherCookie, otherCookie: cookie,
+      attachmentPath: attachmentUpload.body.attachmentPath
+    });
     const alphaMaskUpload = await request(app.base, "/api/images/upload", {
       method: "POST", cookie, body: { image: `data:image/png;base64,${png.toString("base64")}` }
     });

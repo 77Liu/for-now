@@ -290,6 +290,52 @@
       "F9 protected files unchanged; TC-10 open and stage7 not started"
     ]
   },
+  "nightAttachmentSubset": {
+    "recordedAt": "2026-10-19T03:45:00+08:00",
+    "baselineCommit": "5aae56",
+    "status": "PASS_TWENTY_FOUR_COMMAND_SUBSET_STAGE6_PARTIAL",
+    "caseSource": "scripts/thought-attachment-postgres-checks.mjs",
+    "addedCommands": [
+      "contentAttachment.replace",
+      "contentAttachment.remove",
+      "contentAttachment.restore",
+      "contentAttachment.saveUnderstanding"
+    ],
+    "verified": [
+      "four targets each have success and commit-time rollback for four mutation entries",
+      "get and understanding preparation use target closure; full document and inventory access forbidden",
+      "inventory paths and target mutations share account transaction",
+      "duplicate and stale understanding writes; ETag conflict and foreign attachment denial",
+      "exact comment owner and duplicate-id rejection; restore retains owner",
+      "original/derived restoration and imageUnderstanding attachment reference indexes",
+      "queued/running task cancellation; failed commit executes no cancellation callback",
+      "malformed trash entry returns invalid and commits no writes",
+      "1000 unrelated roots and 1000 unrelated inventory rows unchanged",
+      "formal HTTP get/replace/remove/restore/version/account isolation",
+      "npm run test:postgres:stable full terminal PASS",
+      "JSON attachments, content-runtime, HTTP orchestration, API v1, modules and backend types"
+    ],
+    "resolvedFailures": [
+      "new HTTP fixture retained original shared image and conflicted with old cleanup assertion",
+      "separate new account changed old admin snapshot account count; final fixture uses existing second account",
+      "understanding-only changes did not refresh binary-reference indexes"
+    ],
+    "logs": [
+      "/tmp/for-now-night-attachment-postgres.log",
+      "/tmp/for-now-night-attachment-json.log",
+      "/tmp/for-now-night-attachment-runtime.log",
+      "/tmp/for-now-night-attachment-http.log",
+      "/tmp/for-now-night-attachment-contract.log",
+      "/tmp/for-now-night-attachment-modules.log"
+    ],
+    "limitations": [
+      "background image/annotation AI generic updater and foreground answers remain",
+      "discovery per-entry failure matrix remains",
+      "related-history growth and physical SQL scans remain unverified",
+      "no new browser or real search corpus experiment",
+      "F9 protected files unchanged; TC-10 open, stage7 not started"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

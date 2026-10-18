@@ -198,7 +198,8 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
       if (!await ports.objects.update(next, current.version)) throw conflict();
       if (refreshCollections.has(row.collection) || restoredRelations.has(row.objectKey)
         || current.content !== next.content
-        || canonicalJson(current.payload?.attachmentPaths || []) !== canonicalJson(next.payload?.attachmentPaths || [])) {
+        || canonicalJson(current.payload?.attachmentPaths || []) !== canonicalJson(next.payload?.attachmentPaths || [])
+        || canonicalJson(current.payload?.imageUnderstandings || []) !== canonicalJson(next.payload?.imageUnderstandings || [])) {
         refreshedIndexes.add(row.objectKey);
       }
       persistedRows.push(next);

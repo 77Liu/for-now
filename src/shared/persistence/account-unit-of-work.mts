@@ -288,6 +288,20 @@ function createObjectPort(
     noteRead(count(result));
     return result.rows[0] ? structuredClone(result.rows[0]) : null;
   };
+  const findAnnotation = async (id: string, owner: { collection: string; id: string } | null = null) => {
+    const result = await client.query<ObjectRow>(`
+      SELECT ${objectColumns} FROM for_now.store_objects
+      WHERE account_id = $1 AND id = $2 AND kind IN ('annotation', 'annotationDrift')
+        AND ($3::text IS NULL OR parent_key = $3)
+      LIMIT 2 FOR UPDATE
+    `, [accountId, required(id, "annotationId"),
+      owner ? JSON.stringify([required(owner.collection, "ownerCollection"), required(owner.id, "ownerId")]) : null]);
+    noteRead(count(result));
+    if (result.rows.length > 1) {
+      throw problem("请指定批注所属的内容记录", "CONTENT_ATTACHMENT_OWNER_REQUIRED");
+    }
+    return result.rows[0] || null;
+  };
   const findForLocalDates = async (
     collection: string,
     localDates: string[],
@@ -410,6 +424,7 @@ function createObjectPort(
     findMany,
     findByCollection,
     findTrash,
+    findAnnotation,
     findForLocalDates,
     findTree,
     insert,
@@ -512,8 +527,22 @@ function createRelationPort(
 function createAttachmentPort(
   client: QueryClient,
   accountId: string,
-  noteWrite: (rows: number) => void
+  noteWrite: (rows: number) => void,
+  noteRead: (rows: number) => void
 ) {
+  const findMany = async (paths: string[]) => {
+    const selected = stringList(paths, "attachmentPaths");
+    if (!selected.length) return [];
+    if (selected.length > MAX_OBJECT_KEYS) throw new RangeError("Attachment path limit exceeded");
+    const result = await client.query<{
+      path: string; state: string; bytes: number | null; sha256: string | null;
+    }>(`
+      SELECT path, state, bytes, sha256 FROM for_now.attachment_inventory
+      WHERE account_id = $1 AND path = ANY($2::text[]) FOR SHARE
+    `, [accountId, selected]);
+    noteRead(count(result));
+    return result.rows;
+  };
   const removeForObject = async (objectKey: string) => {
     const result = await client.query(`
       DELETE FROM for_now.store_attachment_refs
@@ -534,7 +563,7 @@ function createAttachmentPort(
     `, [accountId, row.ownerKey, row.fieldName, row.valuePath, row.path]);
     noteWrite(count(result));
   };
-  return Object.freeze({ removeForObject, insert });
+  return Object.freeze({ removeForObject, insert, findMany });
 }
 
 function createLifecyclePort(
@@ -707,7 +736,8 @@ export function createAccountUnitOfWork({
             rows => { writes += rows; },
             rows => { reads += rows; }
           ),
-          attachments: createAttachmentPort(client, accountId, rows => { writes += rows; }),
+          attachments: createAttachmentPort(client, accountId,
+            rows => { writes += rows; }, rows => { reads += rows; }),
           lifecycles: createLifecyclePort(
             client,
             accountId,

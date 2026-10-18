@@ -34,6 +34,7 @@
     "src/modules/ai/invocation-contracts.mts",
     "src/app/sync-projection.mts",
     "src/app/source-record-effects.mts",
+    "src/app/record-commands/content-attachments.mts",
     "src/shared/concurrency/account-commits.mts",
     "src/shared/thought-pagination/index.mts",
     "src/modules/thoughts/record-commands.mts",

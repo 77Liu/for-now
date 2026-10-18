@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 457,
-  "updated_at": "2026-10-18T19:21:20.063Z",
+  "revision": 459,
+  "updated_at": "2026-10-18T19:45:50.109Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -105,7 +105,9 @@
         "src/app/perception.mjs",
         "src/app/record-compressions.mjs",
         "src/app/source-record-effects.mts",
-        "src/app/runtime-content-http.mjs"
+        "src/app/runtime-content-http.mjs",
+        "src/http/content-attachments.mjs",
+        "src/http/openapi/content-attachments.mjs"
       ],
       "forbidden_write_set": [
         "public/frontend/app/runtime/home-runtime.mjs",
@@ -172,7 +174,7 @@
       ]
     }
   ],
-  "next_action": "继续阶段6 TC-10返修：改造必要生产者的有界业务闭包，逐入口绑定command、索引/标签delta、ChangeDraft及真实PG成功/故障用例；完成后再核定阶段6出口，阶段7未放行。",
+  "next_action": "继续阶段6 TC-10：后台图片/批注AI写回、前台回答与发现状态逐入口矩阵及关联历史/SQL规模证据；完成后核定阶段6出口，阶段7未放行。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -779,6 +781,26 @@
       "refs": [
         "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTrashCommandSubset",
         "scripts/thought-trash-http-checks.mts",
+        "npm run test:postgres:stable"
+      ]
+    },
+    {
+      "id": "v0516-stage6-attachment-producer-verification",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-sync-latency",
+        "baseline": "5aae56",
+        "requirement_id": "reczz28ORRaxSFnV"
+      },
+      "conclusion": "独立附件四类目标的读取/准备及四个修改入口使用目标闭包与事务内指定路径库存；二十四公开修改命令PG成功/末尾故障矩阵、正式HTTP账户隔离和稳定PG全套通过。批注所属与图片引用索引、失败无取消回调通过。TC-10未关闭。",
+      "limitations": [
+        "后台图片/批注AI通用updater、前台回答及发现状态矩阵待完成",
+        "关联历史增长与物理SQL扫描未完全验证",
+        "无新浏览器/真实语料实验；F9保护指纹未变；阶段7未开始"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightAttachmentSubset",
+        "scripts/thought-attachment-postgres-checks.mjs",
         "npm run test:postgres:stable"
       ]
     }

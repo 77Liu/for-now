@@ -37,6 +37,7 @@ type Context = {
   createQueries(repo: Repository): Queries;
   createService(repo: Repository, queries: Queries): ThoughtLocalCommands & {
     scheduledTaskIds: string[];
+    cancelledTaskIds: string[];
     annotationCommands: AnnotationCommands;
     rootCommands: ReturnType<typeof createThoughtRecordCommands>;
     trashCommands: {
@@ -44,7 +45,10 @@ type Context = {
       removeThoughtNested(input: ThoughtNestedDeleteInput): Promise<Record<string, unknown> | null>;
       restore(id: string): Promise<Record<string, unknown>>;
     };
+    attachments: unknown;
   };
+  attachmentFixtures(root: (id: string) => RecordStore["thoughts"][number]): RecordStore["thoughts"];
+  attachmentChecks(input: Record<string, unknown>): Promise<void>;
 };
 const accountId = "thought-producer-test";
 const rootId = "producer-root";
@@ -98,7 +102,14 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
   await context.account(accountId, async () => {
     await repo.initialize({ allowCreate: true });
     await repo.update(store => {
-      store.thoughts = [root(rootId), ...Array.from({ length: 1000 }, (_, index) => root(`unrelated-${index}`))];
+      store.thoughts = [
+        root(rootId), ...context.attachmentFixtures(root),
+        ...Array.from({ length: 1000 }, (_, index) => root(`unrelated-${index}`))
+      ];
+      store.captures = [{
+        id: "attachment-capture", content: "图片捕念", attachmentPaths: [], version: 1,
+        createdAt: timestamp, occurredAt: timestamp, occurredOn: "2026-10-19"
+      }];
     });
     const queries = context.createQueries(repo);
     await queries.rebuild();
@@ -220,6 +231,10 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
     await trashCommandMatrix(context, service, queries, {
       blockId, remarkId: remark.value.id, followUpId: followUp.value.id
     });
+    await context.attachmentChecks({
+      database, repo, service: service.attachments, scheduledTaskIds: service.scheduledTaskIds,
+      cancelledTaskIds: service.cancelledTaskIds, queries
+    });
     const afterOthers = (await database.query(`SELECT object_key, version, payload FROM for_now.store_objects
       WHERE account_id=$1 AND id LIKE 'unrelated-%' ORDER BY object_key`, [accountId])).rows;
     assert.deepEqual(afterOthers, beforeOthers);
@@ -227,8 +242,8 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
     assert.ok(transactions.every(transaction => transaction.writes < 100), JSON.stringify(transactions));
     const commands = (await database.query(`SELECT DISTINCT command_id FROM for_now.record_changes
       WHERE account_id=$1 ORDER BY command_id`, [accountId])).rows.map(row => row.command_id);
-    assert.equal(commands.length, 20);
-    console.log("Thought producer PostgreSQL matrix passed: twenty public commands, document access forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
+    assert.equal(commands.length, 24);
+    console.log("Thought producer PostgreSQL matrix passed: twenty-four public commands, document access forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
   });
 }
 

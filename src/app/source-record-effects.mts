@@ -26,7 +26,7 @@ export function createSourceMutationEffects(dependencies: Dependencies): SourceM
   return {
     async prepare(ports, state) {
       const sourceKeys = state.rows
-        .filter(row => row.collection === "thoughts")
+        .filter(row => ["thoughts", "captures", "journals"].includes(row.collection))
         .map(row => row.objectKey);
       const restored = state.restoredSourceKeys || [];
       const rootId = state.restoredRootId || null;

@@ -36,7 +36,8 @@ export async function enqueueContentImageUnderstanding(backgroundAi, work) {
     payload: {
       targetType: work.targetType,
       targetId: work.targetId,
-      attachmentPaths: work.attachmentPaths
+      attachmentPaths: work.attachmentPaths,
+      ...(work.owner ? { owner: work.owner } : {})
     },
     clientRequestId: work.clientRequestId
   });

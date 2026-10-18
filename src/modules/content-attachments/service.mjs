@@ -42,20 +42,27 @@ const originalTextOf = (targetType, resource) => targetType === "comment"
   ? String(resource?.text ?? "")
   : String(resource?.content ?? "");
 
-function findComment(store, id) {
+function findComment(store, id, owner = null) {
+  let found = null;
   for (const collection of ANNOTATION_HOST_COLLECTIONS) {
+    if (owner && owner.collection !== collection) continue;
     for (const host of Array.isArray(store?.[collection]) ? store[collection] : []) {
+      if (owner && owner.id !== host.id) continue;
       for (const field of ["annotations", "annotationDrift"]) {
         const resource = (Array.isArray(host?.[field]) ? host[field] : []).find(item => item?.id === id);
-        if (resource) return { resource, parent: host, collection, field };
+        if (!resource) continue;
+        if (found) throw Object.assign(new Error("请指定批注所属的内容记录"), {
+          code: "CONTENT_ATTACHMENT_OWNER_REQUIRED", statusCode: 409
+        });
+        found = { resource, parent: host, collection, field };
       }
     }
   }
-  return null;
+  return found;
 }
 
-export function resolveContentAttachmentResource(store, targetType, targetId) {
-  if (targetType === "comment") return findComment(store, targetId);
+export function resolveContentAttachmentResource(store, targetType, targetId, owner = null) {
+  if (targetType === "comment") return findComment(store, targetId, owner);
   if (targetType === "capture") {
     const resource = (Array.isArray(store?.captures) ? store.captures : []).find(item => item?.id === targetId);
     return resource ? { resource, parent: null, collection: "captures" } : null;
@@ -135,6 +142,7 @@ function taskTarget(located, targetType, targetId) {
 
 export function createContentAttachmentService({
   repository,
+  recordCommands = null,
   trash,
   attachmentInventory,
   getAccountId,
@@ -165,16 +173,21 @@ export function createContentAttachmentService({
     return value;
   };
 
-  async function inventoryIndex() {
+  async function inventoryIndex(paths) {
     accountId();
-    const rows = await attachmentInventory();
+    if (!paths.length) return new Map();
+    const rows = await attachmentInventory({ paths });
     return new Map((Array.isArray(rows) ? rows : [])
       .filter(row => typeof row?.path === "string" && ATTACHMENT_PATH.test(row.path))
       .map(row => [row.path, row]));
   }
 
   async function verifyOwned(paths) {
-    const inventory = await inventoryIndex();
+    const inventory = await inventoryIndex(paths);
+    return verifyInventory(paths, inventory);
+  }
+
+  function verifyInventory(paths, inventory) {
     const unavailable = paths.find(path => {
       const row = inventory.get(path);
       return !row || (row.state && row.state !== "verified");
@@ -191,15 +204,23 @@ export function createContentAttachmentService({
     return owned.forbidden ? owned : { value: parsed.value };
   }
 
-  function locate(store, targetType, targetId) {
-    return resolveResource(store, targetType, targetId);
+  function locate(store, targetType, targetId, owner = null) {
+    return resolveResource(store, targetType, targetId, owner);
   }
 
-  async function get(targetType, targetId) {
+  async function get(targetType, targetId, { owner = null } = {}) {
     const target = normalizeContentAttachmentTarget(targetType, targetId);
     if (target.error) return target;
-    const [store, inventory] = await Promise.all([repository.read(), inventoryIndex()]);
-    const located = locate(store, targetType, targetId);
+    if (recordCommands) return recordCommands.run({
+      commandId: "contentAttachment.get", targetType, targetId, owner, readOnly: true,
+      mutate(store, inventory) {
+        const located = locate(store, targetType, targetId, owner);
+        return located ? { value: project(located, targetType, targetId, inventory) } : { missing: true };
+      }
+    });
+    const store = await repository.read();
+    const located = locate(store, targetType, targetId, owner);
+    const inventory = await inventoryIndex(pathsOf(located?.resource));
     return located ? { value: project(located, targetType, targetId, inventory) } : { missing: true };
   }
 
@@ -226,17 +247,22 @@ export function createContentAttachmentService({
       kind: CONTENT_ATTACHMENT_TRASH_TYPE,
       targetType,
       targetId,
-      parentId: targetId
+      parentId: targetId,
+      ...(targetType === "comment" ? { owner: { collection: located.collection, id: located.parent.id } } : {})
     });
   }
 
-  function cancelUnderstandingTasks(store, targetType, targetId, removedPaths, changedAt) {
+  function cancelUnderstandingTasks(store, located, targetType, targetId, removedPaths, changedAt) {
     if (!removedPaths.length) return [];
     const removed = new Set(removedPaths), running = [];
     for (const task of store.aiTasks || []) {
       if (task.kind !== "contentImageUnderstanding"
         || task.payload?.targetType !== targetType
         || task.payload?.targetId !== targetId
+        || (targetType === "comment" && (
+          task.resourceType !== COLLECTION_RESOURCE_TYPES[located.collection]
+          || task.targetId !== located.parent.id || task.subtargetId !== targetId
+        ))
         || !["queued", "running", "cancelling", WAITING_FOR_USER_MODEL_STATUS].includes(task.status)
         || !(task.payload?.attachmentPaths || []).some(path => removed.has(path))) continue;
       const notStarted = ["queued", WAITING_FOR_USER_MODEL_STATUS].includes(task.status);
@@ -276,13 +302,14 @@ export function createContentAttachmentService({
     changedAt = timestamp(now()),
     touchResource = true,
     allowEmptyImages = false,
+    owner = null,
     inventory = new Map()
   } = {}) {
     const target = normalizeContentAttachmentTarget(targetType, targetId);
     if (target.error) return target;
     const parsed = normalizeOriginalImagePaths(attachmentPaths, { maxImages });
     if (parsed.error) return parsed;
-    const located = locate(store, targetType, targetId);
+    const located = locate(store, targetType, targetId, owner);
     if (!located) return { missing: true };
     const version = expectedVersionResult(located.resource, expectedVersion);
     if (version.error || version.versionConflict) return version;
@@ -303,7 +330,7 @@ export function createContentAttachmentService({
       removedPaths,
       changedAt
     );
-    const runningTaskIds = cancelUnderstandingTasks(store, targetType, targetId, removedPaths, changedAt);
+    const runningTaskIds = cancelUnderstandingTasks(store, located, targetType, targetId, removedPaths, changedAt);
     located.resource.attachmentPaths = [...parsed.value];
     if (touchResource) touchLocated(located, changedAt);
     return afterCommit({
@@ -312,11 +339,19 @@ export function createContentAttachmentService({
     }, runningTaskIds);
   }
 
-  async function replaceOriginalImages(targetType, targetId, attachmentPaths, { expectedVersion = null } = {}) {
+  async function replaceOriginalImages(targetType, targetId, attachmentPaths, { expectedVersion = null, owner = null } = {}) {
     const target = normalizeContentAttachmentTarget(targetType, targetId);
     if (target.error) return target;
     const parsed = normalizeOriginalImagePaths(attachmentPaths, { maxImages });
     if (parsed.error) return parsed;
+    if (recordCommands) return recordCommands.run({
+      commandId: "contentAttachment.replace", targetType, targetId, owner, paths: parsed.value,
+      mutate(store, inventory) {
+        const owned = verifyInventory(parsed.value, inventory);
+        return owned.forbidden ? owned : reconcileOriginalImagesInStore(store, targetType, targetId,
+          parsed.value, { expectedVersion, owner, inventory });
+      }
+    });
     const owned = await verifyOwned(parsed.value);
     if (owned.forbidden) return owned;
     const changedAt = timestamp(now());
@@ -325,7 +360,7 @@ export function createContentAttachmentService({
       targetType,
       targetId,
       parsed.value,
-      { expectedVersion, changedAt, inventory: owned.inventory }
+      { expectedVersion, owner, changedAt, inventory: owned.inventory }
     ));
   }
 
@@ -334,28 +369,25 @@ export function createContentAttachmentService({
     if (target.error) return target;
     const parsed = normalizeOriginalImagePaths([attachmentPath], { maxImages, requireImages: true });
     if (parsed.error) return parsed;
-    const owned = await verifyOwned(parsed.value);
-    if (owned.forbidden) return owned;
-    const changedAt = timestamp(now());
-    return repository.update(store => {
-      const located = locate(store, targetType, targetId);
+    const remove = (store, inventory) => {
+      const owned = verifyInventory(parsed.value, inventory);
+      if (owned.forbidden) return owned;
+      const located = locate(store, targetType, targetId, options.owner);
       if (!located) return { missing: true };
       const version = expectedVersionResult(located.resource, options.expectedVersion);
       if (version.error || version.versionConflict) return version;
       const current = pathsOf(located.resource);
       if (!current.includes(attachmentPath)) return { attachmentMissing: true };
-      return reconcileOriginalImagesInStore(
-        store,
-        targetType,
-        targetId,
-        current.filter(path => path !== attachmentPath),
-        {
-          expectedVersion: options.expectedVersion,
-          changedAt,
-          inventory: owned.inventory
-        }
-      );
+      return reconcileOriginalImagesInStore(store, targetType, targetId,
+        current.filter(path => path !== attachmentPath), { ...options, inventory });
+    };
+    if (recordCommands) return recordCommands.run({
+      commandId: "contentAttachment.remove", targetType, targetId, owner: options.owner,
+      paths: parsed.value, mutate: remove
     });
+    const owned = await verifyOwned(parsed.value);
+    if (owned.forbidden) return owned;
+    return repository.update(store => remove(store, owned.inventory));
   }
 
   function recoveryPayload(entry) {
@@ -385,9 +417,51 @@ export function createContentAttachmentService({
     };
   }
 
+  function restoreOriginalImagesInStore(document, normalizedTrashId, expectedVersion, inventory) {
+    const changedAt = timestamp(now());
+    const currentEntry = trash.get(document.trash || [], normalizedTrashId);
+    if (!currentEntry || currentEntry.type !== CONTENT_ATTACHMENT_TRASH_TYPE) return { missing: true };
+    const currentRecovery = recoveryPayload(currentEntry);
+    if (currentRecovery.invalid) return currentRecovery;
+    if (verifyInventory(currentRecovery.value.sourcePaths, inventory).forbidden) return { attachmentMissing: true };
+    const { targetType, targetId, owner } = currentEntry.location || {};
+    const located = locate(document, targetType, targetId, owner);
+    if (!located) return { parentMissing: true };
+    const version = expectedVersionResult(located.resource, expectedVersion);
+    if (version.error || version.versionConflict) return version;
+    const current = pathsOf(located.resource);
+    if (currentRecovery.value.attachmentPaths.some(path => current.includes(path))) return { restoreConflict: true };
+    const combined = normalizeOriginalImagePaths([
+      ...current,
+      ...currentRecovery.value.attachmentPaths
+    ], { maxImages });
+    if (combined.error) return combined;
+    const combinedSet = new Set(combined.value);
+    if (currentRecovery.value.imageUnderstandings.some(item => (
+      item.sourceAttachmentPaths.some(path => !combinedSet.has(path))
+    ))) return { restoreConflict: true };
+    located.resource.attachmentPaths = combined.value;
+    const existingIds = new Set(understandingsOf(located.resource).map(item => item.id));
+    const restoredUnderstandings = currentRecovery.value.imageUnderstandings
+      .filter(item => item?.id && !existingIds.has(item.id));
+    if (restoredUnderstandings.length) {
+      located.resource.imageUnderstandings = [
+        ...understandingsOf(located.resource),
+        ...cloned(restoredUnderstandings)
+      ];
+    }
+    touchLocated(located, changedAt);
+    trash.remove(document.trash, [normalizedTrashId]);
+    return { value: project(located, targetType, targetId, inventory) };
+  }
+
   async function restoreOriginalImages(trashId, { expectedVersion = null } = {}) {
     const normalizedTrashId = safeText(trashId, 100);
     if (!normalizedTrashId) return { missing: true };
+    if (recordCommands) return recordCommands.run({
+      commandId: "contentAttachment.restore", trashId: normalizedTrashId,
+      mutate: (store, inventory) => restoreOriginalImagesInStore(store, normalizedTrashId, expectedVersion, inventory)
+    });
     const store = await repository.read();
     const entry = trash.get(store.trash || [], normalizedTrashId);
     if (!entry || entry.type !== CONTENT_ATTACHMENT_TRASH_TYPE) return { missing: true };
@@ -395,41 +469,8 @@ export function createContentAttachmentService({
     if (recovery.invalid) return recovery;
     const owned = await verifyOwned(recovery.value.sourcePaths);
     if (owned.forbidden) return { attachmentMissing: true };
-    const changedAt = timestamp(now());
     return repository.update(document => {
-      const currentEntry = trash.get(document.trash || [], normalizedTrashId);
-      if (!currentEntry || currentEntry.type !== CONTENT_ATTACHMENT_TRASH_TYPE) return { missing: true };
-      const currentRecovery = recoveryPayload(currentEntry);
-      if (currentRecovery.invalid) return currentRecovery;
-      const { targetType, targetId } = currentEntry.location || {};
-      const located = locate(document, targetType, targetId);
-      if (!located) return { parentMissing: true };
-      const version = expectedVersionResult(located.resource, expectedVersion);
-      if (version.error || version.versionConflict) return version;
-      const current = pathsOf(located.resource);
-      if (currentRecovery.value.attachmentPaths.some(path => current.includes(path))) return { restoreConflict: true };
-      const combined = normalizeOriginalImagePaths([
-        ...current,
-        ...currentRecovery.value.attachmentPaths
-      ], { maxImages });
-      if (combined.error) return combined;
-      const combinedSet = new Set(combined.value);
-      if (currentRecovery.value.imageUnderstandings.some(item => (
-        item.sourceAttachmentPaths.some(path => !combinedSet.has(path))
-      ))) return { restoreConflict: true };
-      located.resource.attachmentPaths = combined.value;
-      const existingIds = new Set(understandingsOf(located.resource).map(item => item.id));
-      const restoredUnderstandings = currentRecovery.value.imageUnderstandings
-        .filter(item => item?.id && !existingIds.has(item.id));
-      if (restoredUnderstandings.length) {
-        located.resource.imageUnderstandings = [
-          ...understandingsOf(located.resource),
-          ...cloned(restoredUnderstandings)
-        ];
-      }
-      touchLocated(located, changedAt);
-      trash.remove(document.trash, [normalizedTrashId]);
-      return { value: project(located, targetType, targetId, owned.inventory) };
+      return restoreOriginalImagesInStore(document, normalizedTrashId, expectedVersion, owned.inventory);
     });
   }
 
@@ -437,37 +478,45 @@ export function createContentAttachmentService({
     targetType,
     targetId,
     attachmentPaths,
-    inputVersion
+    inputVersion,
+    owner = null
   }) {
     const target = normalizeContentAttachmentTarget(targetType, targetId);
     if (target.error) return target;
     const parsed = normalizeOriginalImagePaths(attachmentPaths, { maxImages, requireImages: true });
     if (parsed.error) return parsed;
+    const prepare = (store, inventory) => {
+      const owned = verifyInventory(parsed.value, inventory);
+      if (owned.forbidden) return owned;
+      const prepared = prepareUnderstandingInStore(store, {
+        targetType, targetId, attachmentPaths: parsed.value, inputVersion, owner
+      });
+      if (!prepared.value) return prepared;
+      const { located, ...value } = prepared.value;
+      return { value: { accountId: accountId(), ...value } };
+    };
+    if (recordCommands) return recordCommands.run({
+      commandId: "contentAttachment.prepareUnderstanding", targetType, targetId, owner,
+      paths: parsed.value, readOnly: true, mutate: prepare
+    });
     const owned = await verifyOwned(parsed.value);
     if (owned.forbidden) return owned;
     const store = await repository.read();
-    const prepared = prepareUnderstandingInStore(store, {
-      targetType,
-      targetId,
-      attachmentPaths: parsed.value,
-      inputVersion
-    });
-    if (!prepared.value) return prepared;
-    const { located, ...value } = prepared.value;
-    return { value: { accountId: accountId(), ...value } };
+    return prepare(store, owned.inventory);
   }
 
   function prepareUnderstandingInStore(store, {
     targetType,
     targetId,
     attachmentPaths,
-    inputVersion
+    inputVersion,
+    owner = null
   }) {
     const target = normalizeContentAttachmentTarget(targetType, targetId);
     if (target.error) return target;
     const parsed = normalizeOriginalImagePaths(attachmentPaths, { maxImages, requireImages: true });
     if (parsed.error) return parsed;
-    const located = locate(store, targetType, targetId);
+    const located = locate(store, targetType, targetId, owner);
     if (!located) return { missing: true };
     const version = expectedVersionResult(located.resource, inputVersion);
     if (version.error || version.versionConflict) return version;
@@ -480,6 +529,7 @@ export function createContentAttachmentService({
         targetId,
         inputVersion: version.currentVersion,
         attachmentPaths: parsed.value,
+        ...(targetType === "comment" ? { owner: { collection: located.collection, id: located.parent.id } } : {}),
         originalText: originalTextOf(targetType, located.resource),
         ...taskTarget(located, targetType, targetId)
       }
@@ -510,7 +560,8 @@ export function createContentAttachmentService({
     content,
     model = "",
     sourceTaskId = "",
-    clientRequestId = ""
+    clientRequestId = "",
+    owner = null
   }) {
     const target = normalizeContentAttachmentTarget(targetType, targetId);
     if (target.error) return target;
@@ -523,7 +574,7 @@ export function createContentAttachmentService({
     }, { maxImages });
     if (parsed.error) return parsed;
     const changedAt = timestamp(now());
-    const located = locate(store, targetType, targetId);
+    const located = locate(store, targetType, targetId, owner);
     if (!located) return { missing: true };
     const duplicate = understandingsOf(located.resource).find(item => (
       (parsed.value.sourceTaskId && item.sourceTaskId === parsed.value.sourceTaskId)
@@ -561,6 +612,14 @@ export function createContentAttachmentService({
       clientRequestId: input.clientRequestId
     }, { maxImages });
     if (parsed.error) return parsed;
+    if (recordCommands) return recordCommands.run({
+      commandId: "contentAttachment.saveUnderstanding", targetType: input.targetType,
+      targetId: input.targetId, owner: input.owner, paths: parsed.value.sourceAttachmentPaths,
+      mutate(store, inventory) {
+        const owned = verifyInventory(parsed.value.sourceAttachmentPaths, inventory);
+        return owned.forbidden ? owned : saveUnderstandingInStore(store, input);
+      }
+    });
     const owned = await verifyOwned(parsed.value.sourceAttachmentPaths);
     if (owned.forbidden) return owned;
     return repository.update(store => saveUnderstandingInStore(store, input));
@@ -568,7 +627,7 @@ export function createContentAttachmentService({
 
   function taskResult(store, task) {
     if (task?.kind !== "contentImageUnderstanding" || !task.resultId) return null;
-    const located = locate(store, task.payload?.targetType, task.payload?.targetId);
+    const located = locate(store, task.payload?.targetType, task.payload?.targetId, task.payload?.owner);
     return understandingsOf(located?.resource).find(item => (
       item.id === task.resultId && item.sourceTaskId === task.id
     )) || null;

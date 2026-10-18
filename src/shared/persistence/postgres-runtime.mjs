@@ -804,12 +804,13 @@ export async function createPostgresRuntime({
     pending: () => readAccount(async (client, id) => (await client.query(`
       SELECT path FROM for_now.attachment_inventory WHERE account_id = $1 AND state = 'uploading'
     `, [id])).rows),
-    list: () => readAccount(async (client, id) => (await client.query(`
+    list: ({ paths = null } = {}) => readAccount(async (client, id) => (await client.query(`
       SELECT path, storage, object_key AS "objectKey", bytes, sha256, state
       FROM for_now.attachment_inventory
       WHERE account_id = $1
+        AND ($2::text[] IS NULL OR path = ANY($2::text[]))
       ORDER BY path
-    `, [id])).rows),
+    `, [id, paths])).rows),
     removed: resourcePath => accountTransaction(async (client, id) => {
       await client.query(`
         UPDATE for_now.attachment_inventory SET state = 'missing_cleanup', bytes = NULL, sha256 = NULL

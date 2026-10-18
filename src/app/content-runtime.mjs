@@ -8,6 +8,7 @@ import { createImportanceService } from "../../.build/typescript/backend/shared/
 import { legalImportanceMaterial, legalImportanceSources } from "./task-context.mjs";
 import crypto from "node:crypto";
 import { createContentAttachmentService } from "../modules/content-attachments/index.mjs";
+import { createContentAttachmentRecordCommands } from "./record-commands/content-attachments.mjs";
 import { keepsakePayload } from "../modules/keepsakes/index.mjs";
 import { createContentBackground, enqueueContentImageUnderstanding } from "./content/background.mjs";
 import { createContentFoundation, createContentRecords } from "./content/resources.mjs";
@@ -154,10 +155,14 @@ export function createContentRuntime({
   });
   const contentAttachmentService = createContentAttachmentService({
     repository: contentRepository,
+    recordCommands: repository.accountUnitOfWork?.run
+      ? createContentAttachmentRecordCommands(contentRepository) : null,
     trash: foundation.trashService,
     attachmentInventory: (...args) => {
       if (!mediaRuntime) throw new Error("Content media runtime is not initialized");
-      return mediaRuntime.listAttachmentInventory(...args);
+      return mediaOptions.attachmentInventory?.list
+        ? mediaOptions.attachmentInventory.list(...args)
+        : mediaRuntime.listAttachmentInventory(...args);
     },
     getAccountId,
     cancelTask: taskId => backgroundAi?.cancel(taskId) || false,

@@ -297,6 +297,7 @@ export function createAiTaskTargets({
       targetType: task.payload?.targetType,
       targetId: task.payload?.targetId,
       attachmentPaths: task.payload?.attachmentPaths,
+      owner: task.payload?.owner,
       inputVersion: task.inputVersion
     });
     if (!prepared.value) return null;
@@ -588,6 +589,7 @@ export function createAiTaskTargets({
         const saved = contentAttachments.saveUnderstandingInStore(store, {
           targetType: work.targetType,
           targetId: work.targetId,
+          owner: work.owner,
           inputVersion: work.inputVersion,
           attachmentPaths: work.attachmentPaths,
           content: result.content,
