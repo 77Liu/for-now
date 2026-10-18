@@ -88,7 +88,7 @@ const parseChainCursor = (value, filters) => {
     return false;
   }
 };
-const chainSearchText = (root, blocks) => normalizedSearchText([
+export const thoughtChainSearchText = (root, blocks) => normalizedSearchText([
   root.content,
   ...(Array.isArray(root.tags) ? root.tags : []),
   ...(Array.isArray(root.remarks) ? root.remarks.map(item => item?.text) : []),
@@ -102,7 +102,7 @@ const chainSearchText = (root, blocks) => normalizedSearchText([
 ].filter(Boolean).join(" "));
 const chainMatchesQuery = (root, blocks, query) => {
   if (!query) return true;
-  const content = chainSearchText(root, blocks);
+  const content = thoughtChainSearchText(root, blocks);
   return query.split(" ").every(term => content.includes(term));
 };
 const userChainPreview = blocks => {
@@ -379,7 +379,8 @@ export function createThoughtService({
   eventTimeFields,
   reanchorAnnotations,
   reconcileOriginalImages = null,
-  getCursorScope = () => ""
+  getCursorScope = () => "",
+  queryRuntime = null
 }) {
   const touchRoot = root => {
     root.version = recordVersion(root.version) + 1;
@@ -581,6 +582,7 @@ export function createThoughtService({
     },
 
     async getChain(id) {
+      if (queryRuntime?.enabled) return queryRuntime.detail(id);
       const store = await repository.read();
       return thoughtChainDetail(store.thoughts, id);
     },
@@ -590,6 +592,7 @@ export function createThoughtService({
     },
 
     async listChains({ limit = CHAIN_LIST_LIMIT, afterId = "", direction = "next", query = "", tag = "", sort = "occurred" } = {}) {
+      if (queryRuntime?.enabled) return queryRuntime.list({ limit, afterId, direction, query, tag, sort });
       const store = await repository.read();
       return thoughtChainListPage(store.thoughts, {
         limit,
@@ -781,3 +784,26 @@ export function createThoughtService({
 }
 
 export { createThoughtRecordCommands } from "../../../.build/typescript/backend/modules/thoughts/record-commands.mjs";
+
+import { createThoughtQueryRuntime as createQueryRuntime } from "../../../.build/typescript/backend/modules/thoughts/query-runtime.mjs";
+import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../../shared/persistence/index.mjs";
+/** 装配公开思绪数据库查询与投影维护；业务事实仍是正式思绪对象。 @since unreleased
+ * @partial 阶段 6 候选接入，尚未宣布完整出口验收。
+ * @partialScope 全部生产者逐入口矩阵和真实浏览器消费者验收待完成；基础 PG 查询与事务证据另见正式回执。
+ * @partialVersion v0.5.16 阶段 6 未发布候选。
+ * @partialReason 当前切片仅完成已记录的局部及 PostgreSQL 验证。
+ * @partialAuthorization Owner 2026-10-19「继续持续推进开发」。
+ * @partialUsage 默认关闭 THOUGHT_PAGING_ENABLED；仅供隔离验收，不开启生产查询。
+ */
+export const createThoughtQueries = ({ repository, enabled = false, discoveryProjection = null, speechProjection = null }) => createQueryRuntime({
+  repository,
+  enabled,
+  dependencies: {
+    canonicalJson, mapStoreObjects, rebuildStoreObjects,
+    summary: thoughtChainSummary,
+    searchText: thoughtChainSearchText,
+    detail: thoughtChainDetail,
+    ...(discoveryProjection ? { discoveryProjection } : {}),
+    ...(speechProjection ? { speechProjection } : {})
+  }
+});

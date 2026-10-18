@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 445,
-  "updated_at": "2026-10-18T13:25:31.152Z",
+  "revision": 450,
+  "updated_at": "2026-10-18T17:00:49.172Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段1/5返修已验收；阶段6仅只读准备（实现暂停）"
+    "phase": "阶段6/11：新F4数据库游标分页实现"
   },
   "scope": {
-    "description": "v0.5.16：f25154复审R1—R4及永久清理缺口已在533053修复并完成本轮验收；当前允许新F4只读准备，不进入下一阶段实现。",
+    "description": "Owner恢复持续串行开发；阶段1/5返修已验收，当前实现新F4数据库分页及其必要生产者接入；通过阶段出口后继续唯一后继。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
-      "commit": "533053",
-      "source": "本轮R1—R4及永久清理返修提交；tree f9c50c。既有F9/首页差分未夹带，阶段6仍只读。"
+      "commit": "d9d79d",
+      "source": "返修候选533053及正式回执；Owner 2026-10-19明确继续持续推进开发。"
     },
     "inputs": [
       "docs/technical-proposals/V0516-跨需求共用底座与串行开发-技术方案.md",
@@ -34,7 +34,7 @@
       "knowledge/test-impact-matrix.md"
     ],
     "exclusions": [
-      "阶段6至11新功能实现暂停；新F4只做只读准备",
+      "当前阶段出口验收前，不实现后继阶段新功能",
       "不 push、tag、Release、Preview 或生产部署",
       "不执行生产业务写入或未授权真实付费调用",
       "不回退或夹带工作区内既有 F9 未提交差分"
@@ -54,17 +54,81 @@
     ],
     "plan_ref": "docs/versions/v0.5.16/README.md"
   },
-  "active_tasks": [],
+  "active_tasks": [
+    {
+      "id": "v0516-stage6-db-thought-paging",
+      "mode": "implementation",
+      "owner": "主控串行",
+      "requirement_id": "reczz28ORRaxSFnV",
+      "baseline": "d9d79d",
+      "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效",
+      "allowed_write_set": [
+        "src/modules/thoughts/**",
+        "src/modules/discovery/**",
+        "src/shared/persistence/**",
+        "src/shared/thought-pagination/**",
+        "src/app/content-runtime.mjs",
+        "src/app/content/**",
+        "src/app/annotation-resources.mjs",
+        "src/app/trash.mjs",
+        "src/app/thought-workflows.mjs",
+        "src/app/ai-task-targets.mjs",
+        "src/app/record-commands/**",
+        "src/app/index.mjs",
+        "src/http/thoughts.mjs",
+        "src/modules/content-attachments/**",
+        "scripts/*thought*",
+        "scripts/postgres-runtime-checks.mjs",
+        "scripts/*discovery*",
+        "scripts/postgres-integration.mjs",
+        "scripts/prepare-generated-runtime.mjs",
+        "package.json",
+        "tsconfig*.json",
+        "docs/technical-proposals/reczz28ORRaxSFnV-应新规重做F4数据库游标分页-技术方案.md",
+        "reviews/2026-10-19*",
+        "coordination/**",
+        "src/app/runtime-foundation.mjs",
+        "src/app/runtime-http-wiring.mjs",
+        "src/app/startup-projections.mjs",
+        "src/http/startup.mjs",
+        "src/http/openapi/thoughts.mjs",
+        "src/modules/notifications/query.mts",
+        "src/modules/notifications/index.mjs",
+        "public/frontend/features/thoughts/operations.mjs",
+        "scripts/startup-projection-regression.mjs",
+        "scripts/frontend-thoughts-feature-regression.mjs",
+        "scripts/api-v1-contract-regression.mjs",
+        "src/app/speech-cache.mjs"
+      ],
+      "forbidden_write_set": [
+        "public/frontend/app/runtime/home-runtime.mjs",
+        "public/frontend/app/runtime/kernel.mjs",
+        "public/frontend/state/index.mjs",
+        "scripts/sync-coordinator-regression.mjs",
+        "src/http/sync.mjs",
+        ".trae/skills/tell-me/**",
+        "生产数据与凭据",
+        "阶段7至11新功能"
+      ],
+      "shared_owner": "主控唯一串行写者（schema/构建/接口/控制面）",
+      "integration_order": "核对前驱与全部生产者→领域读模型和schema→同事务维护/回填→有界查询与HTTP兼容→专项/PG/消费者验收→提交和出口裁定",
+      "acceptance": "方案TC01—TC12；coverage不完整时禁止启用DB分页；保留原有UI/F9差分",
+      "review_ref": "reviews/2026-10-19-stage6-db-paging-review.md",
+      "receipt_ref": "reviews/2026-10-19-stage6-db-paging-result.json"
+    }
+  ],
   "candidate": null,
   "authorization": {
-    "source": "Owner 2026-10-18 本轮明确：提交规则更新并继续当前阶段返修；新F4仅只读准备，暂不进入下一阶段实现。",
+    "source": "Owner 2026-10-19：继续持续推进开发。恢复v0.5.16已评审11项需求的严格串行本地实现、验证和提交，替代此前阶段6只读限制。",
     "allowed_actions": [
-      "已授权当前阶段返修、本地验证与提交",
-      "新F4只读准备；未获后续放行不实现新功能",
-      "控制面事实及验收回执更新"
+      "当前及后继已评审需求的严格串行本地实现、自查、审查、受影响验证与本地提交",
+      "当前阶段必要schema、迁移、运行时、测试及技术方案回填",
+      "隔离本地PostgreSQL、mock provider、无生产副作用测试",
+      "控制面更新；唯一前驱出口通过后登记并接续下一阶段",
+      "Owner本轮明确授权线上真实数据访问；本轮仅通过SELECT-only备份角色只读采样，在来源进程内替换字符，不导出原始正文、账户身份或凭据。"
     ],
     "excluded": [
-      "阶段6至11新功能实现",
+      "阶段出口前越级实现后继需求",
       "push",
       "tag",
       "Release",
@@ -84,8 +148,29 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [],
-  "next_action": "只读准备新F4；复核533053返修候选及回执。未经后续明确放行不登记或执行阶段6实现；不发布或部署。",
+  "blockers": [
+    {
+      "id": "stage6-producer-closure",
+      "status": "OPEN",
+      "owner": "主控",
+      "blocks": "阶段6出口及阶段7实施",
+      "reason": "逐生产者 command/ChangeDraft/成功故障矩阵未完整绑定；兼容提交投影观察器不等于存量全账户 updater 已迁为有界命令。",
+      "evidence": [
+        "reviews/2026-10-19-stage6-db-paging-review.md#未关闭项"
+      ]
+    },
+    {
+      "id": "stage6-browser-consumers",
+      "status": "OPEN",
+      "owner": "主控",
+      "blocks": "阶段6出口及阶段7实施",
+      "reason": "真实浏览器连续分页、详情返回、锚点/草稿/展开态及F9 scope消费验收尚未与本候选完整绑定。",
+      "evidence": [
+        "reviews/2026-10-19-stage6-db-paging-review.md#未关闭项"
+      ]
+    }
+  ],
+  "next_action": "继续当前阶段返修：完成逐生产者有界闭包与故障矩阵、真实浏览器分页/详情/阅读状态验收；TC01—TC12全部通过后才核定阶段6出口。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",

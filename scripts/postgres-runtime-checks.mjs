@@ -1,3 +1,6 @@
+import { runThoughtSearchCorpusChecks } from "../.build/typescript/thought-db-regression/scripts/thought-search-corpus-regression.mjs";
+import { thoughtDiscoveryProjection, createThoughtDiscoveryService } from "../src/modules/discovery/index.mjs";
+import { thoughtSpeechProjection, readThoughtSpeechAssets } from "../src/app/index.mjs";
 import assert from "node:assert/strict";
 import pg from "pg";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -27,6 +30,8 @@ import { createTaskLifecycle } from "../src/modules/tasks/index.mjs";
 import {
   createThoughtService,
   createThoughtTaskTarget,
+  createThoughtQueries,
+  thoughtChainListPage,
   stripThoughtAnswerLead
 } from "../src/modules/thoughts/index.mjs";
 import { evidenceSourceKey } from "../src/modules/user-model/index.mjs";
@@ -40,6 +45,7 @@ import { createSyncHttp } from "../src/http/index.mjs";
 import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
 import "./prompt-test-setup.mjs";
+import { runThoughtDbPagingChecks } from "../.build/typescript/thought-db-regression/scripts/thought-db-paging-regression.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -986,7 +992,8 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     backend = "postgres",
     {
       accountRecoveryEnabled = false,
-      recordCommandAllowlist = ""
+      recordCommandAllowlist = "",
+      thoughtPagingEnabled = false
     } = {}
   ) => {
     const appPort = await freePort();
@@ -997,6 +1004,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*",
         ACCOUNT_RECOVERY_ENABLED: accountRecoveryEnabled ? "1" : "0",
         RECORD_COMMAND_ALLOWLIST: recordCommandAllowlist,
+        THOUGHT_PAGING_ENABLED: thoughtPagingEnabled ? "1" : "0",
         SYNC_ACCOUNT_WAKE_ENABLED: "1",
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
@@ -1234,9 +1242,42 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       FROM for_now.record_changes
       WHERE account_id = 'repo-test' AND cursor = 3
     `)).rows, [{ cursor: "3", version: 3, operation: "delete" }]);
+    await runThoughtSearchCorpusChecks(database);
+    const pagingRepo = runtime.createStoreRepository({ normalize: value => value, emptyDocument: empty() });
+    const pagingQueries = await runThoughtDbPagingChecks({ database, repo: pagingRepo, account,
+      createQueries: options => createThoughtQueries({ ...options, discoveryProjection: thoughtDiscoveryProjection,
+        speechProjection: thoughts => thoughtSpeechProjection(thoughts, value => crypto.createHash("sha256").update(value).digest("hex")) }),
+      registerSpeechFixture: async () => {
+        await runtime.attachments.record({ path: "/attachments/paging.mp3", storage: "local",
+          objectKey: "paging.mp3", bytes: 0, sha256: crypto.createHash("sha256").update("").digest("hex") });
+        await runtime.attachments.confirm({ path: "/attachments/paging.mp3", storage: "local",
+          objectKey: "paging.mp3", bytes: 0, sha256: crypto.createHash("sha256").update("").digest("hex") });
+      },
+      speechAssets: sources => readThoughtSpeechAssets(pagingRepo, sources, {
+        hash: value => crypto.createHash("sha256").update(value).digest("hex"),
+        ownerHash: "paging-owner", currentTime: "2026-10-19T00:00:00.000Z"
+      }),
+      discovery: queries => createThoughtDiscoveryService({ repository: pagingRepo, thoughtQueries: () => queries,
+        now: () => "2026-10-19T00:00:00.000Z" }),
+      legacyPage: thoughtChainListPage,
+      removeRoot: (store, id) => createThoughtRecordHarness(pagingRepo).mutations.moveThoughtChainToTrash(store, id) });
+    await account("repo-test", () => pagingQueries.rebuild());
+    const assertProjectionParity = async accountId => account(accountId, async () => {
+      const store = await repo.read();
+      const expected = thoughtChainListPage(store.thoughts, { limit: 20 });
+      const actual = await pagingQueries.list({});
+      assert.deepEqual(actual.items.map(({ annotationCount, followUpCount, ...item }) => item), expected.items);
+      for (const item of actual.items) assert.equal(item.annotationCount,
+        (store.thoughts.find(root => root.id === item.id).annotations || []).length
+          + (store.thoughts.find(root => root.id === item.id).annotationDrift || []).length);
+    });
     await runNotificationRecordCommandChecks({ database, repo, account });
     await runThoughtRecordCommandChecks({ database, repo, account });
+    await assertProjectionParity("repo-test");
     await runBlockDeletionRemediationChecks({ database, repo, account });
+    await assertProjectionParity("block-remediation-queued");
+    await assertProjectionParity("block-remediation-running");
+
     await account("repo-test", async () => {
       const captureBaseline = (await repo.read()).captures.length;
       await Promise.all(Array.from({ length: 12 }, (_, index) => (index % 2 ? repo : peerRepo).update(value => {
@@ -1631,7 +1672,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       accountId: "repo-test", store: empty()
     })), /entered runtime/);
 
-    let app = await startApp();
+    let app = await startApp("runtime_test", dataDir, "postgres", { thoughtPagingEnabled: true });
     await assert.rejects(startApp(), /Only one application instance/);
     assert.equal((await request(app.base, "/api/state")).status, 401);
     const register = username => request(app.base, "/api/auth/register", {
@@ -1666,10 +1707,16 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       }
       return results;
     };
+    for (const route of ["/api/v1/thought-chains", "/api/v1/route-state?view=thoughts"]) {
+      const result = await request(app.base, route, { cookie });
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+    }
+    assert.equal((await request(app.base, "/api/v1/route-state?view=thoughts&page=2", { cookie })).status, 400);
     const beforeRestart = await initialSync();
     await stop(app.child);
     app = await startApp("runtime_test", dataDir, "postgres", {
-      accountRecoveryEnabled: true
+      accountRecoveryEnabled: true,
+      thoughtPagingEnabled: true
     });
     const recoveryReady = await request(app.base, "/readyz");
     assert.equal(recoveryReady.status, 200, JSON.stringify(recoveryReady.body));
@@ -1916,6 +1963,17 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const perceptionSource = (await account(id, () => repo.read())).captures.find(
       item => item.id === receiptCapture.id
     );
+    const thoughtList = await request(app.base, "/api/v1/thought-chains?q=" + encodeURIComponent("数据库问题"), { cookie });
+    assert.equal(thoughtList.status, 200, JSON.stringify(thoughtList.body));
+    assert.ok(thoughtList.body.data.some(item => item.id === backgroundTask.targetId && item.annotationCount === 1));
+    assert.ok(thoughtList.body.data.every(item => !Object.hasOwn(item, "blocks") && !Object.hasOwn(item, "reasoningContent")));
+    const thoughtRoute = await request(app.base, "/api/v1/route-state?view=thoughts&q=" + encodeURIComponent("数据库问题"), { cookie });
+    assert.equal(thoughtRoute.status, 200, JSON.stringify(thoughtRoute.body));
+    assert.deepEqual(thoughtRoute.body.data.thoughts.map(item => item.id), thoughtList.body.data.map(item => item.id));
+    const detailRoute = await request(app.base, "/api/v1/route-state?view=thoughts&resourceId=" + backgroundTask.targetId, { cookie });
+    assert.equal(detailRoute.status, 200, JSON.stringify(detailRoute.body));
+    assert.ok(detailRoute.body.data.thoughts.some(item => item.id === generatedAnswer.id));
+    assert.equal(detailRoute.body.data.thoughtPage.found, true);
     const perceptionSourceRef = {
       resourceType: "capture",
       resourceId: perceptionSource.id,

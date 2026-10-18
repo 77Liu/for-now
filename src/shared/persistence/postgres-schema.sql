@@ -586,6 +586,10 @@ BEGIN
   INSERT INTO for_now.store_attachment_refs SELECT * FROM jsonb_populate_recordset(NULL::for_now.store_attachment_refs, business->'attachmentRefs');
   INSERT INTO for_now.resource_lifecycle SELECT * FROM jsonb_populate_recordset(NULL::for_now.resource_lifecycle, business->'lifecycles');
   INSERT INTO for_now.idempotency_ledger SELECT * FROM jsonb_populate_recordset(NULL::for_now.idempotency_ledger, business->'idempotency');
+  IF business ? 'projectionVersion' THEN
+    INSERT INTO for_now.record_projection_status(account_id,schema_version)
+      VALUES (owner_id,(business->>'projectionVersion')::integer);
+  END IF;
   FOR item IN SELECT * FROM jsonb_array_elements(documents) LOOP
     IF EXISTS (
       SELECT 1 FROM jsonb_array_elements(item->'fields' || item->'records' || item->'secrets') row
@@ -598,3 +602,63 @@ BEGIN
   END LOOP;
 END $$;
 REVOKE ALL ON FUNCTION for_now_auth.provision_account(text, jsonb, jsonb) FROM PUBLIC;
+
+-- migration:thought-chain-index-v1
+CREATE TABLE IF NOT EXISTS for_now.thought_chain_index (
+  account_id text NOT NULL REFERENCES for_now.accounts(account_id) ON DELETE CASCADE,
+  root_id text NOT NULL,
+  source_version integer NOT NULL CHECK(source_version>0),
+  projection_version bigint NOT NULL CHECK(projection_version>0),
+  index_schema_version integer NOT NULL,
+  search_mode text NOT NULL DEFAULT 'normalized_index' CHECK(search_mode='normalized_index'),
+  occurred_at text NOT NULL,
+  created_at text NOT NULL,
+  tags text[] NOT NULL,
+  search_text text NOT NULL,
+  search_grams text[] NOT NULL,
+  summary jsonb NOT NULL,
+  projection_hash text NOT NULL,
+  speech_sources jsonb NOT NULL DEFAULT '[]'::jsonb,
+  discovery_sort_time bigint NOT NULL,
+  discovery_search jsonb NOT NULL,
+  discovery_status jsonb NOT NULL,
+  PRIMARY KEY(account_id,root_id)
+);
+CREATE INDEX IF NOT EXISTS thought_chain_occurred_idx ON for_now.thought_chain_index
+  (account_id,occurred_at DESC,created_at DESC,root_id DESC);
+CREATE INDEX IF NOT EXISTS thought_chain_created_idx ON for_now.thought_chain_index
+  (account_id,created_at DESC,root_id DESC);
+CREATE INDEX IF NOT EXISTS thought_chain_discovery_idx ON for_now.thought_chain_index
+  (account_id,discovery_sort_time DESC,root_id DESC);
+CREATE INDEX IF NOT EXISTS thought_chain_tags_idx ON for_now.thought_chain_index USING gin(tags);
+CREATE INDEX IF NOT EXISTS thought_chain_search_idx ON for_now.thought_chain_index USING gin(search_grams) WITH (fastupdate=off);
+CREATE INDEX IF NOT EXISTS thought_owned_parent_idx ON for_now.store_objects(account_id,parent_key)
+  WHERE collection='thoughts';
+CREATE TABLE IF NOT EXISTS for_now.thought_tag_counts (
+  account_id text NOT NULL REFERENCES for_now.accounts(account_id) ON DELETE CASCADE,
+  tag text NOT NULL,
+  uses bigint NOT NULL CHECK(uses>=0),
+  PRIMARY KEY(account_id,tag)
+);
+CREATE TABLE IF NOT EXISTS for_now.record_projection_status (
+  account_id text PRIMARY KEY REFERENCES for_now.accounts(account_id) ON DELETE CASCADE,
+  schema_version integer NOT NULL
+);
+ALTER TABLE for_now.thought_chain_index ENABLE ROW LEVEL SECURITY;
+ALTER TABLE for_now.thought_chain_index FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS thought_chain_account ON for_now.thought_chain_index;
+CREATE POLICY thought_chain_account ON for_now.thought_chain_index
+  USING(account_id=current_setting('app.account_id',true))
+  WITH CHECK(account_id=current_setting('app.account_id',true));
+ALTER TABLE for_now.thought_tag_counts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE for_now.thought_tag_counts FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS thought_tag_account ON for_now.thought_tag_counts;
+CREATE POLICY thought_tag_account ON for_now.thought_tag_counts
+  USING(account_id=current_setting('app.account_id',true))
+  WITH CHECK(account_id=current_setting('app.account_id',true));
+ALTER TABLE for_now.record_projection_status ENABLE ROW LEVEL SECURITY;
+ALTER TABLE for_now.record_projection_status FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS record_projection_status_account ON for_now.record_projection_status;
+CREATE POLICY record_projection_status_account ON for_now.record_projection_status
+  USING(account_id=current_setting('app.account_id',true))
+  WITH CHECK(account_id=current_setting('app.account_id',true));

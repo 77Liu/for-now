@@ -231,7 +231,7 @@ export function createThoughtOperations({
   }
   async function loadAdjacent(direction = "next") {
     const route = navigation.currentRoute(), page = snapshot().thoughtPage;
-    if (route.view !== "thoughts" || route.kind === "detail") return false;
+    if (route.view !== "thoughts" || route.kind === "detail" || pagingConfig()?.enabled === false) return false;
     const window = ensurePaging();
     if (pagingEnabled() && !window) return false;
     if (window?.stale || page?.stale) { viewPort.showToast("内容已变化，请刷新后继续", "error"); return false; }
@@ -263,10 +263,10 @@ export function createThoughtOperations({
         snapshot().thoughts = projection.items;
         snapshot().thoughtPage = { ...page, window: next, nextCursor: projection.nextCursor, prevCursor: projection.prevCursor };
       } else {
-        const known = new Set((snapshot().thoughts || []).map(item => item.id));
-        snapshot().thoughts = [...snapshot().thoughts, ...result.data.filter(item => !known.has(item.id))].slice(0, THOUGHT_PAGING.pageSize * THOUGHT_PAGING.maxPages);
-        snapshot().thoughtPage = { ...page, page: Math.min(THOUGHT_PAGING.maxPages, (page.page || 1) + 1), nextCursor: snapshot().thoughts.length < THOUGHT_PAGING.pageSize * THOUGHT_PAGING.maxPages ? result.meta.nextCursor : null };
-        navigation.replaceQuery({ page: snapshot().thoughtPage.page }, { apply: false });
+        snapshot().thoughts = result.data.slice(0, THOUGHT_PAGING.pageSize);
+        snapshot().thoughtPage = { ...page, page: 1, requestCursor: cursor, direction,
+          nextCursor: result.meta.nextCursor, prevCursor: result.meta.prevCursor };
+        navigation.replaceQuery({ cursor, direction, page: null }, { apply: false });
       }
       thoughtView.render();
       if (focusChain) document.querySelector(`#all-thoughts [data-chain-id="${platform.escapeSelector(focusChain)}"] summary`)?.focus?.({ preventScroll: true });

@@ -52,7 +52,8 @@ export function createThoughtHttp({
   async function handleV1(req, res, url, v1) {
     if (req.method === "GET" && url.pathname === "/api/v1/thought-chains") {
       const direction = url.searchParams.get("direction") || "next";
-      if (!["next", "prev"].includes(direction) || (direction === "prev" && !url.searchParams.get("cursor")) || url.searchParams.has("page")) return v1.error(res, 400, "分页参数冲突或方向无效", "INVALID_QUERY");
+      if (!["next", "prev"].includes(direction) || (direction === "prev" && !url.searchParams.get("cursor")) || (url.searchParams.has("page") && url.searchParams.get("page") !== "1")
+        || (url.searchParams.has("page") && url.searchParams.has("cursor"))) return v1.error(res, 400, "分页参数冲突或方向无效", "INVALID_QUERY");
       const page = await workflows.listChains({
         direction,
         ...v1.pagination(url, { defaultLimit: THOUGHT_PAGING.pageSize, maxLimit: THOUGHT_PAGING.pageSize, maxCursorLength: THOUGHT_PAGING.maxCursorDecodedLength }),

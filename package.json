@@ -95,7 +95,7 @@
     "test:postgres:preflight": "node scripts/postgres-test-preflight.mjs",
     "test:postgres:stable": "node scripts/postgres-test-preflight.mjs --run",
     "test:postgres-preflight": "node scripts/postgres-test-preflight-regression.mjs",
-    "test:postgres": "npm run build:runtime --silent && npm run build:ai-migrations --silent && node scripts/ai-budget-postgres-regression.mjs && node scripts/postgres-integration.mjs && node scripts/persistence-ledger-postgres-regression.mjs && node scripts/postgres-record-compression-rollback-regression.mjs",
+    "test:postgres": "npm run build:runtime --silent && npm run build:ai-migrations --silent && node scripts/ai-budget-postgres-regression.mjs && tsc -p tsconfig.thought-db-regression.json && node scripts/postgres-integration.mjs && node scripts/persistence-ledger-postgres-regression.mjs && node scripts/postgres-record-compression-rollback-regression.mjs",
     "test:record-commands": "npm run build:runtime --silent && tsc -p tsconfig.record-commands-regression.json && node .build/typescript/record-commands-regression/scripts/record-command-producer-coverage-regression.mjs",
     "test:backend": "node scripts/system-test.mjs backend",
     "test:load": "npm run build:runtime --silent && node scripts/system-test.mjs load",
@@ -169,7 +169,9 @@
     "test:business-identifiers": "npm run build:runtime --silent && tsc -p tsconfig.business-identifiers-regression.json && node .build/typescript/business-identifiers-regression/scripts/business-identifiers-regression.mjs",
     "test:record-windows": "npm run build:runtime --silent && tsc -p tsconfig.record-windows-regression.json && node .build/typescript/record-windows-regression/scripts/record-windows-regression.mjs",
     "check:links": "node scripts/check-document-links.mjs",
-    "check:links:external": "node scripts/check-document-links.mjs --external"
+    "check:links:external": "node scripts/check-document-links.mjs --external",
+    "migrate:thought-index": "npm run build:backend --silent && tsc -p tsconfig.thought-index-migration.json && node .build/typescript/thought-index-migration/scripts/migrate-thought-index.mjs",
+    "build:thought-corpus": "tsc -p tsconfig.thought-corpus.json"
   },
   "dependencies": {
     "@alicloud/credentials": "2.4.7",

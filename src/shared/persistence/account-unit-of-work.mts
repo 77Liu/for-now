@@ -9,7 +9,7 @@ type QueryResult<Row = Record<string, unknown>> = {
   rows: Row[];
   rowCount: number | null;
 };
-type QueryClient = {
+export type QueryClient = {
   query<Row = Record<string, unknown>>(sql: string, values?: unknown[]): Promise<QueryResult<Row>>;
 };
 export type ObjectRow = {
@@ -229,7 +229,8 @@ function createObjectPort(
   client: QueryClient,
   accountId: string,
   noteWrite: (rows: number) => void,
-  noteRead: (rows: number) => void
+  noteRead: (rows: number) => void,
+  noteObjectChanged: (row: ObjectRow) => void
 ) {
   const find = async (objectKey: string, { lock = false } = {}) => {
     const result = await client.query<ObjectRow>(`
@@ -305,6 +306,7 @@ function createObjectPort(
       row.tombstone === true, row.deletedAt || null
     ]);
     noteWrite(count(result));
+    if (count(result)) noteObjectChanged(row);
   };
   const update = async (row: ObjectRow, expectedVersion: number) => {
     const result = await client.query(`
@@ -320,14 +322,17 @@ function createObjectPort(
       row.tombstone === true, row.deletedAt || null
     ]);
     noteWrite(count(result));
+    if (count(result)) noteObjectChanged(row);
     return count(result) === 1;
   };
   const remove = async (objectKey: string, expectedVersion: number) => {
-    const result = await client.query(`
+    const result = await client.query<ObjectRow>(`
       DELETE FROM for_now.store_objects
       WHERE account_id = $1 AND object_key = $2 AND version = $3
+      RETURNING ${objectColumns}
     `, [accountId, required(objectKey, "objectKey"), expectedVersion]);
     noteWrite(count(result));
+    for (const row of result.rows) noteObjectChanged(row);
     return count(result) === 1;
   };
   return Object.freeze({
@@ -529,10 +534,12 @@ function createLifecyclePort(
 export function createAccountUnitOfWork({
   transaction,
   onCommitted = () => {},
+  beforeCommit = async () => {},
   getContext = () => undefined,
   now = () => new Date().toISOString()
 }: {
   transaction: Transaction;
+  beforeCommit?: (context: { client: QueryClient; accountId: string }, changedRows: ObjectRow[]) => Promise<void>;
   onCommitted?: (event: {
     accountId: string;
     commandId: string;
@@ -596,12 +603,15 @@ export function createAccountUnitOfWork({
         let reads = 0;
         let writes = 0;
         const changes: Required<RecordChangeDraft>[] = [];
+        const changedRows: ObjectRow[] = [];
         const addChange = (draft: RecordChangeDraft) => {
           changes.push(normalizeChange(draft));
         };
         const value = await operation({
           accountId,
-          objects: createObjectPort(client, accountId, rows => { writes += rows; }, rows => { reads += rows; }),
+          objects: createObjectPort(client, accountId,
+            rows => { writes += rows; }, rows => { reads += rows; },
+            row => changedRows.push(row)),
           relations: createRelationPort(
             client,
             accountId,
@@ -620,6 +630,7 @@ export function createAccountUnitOfWork({
         if ((writes > 0) !== (changes.length > 0)) {
           throw new Error("Record command writes and ChangeSet must be committed together");
         }
+        await beforeCommit({ client, accountId }, changedRows);
         if (idempotency) {
           await insertIdempotency(client, accountId, idempotency, value, timestamp);
         }

@@ -34,7 +34,9 @@ export {
   SPEECH_CACHE_RETENTION_DAYS,
   createSpeechCache,
   normalizeSpeechCacheStore,
-  publicSpeechAssets
+  publicSpeechAssets,
+  thoughtSpeechProjection,
+  readThoughtSpeechAssets
 } from "./speech-cache.mjs";
 export {
   SPEECH_CACHE_SWEEP_INTERVAL_MS,

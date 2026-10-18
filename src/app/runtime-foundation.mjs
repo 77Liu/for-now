@@ -364,7 +364,10 @@ export async function createRuntimeFoundation({
       });
   const readStore = () => storeRepository.read();
   const updateStore = mutator => storeRepository.update(mutator);
-  const discoveryService = createThoughtDiscoveryService({ repository: storeRepository, now });
+  const discoveryService = createThoughtDiscoveryService({
+    repository: storeRepository, now,
+    thoughtQueries: () => contentRuntime?.thoughtQueries || null
+  });
   const actionsService = createActionsService({
     repository: storeRepository,
     now,
@@ -416,6 +419,7 @@ export async function createRuntimeFoundation({
     recordCompressionMaxBackfillDatesPerScan: appConfig.recordCompressionMaxBackfillDatesPerScan,
     recordCompressionStartDate: appConfig.recordCompressionStartDate,
     recordCommandConfig: appConfig.recordCommands,
+    thoughtPagingConfig: appConfig.features.thoughtPaging,
     now,
     today,
     currentTime: () => Date.now(),

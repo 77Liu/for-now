@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "rootDir": ".",
+    "outDir": ".build/typescript/thought-db-regression",
+    "noEmitOnError": true
+  },
+  "files": [
+    "scripts/thought-db-paging-regression.mts",
+    "scripts/thought-search-corpus-regression.mts"
+  ]
+}

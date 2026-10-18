@@ -320,6 +320,7 @@ export async function createPostgresRuntime({
    * 创建账户仓储；新增onCommitted（unreleased）位于真实COMMIT之后、审计之前。
    * 提示失败不回滚或重判已提交事实；仍由持久游标与回执确认结果。
    */
+  let recordProjection = null;
   const createStoreRepository = ({
     normalize,
     pgIo = null,
@@ -333,7 +334,9 @@ export async function createPostgresRuntime({
     const hintCommitted = (id, details = {}) => {
       try { void Promise.resolve(onCommitted({ accountId: id, storageScope: "postgres", ...details })).catch(() => {}); } catch {}
     };
+    const projectChanged = (context, rows) => recordProjection?.changed(context, rows);
     const accountUnitOfWork = createAccountUnitOfWork({
+      beforeCommit: async (context, rows) => { await projectChanged(context, rows); },
       transaction: accountTransaction,
       onCommitted: event => hintCommitted(event.accountId, {
         cursor: event.cursor,
@@ -439,6 +442,14 @@ export async function createPostgresRuntime({
           if (!result.rowCount) throw conflict();
           await clearStoreObjects(client, id);
           await writeStoreObjects(client, mapping);
+          if (recordProjection) {
+            const previous = new Map(mapStoreObjects(id, before).objects.map(row => [row.objectKey, row]));
+            const current = new Map(mapping.objects.map(row => [row.objectKey, row]));
+            const changed = [...previous.values(), ...current.values()].filter(row => (
+              canonicalJson(previous.get(row.objectKey) ?? null) !== canonicalJson(current.get(row.objectKey) ?? null)
+            ));
+            await projectChanged({ client, accountId: id }, changed);
+          }
           const missing = await client.query(`
             SELECT 1 FROM for_now.store_attachment_refs r
             LEFT JOIN for_now.attachment_inventory i ON i.account_id = r.account_id AND i.path = r.path
@@ -479,6 +490,34 @@ export async function createPostgresRuntime({
     return {
       /** 数据库实例由运行时独占，账户由受信上下文另行绑定。 @since unreleased */
       syncScope: () => "postgres",
+      /** Installs one domain-owned projection before account initialization. @since unreleased */
+      recordProjectionCoverage: Object.freeze({
+        recordTransactions: true,
+        legacyCommits: true,
+        initialization: true,
+        offlineImportInvalidates: true
+      }),
+      installRecordProjection(projection) {
+        if (recordProjection) throw new Error("Record projection already installed");
+        if (typeof projection?.changed !== "function" || typeof projection?.rebuild !== "function") {
+          throw new TypeError("Record projection requires changed/rebuild commands");
+        }
+        recordProjection = projection;
+      },
+      /** Reads only caller-declared collections for legacy domain adapters. @since unreleased */
+      readCollections: fields => readAccount(async (client, id) => {
+        if (!Array.isArray(fields) || fields.some(field => typeof field !== "string")) {
+          throw new TypeError("Collection query requires explicit field names");
+        }
+        return rebuildStoreObjects(await readPostgresStoreObjects(client, id, { fields }));
+      }),
+      /** Runs a domain query under the trusted account and the existing read transaction. @since unreleased */
+      queryRecords: operation => readAccount((client, accountId) => operation({ client, accountId })),
+      /** Explicit maintenance: isolated account transaction, never an online fallback. @since unreleased */
+      rebuildRecordProjection: (afterRootId = "") => accountTransaction((client, accountId) => {
+        if (!recordProjection) throw new Error("Record projection is not installed");
+        return recordProjection.rebuild({ client, accountId }, afterRootId);
+      }),
       validate: ({ allowCreate = false } = {}) => readAccount(async (client, id) => {
         const exists = (await client.query("SELECT 1 FROM for_now.accounts WHERE account_id = $1", [id])).rowCount;
         if (!exists && allowCreate) return null;
@@ -542,10 +581,21 @@ export async function createPostgresRuntime({
             now
           );
           if (canonicalJson(raw) !== canonicalJson(normalized)) {
+            const previousMapping = mapStoreObjects(id, raw);
+            const nextMapping = mapStoreObjects(id, normalized);
             await clearStoreObjects(client, id);
-            await writeStoreObjects(client, mapStoreObjects(id, normalized));
+            await writeStoreObjects(client, nextMapping);
+            if (recordProjection) {
+              const previousRows = new Map(previousMapping.objects.map(row => [row.objectKey, row]));
+              const currentRows = new Map(nextMapping.objects.map(row => [row.objectKey, row]));
+              const changed = [...previousRows.values(), ...currentRows.values()].filter(row => (
+                canonicalJson(previousRows.get(row.objectKey) ?? null) !== canonicalJson(currentRows.get(row.objectKey) ?? null)
+              ));
+              await projectChanged({ client, accountId: id }, changed);
+            }
           }
         }
+        if (recordProjection?.initialize) await recordProjection.initialize({ client, accountId: id });
         await markAccount(client, id);
         }).then(result => { hintCommitted(id); return result; });
       },
@@ -650,8 +700,11 @@ export async function createPostgresRuntime({
     if (!current) throw invalid("Provisioning requires a registration transaction");
     // 注册必须一次写入完整同步元数据；兼容无 trash 的合法旧格式，且不修改调用方。
     const document = preparePersistenceDocument(structuredClone(store), undefined, { force: true });
+    const mapping = mapStoreObjects(id, document);
+    const business = storeSqlMapping(mapping);
+    if (recordProjection) business.projectionVersion = recordProjection.provisionedVersion(mapping.objects);
     current.provisions.push({
-      id, business: storeSqlMapping(mapStoreObjects(id, document)),
+      id, business,
       documents: Object.entries(values).map(([name, value]) => documentSqlMapping(mapAccountDocument(id, name, value)))
     });
   };

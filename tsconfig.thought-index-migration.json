@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "rootDir": ".",
+    "outDir": ".build/typescript/thought-index-migration",
+    "noEmitOnError": true
+  },
+  "files": [
+    "scripts/migrate-thought-index.mts"
+  ]
+}

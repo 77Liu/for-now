@@ -1,3 +1,6 @@
+import crypto from "node:crypto";
+import { readThoughtSpeechAssets } from "./speech-cache.mjs";
+import { readNotificationUnread } from "../modules/notifications/index.mjs";
 import { openingPreferences } from "../../public/frontend/shared/opening/index.mjs";
 import path from "node:path";
 import {
@@ -533,6 +536,38 @@ export function createRuntimeHttpWiring({
     try { return openingPreferences((await aiRuntime.readLlmSettings()).opening); }
     catch { return openingPreferences(); }
   };
+  const readThoughtRoute = async route => {
+    const queries = contentRuntime.thoughtQueries;
+    const query = route.query || {};
+    const unread = await storeRepository.queryRecords(readNotificationUnread);
+    const speechFor = async ids => {
+      const speech = publicStateFromStore({ speechCache: [] }, undefined, ["speechCache"]).speech;
+      const hash = value => crypto.createHash("sha256").update(String(value)).digest("hex");
+      const sourceReceipts = await queries.speechSources(ids);
+      speech.assets = await readThoughtSpeechAssets(storeRepository, sourceReceipts, {
+        ownerHash: hash(safeText(requestStorage.getStore()?.user?.id, 100) || "local"),
+        currentTime: now(), hash
+      });
+      return speech;
+    };
+    if (route.resourceId) {
+      const detail = await queries.detail(route.resourceId);
+      const { blocks = [], ...root } = detail || {};
+      return { notificationUnread: unread, speech: await speechFor(detail ? [root.id] : []),
+        thoughts: detail ? [root, ...blocks] : [],
+        thoughtPage: { kind: "detail", found: Boolean(detail), nextId: "", query: query.q || "", page: 1 } };
+    }
+    const page = await queries.list({
+      afterId: query.thoughtAfterId || "", direction: query.direction || "next",
+      query: query.q || "", tag: query.tag || "", sort: query.sort,
+    });
+    return { notificationUnread: unread, speech: await speechFor(page.items.map(item => item.id)),
+      thoughts: page.items, thoughtPage: {
+      kind: "list", nextId: page.nextId, prevId: page.prevId, tags: page.tags,
+      requestCursor: query.cursor || "", direction: query.direction || "next",
+      query: query.q || "", tag: query.tag || "", sort: query.sort === "created" ? "created" : "occurred", page: 1
+    } };
+  };
   const startupHttp = createStartupHttp({
     readStartup: async () => {
       const store = await readStore();
@@ -551,17 +586,15 @@ export function createRuntimeHttpWiring({
         unread: notificationUnread(store.notifications)
       });
     },
-    readRouteState: async route => ({
-      ...routeStateProjection(
-        publicStateFromStore(await readStore()),
-        {
-          ...route,
-          currentDate: today(),
-          cursorScope: safeText(requestStorage.getStore()?.user?.id, 100) || "local"
-        }
-      ),
-      _routeProjection: { view: route.view, complete: false }
-    })
+    readRouteState: async route => {
+      const projection = route.view === "thoughts" && contentRuntime.thoughtQueries?.enabled
+        ? await readThoughtRoute(route)
+        : routeStateProjection(publicStateFromStore(await readStore()), {
+            ...route, currentDate: today(),
+            cursorScope: safeText(requestStorage.getStore()?.user?.id, 100) || "local"
+          });
+      return { ...projection, _routeProjection: { view: route.view, complete: false } };
+    }
   });
   const syncHttp = createSyncHttp({
     repository: storeRepository,

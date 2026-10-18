@@ -1,3 +1,6 @@
+import { thoughtSpeechProjection } from "./speech-cache.mjs";
+import { thoughtDiscoveryProjection } from "../modules/discovery/index.mjs";
+import { createThoughtQueries } from "../modules/thoughts/index.mjs";
 import { createNotificationService } from "../modules/notifications/index.mjs";
 import { cancelExistingTaskForAccountRecovery } from "../modules/tasks/index.mjs";
 import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
@@ -45,6 +48,7 @@ export function createContentRuntime({
   recordCompressionMaxBackfillDatesPerScan = 1,
   recordCompressionStartDate = "",
   recordCommandConfig = null,
+  thoughtPagingConfig = null,
   now = () => new Date().toISOString(),
   today,
   currentTime = () => Date.now(),
@@ -117,6 +121,12 @@ export function createContentRuntime({
   const getRecentTrend = (store, asOf) => (
     recordCompressionService.getCurrentTrend(store, asOf)
   );
+  const thoughtQueries = createThoughtQueries({
+    repository,
+    enabled: thoughtPagingConfig?.enabled === true,
+    speechProjection: thoughts => thoughtSpeechProjection(thoughts, hash),
+    discoveryProjection: thoughtDiscoveryProjection
+  });
   const contentRepository = createPerceptionAwareRepository({
     repository,
     perception: perceptionRuntime,
@@ -155,6 +165,7 @@ export function createContentRuntime({
   const records = createContentRecords({
     repository,
     sourceRepository: contentRepository,
+    thoughtQueries,
     foundation,
     contentAttachments: contentAttachmentService,
     getCursorScope,
@@ -282,6 +293,7 @@ export function createContentRuntime({
 
   return {
     ...foundation,
+    thoughtQueries,
     ...records,
     ...mediaRuntime,
     ...background,

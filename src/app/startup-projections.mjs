@@ -618,7 +618,7 @@ export function routeStateProjection(state, {
   if (view === "journals") return { ...common, journals: clone(list(state?.journals)), journalDraft: clone(state?.journalDraft || null) };
   if (view === "thoughts") {
     const pageNumber = query?.page == null ? 1 : Number(query.page);
-    if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > THOUGHT_PAGING.maxPages) throw Object.assign(new Error("旧页码不支持，请从游标入口继续"), { statusCode: 400, code: "LEGACY_PAGE_UNSUPPORTED" });
+    if (!Number.isInteger(pageNumber) || pageNumber !== 1) throw Object.assign(new Error("旧页码不支持，请从游标入口继续"), { statusCode: 400, code: "LEGACY_PAGE_UNSUPPORTED" });
     if ((query?.cursor || query?.direction) && query?.page != null) throw Object.assign(new Error("游标和旧页码不能同时使用"), { statusCode: 400, code: "INVALID_QUERY" });
     if (resourceId) {
       const detail = thoughtChainDetail(state?.thoughts, resourceId);
@@ -631,8 +631,7 @@ export function routeStateProjection(state, {
       };
     }
     const page = thoughtChainListPage(state?.thoughts, {
-      limit: THOUGHT_PAGING.pageSize * pageNumber,
-      maxLimit: THOUGHT_PAGING.pageSize * THOUGHT_PAGING.maxPages,
+      limit: THOUGHT_PAGING.pageSize,
       afterId: query?.thoughtAfterId || "",
       direction: query?.direction || "next",
       query: query?.q || "",
@@ -640,14 +639,6 @@ export function routeStateProjection(state, {
       sort: query?.sort,
       cursorScope
     });
-    const pages = [];
-    let requestId = "";
-    for (let index = 0; !query?.cursor && !query?.direction && index < pageNumber; index += 1) {
-      const part = thoughtChainListPage(state?.thoughts, { limit: THOUGHT_PAGING.pageSize, afterId: requestId, query: query?.q || "", tag: query?.tag || "", sort: query?.sort, cursorScope });
-      pages.push({ requestId, nextId: part.nextId, prevId: part.prevId, count: part.items.length });
-      if (!part.nextId) break;
-      requestId = part.nextId;
-    }
     return {
       ...common,
       thoughts: page.items,
@@ -664,8 +655,7 @@ export function routeStateProjection(state, {
         query: text(query?.q),
         tag: text(query?.tag),
         sort: query?.sort === "created" ? "created" : "occurred",
-        page: pageNumber,
-        pages: query?.cursor || query?.direction ? undefined : pages
+        page: 1
       }
     };
   }

@@ -290,6 +290,8 @@ export async function applyPostgresMigration(client, plan, { expectedTargetSha25
     );
 
     await clearStoreObjects(client, plan.accountId);
+    // Derived readers stay unavailable until their explicit, bounded maintenance command completes.
+    await client.query("DELETE FROM for_now.record_projection_status WHERE account_id=$1", [plan.accountId]);
     await writeStoreObjects(client, plan.business);
 
     const counts = await targetCounts(client, plan.accountId);
