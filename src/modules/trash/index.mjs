@@ -1,8 +1,20 @@
 import { safeText } from "../../shared/validation/index.mjs";
 
 export function createTrashService({ createId, now, hash, retentionDays }) {
-  const find = (entries, type, resourceId) => entries.find(item => item.type === type && item.resourceId === resourceId) || null;
-  const get = (entries, id) => entries.find(item => item.id === id);
+  const purged = entry => entry?.permanentlyPurged === true;
+  const visible = entries => entries.filter(entry => !purged(entry));
+  const accessible = entry => {
+    if (purged(entry)) {
+      throw Object.assign(new Error("该记录已永久清理，禁止删除或恢复"), {
+        statusCode: 409, code: "RESOURCE_PERMANENTLY_PURGED"
+      });
+    }
+    return entry;
+  };
+  const find = (entries, type, resourceId) => accessible(entries.find(item => (
+    item.type === type && item.resourceId === resourceId
+  ))) || null;
+  const get = (entries, id) => accessible(entries.find(item => item.id === id));
 
   function add(entries, type, payload, location) {
     const deletedAt = now();
@@ -20,6 +32,8 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
   }
 
   function expanded(entries, requestedIds) {
+    for (const id of requestedIds) get(entries, id);
+    entries = visible(entries);
     const selected = new Set(requestedIds), parentIds = new Set();
     for (const entry of entries) if (selected.has(entry.id)) parentIds.add(entry.resourceId);
     let changed = true;
@@ -48,5 +62,19 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
     }
   }
 
-  return { find, get, add, expanded, plan, remove, retentionDays };
+  /** Marks retained records as permanently purged; payloads remain durable. @since unreleased */
+  function purge(entries) {
+    const purgedAt = now();
+    for (const entry of entries) {
+      accessible(entry);
+      Object.assign(entry, {
+        permanentlyPurged: true,
+        lifecycleState: "purged",
+        tombstone: true,
+        purgedAt
+      });
+    }
+  }
+
+  return { find, get, add, expanded, plan, remove, purge, visible, retentionDays };
 }

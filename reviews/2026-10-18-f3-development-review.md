@@ -17,7 +17,7 @@
 
 ### F3-01 / P1：删除旧记录成功后，剩余思绪无法重建
 
-位置：[store-mapping.mjs](../src/shared/persistence/store-mapping.mjs) 的 `ordered`（审查时 447–455 行）；[thought-graph.mjs](../src/app/record-commands/thought-graph.mjs) 的 `removeRows`（73–83 行）；[schema](../src/shared/persistence/postgres-schema.sql) 的 `record-commands-v1`。
+位置：[store-mapping.mjs](../src/shared/persistence/store-mapping.mjs) 的 `ordered`（审查时 447–455 行）；[thought-graph.mjs](../src/shared/persistence/thought-record-repository.mts) 的 `removeRows`（73–83 行）；[schema](../src/shared/persistence/postgres-schema.sql) 的 `record-commands-v1`。
 
 新 schema 允许 position 为空，但未转换旧行；新删除也不改变剩余旧 position。重建逻辑只要发现剩余行的 position 都是整数，仍要求它们从 0 连续。
 
@@ -29,7 +29,7 @@
 
 ### F3-02 / P1：生命周期匹配遗漏父对象，会改坏另一思绪的批注状态
 
-位置：[thought-graph.mjs](../src/app/record-commands/thought-graph.mjs) 的 `markThoughtLifecycleDeleted`（257–294 行）；[account-unit-of-work.mts](../src/shared/persistence/account-unit-of-work.mts) 的 `findByResourceIds`（453–468 行）。
+位置：[thought-graph.mjs](../src/shared/persistence/thought-record-repository.mts) 的 `markThoughtLifecycleDeleted`（257–294 行）；[account-unit-of-work.mts](../src/shared/persistence/account-unit-of-work.mts) 的 `findByResourceIds`（453–468 行）。
 
 查询只限定账户与 resourceId，随后只比较 resourceType+resourceId，没有用包含父对象的完整 resourceKey。
 
@@ -41,7 +41,7 @@
 
 ### F3-03 / P2：取消单个任务仍读取并锁定整个通知集合
 
-位置：[tasks.mjs](../src/app/record-commands/tasks.mjs) 的 `cancel`（59–60 行）；[account-unit-of-work.mts](../src/shared/persistence/account-unit-of-work.mts) 的 `findByCollection`（257–266 行）。思绪 AI 写回的 `readTaskClosure` 也使用相同全通知读取。
+位置：[tasks.mjs](../src/modules/tasks/record-commands.mts) 的 `cancel`（59–60 行）；[account-unit-of-work.mts](../src/shared/persistence/account-unit-of-work.mts) 的 `findByCollection`（257–266 行）。思绪 AI 写回的 `readTaskClosure` 也使用相同全通知读取。
 
 **真实 PG 复现：**一个目标任务、60 条通知，其中 59 条无关；取消一次读取 61 条对象，只更新 2 条。查询没有分页或目标 taskId 条件，并使用 `FOR UPDATE`。
 
@@ -51,7 +51,7 @@
 
 ### F3-04 / P1（F9 接入前必须关闭）：删除的 ChangeSet 漏掉连带任务和通知
 
-位置：[thoughts.mjs](../src/app/record-commands/thoughts.mjs) 的 `remove`；[thought-graph.mjs](../src/app/record-commands/thought-graph.mjs) 的 `persistMappedClosure`。
+位置：[thoughts.mjs](../src/app/record-commands/thoughts.mjs) 的 `remove`；[thought-graph.mjs](../src/shared/persistence/thought-record-repository.mts) 的 `persistMappedClosure`。
 
 删除会复用领域逻辑取消任务、更新通知并建立回收记录，实际映射也持久化这些变化，但显式 ChangeSet 只追加思绪根删除。
 

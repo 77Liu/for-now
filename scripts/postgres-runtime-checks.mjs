@@ -18,7 +18,7 @@ import {
   createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep,
   userModelCoreReadiness, createPerceptionAwareRepository, createPerceptionRuntime,
   createNotificationRecordCommands, createTaskRecordCommands,
-  createThoughtRecordCommands, createTrashMutations
+  createThoughtRecordCommands, createTrashMutations, createTrashCommands
 } from "../src/app/index.mjs";
 import { createCaptureRecords } from "../src/modules/captures/index.mjs";
 import { createAnnotationService } from "../src/modules/annotations/index.mjs";
@@ -552,7 +552,7 @@ function createThoughtRecordHarness(repo) {
     thoughtTarget,
     now
   });
-  return { commands, taskCommands, cancelledTasks };
+  return { commands, taskCommands, cancelledTasks, trash, mutations };
 }
 
 const thoughtUpdateInput = Object.freeze({
@@ -1236,6 +1236,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     `)).rows, [{ cursor: "3", version: 3, operation: "delete" }]);
     await runNotificationRecordCommandChecks({ database, repo, account });
     await runThoughtRecordCommandChecks({ database, repo, account });
+    await runBlockDeletionRemediationChecks({ database, repo, account });
     await account("repo-test", async () => {
       const captureBaseline = (await repo.read()).captures.length;
       await Promise.all(Array.from({ length: 12 }, (_, index) => (index % 2 ? repo : peerRepo).update(value => {
@@ -2088,6 +2089,21 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     } });
     assert.equal(purge.status, 200, JSON.stringify(purge.body));
     assert.equal(purge.body.attachmentCleanupPending, 0);
+    assert.equal((await request(app.base, "/api/trash", { cookie })).body.items.length, 0);
+    assert.equal((await request(app.base, "/api/state", { cookie })).body.trashCount, 0);
+    const purgedTrashId = plan.body.items.find(item => item.resourceId === media.body.id).id;
+    const deniedRestore = await request(app.base, `/api/trash/${purgedTrashId}/restore`, { method: "POST", cookie, body: {} });
+    assert.equal(deniedRestore.status, 409);
+    assert.equal(deniedRestore.body.code, "RESOURCE_PERMANENTLY_PURGED");
+    const deniedDelete = await request(app.base, `/api/keepsakes/${media.body.id}`, { method: "DELETE", cookie });
+    assert.equal(deniedDelete.status, 409);
+    assert.equal(deniedDelete.body.code, "RESOURCE_PERMANENTLY_PURGED");
+    const retainedPurgeRow = (await database.query(`
+      SELECT payload FROM for_now.store_objects
+      WHERE account_id=$1 AND collection='trash' AND id=$2
+    `, [id, purgedTrashId])).rows[0];
+    assert.equal(retainedPurgeRow.payload.permanentlyPurged, true);
+    assert.equal(retainedPurgeRow.payload.payload.id, media.body.id);
     assert.equal((await database.query("SELECT count(*)::int AS n FROM for_now.attachment_inventory WHERE account_id = $1", [id])).rows[0].n, 0);
     assert.equal((await fetch(`${app.base}${attachmentPath}`, { headers: { cookie } })).status, 404);
 
@@ -2304,5 +2320,126 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     await Promise.all([...children].map(stop));
     await new Promise(resolve => provider.close(resolve));
     await Promise.all([runtime.close(), peer.close()]);
+  }
+}
+
+
+async function runBlockDeletionRemediationChecks({ database, repo, account }) {
+  for (const initialStatus of ["queued", "running"]) {
+    const accountId = `block-remediation-${initialStatus}`;
+    await account(accountId, () => repo.initialize({ allowCreate: true }));
+    const harness = createThoughtRecordHarness(repo);
+    await account(accountId, () => repo.update(store => {
+      store.thoughts = thoughtRecordFixtures();
+      store.trash = [];
+      store.attachmentCleanup = [];
+      store.aiTasks = [];
+      store.notifications = [];
+      const root = store.thoughts[0];
+      root.annotations[0].targetKey = "idea:thought-idea";
+      root.annotations[0].quote = "旧想法";
+      root.annotations[0].start = 0;
+      root.annotations[0].end = 3;
+      root.annotations.push({
+        ...structuredClone(root.annotations[0]), id: "previously-deleted"
+      }, {
+        ...structuredClone(root.annotations[0]), id: "question-annotation",
+        targetKey: "question:thought-root", quote: "关键", start: 2, end: 4
+      });
+      store.aiTasks.push({
+        id: "block-task", kind: "annotationShenji", resourceType: "thought",
+        targetId: "thought-root", subtargetId: "annotation-1", status: initialStatus,
+        payload: {}, attempt: 0, createdAt: "2026-10-18T03:05:00.000Z",
+        updatedAt: "2026-10-18T03:05:00.000Z"
+      });
+      store.notifications.push({
+        id: "block-notice", taskId: "block-task", kind: "aiTask",
+        resourceType: "thought", targetId: "thought-root", subtargetId: "annotation-1",
+        status: initialStatus, title: "批注回答", message: "生成中", readAt: "",
+        createdAt: "2026-10-18T03:05:00.000Z", updatedAt: "2026-10-18T03:05:00.000Z"
+      });
+      harness.mutations.moveNestedItemToTrash(store, {
+        parentCollection: "thoughts", parentId: root.id, field: "annotations",
+        type: "annotation", id: "previously-deleted"
+      });
+    }));
+    const expectedVersion = await account(accountId, async () => (
+      (await repo.read()).thoughts.find(item => item.id === "thought-root").version
+    ));
+    const cursor = (await database.query(
+      "SELECT current_cursor FROM for_now.account_sync_heads WHERE account_id=$1", [accountId]
+    )).rows[0].current_cursor;
+    await account(accountId, () => harness.commands.update({
+      ...thoughtUpdateInput, questionText: "前文关键后文", idea: "", expectedVersion
+    }));
+    const stored = await account(accountId, () => repo.read());
+    const entry = stored.trash.find(item => item.type === "thoughtBlock");
+    assert.deepEqual(entry.dependents.annotations.map(item => item.id), ["annotation-1"]);
+    assert.deepEqual(entry.dependents.resourceKeys, ["thoughtChain:thought-root/annotation:annotation-1"]);
+    assert.deepEqual(stored.thoughts.find(item => item.id === "thought-root").annotations.map(item => item.id), ["question-annotation"]);
+    const lifecycle = await database.query(`
+      SELECT resource_key, state, tombstone, trash_id FROM for_now.resource_lifecycle
+      WHERE account_id=$1 AND resource_id='annotation-1' ORDER BY resource_key
+    `, [accountId]);
+    assert.deepEqual(lifecycle.rows, [
+      { resource_key: "thoughtChain:thought-root/annotation:annotation-1", state: "deleted", tombstone: true, trash_id: entry.id },
+      { resource_key: "thoughtChain:thought-sibling/annotation:annotation-1", state: "active", tombstone: false, trash_id: "" }
+    ]);
+    const expected = initialStatus === "queued" ? "cancelled" : "cancelling";
+    assert.equal(stored.aiTasks[0].status, expected);
+    assert.equal(stored.notifications[0].status, expected);
+    const changes = (await database.query(`
+      SELECT entity_type, entity_id, cursor FROM for_now.record_changes
+      WHERE account_id=$1 AND cursor > $2 ORDER BY cursor, ordinal
+    `, [accountId, cursor])).rows;
+    assert.deepEqual(new Set(changes.map(row => row.entity_type)), new Set(["thoughtChain", "aiTask", "notification"]));
+    assert.equal(new Set(changes.map(row => row.cursor)).size, 1);
+    if (initialStatus === "running") {
+      await account(accountId, () => harness.commands.failWriteback("block-task", { code: "AI_TASK_CANCELLED" }));
+      const settled = await account(accountId, () => repo.read());
+      assert.equal(settled.aiTasks[0].status, "cancelled");
+      assert.equal(settled.notifications[0].status, "cancelled");
+      const terminalChanges = (await database.query(`
+        SELECT entity_type FROM for_now.record_changes
+        WHERE account_id=$1 AND command_id='thought.aiWriteback.failure'
+      `, [accountId])).rows;
+      assert.deepEqual(new Set(terminalChanges.map(row => row.entity_type)), new Set(["aiTask", "notification"]));
+    }
+    await account(accountId, () => repo.update(store => harness.mutations.restoreTrashEntry(store, entry.id)));
+    const restored = await account(accountId, () => repo.read());
+    assert.deepEqual(restored.thoughts.find(item => item.id === "thought-root").annotations.map(item => item.id).sort(), ["annotation-1", "question-annotation"]);
+    assert.equal((await account(accountId, () => repo.update(store => harness.mutations.restoreTrashEntry(store, entry.id)))).missing, true);
+    assert.equal((await database.query(`
+      SELECT state FROM for_now.resource_lifecycle
+      WHERE account_id=$1 AND resource_key='thoughtChain:thought-root/annotation:annotation-1'
+    `, [accountId])).rows[0].state, "active");
+    assert.equal((await database.query(`
+      SELECT state FROM for_now.resource_lifecycle
+      WHERE account_id=$1 AND resource_key='thoughtChain:thought-root/annotation:previously-deleted'
+    `, [accountId])).rows[0].state, "deleted");
+    // Permanent purge keeps the DB row and payload but closes every business entry point.
+    const deleted = await account(accountId, () => repo.update(store => harness.mutations.moveThoughtBlockToTrash(store, "thought-idea")));
+    const trashCommands = createTrashCommands({
+      repository: repo, trash: harness.trash, mutations: harness.mutations,
+      cleanup: { enqueue() {}, drain: async () => ({ attempted: 0, removed: [], pending: 0 }) }
+    });
+    await account(accountId, async () => {
+      const plan = await trashCommands.preview([deleted.id]);
+      await trashCommands.purge([deleted.id], plan.planHash);
+      assert.equal((await trashCommands.list()).items.some(item => item.id === deleted.id), false);
+      await assert.rejects(trashCommands.restore(deleted.id), { code: "RESOURCE_PERMANENTLY_PURGED" });
+      await assert.rejects(repo.update(store => harness.mutations.moveThoughtBlockToTrash(store, "thought-idea")), { code: "RESOURCE_PERMANENTLY_PURGED" });
+      await assert.rejects(trashCommands.purge([deleted.id], plan.planHash), { code: "RESOURCE_PERMANENTLY_PURGED" });
+    });
+    const tomb = (await database.query(`
+      SELECT payload FROM for_now.store_objects WHERE account_id=$1 AND collection='trash' AND id=$2
+    `, [accountId, deleted.id])).rows[0].payload;
+    assert.equal(tomb.permanentlyPurged, true);
+    assert.equal(tomb.lifecycleState, "purged");
+    assert.equal(tomb.payload.id, "thought-idea");
+    assert.equal((await database.query(`
+      SELECT state FROM for_now.resource_lifecycle
+      WHERE account_id=$1 AND resource_key='thoughtChain:thought-root/annotation:annotation-1'
+    `, [accountId])).rows[0].state, "purged");
   }
 }

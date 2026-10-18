@@ -1,8 +1,33 @@
+/**
+ * 验证首批记录命令的生产者覆盖与既有后台输入绑定边界。
+ * 建立时间：2026-10-18
+ * 状态：active
+ * 边界：合成状态与只读源码检查，不启用 F9 或访问生产。
+ */
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
-import { createBackgroundAi } from "../src/app/index.mjs";
-import { createNotificationService } from "../src/modules/notifications/index.mjs";
-import { createTaskLifecycle } from "../src/modules/tasks/index.mjs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { projectRoot } from "./project-root.mjs";
+import type { RecordEntity, RecordStore } from "../src/shared/persistence/record-command-types.mjs";
+const root = projectRoot(import.meta.url);
+// Legacy background services cross an explicit test boundary; domain commands compile in backend.
+interface BackgroundOptions {
+  repository: { read(): Promise<RecordStore>; update<T>(operation: (store: RecordStore) => T): Promise<T> };
+  tasks: unknown;
+  notifications: unknown;
+  targets: { prepare(): { inputVersion: number; subtargetVersion: number; inputHash: string; markQueued(): void }; save(): string; result(): null };
+  generate(): Promise<{ content: string }>;
+  dispatch(callback: () => unknown): void;
+  contextKey(): string;
+  onError(error: Error): void;
+}
+const { createBackgroundAi }: { createBackgroundAi(options: BackgroundOptions): { resume(): Promise<void> } } =
+  await import(pathToFileURL(path.join(root, "src/app/index.mjs")).href);
+const { createNotificationService }: { createNotificationService(options: { createId(): string; now(): string }): unknown } =
+  await import(pathToFileURL(path.join(root, "src/modules/notifications/index.mjs")).href);
+const { createTaskLifecycle }: { createTaskLifecycle(options: { createId(): string; now(): string; hash(value: unknown): string }): unknown } =
+  await import(pathToFileURL(path.join(root, "src/modules/tasks/index.mjs")).href);
 
 const coverage = Object.freeze({
   notification: Object.freeze({
@@ -53,10 +78,10 @@ for (const [entity, entry] of Object.entries(coverage)) {
 }
 
 const [background, thoughtWorkflows, thoughtDomain, trash] = await Promise.all([
-  fs.readFile(new URL("../src/app/background-ai.mjs", import.meta.url), "utf8"),
-  fs.readFile(new URL("../src/app/thought-workflows.mjs", import.meta.url), "utf8"),
-  fs.readFile(new URL("../src/modules/thoughts/index.mjs", import.meta.url), "utf8"),
-  fs.readFile(new URL("../src/app/trash.mjs", import.meta.url), "utf8")
+  fs.readFile(path.join(root, "src/app/background-ai.mjs"), "utf8"),
+  fs.readFile(path.join(root, "src/app/thought-workflows.mjs"), "utf8"),
+  fs.readFile(path.join(root, "src/modules/thoughts/index.mjs"), "utf8"),
+  fs.readFile(path.join(root, "src/app/trash.mjs"), "utf8")
 ]);
 
 assert.match(background, /repository\.update\(store => createInStore/);
@@ -67,7 +92,7 @@ assert.match(thoughtDomain, /createBlock/);
 assert.match(trash, /function restoreTrashEntry/);
 assert.ok(Object.values(coverage).every(entry => entry.f9Ready === false));
 
-const deferredStore = {
+const deferredStore: { aiTasks: RecordEntity[]; notifications: RecordEntity[] } = {
   aiTasks: [{
     id: "deferred-task",
     kind: "thoughtDraft",
@@ -86,7 +111,7 @@ const deferredStore = {
   }],
   notifications: []
 };
-const scheduled = [];
+const scheduled: (() => unknown)[] = [];
 const now = () => "2026-10-18T00:01:00.000Z";
 const backgroundAi = createBackgroundAi({
   repository: {

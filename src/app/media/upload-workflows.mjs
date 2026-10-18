@@ -238,7 +238,10 @@ export function createAttachmentUploadWorkflows({
         attachmentCleanup: _cleanup,
         ...visibleStore
       } = store;
-      const referenced = collectAttachmentPaths(visibleStore);
+      const referenced = collectAttachmentPaths({
+        ...visibleStore,
+        trash: (visibleStore.trash || []).filter(entry => entry.permanentlyPurged !== true)
+      });
       const removable = requested.filter(resourcePath => !referenced.has(resourcePath));
       if (removable.length) {
         cleanup.enqueue(store, new Set(removable));

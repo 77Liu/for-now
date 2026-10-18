@@ -12,7 +12,7 @@ type QueryResult<Row = Record<string, unknown>> = {
 type QueryClient = {
   query<Row = Record<string, unknown>>(sql: string, values?: unknown[]): Promise<QueryResult<Row>>;
 };
-type ObjectRow = {
+export type ObjectRow = {
   objectKey: string;
   collection: string;
   kind: string;
@@ -47,7 +47,7 @@ type Idempotency = {
   requestHash: string;
   expiresAt: string;
 };
-type LifecycleRow = {
+export type LifecycleRow = {
   resourceKey: string;
   resourceType: string;
   resourceId: string;
@@ -652,3 +652,7 @@ export function createAccountUnitOfWork({
     }
   });
 }
+
+/** Record transaction contract shared by typed domain repositories. @since unreleased */
+export type AccountUnitOfWork = ReturnType<typeof createAccountUnitOfWork>;
+export type RecordTransaction = Parameters<Parameters<AccountUnitOfWork["run"]>[1]>[0];

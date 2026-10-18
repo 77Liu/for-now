@@ -779,3 +779,5 @@ export function createThoughtService({
     }
   };
 }
+
+export { createThoughtRecordCommands } from "../../../.build/typescript/backend/modules/thoughts/record-commands.mjs";

@@ -4,7 +4,10 @@ export function createAttachmentCleanup({ repository, remove, now, contextKey, d
   const timers = new Map();
   const references = store => {
     const { _persistence, attachmentCleanup, ...visibleStore } = store;
-    return collectAttachmentPaths(visibleStore);
+    return collectAttachmentPaths({
+      ...visibleStore,
+      trash: (visibleStore.trash || []).filter(entry => entry.permanentlyPurged !== true)
+    });
   };
   const enqueue = (store, candidates) => enqueueAttachmentCleanup(store.attachmentCleanup, candidates, references(store), now);
   const drain = store => drainAttachmentCleanup(store.attachmentCleanup, references(store), { remove, now });

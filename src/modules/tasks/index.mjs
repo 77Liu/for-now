@@ -550,3 +550,7 @@ export function cancelExistingTaskForAccountRecovery(tasks, id, attempt, now) {
   task.updatedAt = task.completedAt = now();
   return true;
 }
+
+import { createTaskRecordCommands as create } from "../../../.build/typescript/backend/modules/tasks/record-commands.mjs";
+/** Wires the task domain command and waiting status contract. @since unreleased */
+export const createTaskRecordCommands = options => create({ ...options, waitingStatus: WAITING_FOR_USER_MODEL_STATUS });

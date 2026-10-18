@@ -104,7 +104,9 @@ function terminalRow(entry) {
     dispatchState: entry.dispatchState === "not_invoked" ? "not_invoked" : "invoked",
     responsePayload: responsePayload(entry),
     errorPayload: entry.error || null,
-    usagePayload: entry.usage || null
+    usagePayload: entry.usageRecovery
+      ? { ...entry.usage, usageRecovery: structuredClone(entry.usageRecovery) }
+      : entry.usage || null
   };
 }
 
@@ -223,13 +225,16 @@ function createUsagePersistence({
   ));
   const save = async (entry, audit, reservation) => {
     const activeScope = scope(audit);
+    const key = `${activeScope}\u0000${entry.callId || entry.id}`;
+    reservation ||= pending.get(key)?.reservation;
     reservation?.retain?.(entry);
     try {
       await persist(entry);
       reservation?.commit?.();
+      pending.delete(key);
       return true;
     } catch (error) {
-      pending.set(`${activeScope}\u0000${entry.callId || entry.id}`, {
+      pending.set(key, {
         entry,
         audit,
         reservation,
@@ -269,7 +274,8 @@ function createUsagePersistence({
     }
     return { recovered, pending: [...pending.values()].filter(item => item.scope === activeScope).length };
   };
-  return { save, recover };
+  const pendingCount = () => [...pending.values()].filter(item => item.scope === scope({})).length;
+  return { save, recover, pendingCount };
 }
 
 function createDeepSeekAttemptRecorder({ usagePersistence, persistence, endUninvokedCall, logEvent, now }) {
@@ -298,9 +304,7 @@ function createDeepSeekAttemptRecorder({ usagePersistence, persistence, endUninv
       ...audit,
       dispatchState: "invoked",
       persistence: { usage: usagePersisted ? "persisted" : "pending" },
-      ...(usagePersisted ? {} : {
-        usageRecovery: structuredClone(usageEntry)
-      }),
+      usageRecovery: structuredClone(usageEntry),
       usage: {
         known: usageEntry.usageKnown,
         normalized: usageEntry.tokens,
@@ -408,9 +412,7 @@ async function finalizeProviderAttempt({
     response,
     error: failure ? errorMetadata(failure) : null,
     persistence: { usage: usagePersisted ? "persisted" : "pending" },
-    ...(usagePersisted ? {} : {
-      usageRecovery: structuredClone(usageEntry)
-    }),
+    usageRecovery: structuredClone(usageEntry),
     usage: {
       known: usageEntry.usageKnown,
       unitType: usageEntry.unitType,
@@ -520,14 +522,28 @@ function createProviderCaller(dependencies) {
   return { prepareProviderCall, providerCall };
 }
 
-function createPendingRecovery(persistence, usagePersistence) {
+function createPendingRecovery(persistence, usagePersistence, repository) {
   return async () => {
     const audit = await persistence.recover();
     const usage = await usagePersistence.recover();
+    let recovered = 0;
+    let afterCallId = "";
+    if (repository?.findMissingUsage) {
+      // Keyset traversal advances past failures; no in-memory retry marker is authoritative.
+      while (true) {
+        const rows = await repository.findMissingUsage(afterCallId, 200);
+        for (const row of rows) {
+          const saved = await usagePersistence.save(row.usageRecovery, { callId: row.callId });
+          if (saved) recovered += 1;
+          afterCallId = row.callId;
+        }
+        if (rows.length < 200) break;
+      }
+    }
     return {
-      recoveredUsage: usage.recovered,
+      recoveredUsage: usage.recovered + recovered,
       recoveredAudit: audit.recovered,
-      pendingUsage: usage.pending,
+      pendingUsage: usagePersistence.pendingCount(),
       pendingAudit: audit.pending
     };
   };
@@ -645,7 +661,7 @@ export function createAiAudit({
     message,
     start,
     recordDeepSeekAttempt,
-    recoverPending: createPendingRecovery(persistence, usagePersistence),
+    recoverPending: createPendingRecovery(persistence, usagePersistence, repository),
     maintain: createAuditMaintenance(repository, now),
     prepareProviderCall,
     providerCall,

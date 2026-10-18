@@ -199,7 +199,12 @@ export function createTrashMutations({
     ];
     const entry = moveCollectionItemToTrash(store, "thoughts", "thoughtBlock", id);
     entry.location.parentId = item.relatedTo;
-    entry.dependents = dependents;
+    entry.dependents = {
+      ...dependents,
+      resourceKeys: ["annotations", "annotationDrift"].flatMap(field => (
+        (dependents[field] || []).map(value => `thoughtChain:${item.relatedTo}/annotation:${value.id}`)
+      ))
+    };
     if (root) advance(root);
     return afterCommit(entry, runningTaskIds);
   }
@@ -271,11 +276,11 @@ export function createTrashMutations({
 
 export function createTrashCommands({ repository, trash, mutations, cleanup }) {
   return {
-    async list() { return { retentionDays: trash.retentionDays, items: (await repository.read()).trash }; },
+    async list() { return { retentionDays: trash.retentionDays, items: trash.visible((await repository.read()).trash) }; },
     restore(id) { return repository.update(store => mutations.restoreTrashEntry(store, id)); },
     async preview(ids) {
       const store = await repository.read();
-      const entries = trash.expanded(store.trash, ids.length ? ids : store.trash.map(item => item.id));
+      const entries = trash.expanded(store.trash, ids.length ? ids : trash.visible(store.trash).map(item => item.id));
       return {
         ...trash.plan(entries),
         attachmentPaths: [...collectAttachmentPaths([
@@ -290,7 +295,7 @@ export function createTrashCommands({ repository, trash, mutations, cleanup }) {
         const entries = trash.expanded(store.trash, ids), plan = trash.plan(entries);
         if (!entries.length) return { missing: true };
         if (expectedPlanHash !== plan.planHash) return { changed: true, plan };
-        trash.remove(store.trash, entries.map(item => item.id));
+        trash.purge(entries);
         const speechEntries = speechCacheForTrash(store, entries);
         if (speechEntries.length) {
           const removed = new Set(speechEntries);

@@ -37,3 +37,5 @@ export function createNotificationService({ createId, now }) {
     }
   };
 }
+
+export { createNotificationRecordCommands } from "../../../.build/typescript/backend/modules/notifications/record-commands.mjs";

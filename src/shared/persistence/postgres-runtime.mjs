@@ -4,6 +4,7 @@ import {
   beginAiAuditAttempt,
   deleteExpiredAiAuditAttempts,
   finishAiAuditAttempt,
+  findMissingAiAuditUsage,
   markInterruptedAiAuditAttempts
 } from "../../../.build/typescript/backend/shared/persistence/ai-audit-repository.mjs";
 import {
@@ -552,6 +553,9 @@ export async function createPostgresRuntime({
     };
   };
   const aiAudit = {
+    findMissingUsage: (afterCallId, limit) => readAccount((client, id) => (
+      findMissingAiAuditUsage(client, id, afterCallId, limit)
+    )),
     beginAttempt: row => accountTransaction((client, id) => (
       beginAiAuditAttempt(client, id, row)
     )),

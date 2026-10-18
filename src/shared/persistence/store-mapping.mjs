@@ -243,7 +243,10 @@ export function mapStoreObjects(accountId, store) {
         position: index, parts: [...parts, id, childField], inheritedLifecycle: objectLifecycle
       }));
     }
-    attachments(payload, objectKey, collection);
+    // Retained purge payloads are history, not live binary references.
+    if (!(kind === "trash" && item.permanentlyPurged === true)) {
+      attachments(payload, objectKey, collection);
+    }
   };
 
   for (const [field, value] of Object.entries(store)) {

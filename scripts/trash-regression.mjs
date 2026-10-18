@@ -293,7 +293,7 @@ const keepsake = await move("keepsakes", "keepsake", "keepsake");
 assert.deepEqual(collectAttachmentPaths({ markdown: "before /attachments/not-a-ref.png", bad: "/attachments/../x", good: ["/attachments/shared.png"] }), new Set(["/attachments/shared.png"]));
 const firstPurge = await purge(keepsake.id);
 assert.deepEqual(firstPurge.attachments, ["/attachments/only.png"]);
-assert.ok(commits.some(store => !store.trash.length && store.attachmentCleanup.some(item => item.path === "/attachments/only.png")));
+assert.ok(commits.some(store => store.trash.every(item => item.permanentlyPurged === true) && store.attachmentCleanup.some(item => item.path === "/attachments/only.png")));
 assert.ok(!removals.some(item => item.path === "/attachments/shared.png"));
 const parent = await move("books", "book", "book");
 const preview = await commands.preview([parent.id]);

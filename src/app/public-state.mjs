@@ -101,7 +101,8 @@ export function createPublicStateProjection({
       } : {}),
       ...(insights ? { clusters: deriveThoughtClusters(store), insights: deriveStateInsights(store, { currentDate: today() }) } : {}),
       ...(wants("trash") ? {
-        trashCount: owner ? trash.length : withoutOwnerMetadata(trash).length
+        trashCount: (owner ? trash : withoutOwnerMetadata(trash))
+          .filter(entry => entry.permanentlyPurged !== true).length
       } : {}),
       ...(wants("speechCache") ? { speech: {
         configured: speechProvider.configured,

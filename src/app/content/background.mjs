@@ -16,7 +16,7 @@ import {
 import { createAiTaskTargets } from "../ai-task-targets.mjs";
 import { createBackgroundAi } from "../background-ai.mjs";
 import { createNotificationRecordCommands } from "../record-commands/notifications.mjs";
-import { createTaskRecordCommands } from "../record-commands/tasks.mjs";
+import { createTaskRecordCommands } from "../../modules/tasks/index.mjs";
 import { userModelRequiresCoreReady } from "../user-model.mjs";
 import { prepareReferenceRequest, verifyReferenceAnswer } from "../answer-citations.mjs";
 

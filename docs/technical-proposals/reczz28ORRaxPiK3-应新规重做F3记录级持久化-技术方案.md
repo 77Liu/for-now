@@ -470,14 +470,14 @@ operationId+scope 为业务唯一键，fingerprint 防止异请求复用。实�
 |审查返修|同时关闭阶段 1 用量恢复载荷、阶段 2 撤销会话改密与认证锁序、统计用户时区三类横切缺陷；旧 UTC 日额度聚合保持不变。|
 |模块边界|通知、任务和思绪命令工厂经 `src/app/index.mjs` 公开；回归脚本不再深层导入 app 私有文件。|
 
-两份审查报告的 8 项问题均已在当前候选关闭：
+原始 8 项场景已返修；`f25154` 复审又发现删块生命周期、关联变化、数据库补账及类型/领域职责缺口。本轮继续修复，阶段 6 保持只读准备，不能用原始场景通过代替新增反例验收：
 
 |问题|状态|实现与回归证据|
 |---|---|---|
 |F3-01 删除后记录不可读|已修复|重建按稀疏整数 position 排序；覆盖删除旧首项、中项、末项、混合空 position、元数据空洞和重复 position 拒绝。|
 |F3-02 跨父生命周期误写|已修复|UoW 新增完整 `resourceKey` 查询；真实 PostgreSQL 中两条思绪链使用相同批注 ID，删除一条后另一条保持 active。|
 |阶段 2 撤销会话仍可改密|已修复|document 与 row 提交均复验 session/user/snapshot 世代；旧会话配新凭据快照返回失败，密码不变。|
-|阶段 1 用量失败后重启不恢复|已修复|DeepSeek 与通用 provider 在 usage pending 时写完整 `usageRecovery`；实际 producer 日志由新 runtime 恢复两次仍只记一条。数据库模式继续以 attempt 表和内存有限重试为事实源，不读取兼容文件。|
+|阶段 1 用量失败后重启不恢复|已修复|DeepSeek 与通用 provider 在 usage pending 时写完整 `usageRecovery`；实际 producer 日志由新 runtime 恢复两次仍只记一条。本轮数据库模式在审计原行保存完整用量，按账户和 callId 查账本差额并幂等补账；未入账审计到期仍保留。独立生产者进程退出后由新进程恢复，重复执行不重复入账，不读取兼容文件。|
 |F3-03 单任务扫描全部通知|已修复|通过关系索引取得通知 object key，再 `findMany(..., FOR UPDATE)`；SQL trace 证明取消和写回均无通知集合查询。|
 |F3-04 删除 ChangeSet 漏任务/通知|已修复|按持久化前后版本与业务字段追加关联任务、通知 update；真实 PG 同 cursor 同时出现根 delete、task update、notification update。|
 |阶段 2 并发改密死锁|已修复|认证命令统一先确定 userId、锁 user、再锁并复验 session；两个真实连接并发改密仅一个提交，另一个返回失效，无 `40P01`。|
@@ -513,6 +513,14 @@ operationId+scope 为业务唯一键，fingerprint 防止异请求复用。实�
   登记完成后按严格串行规则进入准备。
 - 未执行生产部署、生产数据写入、真实付费 provider、Safari/PWA/iOS 真机或生产
   容量观测；这些限制不得由本地 PostgreSQL 与 mock 回归外推。
+
+### 4.1.1 本轮复审返修
+
+- 删块回收清单复用 `dependents`，补齐所属思绪下的完整批注身份；恢复只还原本次清单，原先单独删除的批注不恢复，同名跨父对象不受影响。
+- 编辑删块与整链删除均收集真实持久化版本变化；queued 进入 cancelled，running 先 cancelling，再经停止完成写回传播任务和通知终态。
+- 永久清理保留回收对象及 payload，写入 `permanentlyPurged=true`、`lifecycleState=purged`、`purgedAt`；列表与计数过滤，业务入口拒绝重复删除、恢复和清理。保留正文不再充当附件引用；附件清理、备份与上传引用消费均按此语义处理。
+- 通知、任务、思绪命令实现在所属领域 `.mts`；思绪生命周期规则单独维护。持久化图与任务/通知仓库位于 shared persistence，仅处理精确闭包；应用入口只注入既有服务、映射及跨领域可见性/输入策略。后台模型调用继续在事务外。输入、输出、服务、事务端口受 strict 后端类型检查；coverage 脚本迁移 `.mts` 并独立编译。
+- 本轮验收与候选绑定见[返修回执](../../reviews/2026-10-18-f25154-remediation-result.json)。首批 coverage 仍保留 legacy/partial，F9 v2 不开放；本轮未实现下一阶段的新 F4。
 
 ## 4.2 测试方案（必填）
 

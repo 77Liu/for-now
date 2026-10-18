@@ -184,6 +184,11 @@ export async function deleteExpiredAiAuditAttempts(
       SELECT call_id
       FROM for_now.ai_request_audit
       WHERE account_id=$1 AND started_at < $2::timestamptz
+        AND (usage_payload IS NULL OR usage_payload='null'::jsonb OR EXISTS (
+          SELECT 1 FROM for_now.ai_usage_attempts usage
+          WHERE usage.account_id=ai_request_audit.account_id
+            AND usage.call_id=ai_request_audit.call_id
+        ))
       ORDER BY started_at, call_id
       LIMIT $3
       FOR UPDATE SKIP LOCKED
@@ -193,4 +198,36 @@ export async function deleteExpiredAiAuditAttempts(
     WHERE audit.account_id=$1 AND audit.call_id=expired.call_id
   `, [accountId, cutoff, bounded]);
   return result.rowCount ?? 0;
+}
+
+/**
+ * Reads the current account's audit/ledger difference without a mutable recovery flag.
+ * @since unreleased
+ */
+export async function findMissingAiAuditUsage(
+  client: PgQueryClient,
+  accountId: string,
+  afterCallId = "",
+  limit = 200
+): Promise<Array<{ callId: string; usageRecovery: Record<string, unknown> }>> {
+  const bounded = Math.max(1, Math.min(1000, Math.trunc(limit)));
+  const result = await client.query(`
+    SELECT audit.call_id AS "callId", audit.usage_payload->'usageRecovery' AS "usageRecovery"
+    FROM for_now.ai_request_audit audit
+    WHERE audit.account_id=$1 AND audit.call_id > $2
+      AND jsonb_typeof(audit.usage_payload->'usageRecovery')='object'
+      AND NOT EXISTS (
+        SELECT 1 FROM for_now.ai_usage_attempts usage
+        WHERE usage.account_id=audit.account_id AND usage.call_id=audit.call_id
+      )
+    ORDER BY audit.call_id
+    LIMIT $3
+  `, [accountId, afterCallId, bounded]);
+  return result.rows.map(row => {
+    const usageRecovery = row.usageRecovery as Record<string, unknown>;
+    if (usageRecovery.callId !== row.callId) {
+      throw repositoryError("AI_AUDIT_USAGE_IDENTITY_INVALID", "Audit usage identity differs from call ID");
+    }
+    return { callId: String(row.callId), usageRecovery };
+  });
 }
