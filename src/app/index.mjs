@@ -28,6 +28,7 @@ export { createContentBackground } from "./content/background.mjs";
 export { createNotificationRecordCommands } from "./record-commands/notifications.mjs";
 export { createTaskRecordCommands } from "../modules/tasks/index.mjs";
 export { createThoughtRecordCommands } from "./record-commands/thoughts.mjs";
+export { createContentAiRecordCommands } from "./record-commands/content-ai.mjs";
 export { createContentAttachmentRecordCommands } from "./record-commands/content-attachments.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";
 export { createAttachmentCleanup } from "./attachment-cleanup.mjs";

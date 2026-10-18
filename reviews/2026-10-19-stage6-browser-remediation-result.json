@@ -336,6 +336,54 @@
       "F9 protected files unchanged; TC-10 open, stage7 not started"
     ]
   },
+  "nightAiWritebackSubset": {
+    "recordedAt": "2026-10-19T04:10:00+08:00",
+    "baselineCommit": "ab761ee",
+    "status": "PASS_TWENTY_SEVEN_COMMAND_SUBSET_STAGE6_PARTIAL",
+    "caseSource": "scripts/thought-ai-postgres-checks.mjs",
+    "addedCommands": [
+      "content.aiWriteback",
+      "content.aiWriteback.failure",
+      "thought.foregroundAnswer"
+    ],
+    "verified": [
+      "four image targets and thought annotation reply use target record transactions",
+      "foreground answer, internal task and idempotency receipt commit atomically",
+      "stable account revision binds external context verification to final writeback",
+      "each added command has commit-time failure rollback; revision conflict commits nothing",
+      "cancelled tasks accept no result; terminal replay changes nothing",
+      "1000 unrelated roots unchanged; current transaction reads and writes below 100",
+      "formal HTTP foreground streaming answer/replay, background root/follow-up, annotation and image tasks",
+      "cross-account denial and replay do not add mock provider calls",
+      "npm run test:postgres:stable full terminal PASS",
+      "backend types, module boundaries, thoughts, P00, content runtime, background gates and HTTP orchestration PASS"
+    ],
+    "resolvedFailures": [
+      "new typed command absent from explicit backend build manifest",
+      "test omitted date/tag fields and requested root detail using block id",
+      "revision-race fixture touched unrelated root; final fixture names a test-owned root",
+      "formal provider mock lacked SSE; historical extraction text caused wrong response structure",
+      "local thought target had no context hash and falsely rejected verified background results",
+      "HTTP automatic-answer fixture had automatic answer policy disabled"
+    ],
+    "logs": [
+      "/tmp/for-now-night-ai-postgres.log",
+      "/tmp/for-now-night-ai-modules.log",
+      "/tmp/for-now-night-ai-p00.log",
+      "/tmp/for-now-night-ai-content.log",
+      "/tmp/for-now-night-ai-gate.log",
+      "/tmp/for-now-night-ai-production-gate.log",
+      "/tmp/for-now-night-ai-thoughts.log",
+      "/tmp/for-now-night-ai-http.log"
+    ],
+    "limitations": [
+      "discovery per-entry failure matrix, related-history growth and physical SQL scans remain",
+      "context preparation and task claim retain account compatibility reads/updaters",
+      "final writeback closure does not prove full AI preparation chain bounded",
+      "no new browser or real search corpus experiment",
+      "F9 protected digests unchanged; TC-10 open, stage7 not started"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

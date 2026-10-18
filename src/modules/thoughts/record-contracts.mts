@@ -69,7 +69,9 @@ export type ThoughtServices = TaskCommandServices & {
   taskInputMatches(task: RecordEntity, work: TaskWork | null): boolean;
   now?: () => string;
 };
-export type ThoughtWriteback = { taskId: string; result: unknown; expectedRevision?: string };
+export type ThoughtWriteback = {
+  taskId: string; result: unknown; expectedRevision?: string; contextFingerprint?: string;
+};
 export type ThoughtFailure = CommandError | null;
 
 export type SettlementServices = Pick<ThoughtServices, "tasks" | "notifications" | "thoughtTarget" | "repository" | "taskInputMatches">;

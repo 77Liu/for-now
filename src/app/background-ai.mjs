@@ -36,6 +36,15 @@ export function createBackgroundAi({
   const dynamicRecordCommands = new Map();
   const running = new Set();
   const controllers = new Map();
+  const recordWritebackFor = kind => {
+    if (["thoughtAnswer", "followUpAnswer"].includes(kind)) {
+      return dynamicRecordCommands.get("thought.aiWriteback");
+    }
+    if (["contentImageUnderstanding", "annotationShenji"].includes(kind)) {
+      return dynamicRecordCommands.get("content.aiWriteback");
+    }
+    return null;
+  };
   const enabledRecordCommand = (name, command) => {
     if (!recordCommands?.enabled?.(name)) return null;
     if (typeof command !== "function") {
@@ -201,7 +210,7 @@ export function createBackgroundAi({
   const stableTaskWriteback = async (taskId, expectedWork) => {
     const unitOfWork = repository.accountUnitOfWork;
     if (!unitOfWork?.readRevision) {
-      throw new TypeError("Thought AI writeback requires AccountUnitOfWork revision reads");
+      throw new TypeError("Content AI writeback requires AccountUnitOfWork revision reads");
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const before = await unitOfWork.readRevision();
@@ -218,6 +227,80 @@ export function createBackgroundAi({
     }
     return null;
   };
+  const claimQueuedTask = (store, taskId) => {
+    const task = store.aiTasks.find(item => item.id === taskId);
+    if (!task || task.status !== "queued") return null;
+    if (shouldWaitForModel(store, task)) {
+      const intent = inspectRequestedIntent(store, task);
+      if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
+        stale(store, task, "等待核心用户模型期间，目标已变化");
+        return null;
+      }
+      const waiting = tasks.waitForUserModel(store.aiTasks, taskId);
+      if (waiting) notify(store, waiting, WAITING_FOR_USER_MODEL_STATUS, "等待核心用户模型就绪");
+      return null;
+    }
+    if (task.kind === RECORD_COMPRESSION_TASK_KIND && !taskInputsCurrent(store, task)) {
+      stale(store, task, "日压缩已完成、越界或来源已变化，未调用模型");
+      return null;
+    }
+    const claimedTask = tasks.claim(store.aiTasks, taskId);
+    if (!claimedTask) return null;
+    targetFor(claimedTask).started?.(store, claimedTask);
+    notify(store, claimedTask, "running", "正在生成");
+    return { identity: { id: claimedTask.id, attempt: claimedTask.attempt }, kind: claimedTask.kind };
+  };
+  const saveLegacyTaskResult = (value, task, work, result) => {
+    const currentTask = value.aiTasks.find(item => item.id === task.id);
+    if (!currentTask) return false;
+    if (["cancelled", "cancelling"].includes(currentTask.status)) {
+      cancelled(value, currentTask);
+      return false;
+    }
+    const resultTarget = targetFor(currentTask);
+    const current = resultTarget.prepareResult
+      ? resultTarget.prepareResult(value, currentTask) : prepareTarget(value, currentTask);
+    const contextChanged = work.contextFingerprint
+      && work.contextFingerprint !== current?.contextFingerprint;
+    if (!taskInputMatches(task, current) || contextChanged) {
+      stale(value, currentTask, "目标已经变化，生成结果未写入");
+      return false;
+    }
+    const resultId = targetFor(currentTask).save(value, current, task, result);
+    if (work.contextFingerprint) currentTask.contextFingerprint = work.contextFingerprint;
+    tasks.complete(currentTask, "succeeded", { resultId });
+    notify(value, currentTask, "succeeded");
+    return true;
+  };
+  const failLegacyTask = (store, taskId, error) => {
+    const task = store.aiTasks.find(item => item.id === taskId);
+    if (!task) return;
+    if (["cancelled", "cancelling"].includes(task.status)) cancelled(store, task);
+    else if (error?.code === "AI_TASK_STALE"
+      || (error?.code === "AI_TASK_CANCELLED" && !taskInputsCurrent(store, task))) {
+      stale(store, task, "目标已变化，未调用外部模型");
+    } else if (task.kind === RECORD_COMPRESSION_TASK_KIND && error?.budgetAdmissionRejected === true) {
+      const waiting = tasks.waitForBudget(store.aiTasks, task.id, prepareTarget(store, task), error.code);
+      if (waiting.waiting) targetFor(task).waitingBudget?.(store, task);
+      else if (waiting.stale) stale(store, task, "预算等待前来源或权限已变化");
+    } else {
+      targetFor(task).fail?.(store, task, error);
+      tasks.complete(task, "failed", { error: error.message, errorCode: error.code || "AI_TASK_FAILED" });
+      notify(store, task, "failed", task.error || "生成失败");
+    }
+  };
+  const settleAfterRun = async (taskId, executed) => {
+    try {
+      const store = await repository.read();
+      const task = store.aiTasks.find(item => item.id === taskId);
+      if (!task || !["succeeded", "failed", "cancelled", "stale"].includes(task.status)) return;
+      if (executed || task.kind === "importanceScoring") await targetFor(task).settled?.(task);
+      // 所有抽取终态都重新评估队列；门禁自行判定最新合法来源是否仍在途。
+      if (task.kind === "onboardingClaimExtraction") await releaseWaiting();
+    } catch (releaseError) {
+      try { onError(taskId, releaseError); } catch {}
+    }
+  };
 
   async function run(taskId) {
     const key = `${contextKey()}:${taskId}`;
@@ -231,32 +314,10 @@ export function createBackgroundAi({
     try {
       const initial = await repository.read();
       await beforePrepare(initial.aiTasks.find(item => item.id === taskId));
-      const claimed = await repository.update(store => {
-        const task = store.aiTasks.find(item => item.id === taskId);
-        if (!task || task.status !== "queued") return false;
-        claimedKind = task.kind;
-        if (shouldWaitForModel(store, task)) {
-          const intent = inspectRequestedIntent(store, task);
-          if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
-            stale(store, task, "等待核心用户模型期间，目标已变化");
-            return false;
-          }
-          const waiting = tasks.waitForUserModel(store.aiTasks, taskId);
-          if (waiting) notify(store, waiting, WAITING_FOR_USER_MODEL_STATUS, "等待核心用户模型就绪");
-          return false;
-        }
-        if (task.kind === RECORD_COMPRESSION_TASK_KIND && !taskInputsCurrent(store, task)) {
-          stale(store, task, "日压缩已完成、越界或来源已变化，未调用模型");
-          return false;
-        }
-        const claimedTask = tasks.claim(store.aiTasks, taskId);
-        if (!claimedTask) return false;
-        claimedIdentity = { id: claimedTask.id, attempt: claimedTask.attempt };
-        targetFor(claimedTask).started?.(store, claimedTask);
-        notify(store, claimedTask, "running", "正在生成");
-        return true;
-      });
+      const claimed = await repository.update(store => claimQueuedTask(store, taskId));
       if (!claimed) return;
+      claimedIdentity = claimed.identity;
+      claimedKind = claimed.kind;
       executed = true;
       const store = await repository.read(), task = store.aiTasks.find(item => item.id === taskId);
       if (task) {
@@ -277,6 +338,13 @@ export function createBackgroundAi({
         Object.assign(task, bound);
       }
       if (!task || !taskInputMatches(task, work)) {
+        const recordWriteback = recordWritebackFor(task?.kind);
+        if (recordWriteback) {
+          await recordWriteback.failWriteback(taskId, Object.assign(
+            new Error("目标已变化，未调用外部模型"), { code: "AI_TASK_STALE" }
+          ));
+          return;
+        }
         await repository.update(value => {
           const current = value.aiTasks.find(item => item.id === taskId);
           if (current) {
@@ -295,96 +363,40 @@ export function createBackgroundAi({
           ...(generated.referenceReceipt ? { referenceRequest: structuredClone(generated.referenceReceipt) } : {}) } }
         : generated;
       if (task.kind === "importanceScoring") await beforePrepare({ kind: task.kind });
-      const thoughtWriteback = dynamicRecordCommands.get("thought.aiWriteback");
-      if (thoughtWriteback && ["thoughtAnswer", "followUpAnswer"].includes(task.kind)) {
+      const recordWriteback = recordWritebackFor(task.kind);
+      if (recordWriteback) {
         const current = await stableTaskWriteback(taskId, work);
         if (!current) {
-          await thoughtWriteback.failWriteback(taskId, Object.assign(
+          await recordWriteback.failWriteback(taskId, Object.assign(
             new Error("目标已变化，结果未写入"),
             { code: "AI_TASK_STALE" }
           ));
           return;
         }
-        await thoughtWriteback.writeback({
+        await recordWriteback.writeback({
           taskId,
           result,
-          expectedRevision: current.revision
+          expectedRevision: current.revision,
+          contextFingerprint: work.contextFingerprint
         });
         return;
       }
-      await repository.update(value => {
-        const currentTask = value.aiTasks.find(item => item.id === taskId);
-        if (!currentTask) return false;
-        if (["cancelled", "cancelling"].includes(currentTask.status)) {
-          cancelled(value, currentTask);
-          return false;
-        }
-        const resultTarget = targetFor(currentTask);
-        const currentWork = resultTarget.prepareResult
-          ? resultTarget.prepareResult(value, currentTask) : prepareTarget(value, currentTask);
-        const contextChanged = work.contextFingerprint
-          && work.contextFingerprint !== currentWork?.contextFingerprint;
-        if (!taskInputMatches(task, currentWork) || contextChanged) {
-          stale(value, currentTask, "目标已经变化，生成结果未写入");
-          return false;
-        }
-        const resultId = targetFor(currentTask).save(value, currentWork, task, result);
-        if (work.contextFingerprint) currentTask.contextFingerprint = work.contextFingerprint;
-        tasks.complete(currentTask, "succeeded", { resultId });
-        notify(value, currentTask, "succeeded");
-      });
+      await repository.update(value => saveLegacyTaskResult(value, task, work, result));
     } catch (error) {
       if (claimedIdentity && cleanupExistingTask && await cleanupExistingTask(claimedIdentity, error)) return;
-      const thoughtWriteback = dynamicRecordCommands.get("thought.aiWriteback");
-      if (claimedIdentity && thoughtWriteback
-        && ["thoughtAnswer", "followUpAnswer"].includes(claimedKind)) {
+      const recordWriteback = recordWritebackFor(claimedKind);
+      if (claimedIdentity && recordWriteback) {
         const terminalError = error?.code === "VERSION_CONFLICT"
           ? Object.assign(new Error("目标已变化，结果未写入"), { code: "AI_TASK_STALE" })
           : error;
-        await thoughtWriteback.failWriteback(taskId, terminalError);
+        await recordWriteback.failWriteback(taskId, terminalError);
         return;
       }
-      await repository.update(store => {
-        const task = store.aiTasks.find(item => item.id === taskId);
-        if (!task) return;
-        if (["cancelled", "cancelling"].includes(task.status)) cancelled(store, task);
-        else if (error?.code === "AI_TASK_STALE"
-          || (error?.code === "AI_TASK_CANCELLED"
-            && !taskInputsCurrent(store, task))) {
-          stale(store, task, "目标已变化，未调用外部模型");
-        }
-        else if (task.kind === RECORD_COMPRESSION_TASK_KIND && error?.budgetAdmissionRejected === true) {
-          const work = prepareTarget(store, task);
-          const waiting = tasks.waitForBudget(store.aiTasks, task.id, work, error.code);
-          if (waiting.waiting) targetFor(task).waitingBudget?.(store, task);
-          else if (waiting.stale) stale(store, task, "预算等待前来源或权限已变化");
-        }
-        else {
-          targetFor(task).fail?.(store, task, error);
-          tasks.complete(task, "failed", {
-            error: error.message,
-            errorCode: error.code || "AI_TASK_FAILED"
-          });
-          notify(store, task, "failed", task.error || "生成失败");
-        }
-      });
+      await repository.update(store => failLegacyTask(store, taskId, error));
     } finally {
       controllers.delete(key);
       running.delete(key);
-      // 所有抽取终态都重新评估队列；门禁自行判定最新合法来源是否仍在途。
-      try {
-        const store = await repository.read();
-        const task = store.aiTasks.find(item => item.id === taskId);
-        if ((executed || task?.kind === "importanceScoring") && task && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
-          await targetFor(task).settled?.(task);
-        }
-        if (task?.kind === "onboardingClaimExtraction"
-          && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
-          await releaseWaiting();
-        }
-      } catch (releaseError) {
-        try { onError(taskId, releaseError); } catch {}
-      }
+      await settleAfterRun(taskId, executed);
     }
   }
 
@@ -543,8 +555,9 @@ export function createBackgroundAi({
 
   return {
     registerRecordCommand(name, handler) {
-      if (!recordCommands?.enabled?.(name)) return false;
-      if (name !== "thought.aiWriteback"
+      const flag = name === "content.aiWriteback" ? "thought.aiWriteback" : name;
+      if (!recordCommands?.enabled?.(flag)) return false;
+      if (!["thought.aiWriteback", "content.aiWriteback"].includes(name)
         || !handler?.writeback
         || !handler?.failWriteback) {
         throw new TypeError(`Record command ${name} implementation is invalid`);

@@ -14,6 +14,7 @@ import type {
   ThoughtCreateInput, ThoughtInput, ThoughtServices, ThoughtWriteback, ThoughtFailure
 } from "./record-contracts.mjs";
 import { commitThoughtCommand, afterThoughtCommandCommit } from "./command-commit.mjs";
+import { createForegroundAnswerCommand } from "./foreground-answer-command.mjs";
 
 type Observation = Awaited<ReturnType<SourceMutationEffects["prepare"]>> | undefined;
 type TaskClosure = NonNullable<Awaited<ReturnType<typeof readTaskClosure>>>;
@@ -88,6 +89,8 @@ function settleTask(
   if (status === "succeeded") {
     const work = closure.thoughtClosure
       ? services.thoughtTarget.inspect(closure.store.thoughts, task) : null;
+    // 完整输入哈希已在事务外随账户修订号核验；局部闭包只重验目标版本。
+    if (work) work.inputHash = task.inputHash;
     if (!work || !services.taskInputMatches(task, work)) {
       status = "stale";
     } else {
@@ -214,12 +217,18 @@ function settlementCommand(services: ThoughtServices, failed: boolean) {
     }, async ports => {
       const closure = await readTaskClosure(ports, input.taskId, repository);
       if (!closure) return null;
+      if (!failed && closure.taskRow.payload.inputHash && input.expectedRevision == null) {
+        throw new TypeError("Thought AI writeback requires a verified account revision");
+      }
       const prepared = await effects?.prepare(ports, closure);
       const status = !failed ? "succeeded"
         : error?.code === "AI_TASK_STALE" ? "stale"
           : error?.code === "AI_TASK_CANCELLED" ? "cancelled" : "failed";
       const result = settleTask(closure, services, input.result, status, error);
       if (!result) return null;
+      if (result.status === "succeeded" && input.contextFingerprint) {
+        result.task.contextFingerprint = input.contextFingerprint;
+      }
       await commitThoughtCommand(ports, repository, closure, String(result.task.targetId || ""), {
         observation: prepared
       });
@@ -249,6 +258,7 @@ export function createThoughtRecordCommands(services: ThoughtServices) {
     update: updateCommand(services),
     create: createCommand(services),
     remove: removeCommand(services),
+    saveForegroundAnswer: createForegroundAnswerCommand(services),
     writeback: settlementCommand(services, false),
     failWriteback: (taskId: string, error: ThoughtFailure) => fail({ taskId, result: null }, error)
   });

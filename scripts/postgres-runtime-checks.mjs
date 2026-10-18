@@ -2,6 +2,7 @@ import { holdThoughtBrowserProbe } from "../.build/typescript/thought-db-regress
 import {
   attachmentProducerFixtures, runAttachmentProducerPostgresChecks, runAttachmentProducerHttpChecks
 } from "./thought-attachment-postgres-checks.mjs";
+import { runThoughtAiPostgresChecks, runThoughtAiHttpChecks } from "./thought-ai-postgres-checks.mjs";
 import { createContentAttachmentService } from "../src/modules/content-attachments/index.mjs";
 import { runThoughtSearchCorpusChecks } from "../.build/typescript/thought-db-regression/scripts/thought-search-corpus-regression.mjs";
 import { thoughtDiscoveryProjection, createThoughtDiscoveryService } from "../src/modules/discovery/index.mjs";
@@ -26,7 +27,8 @@ import {
   createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep,
   userModelCoreReadiness, createPerceptionAwareRepository, createPerceptionRuntime,
   createNotificationRecordCommands, createTaskRecordCommands,
-  createThoughtRecordCommands, createTrashMutations, createTrashCommands, createContentAttachmentRecordCommands
+  createThoughtRecordCommands, createTrashMutations, createTrashCommands, createContentAttachmentRecordCommands,
+  createContentAiRecordCommands, createAiTaskTargets
 } from "../src/app/index.mjs";
 import { createCaptureRecords } from "../src/modules/captures/index.mjs";
 import { createAnnotationService } from "../src/modules/annotations/index.mjs";
@@ -996,7 +998,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
               span: [0, 4]
             }]
           }
-        : serializedMessages.includes(extractionText)
+        : serializedMessages.includes("<permitted_sources>")
           ? {
               claims: [{
                 domain: "context",
@@ -1011,6 +1013,16 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
           : { answer: "数据库中的模型回答", citations: [] })
       : "数据库中的模型回答";
     providerCalls += 1;
+    if (payload.stream === true) {
+      res.setHeader("content-type", "text/event-stream");
+      const event = value => `data: ${JSON.stringify(value)}\n\n`;
+      res.end(event({ choices: [{ delta: { reasoning_content: "隔离模型思考" } }] })
+        + event({ choices: [{ delta: { content } }] })
+        + event({ choices: [{ delta: {}, finish_reason: "stop" }],
+          usage: { prompt_tokens: 2, completion_tokens: 2 } })
+        + "data: [DONE]\n\n");
+      return;
+    }
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify({ choices: [{ message: { content, reasoning_content: "隔离模型思考" }, finish_reason: "stop" }], usage: { prompt_tokens: 2, completion_tokens: 2 } }));
   });
@@ -1296,6 +1308,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       account,
       attachmentFixtures: attachmentProducerFixtures,
       attachmentChecks: runAttachmentProducerPostgresChecks,
+      aiChecks: runThoughtAiPostgresChecks,
       createQueries: () => pagingQueries,
       createService: (repository, queryRuntime) => {
         const now = () => "2026-10-19T00:00:00.000Z";
@@ -1381,7 +1394,20 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
           cancelTask: taskId => cancelledTaskIds.push(taskId),
           getAccountId: () => "thought-producer-test", now, createId
         });
-        return { ...service, scheduledTaskIds, cancelledTaskIds, annotationCommands, rootCommands, trashCommands, attachments };
+        const targets = createAiTaskTargets({
+          thoughts: createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead }),
+          annotations, contentAttachments: attachments,
+          getAccountId: () => "thought-producer-test", now, hash
+        });
+        const contentAi = createContentAiRecordCommands({
+          unitOfWork: aware.accountUnitOfWork,
+          effects: aware.sourceMutationEffects,
+          tasks: createTaskLifecycle({ createId, now, hash }),
+          notifications: createNotificationService({ createId, now }),
+          targets
+        });
+        return { ...service, scheduledTaskIds, cancelledTaskIds, annotationCommands, rootCommands, trashCommands,
+          attachments, contentAi, thoughtService: service, producerRepository: aware };
       }
     });
     await account("repo-test", () => pagingQueries.rebuild());
@@ -2501,6 +2527,14 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await request(restoredApp.base, "/api/ai-tasks/restart-queued", { cookie })).body.status, "succeeded");
     assert.equal((await request(restoredApp.base, "/api/ai-tasks/restart-running", { cookie })).body.status, "failed");
     assert.equal(providerCalls, 5);
+    await request(restoredApp.base, "/api/settings", {
+      cookie, method: "POST", body: { automaticAnswers: { thoughtAnswer: false } }
+    });
+    await runThoughtAiHttpChecks({
+      base: restoredApp.base, request, cookie, otherCookie, waitTask,
+      attachmentPath: "/attachments/interrupted-present.png"
+    });
+    assert.equal(providerCalls, 10, "Foreground replay and forbidden requests must not call the provider");
     await assert.rejects(applyPostgresBundle(restoredMigration, bundle), /entered runtime/);
     return ["runtime role validation", ...budgetChecks,
       "atomic registration rollback", "cross-connection serialized writes",

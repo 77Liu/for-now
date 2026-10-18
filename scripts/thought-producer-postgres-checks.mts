@@ -49,6 +49,7 @@ type Context = {
   };
   attachmentFixtures(root: (id: string) => RecordStore["thoughts"][number]): RecordStore["thoughts"];
   attachmentChecks(input: Record<string, unknown>): Promise<void>;
+  aiChecks(context: Record<string, unknown>, service: unknown): Promise<void>;
 };
 const accountId = "thought-producer-test";
 const rootId = "producer-root";
@@ -235,6 +236,7 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
       database, repo, service: service.attachments, scheduledTaskIds: service.scheduledTaskIds,
       cancelledTaskIds: service.cancelledTaskIds, queries
     });
+    await context.aiChecks({ database, repo, queries }, service);
     const afterOthers = (await database.query(`SELECT object_key, version, payload FROM for_now.store_objects
       WHERE account_id=$1 AND id LIKE 'unrelated-%' ORDER BY object_key`, [accountId])).rows;
     assert.deepEqual(afterOthers, beforeOthers);
@@ -242,8 +244,8 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
     assert.ok(transactions.every(transaction => transaction.writes < 100), JSON.stringify(transactions));
     const commands = (await database.query(`SELECT DISTINCT command_id FROM for_now.record_changes
       WHERE account_id=$1 ORDER BY command_id`, [accountId])).rows.map(row => row.command_id);
-    assert.equal(commands.length, 24);
-    console.log("Thought producer PostgreSQL matrix passed: twenty-four public commands, document access forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
+    assert.equal(commands.length, 27);
+    console.log("Thought producer PostgreSQL matrix passed: twenty-seven public commands, document mutation forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
   });
 }
 

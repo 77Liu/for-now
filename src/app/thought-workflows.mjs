@@ -58,6 +58,12 @@ export function createThoughtWorkflows({
   const removeChainRecord = recordCommands?.enabled?.("thought.delete")
     ? recordCommands?.thoughts?.remove
     : null;
+  const saveAnswerRecord = recordCommands?.enabled?.("thought.aiWriteback")
+    ? recordCommands?.thoughts?.saveForegroundAnswer
+    : null;
+  if (recordCommands?.enabled?.("thought.aiWriteback") && typeof saveAnswerRecord !== "function") {
+    throw new TypeError("Foreground thought answer is enabled without a record command");
+  }
   if (recordCommands?.enabled?.("thought.create") && typeof createChainRecord !== "function") {
     throw new TypeError("Record command thought.create is enabled without an implementation");
   }
@@ -222,6 +228,106 @@ export function createThoughtWorkflows({
     targetId: task.targetId || "",
     payload: task.payload || {}
   }));
+  const assertAnswerContextCurrent = (store, id, receipt, recentTrendFingerprint) => {
+    const question = store.thoughts.find(item => item.id === id && item.type === "question");
+    const options = question ? answerContextOptions(store, question, receipt.generatedAt) : null;
+    if (!question || trendFingerprint(options.recentTrend) !== recentTrendFingerprint
+      || !workingContextReceiptMatches(store, receipt, options)) {
+      throw failure("个人语境已变化，本次回答未写入", "STALE_PERSONAL_CONTEXT", 409);
+    }
+  };
+  const stableAnswerRevision = async (id, receipt, recentTrendFingerprint) => {
+    const unitOfWork = repository.accountUnitOfWork;
+    if (!unitOfWork?.readRevision) throw new TypeError("Foreground answer requires account revision reads");
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const before = await unitOfWork.readRevision();
+      const current = await repository.read();
+      const after = await unitOfWork.readRevision();
+      if (before !== after) continue;
+      assertAnswerContextCurrent(current, id, receipt, recentTrendFingerprint);
+      return after;
+    }
+    throw failure("个人语境已变化，本次回答未写入", "STALE_PERSONAL_CONTEXT", 409);
+  };
+  const persistForegroundAnswer = async (ledgerRequest, input) => {
+    const { id, contextReceipt, recentTrendFingerprint } = input;
+    const save = current => {
+      const saved = saveForegroundAnswer(current, input);
+      if (saved.stale) throw failure("问题已被修改或删除，本次回答未写入", "STALE_AI_RESULT", 409);
+      return saved;
+    };
+    if (saveAnswerRecord) {
+      const expectedRevision = await stableAnswerRevision(id, contextReceipt, recentTrendFingerprint);
+      try {
+        return await saveAnswerRecord({ ...input, expectedRevision }, save);
+      } catch (error) {
+        if (error?.code !== "VERSION_CONFLICT") throw error;
+        const replay = await repository.readIdempotent?.(ledgerRequest);
+        if (replay !== undefined) return replay.value
+          ? { ...replay, duplicate: true } : { value: replay, duplicate: true };
+        throw failure("个人语境已变化，本次回答未写入", "STALE_PERSONAL_CONTEXT", 409);
+      }
+    }
+    const validatedSave = current => {
+      assertAnswerContextCurrent(current, id, contextReceipt, recentTrendFingerprint);
+      return save(current);
+    };
+    return typeof repository.executeIdempotent === "function"
+      ? repository.executeIdempotent(ledgerRequest, validatedSave)
+      : repository.update(validatedSave);
+  };
+  const generateForegroundAnswer = async (store, { id, clientRequestId, listeners }, save) => {
+    assertThoughtModelReady(store);
+    const duplicate = store.thoughts.find(item => item.type === "answer" && item.clientRequestId === clientRequestId);
+    if (duplicate) {
+      if (duplicate.relatedTo !== id) {
+        throw failure("同一请求标识不能用于不同内容", "IDEMPOTENCY_KEY_REUSED", 409);
+      }
+      return duplicate;
+    }
+    const question = store.thoughts.find(item => item.id === id && item.type === "question");
+    if (!question) throw failure("问题不存在", "THOUGHT_NOT_FOUND", 404);
+    const sourceVersion = recordVersion(question.version);
+    const contextOptions = answerContextOptions(store, question);
+    const workingContext = workingContextProjection(store, {
+      ...contextOptions, selectionSeed: hash(JSON.stringify([clientRequestId, contextOptions.coreUserModel]))
+    });
+    const imagePaths = workingContext.attachmentPaths.length
+      ? await materializeAttachmentFiles(workingContext.attachmentPaths) : [];
+    const assertCurrent = async () => assertAnswerContextCurrent(
+      await repository.read(), id, workingContext.receipt, trendFingerprint(contextOptions.recentTrend)
+    );
+    let result;
+    const bufferedDeltas = [];
+    try {
+      await assertCurrent();
+      const referenceRequest = prepareReferenceRequest(workingContext.prompt,
+        answerCitationSources(contextOptions.coreUserModel, [
+          ...(workingContext.citationSources || []),
+          ...(contextOptions.recentTrend?.historicalUserSupplementCitationSources || []),
+          ...(contextOptions.recentTrend?.citationSources || [])
+        ]), JSON.stringify([getAccountId(), workingContext.receipt]), workingContext.receipt);
+      const generated = await generate(referenceRequest.prompt, {
+        scene: "thoughtAnswer", json: true, captureReasoning: true,
+        contextReceipt: { ...workingContext.receipt, referenceRequest: referenceRequest.receipt },
+        imagePaths, onDelta: event => bufferedDeltas.push(event)
+      });
+      result = verifyReferenceAnswer(generated.content, referenceRequest);
+      result.reasoningContent = generated.reasoningContent || "";
+    } finally {
+      await cleanupTemporaryFiles(imagePaths);
+    }
+    await assertCurrent();
+    const saved = await save({
+      sourceVersion, result, contextReceipt: workingContext.receipt,
+      recentTrendFingerprint: trendFingerprint(contextOptions.recentTrend)
+    });
+    if (saved.stale) throw failure("问题已被修改或删除，本次回答未写入", "STALE_AI_RESULT", 409);
+    if (!saved.duplicate && saved.value) {
+      replayVerifiedAnswerDeltas(listeners, bufferedDeltas, saved.value.content);
+    }
+    return saved.value;
+  };
   const queueColdTask = async (kind, targetId, payload, clientRequestId) => {
     const store = await repository.read();
     if (!userModelRequiresCoreReady(store)) return null;
@@ -518,140 +624,10 @@ export function createThoughtWorkflows({
             const persisted = await repository.readIdempotent(ledgerRequest);
             if (persisted !== undefined) return persisted.value || persisted;
           }
-          const generateAndSave = async (store, save) => {
-            assertThoughtModelReady(store);
-            const duplicate = store.thoughts.find(item => item.type === "answer" && item.clientRequestId === clientRequestId);
-            if (duplicate) {
-              if (duplicate.relatedTo !== id) {
-                throw failure("同一请求标识不能用于不同内容", "IDEMPOTENCY_KEY_REUSED", 409);
-              }
-              return duplicate;
-            }
-            const question = store.thoughts.find(item => item.id === id && item.type === "question");
-            if (!question) throw failure("问题不存在", "THOUGHT_NOT_FOUND", 404);
-            const sourceVersion = recordVersion(question.version);
-            const contextOptions = answerContextOptions(store, question);
-            const workingContext = workingContextProjection(
-              store,
-              { ...contextOptions, selectionSeed: hash(JSON.stringify([clientRequestId, contextOptions.coreUserModel])) }
-            );
-            const imagePaths = workingContext.attachmentPaths.length
-              ? await materializeAttachmentFiles(workingContext.attachmentPaths)
-              : [];
-            const assertWorkingContextCurrent = async () => {
-              const current = await repository.read();
-              const currentQuestion = current.thoughts.find(item => item.id === id && item.type === "question");
-              const currentContextOptions = currentQuestion
-                ? answerContextOptions(current, currentQuestion, workingContext.receipt.generatedAt)
-                : null;
-              if (!currentQuestion || trendFingerprint(currentContextOptions.recentTrend)
-                  !== trendFingerprint(contextOptions.recentTrend)
-                || !workingContextReceiptMatches(
-                current,
-                workingContext.receipt,
-                currentContextOptions
-              )) {
-                throw failure("个人语境已变化，本次回答未提供", "STALE_PERSONAL_CONTEXT", 409);
-              }
-            };
-            let result;
-            const bufferedDeltas = [];
-            try {
-              await assertWorkingContextCurrent();
-              const referenceRequest = prepareReferenceRequest(workingContext.prompt,
-                answerCitationSources(contextOptions.coreUserModel, [
-                  ...(workingContext.citationSources || []),
-                  ...(contextOptions.recentTrend?.historicalUserSupplementCitationSources || []),
-                  ...(contextOptions.recentTrend?.citationSources || [])
-                ]), JSON.stringify([getAccountId(), workingContext.receipt]), workingContext.receipt);
-              const generated = await generate(referenceRequest.prompt, {
-                scene: "thoughtAnswer",
-                json: true,
-                captureReasoning: true,
-                contextReceipt: { ...workingContext.receipt, referenceRequest: referenceRequest.receipt },
-                imagePaths,
-                onDelta: event => bufferedDeltas.push(event)
-              });
-              result = verifyReferenceAnswer(generated.content, referenceRequest);
-              result.reasoningContent = generated.reasoningContent || "";
-            } finally {
-              await cleanupTemporaryFiles(imagePaths);
-            }
-            await assertWorkingContextCurrent();
-            const saved = await save({
-              sourceVersion,
-              result,
-              contextReceipt: workingContext.receipt,
-              recentTrendFingerprint: trendFingerprint(contextOptions.recentTrend)
-            });
-            if (saved.stale) {
-              throw failure("问题已被修改或删除，本次回答未写入", "STALE_AI_RESULT", 409);
-            }
-            if (!saved.duplicate && saved.value) {
-              replayVerifiedAnswerDeltas(entry.listeners, bufferedDeltas, saved.value.content);
-            }
-            return saved.value;
-          };
-          if (typeof repository.executeIdempotent === "function") {
-            const store = await repository.read();
-            return generateAndSave(store, ({ sourceVersion, result, contextReceipt, recentTrendFingerprint }) => repository.executeIdempotent(
-              ledgerRequest,
-              current => {
-                const currentQuestion = current.thoughts.find(item => item.id === id && item.type === "question");
-                const currentContextOptions = currentQuestion
-                  ? answerContextOptions(current, currentQuestion, contextReceipt.generatedAt)
-                  : null;
-                if (!currentQuestion || trendFingerprint(currentContextOptions.recentTrend)
-                    !== recentTrendFingerprint
-                  || !workingContextReceiptMatches(
-                  current,
-                  contextReceipt,
-                  currentContextOptions
-                )) {
-                  throw failure("个人语境已变化，本次回答未写入", "STALE_PERSONAL_CONTEXT", 409);
-                }
-                const saved = saveForegroundAnswer(current, {
-                  id,
-                  clientRequestId,
-                  requestHash,
-                  sourceVersion,
-                  result,
-                  contextReceipt
-                });
-                if (saved.stale) {
-                  throw failure("问题已被修改或删除，本次回答未写入", "STALE_AI_RESULT", 409);
-                }
-                return saved;
-              }
-            ));
-          }
           const store = await repository.read();
-          return generateAndSave(store, ({ sourceVersion, result, contextReceipt, recentTrendFingerprint }) => repository.update(current => {
-            const currentQuestion = current.thoughts.find(item => item.id === id && item.type === "question");
-            const currentContextOptions = currentQuestion
-              ? answerContextOptions(current, currentQuestion, contextReceipt.generatedAt)
-              : null;
-            if (!currentQuestion || trendFingerprint(currentContextOptions.recentTrend)
-                !== recentTrendFingerprint
-              || !workingContextReceiptMatches(
-              current,
-              contextReceipt,
-              currentContextOptions
-            )) {
-              throw failure("个人语境已变化，本次回答未写入", "STALE_PERSONAL_CONTEXT", 409);
-            }
-            const saved = saveForegroundAnswer(current, {
-              id,
-              clientRequestId,
-              requestHash,
-              sourceVersion,
-              result,
-              contextReceipt
-            });
-            if (saved.stale) {
-              throw failure("问题已被修改或删除，本次回答未写入", "STALE_AI_RESULT", 409);
-            }
-            return saved;
+          return generateForegroundAnswer(store, { id, clientRequestId, listeners: entry.listeners },
+            result => persistForegroundAnswer(ledgerRequest, {
+            id, clientRequestId, requestHash, ...result
           }));
         });
         activeAnswers.set(key, entry);

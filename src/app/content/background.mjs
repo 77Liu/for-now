@@ -16,6 +16,7 @@ import {
 import { createAiTaskTargets } from "../ai-task-targets.mjs";
 import { createBackgroundAi } from "../background-ai.mjs";
 import { createNotificationRecordCommands } from "../record-commands/notifications.mjs";
+import { createContentAiRecordCommands } from "../record-commands/content-ai.mjs";
 import { createTaskRecordCommands } from "../../modules/tasks/index.mjs";
 import { userModelRequiresCoreReady } from "../user-model.mjs";
 import { prepareReferenceRequest, verifyReferenceAnswer } from "../answer-citations.mjs";
@@ -243,6 +244,15 @@ export function createContentBackground({
       error: errorMetadata(error)
     })
   });
+  if (repository.accountUnitOfWork?.run) {
+    backgroundAi.registerRecordCommand("content.aiWriteback", createContentAiRecordCommands({
+      unitOfWork: repository.accountUnitOfWork,
+      effects: repository.sourceMutationEffects,
+      tasks: taskService,
+      notifications: notificationService,
+      targets: taskTargets
+    }));
+  }
 
   async function requestCaptureTranscription(capture, { force = false } = {}) {
     const { speechProvider } = mediaRuntime;
