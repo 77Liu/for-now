@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 440,
-  "updated_at": "2026-10-18T05:39:38.839Z",
+  "revision": 445,
+  "updated_at": "2026-10-18T13:25:31.152Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,22 +9,22 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "a7ea41",
+    "commit": "9c4916",
     "effective_date": "2026-10-18",
-    "source": "Owner 本轮批准的开发规则与 v0.5.16 严格串行技术基线；规则提交 88f5de，方案基线 a7ea41。"
+    "source": "Owner 本轮要求提交规则更新并返修；评审呈现、删除恢复、数据库补账与排版规则已提交。"
   },
   "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段 5/11：新 F3 记录级持久化出口通过，准备本地提交"
+    "phase": "阶段1/5返修已验收；阶段6仅只读准备（实现暂停）"
   },
   "scope": {
-    "description": "v0.5.16 共 11 项有效需求，严格串行：AI 原子审计 → 新 F1 → F2 → F5 → 新 F3 → 新 F4 → F7 → F6 → F8 → AI 推理可见性 → 新 F9；当前仅阶段 1 可开发。",
+    "description": "v0.5.16：f25154复审R1—R4及永久清理缺口已在533053修复并完成本轮验收；当前允许新F4只读准备，不进入下一阶段实现。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
-      "commit": "b1a62a",
-      "source": "阶段4 F5组合复验经本地出口审查后提交；提交树68247d，未夹带既有F9、knowledge与.trae差分。"
+      "commit": "533053",
+      "source": "本轮R1—R4及永久清理返修提交；tree f9c50c。既有F9/首页差分未夹带，阶段6仍只读。"
     },
     "inputs": [
       "docs/technical-proposals/V0516-跨需求共用底座与串行开发-技术方案.md",
@@ -34,7 +34,7 @@
       "knowledge/test-impact-matrix.md"
     ],
     "exclusions": [
-      "阶段 1 出口门通过前，不开发阶段 2 至 11",
+      "阶段6至11新功能实现暂停；新F4只做只读准备",
       "不 push、tag、Release、Preview 或生产部署",
       "不执行生产业务写入或未授权真实付费调用",
       "不回退或夹带工作区内既有 F9 未提交差分"
@@ -54,58 +54,17 @@
     ],
     "plan_ref": "docs/versions/v0.5.16/README.md"
   },
-  "active_tasks": [
-    {
-      "id": "v0516-record-level-persistence",
-      "owner": "主开发Agent",
-      "mode": "integration",
-      "branch": "feat/v0.5.16-sync-latency",
-      "baseline": "b1a62a",
-      "status": "REVIEWED_GO",
-      "allowed_write_set": [
-        "src/shared/persistence/account-unit-of-work.mts及必要公开入口（账户短事务、精准对象/幂等原语、ChangeSet与独立sync head；禁止领域业务枚举）",
-        "src/shared/persistence/postgres-schema.sql、migrations/registry.mts、postgres-runtime.mjs、postgres-objects.mjs、store-mapping.mjs、index.mjs（F3 schema唯一写者、position退场、UoW装配与专用全量入口隔离）",
-        "src/config/index.mjs、deploy/for-now.env.example、tsconfig.backend.json（RECORD_COMMAND_ALLOWLIST唯一配置装配，默认空）",
-        "src/app/record-commands/**、runtime-foundation.mjs、content-runtime.mjs、content/resources.mjs、content/workflows.mjs、background-ai.mjs、thought-workflows.mjs（应用层UoW编排与首批命令路由）",
-        "src/modules/notifications/**、src/modules/tasks/**、src/modules/thoughts/**（仅领域typed command/port与现有业务不变量复用）",
-        "scripts/record-command*-regression.*、postgres-*、runtime-infrastructure-regression.mjs、server-runtime-regression.mjs及直接受影响专项",
-        "package.json、knowledge/module-boundaries.json（仅新增永久测试入口或真实公开依赖需要时）",
-        "docs/technical-proposals/reczz28ORRaxPiK3-应新规重做F3记录级持久化-技术方案.md（仅开发明细、producer coverage与真实证据）",
-        "coordination/**（仅主控通过唯一更新入口）"
-      ],
-      "forbidden_write_set": [
-        "阶段6至11的F4查询、F7/F6/F8前端交互、推理可见性和F9 transport/frontend state实现",
-        "src/http/sync.mjs、scripts/sync-coordinator-regression.mjs、public/frontend/app/runtime/home-runtime.mjs、public/frontend/app/runtime/kernel.mjs既有未提交差分",
-        "knowledge/development-release-checklist.md、knowledge/privacy-notice.md、knowledge/prompt-architecture.md既有未提交差分",
-        ".trae/**",
-        "普通命令异常后的legacy fallback、before/after整账户快照diff、万能CommandPlan或persistence业务分派",
-        "远程push、tag、Release、Preview、生产部署、生产业务写入与真实付费provider调用"
-      ],
-      "shared_file_owner": "主开发是阶段5 schema、UoW、首批领域命令适配、配置与回归的唯一写者；控制面仍由主控经唯一入口维护。",
-      "integration_order": "先注册additive schema并实现默认关闭的UoW/ChangeSet底座；再迁通知已读和任务状态；随后迁思绪编辑/删除，最后迁思绪创建及AI写回并固化F9 producer coverage fixture。每一内部步骤失败留在本阶段修复，不提前开发F4。",
-      "contracts": [
-        "普通allowlist命令只读取并写入目标业务闭包，不调用repository.read/readRaw/clearStoreObjects，不重写无关position。",
-        "领域拥有命令DTO与不变量；应用层只编排公开typed command；persistence只提供账户事务、条件行、幂等和change原语。",
-        "实际状态写、幂等回执、独立sync cursor和RecordChange在同一短事务提交；无ChangeDraft不推进cursor。",
-        "RECORD_COMMAND_ALLOWLIST默认空，只在请求开始前固定row或legacy路径；row异常禁止同请求回退。",
-        "模型调用和上下文计算在事务外；AI写回按来源ID/版本条件提交，迟到结果不得覆盖。",
-        "只有全部写入口覆盖的实体类型可标记RecordChangeCoverage=complete；本阶段不实现F9消费。",
-        "新增或实质修改函数遵循少于100行软目标；防御与抽象必须对应已知失败或真实消费者。"
-      ],
-      "result": "阶段5记录级持久化首批通知、任务与思绪命令已实现；两份审查报告的8项问题在当前候选全部关闭，PostgreSQL 16.14稳定套件、主回归、静态门与受影响专项通过。F9 producer coverage仍为false，本结论不是发布GO。"
-    }
-  ],
+  "active_tasks": [],
   "candidate": null,
   "authorization": {
-    "source": "Owner 2026-10-18 本轮明确：遵循项目规则开始开发，已评审需求按唯一串行方案持续推进，遇技术计划矛盾或必须 Owner 裁定时停止报告。",
+    "source": "Owner 2026-10-18 本轮明确：提交规则更新并继续当前阶段返修；新F4仅只读准备，暂不进入下一阶段实现。",
     "allowed_actions": [
-      "11 项已评审方案的本地串行实现、自查、审查与受影响验证",
-      "当前阶段必要的 schema、迁移、运行时、测试和方案开发明细修改",
-      "隔离本地 PostgreSQL、mock provider 与无生产副作用测试",
-      "本地原子提交及必要需求资产、控制面更新"
+      "已授权当前阶段返修、本地验证与提交",
+      "新F4只读准备；未获后续放行不实现新功能",
+      "控制面事实及验收回执更新"
     ],
     "excluded": [
-      "阶段出口前越级开发后继需求",
+      "阶段6至11新功能实现",
       "push",
       "tag",
       "Release",
@@ -126,7 +85,7 @@
     }
   },
   "blockers": [],
-  "next_action": "仅暂存并提交阶段5实现、8项审查返修、技术方案开发明细与控制面记录，排除既有F9、knowledge与.trae差分；核对提交树后登记实际commit并进入阶段6新F4只读准备。",
+  "next_action": "只读准备新F4；复核533053返修候选及回执。未经后续明确放行不登记或执行阶段6实现；不发布或部署。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -561,9 +520,10 @@
         "baseline": "a7ea41",
         "requirement_id": "reczz28ORRaxSCBn",
         "commit": "1bf34d",
-        "tree": "ca53f4"
+        "tree": "ca53f4",
+        "remediation_commit": "533053"
       },
-      "conclusion": "阶段1原提交1bf34d3完成既定正常路径；后续审查发现usage pending兼容日志缺恢复载荷和统计时区错位。当前阶段5候选已修复并经实际producer重启恢复、上海午夜PG/HTTP及完整出口门重新核定通过；原提交快照不单独代表这些失败路径。",
+      "conclusion": "533053补齐数据库审计原行完整费用、按账户/callId差额补账及到期清理保护；真实生产者进程失败退出后由新OS进程补齐已知、零和未知费用，重复恢复幂等，完整PG门通过。文件模式原验收继续有效。",
       "limitations": [
         "AI_AUDIT_DB_ENABLED 默认仍为0；未部署、未写生产、未执行真实付费 provider 调用。",
         "本结论是阶段研发出口 GO，不是版本发布 GO；v0.5.x NDJSON 兼容保留至 v0.6.0 正式上线。",
@@ -576,7 +536,8 @@
         "npm run test:postgres:stable",
         "npm test",
         "npm run test:deploy",
-        "npm run test:deploy:preview"
+        "npm run test:deploy:preview",
+        "reviews/2026-10-18-f25154-remediation-result.json"
       ]
     },
     {
@@ -678,26 +639,20 @@
       "object": {
         "kind": "source_manifest",
         "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "b1a62a",
-        "requirement_id": "reczz28ORRaxPiK3",
-        "review_snapshots": [
-          "reviews/2026-10-18-f3-development-review.md",
-          "reviews/2026-10-18-f7bd64-b1a62a-review.md"
-        ]
+        "baseline": "f25154",
+        "commit": "533053",
+        "tree": "f9c50c",
+        "requirement_id": "reczz28ORRaxPiK3"
       },
-      "conclusion": "F3-01至F3-04、会话撤销竞态、usage重启恢复、并发改密死锁和统计时区共8项已在当前候选关闭。阶段1/2受影响失败路径重新核定为本地PASS；阶段5本地研发出口GO，允许形成隔离提交。",
+      "conclusion": "533053完成R1/R2删块批注删除恢复、任务通知同事务变化与最终取消传播，永久清理保留DB记录并拒绝HTTP删除恢复；R4领域typed command/repositories及coverage类型覆盖通过。本轮阶段1/5返修验收通过，阶段6实现继续暂停。",
       "limitations": [
-        "RECORD_COMMAND_ALLOWLIST、AI_AUDIT_DB_ENABLED等生产开关仍按原契约默认关闭；未部署或写生产。",
-        "notification、aiTask、thoughtChain仍有legacy/partial生产者，F9 v2覆盖门保持false。",
-        "未执行真实付费provider、Safari/PWA/iOS真机或生产容量观测；不是版本发布GO。"
+        "仅首批命令；producer coverage仍有legacy/partial，F9 v2保持关闭",
+        "阶段6只读；未发布、部署、生产写入、付费provider调用或真机验收",
+        "完整门基于本轮源码指纹；既有F9和首页未提交差分未纳入该提交或UI验收"
       ],
       "refs": [
-        "docs/technical-proposals/reczz28ORRaxPiK3-应新规重做F3记录级持久化-技术方案.md#41-开发明细必填评审时留空开发结束后填写",
-        "npm run test:postgres:stable --silent",
-        "npm run check",
-        "npm test --silent",
-        "npm run test:auth --silent",
-        "npm run test:record-commands --silent"
+        "reviews/2026-10-18-f25154-remediation-result.json",
+        "git:533053"
       ]
     }
   ],

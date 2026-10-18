@@ -263,5 +263,13 @@
       "path": "tsconfig.record-commands-regression.json",
       "sha256": "af3656"
     }
-  ]
+  ],
+  "candidate_commit": "533053",
+  "candidate_tree": "f9c50c",
+  "control_plane_audit": {
+    "result": "PASS",
+    "revision": 445,
+    "event_count": 115,
+    "scope": "控制面与事件持久化一致性；业务结论由源码审查与专项验收支持"
+  }
 }
