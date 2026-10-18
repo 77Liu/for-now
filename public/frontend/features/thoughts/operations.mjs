@@ -182,8 +182,11 @@ export function createThoughtOperations({
     }
     return meta.window;
   }
-  function capturePosition() {
-    const window = ensurePaging(), position = visiblePosition();
+  function capturePosition(anchorId = "") {
+    const card = anchorId ? document.querySelector(`#all-thoughts [data-chain-id="${platform.escapeSelector(anchorId)}"]`) : null;
+    const rect = card?.getBoundingClientRect?.();
+    const position = rect ? { anchorId, offset: rect.top >= 0 && rect.top < platform.window.innerHeight ? rect.top : 0 } : visiblePosition();
+    const window = ensurePaging();
     if (pendingPages.size || restoreNeeded) return;
     if (!window || !position) return;
     const page = window.pages.find(item => item.items.some(item => item.id === position.anchorId));

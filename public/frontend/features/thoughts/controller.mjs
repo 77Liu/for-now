@@ -148,6 +148,9 @@ export function createThoughtsFeatureController({
   });
   const thoughtView = createThoughtView({
     getSnapshot: data.getSnapshot,
+    getDraftOwnerScope: () => JSON.stringify([data.getAccountId(), data.getSessionSerial()]),
+    getDraftStorageKey: () => data.getAccountId() ? `cike:session-drafts:${data.getAccountId()}` : "",
+    draftStorage: () => { try { return window.sessionStorage; } catch { return undefined; } },
     hasActiveSelection: container => annotations.hasActiveSelection?.(container) || false,
     getActiveDate: crossDomain.getActiveDate,
     isFullRouteStateLoaded: data.isFullRouteStateLoaded,
@@ -251,8 +254,9 @@ export function createThoughtsFeatureController({
     const summary = closest(event, ".chain-summary");
     if (summary) {
       event.preventDefault();
-      operations.capturePosition();
-      navigation.openDetail(summary.closest("[data-chain-id]")?.dataset.chainId);
+      const rootId = summary.closest("[data-chain-id]")?.dataset.chainId;
+      operations.capturePosition(rootId);
+      navigation.openDetail(rootId);
       return;
     }
     const button = closest(event, "button");
@@ -342,6 +346,11 @@ export function createThoughtsFeatureController({
   }
 
   function handleInput(event) {
+    const form = event.target?.closest?.("form");
+    if (form?.matches?.(".followup-form,[data-followup-manual-answer],[data-followup-edit]")) {
+      form.dataset.thoughtDraftDirty = "true";
+      thoughtView.rememberDrafts();
+    }
     if (event.target?.matches?.("[data-speech-generation-rate]")) {
       const output = event.target.closest("label")?.querySelector("output");
       if (output) output.textContent = (1 + Number(event.target.value) / 100).toFixed(2) + "×";
@@ -387,6 +396,7 @@ export function createThoughtsFeatureController({
   const unmount = async () => {
     const current = activation;
     if (!current) return false;
+    thoughtView.rememberDrafts();
     operations.resetPaging();
     readingState.invalidate();
     thoughtView.clearSelectionRender();

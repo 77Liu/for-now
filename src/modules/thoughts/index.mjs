@@ -789,7 +789,7 @@ import { createThoughtQueryRuntime as createQueryRuntime } from "../../../.build
 import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../../shared/persistence/index.mjs";
 /** 装配公开思绪数据库查询与投影维护；业务事实仍是正式思绪对象。 @since unreleased
  * @partial 阶段 6 候选接入，尚未宣布完整出口验收。
- * @partialScope 全部生产者逐入口矩阵和真实浏览器消费者验收待完成；基础 PG 查询与事务证据另见正式回执。
+ * @partialScope 全部生产者逐入口矩阵待完成；查询、事务及桌面浏览器的局部通过证据另见正式回执。
  * @partialVersion v0.5.16 阶段 6 未发布候选。
  * @partialReason 当前切片仅完成已记录的局部及 PostgreSQL 验证。
  * @partialAuthorization Owner 2026-10-19「继续持续推进开发」。

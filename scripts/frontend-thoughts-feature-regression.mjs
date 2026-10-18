@@ -457,6 +457,30 @@ console.log(
   writeDeferred[0]({ id: "edit-follow", question: "new", answer: "", version: 2 });
   await tick();
   assert.equal(state.thoughts[0].followUps[0].question, "old", "旧账户的追问ACK不能进入新账户快照");
+  // 跨页窗口中激活的记录决定返回游标，不能使用视口首条的游标。
+  const cards = ["visible", "activated"].map((id, index) => ({
+    dataset: { chainId: id },
+    getBoundingClientRect: () => ({ top: index ? 2000 : 50, bottom: index ? 2100 : 150 })
+  }));
+  route = { view: "thoughts", kind: "page", query: {} };
+  state = { thoughts: cards.map(card => ({ id: card.dataset.chainId, type: "question", content: "摘要", createdAt: "2026-10-19T00:00:00.000Z" })), thoughtPage: {
+    kind: "list", window: { ownerKey: `${owner}|1`, routeKey: JSON.stringify(["thoughts", "page", "", "", []]),
+      generation: 0, stale: false, pages: [
+        { items: [{ id: "visible" }], requestCursor: "visible-cursor", direction: "next" },
+        { items: [{ id: "activated" }], requestCursor: "activated-cursor", direction: "next" }
+      ] }
+  } };
+  fakeWindow.innerHeight = 800;
+  fakeDocument.querySelectorAll = selector => selector === "#all-thoughts [data-chain-id]" ? cards : [];
+  fakeDocument.querySelector = selector => selector.includes('[data-chain-id="activated"]') ? cards[1]
+    : selector === "#all-thoughts" ? root : selector === "#thought-pagination-status" ? status : null;
+  await mount();
+  const summary = { closest: () => cards[1] };
+  listeners.get("click")({ preventDefault() {}, target: {
+    closest: selector => selector === ".chain-summary" ? summary : null
+  } });
+  await tick();
+  assert.equal(route.query.cursor, "activated-cursor");
   await assert.doesNotReject(() => controller.resetSession());
 }
 

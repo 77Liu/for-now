@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-19",
+  "baselineCommit": "fe5a0a",
+  "ruleCommit": "9c4916",
+  "status": "PASS_DESKTOP_BROWSER_SUBSET_STAGE6_PARTIAL",
+  "sourceManifest": [
+    {
+      "path": "public/frontend/features/thoughts/controller.mjs",
+      "sha256_6": "a0407a",
+      "change": "source"
+    },
+    {
+      "path": "public/frontend/features/thoughts/operations.mjs",
+      "sha256_6": "55ecb8",
+      "change": "source"
+    },
+    {
+      "path": "public/frontend/features/thoughts/view.mjs",
+      "sha256_6": "5d8fa1",
+      "change": "source"
+    },
+    {
+      "path": "scripts/frontend-thoughts-feature-regression.mjs",
+      "sha256_6": "e325ac",
+      "change": "source"
+    },
+    {
+      "path": "scripts/postgres-runtime-checks.mjs",
+      "sha256_6": "9b8a69",
+      "change": "source"
+    },
+    {
+      "path": "scripts/thought-browser-probe.mts",
+      "sha256_6": "4602e5",
+      "change": "source"
+    },
+    {
+      "path": "scripts/url-history-regression.mjs",
+      "sha256_6": "81e8f0",
+      "change": "source"
+    },
+    {
+      "path": "src/modules/thoughts/discovery-query.mts",
+      "sha256_6": "5c9311",
+      "change": "partial_scope_comment_only"
+    },
+    {
+      "path": "src/modules/thoughts/index.mjs",
+      "sha256_6": "738f85",
+      "change": "partial_scope_comment_only"
+    },
+    {
+      "path": "src/modules/thoughts/projection.mts",
+      "sha256_6": "8aaaf6",
+      "change": "partial_scope_comment_only"
+    },
+    {
+      "path": "src/modules/thoughts/query-contracts.mts",
+      "sha256_6": "b8494d",
+      "change": "partial_scope_comment_only"
+    },
+    {
+      "path": "src/modules/thoughts/query-runtime.mts",
+      "sha256_6": "914c81",
+      "change": "partial_scope_comment_only"
+    },
+    {
+      "path": "src/modules/thoughts/query.mts",
+      "sha256_6": "71506a",
+      "change": "partial_scope_comment_only"
+    },
+    {
+      "path": "tsconfig.thought-db-regression.json",
+      "sha256_6": "04e976",
+      "change": "source"
+    }
+  ],
+  "sourceManifestSha256_6": "6b5275",
+  "backendLogicUnchanged": true,
+  "browser": {
+    "engine": "Codex IAB / actual page DOM and accessibility observations",
+    "persistence": "isolated PostgreSQL 16.14",
+    "thoughtPagingEnabled": true,
+    "fixtureRoots": 141,
+    "otherTaskDirtyFilesIncluded": false,
+    "cases": [
+      {
+        "case": "eight-page traversal and bounded window",
+        "status": "PASS",
+        "cardsByPage": [
+          20,
+          40,
+          60,
+          80,
+          100,
+          100,
+          100,
+          83
+        ],
+        "maxPages": 5
+      },
+      {
+        "case": "activated record page cursor and return",
+        "status": "PASS",
+        "record": "browser-thought-0020",
+        "oldWrongBoundary": "browser-thought-0041",
+        "fixedBoundary": "browser-thought-0021"
+      },
+      {
+        "case": "draft and open form retained after detail return",
+        "status": "PASS"
+      },
+      {
+        "case": "full reload followed by asynchronous body arrival retains edited draft/open form",
+        "status": "PASS"
+      },
+      {
+        "case": "submit accepted then reload keeps saved follow-up and blank hidden new form",
+        "status": "PASS"
+      },
+      {
+        "case": "new draft then logout/login leaves blank hidden form",
+        "status": "PASS"
+      }
+    ],
+    "scope": "合成数据；桌面浏览器。sessionStorage可用；不可用时沿现有端口退化为内存，不证明跨刷新保存。移动端和真实设备尚未执行。"
+  },
+  "validation": {
+    "frontendWorkspace": {
+      "status": "PASS",
+      "command": "node scripts/frontend-thoughts-feature-regression.mjs"
+    },
+    "frontendCleanCandidate": {
+      "status": "PASS",
+      "command": "node scripts/frontend-thoughts-feature-regression.mjs",
+      "productSourceByteEqual": true
+    },
+    "urlHistoryWorkspace": {
+      "status": "PASS",
+      "command": "npm run test:url-history"
+    },
+    "urlHistoryCleanCandidate": {
+      "status": "PASS",
+      "command": "node scripts/url-history-regression.mjs"
+    },
+    "postgresAfterBrowser": {
+      "status": "PASS",
+      "command": "THOUGHT_BROWSER_PROBE=<fresh ignored local file> npm run test:postgres:stable",
+      "corpusExperimentThisRun": "NOT_RUN",
+      "reusedSearchEvidence": "reviews/2026-10-19-stage6-db-paging-result.json"
+    },
+    "checks": {
+      "status": "PASS",
+      "command": "tsc -p tsconfig.thought-db-regression.json && npm run check"
+    }
+  },
+  "initialFailures": [
+    "激活跨页记录时检查点用了视口首条游标。",
+    "详情路由卸载丢失追问草稿。",
+    "返修中间版本ACK后旧提交复活，已在提交前修复。",
+    "首屏骨架渲染后的同scope空DOM吞掉刷新恢复草稿，已修复合并顺序。",
+    "URL历史专项仍断言旧page=2/累计前缀，已更新为已确认的单页与规范化契约，保留前后退/滚动/删除覆盖。"
+  ],
+  "remainingStageBlocker": "TC-10必要生产者有界闭包及逐入口成功/故障矩阵未完成；不放行阶段7。",
+  "protectedFiles": [
+    {
+      "path": "public/frontend/app/runtime/home-runtime.mjs",
+      "sha256_6": "f6e3bf",
+      "changed": false
+    },
+    {
+      "path": "public/frontend/app/runtime/kernel.mjs",
+      "sha256_6": "3d52f4",
+      "changed": false
+    },
+    {
+      "path": "public/frontend/state/index.mjs",
+      "sha256_6": "7a714f",
+      "changed": false
+    },
+    {
+      "path": "scripts/sync-coordinator-regression.mjs",
+      "sha256_6": "c22c4a",
+      "changed": false
+    },
+    {
+      "path": "src/http/sync.mjs",
+      "sha256_6": "7afb9c",
+      "changed": false
+    }
+  ]
+}

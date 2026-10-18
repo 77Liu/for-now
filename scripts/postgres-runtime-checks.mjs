@@ -1,3 +1,4 @@
+import { holdThoughtBrowserProbe } from "../.build/typescript/thought-db-regression/scripts/thought-browser-probe.mjs";
 import { runThoughtSearchCorpusChecks } from "../.build/typescript/thought-db-regression/scripts/thought-search-corpus-regression.mjs";
 import { thoughtDiscoveryProjection, createThoughtDiscoveryService } from "../src/modules/discovery/index.mjs";
 import { thoughtSpeechProjection, readThoughtSpeechAssets } from "../src/app/index.mjs";
@@ -1974,6 +1975,8 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(detailRoute.status, 200, JSON.stringify(detailRoute.body));
     assert.ok(detailRoute.body.data.thoughts.some(item => item.id === generatedAnswer.id));
     assert.equal(detailRoute.body.data.thoughtPage.found, true);
+    await holdThoughtBrowserProbe({ base: app.base, username: registration.body.user.username,
+      seed: thoughts => account(id, () => repo.update(store => { store.thoughts.push(...thoughts); })) });
     const perceptionSourceRef = {
       resourceType: "capture",
       resourceId: perceptionSource.id,

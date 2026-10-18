@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 450,
-  "updated_at": "2026-10-18T17:00:49.172Z",
+  "revision": 454,
+  "updated_at": "2026-10-18T17:36:13.125Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,7 +17,7 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段6/11：新F4数据库游标分页实现"
+    "phase": "阶段6/11：新F4生产者有界闭包返修"
   },
   "scope": {
     "description": "Owner恢复持续串行开发；阶段1/5返修已验收，当前实现新F4数据库分页及其必要生产者接入；通过阶段出口后继续唯一后继。",
@@ -98,7 +98,10 @@
         "scripts/startup-projection-regression.mjs",
         "scripts/frontend-thoughts-feature-regression.mjs",
         "scripts/api-v1-contract-regression.mjs",
-        "src/app/speech-cache.mjs"
+        "src/app/speech-cache.mjs",
+        "public/frontend/features/thoughts/controller.mjs",
+        "public/frontend/features/thoughts/view.mjs",
+        "scripts/url-history-regression.mjs"
       ],
       "forbidden_write_set": [
         "public/frontend/app/runtime/home-runtime.mjs",
@@ -113,8 +116,8 @@
       "shared_owner": "主控唯一串行写者（schema/构建/接口/控制面）",
       "integration_order": "核对前驱与全部生产者→领域读模型和schema→同事务维护/回填→有界查询与HTTP兼容→专项/PG/消费者验收→提交和出口裁定",
       "acceptance": "方案TC01—TC12；coverage不完整时禁止启用DB分页；保留原有UI/F9差分",
-      "review_ref": "reviews/2026-10-19-stage6-db-paging-review.md",
-      "receipt_ref": "reviews/2026-10-19-stage6-db-paging-result.json"
+      "review_ref": "reviews/2026-10-19-stage6-browser-remediation.md",
+      "receipt_ref": "reviews/2026-10-19-stage6-browser-remediation-result.json"
     }
   ],
   "candidate": null,
@@ -158,19 +161,9 @@
       "evidence": [
         "reviews/2026-10-19-stage6-db-paging-review.md#未关闭项"
       ]
-    },
-    {
-      "id": "stage6-browser-consumers",
-      "status": "OPEN",
-      "owner": "主控",
-      "blocks": "阶段6出口及阶段7实施",
-      "reason": "真实浏览器连续分页、详情返回、锚点/草稿/展开态及F9 scope消费验收尚未与本候选完整绑定。",
-      "evidence": [
-        "reviews/2026-10-19-stage6-db-paging-review.md#未关闭项"
-      ]
     }
   ],
-  "next_action": "继续当前阶段返修：完成逐生产者有界闭包与故障矩阵、真实浏览器分页/详情/阅读状态验收；TC01—TC12全部通过后才核定阶段6出口。",
+  "next_action": "继续阶段6 TC-10返修：改造必要生产者的有界业务闭包，逐入口绑定command、索引/标签delta、ChangeDraft及真实PG成功/故障用例；完成后再核定阶段6出口，阶段7未放行。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",

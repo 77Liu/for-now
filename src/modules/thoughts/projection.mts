@@ -4,7 +4,7 @@
  * 状态：active
  * 边界：在线只刷新实际变更根；事务适配器不解释思绪业务字段。
  * @partial 阶段 6 候选接入，尚未宣布完整出口验收。
- * @partialScope 全部生产者逐入口矩阵和真实浏览器消费者验收待完成；基础 PG 查询与事务证据另见正式回执。
+ * @partialScope 全部生产者逐入口矩阵待完成；查询、事务及桌面浏览器的局部通过证据另见正式回执。
  * @partialVersion v0.5.16 阶段 6 未发布候选。
  * @partialReason 当前切片仅完成已记录的局部及 PostgreSQL 验证。
  * @partialAuthorization Owner 2026-10-19「继续持续推进开发」。
@@ -99,7 +99,7 @@ async function updateTagCounts(context: ProjectionContext, previous: string[], n
 
 /** 创建唯一的思绪投影维护命令，供记录事务和明确登记的兼容生产者共同调用。 @since unreleased
  * @partial 阶段 6 候选接入，尚未宣布完整出口验收。
- * @partialScope 全部生产者逐入口矩阵和真实浏览器消费者验收待完成；基础 PG 查询与事务证据另见正式回执。
+ * @partialScope 全部生产者逐入口矩阵待完成；查询、事务及桌面浏览器的局部通过证据另见正式回执。
  * @partialVersion v0.5.16 阶段 6 未发布候选。
  * @partialReason 当前切片仅完成已记录的局部及 PostgreSQL 验证。
  * @partialAuthorization Owner 2026-10-19「继续持续推进开发」。

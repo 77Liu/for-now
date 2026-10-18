@@ -14,6 +14,9 @@ function requireFunction(value, name) {
 
 export function createThoughtView({
   getSnapshot,
+  getDraftOwnerScope = () => "",
+  getDraftStorageKey = () => "",
+  draftStorage = () => undefined,
   hasActiveSelection = () => false,
   getActiveDate,
   isFullRouteStateLoaded,
@@ -58,6 +61,57 @@ export function createThoughtView({
   let routeResult = null;
   const expandedContent = new Set();
   let renderedScope = "";
+  let draftOwner = "";
+  let draftKey = "";
+  const retainedDrafts = new Map();
+  function writeDrafts() {
+    if (!draftKey) return;
+    try {
+      const storage = draftStorage();
+      const previous = JSON.parse(storage?.getItem(draftKey) || "{}");
+      storage?.setItem(draftKey, JSON.stringify({ ...previous, thoughtForms: [...retainedDrafts.values()] }));
+    } catch { /* 受限存储保留内存草稿，沿用既有 session-drafts 的失败语义。 */ }
+  }
+  function currentDrafts() {
+    const owner = getDraftOwnerScope();
+    if (owner !== draftOwner) {
+      retainedDrafts.clear();
+      draftOwner = owner;
+      draftKey = getDraftStorageKey();
+      try {
+        const saved = JSON.parse(draftStorage()?.getItem(draftKey) || "{}").thoughtForms;
+        if (Array.isArray(saved)) for (const draft of saved) {
+          if (typeof draft?.key === "string" && draft.key.startsWith("follow-up:")
+            && Array.isArray(draft.fields) && draft.fields.every(field => typeof field?.key === "string" && typeof field.value === "string")) {
+            retainedDrafts.set(draft.key, draft);
+          }
+        }
+      } catch { /* 损坏草稿不阻断实际记录读取。 */ }
+    }
+    return owner ? [...retainedDrafts.values()] : [];
+  }
+  /** 仅记录用户实际编辑的表单，沿既有账户 session-drafts 保存，不缓存加载正文。 @since unreleased */
+  function rememberDrafts() {
+    if (draftOwner !== getDraftOwnerScope()) {
+      currentDrafts();
+      return;
+    }
+    if (!draftOwner || !surface) return;
+    for (const draft of captureFormDrafts(surface)) {
+      if (!draft.dirty) continue;
+      const edited = draft.fields.some(field => typeof field.value === "string" && field.value.trim());
+      if (edited) retainedDrafts.set(draft.key, { ...draft, submitting: false });
+      else retainedDrafts.delete(draft.key);
+    }
+    writeDrafts();
+  }
+  function draftsForRender(root) {
+    const drafts = new Map(currentDrafts().map(draft => [draft.key, draft]));
+    if (renderedScope === renderToken.scope) for (const draft of captureFormDrafts(root)) {
+      if (draft.dirty || !drafts.has(draft.key)) drafts.set(draft.key, draft);
+    }
+    return [...drafts.values()];
+  }
   let renderToken = null;
   const currentFrame = (root, callback, token = renderToken) => requestFrame(() => {
     if (root?.isConnected !== false && readingState.isCurrent(token)) callback();
@@ -87,6 +141,7 @@ export function createThoughtView({
     const active = document.activeElement;
     return [...root.querySelectorAll("form")].map((form, index) => ({
       key: formIdentity(form, index),
+      dirty: form.dataset.thoughtDraftDirty === "true",
       hidden: form.hidden,
       requestId: form.dataset.requestId || "",
       submitting: Boolean(form.querySelector('button[type="submit"]')?.disabled),
@@ -108,6 +163,7 @@ export function createThoughtView({
       const draft = drafts.find(item => item.key === formIdentity(form, index));
       if (!draft) return;
       form.hidden = draft.hidden;
+      if (draft.dirty) form.dataset.thoughtDraftDirty = "true";
       const submit = form.querySelector('button[type="submit"]');
       if (submit) submit.disabled = draft.submitting;
       if (draft.requestId) form.dataset.requestId = draft.requestId;
@@ -235,7 +291,7 @@ export function createThoughtView({
   function renderTogether(snapshot, extraOpen) {
     const root = queryOne("#today-thoughts");
     if (!root) return false;
-    const drafts = renderedScope === renderToken.scope ? captureFormDrafts(root) : [];
+    const drafts = draftsForRender(root);
     const open = openState(root);
     extraOpenState(open, extraOpen);
     const items = createThoughtChains(snapshot.thoughts, "occurred")
@@ -258,7 +314,7 @@ export function createThoughtView({
   function renderThoughtPage(snapshot, extraOpen) {
     const root = queryOne("#all-thoughts");
     if (!root) return false;
-    const drafts = renderedScope === renderToken.scope ? captureFormDrafts(root) : [];
+    const drafts = draftsForRender(root);
     const open = openState(root);
     extraOpenState(open, extraOpen);
     document.querySelectorAll("[data-thought-sort]").forEach(button => {
@@ -477,6 +533,9 @@ export function createThoughtView({
           return Object.hasOwn(submitted, name) && field.value !== submitted[name];
         });
         // ACK只消费本次提交的文本；等待期间新输入仍是用户草稿。
+        if (changed) retainedDrafts.set(consumedKey, { ...draft, submitting: false, requestId: "" });
+        else retainedDrafts.delete(consumedKey);
+        writeDrafts();
         return changed ? [{ ...draft, submitting: false, requestId: "" }] : [];
       });
       const open = openState(current.parentElement);
@@ -528,6 +587,7 @@ export function createThoughtView({
       updateRoute(nextRoute, result);
     },
     updateRoute,
+    rememberDrafts,
     render,
     syncOverflow,
     toggleExpanded,
@@ -535,6 +595,10 @@ export function createThoughtView({
       clearSelectionRender();
       audioLifecycle?.dispose(surface);
       expandedContent.clear();
+      retainedDrafts.clear();
+      writeDrafts();
+      draftOwner = "";
+      draftKey = "";
       renderedScope = "";
       readingState.invalidate();
       queryOne("#all-thoughts")?.replaceChildren();
