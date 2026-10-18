@@ -47,6 +47,7 @@ import {
   list,
   objectValue,
   permittedHistoricalTextDates,
+  sourceLocalDates,
   validLocalDate,
   validTimezone
 } from "./record-compression-context.mjs";
@@ -940,6 +941,68 @@ export function createRecordCompressionService({
       };
     },
     buildInput,
+    sourceMutationDates(store) {
+      const dates = [
+        ...sourceLocalDates(store, timezone(), now()),
+        ...sourceLocalDates(store, historicalTimezone(), now())
+      ];
+      return [...new Set([...dates, ...dates.map(date => dateKeyOffset(date, 1))])];
+    },
+    invalidateSourceClosure(store, beforeStore) {
+      const timestamp = now();
+      const dates = new Set([
+        ...sourceLocalDates(beforeStore, timezone(), timestamp),
+        ...sourceLocalDates(store, timezone(), timestamp),
+        ...sourceLocalDates(beforeStore, historicalTimezone(), timestamp),
+        ...sourceLocalDates(store, historicalTimezone(), timestamp)
+      ]);
+      const changedDates = new Set();
+      const changedSourceIds = new Set();
+      for (const localDate of dates) {
+        for (const requestedTimezone of new Set([timezone(), historicalTimezone()])) {
+          const previous = buildInput(beforeStore, localDate, requestedTimezone, timestamp);
+          const current = buildInput(store, localDate, requestedTimezone, timestamp);
+          for (const sourceId of changedManifestSourceIds(previous, current)) {
+            changedSourceIds.add(sourceId);
+            changedDates.add(localDate);
+          }
+        }
+      }
+      if (!changedSourceIds.size) return [];
+      const windowChanged = value => {
+        const previous = buildInput(beforeStore, value.localDate, value.timezone, timestamp, value.windowKey || "");
+        const current = buildInput(store, value.localDate, value.timezone, timestamp, value.windowKey || "");
+        return changedManifestSourceIds(previous, current).size > 0;
+      };
+      for (const summary of list(store.recordCompressions)) {
+        if (!["invalidated", "failed"].includes(summary.status) && windowChanged(summary)) {
+          invalidateCompressionSummary(summary, timestamp);
+        }
+      }
+      const supplement = store.historicalUserSupplement;
+      const retained = list(supplement?.records)
+        .filter(record => !changedSourceIds.has(record?.source?.sourceId));
+      if (supplement && retained.length !== list(supplement.records).length) {
+        store.historicalUserSupplement = {
+          ...supplement,
+          records: retained,
+          coverage: { ...supplement.coverage, complete: false },
+          tokenUsage: {
+            estimated: true,
+            scope: "model_output",
+            tokens: estimateHistoricalUserSupplementOutputTokens(retained)
+          }
+        };
+      }
+      return list(store.aiTasks).filter(task => (
+        task.kind === RECORD_COMPRESSION_TASK_KIND
+        && task.status === "running"
+        && taskBelongsToCurrentAccount(store, task)
+        && (task.payload?.operation === HISTORICAL_SUPPLEMENT_OPERATION
+          ? [...changedDates].some(date => date >= task.payload?.windowStart && date <= task.payload?.windowEnd)
+          : windowChanged(task.payload || {}))
+      )).map(task => task.id);
+    },
     invalidateChangedSources(store, beforeStore) {
       if (sourceStateFingerprint(store) === sourceStateFingerprint(beforeStore)) return [];
       const staleRunningTaskIds = list(store?.aiTasks)
@@ -1014,6 +1077,21 @@ export function createRecordCompressionService({
       return result;
     }
   };
+}
+
+function canonicalSourceState(source) {
+  if (!source) return "";
+  return JSON.stringify([
+    source.version, source.sourceHash, source.permissionRevision, source.origin
+  ]);
+}
+
+function changedManifestSourceIds(previous, current) {
+  const before = new Map(list(previous?.sourceManifest).map(source => [source.sourceId, source]));
+  const after = new Map(list(current?.sourceManifest).map(source => [source.sourceId, source]));
+  return new Set([...before.keys(), ...after.keys()].filter(sourceId => (
+    canonicalSourceState(before.get(sourceId)) !== canonicalSourceState(after.get(sourceId))
+  )));
 }
 
 function upsertCompression(store, value) {

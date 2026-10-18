@@ -41,7 +41,8 @@ export function createContentFoundation({
   const annotationCommands = createAnnotationCommands({
     repository,
     annotations: annotationService,
-    moveNestedItemToTrash: trashMutations.moveNestedItemToTrash
+    moveNestedItemToTrash: trashMutations.moveNestedItemToTrash,
+    now
   });
   return {
     annotationService,

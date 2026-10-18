@@ -62,6 +62,30 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     };
   }
 
+  /** 按顶层内容身份解析所属思绪，只加载该根及必要子项。 @since unreleased */
+  async function readThoughtTargetClosure(ports: RecordTransaction, id: string, { forDeletion = false } = {}) {
+    const target = await ports.objects.find(recordObjectKey("thoughts", id));
+    if (!target) return null;
+    const rootId = target.payload.type === "question"
+      ? target.id
+      : typeof target.payload.relatedTo === "string" ? target.payload.relatedTo : "";
+    if (!rootId) {
+      const rows = await ports.objects.findTree([target.objectKey], { lock: true });
+      return {
+        rootKey: target.objectKey,
+        rows,
+        store: rebuildRecordCollections(rows, ["thoughts"]),
+        thoughts: rebuildRecordCollections(rows, ["thoughts"]).thoughts
+      };
+    }
+    if (forDeletion) return readThoughtDeleteClosure(ports, rootId);
+    const closure = await readThoughtClosure(ports.objects, ports.relations, rootId);
+    return closure ? {
+      ...closure,
+      store: rebuildRecordCollections(closure.rows, ["thoughts"])
+    } : null;
+  }
+
   const comparable = (row: ObjectRow) => canonicalJson({
     childFields: row.childFields,
     content: row.content,
@@ -89,6 +113,11 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
 
   async function insertRows(ports: RecordTransaction, mapping: Mapping, rows: EntityRow[]) {
     const inserted = new Set(rows.map(row => row.objectKey));
+    for (const collection of new Set(rows.map(row => row.collection))) {
+      const singleton = rows.some(row => row.collection === collection
+        && JSON.parse(row.objectKey).length === 1);
+      await ports.objects.ensureCollection(collection, singleton ? "object" : "array");
+    }
     for (const row of rows) await ports.objects.insert({ ...row, position: null });
     for (const relation of mapping.relations) {
       if (inserted.has(relation.objectKey)) await ports.relations.insert(relation);
@@ -153,7 +182,11 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
       }
       const next = mappedUpdate(current, row);
       if (!await ports.objects.update(next, current.version)) throw conflict();
-      if (refreshCollections.has(row.collection)) refreshedIndexes.add(row.objectKey);
+      if (refreshCollections.has(row.collection)
+        || current.content !== next.content
+        || canonicalJson(current.payload?.attachmentPaths || []) !== canonicalJson(next.payload?.attachmentPaths || [])) {
+        refreshedIndexes.add(row.objectKey);
+      }
       persistedRows.push(next);
     }
     const insertedRows = mappedRows
@@ -225,6 +258,13 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     return { store, beforeRows };
   }
 
-  return { rebuildRecordCollections, readThoughtClosure, readThoughtDeleteClosure, persistMappedClosure, createThoughtStoreClosure };
+  return {
+    rebuildRecordCollections,
+    readThoughtClosure,
+    readThoughtTargetClosure,
+    readThoughtDeleteClosure,
+    persistMappedClosure,
+    createThoughtStoreClosure
+  };
 }
 export type ThoughtRecordRepository = ReturnType<typeof createThoughtRecordRepository>;

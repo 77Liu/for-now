@@ -42,6 +42,16 @@ export interface RecordEntity extends Record<string, unknown> {
 }
 export type EntityRow = Omit<ObjectRow, "payload"> & { payload: RecordEntity };
 export type RecordStore = Record<string, RecordEntity[]>;
+export type SourceMutationState = {
+  rows: ObjectRow[];
+  store: RecordStore;
+};
+export type SourceMutationEffects = {
+  prepare(ports: RecordTransaction, state: SourceMutationState): Promise<{
+    apply(): Promise<void>;
+    afterCommit(): void;
+  }>;
+};
 export type Mapping = {
   objects: EntityRow[];
   relations: Parameters<RecordTransaction["relations"]["insert"]>[0][];

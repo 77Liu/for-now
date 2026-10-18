@@ -163,6 +163,52 @@
     "URL历史专项仍断言旧page=2/累计前缀，已更新为已确认的单页与规范化契约，保留前后退/滚动/删除覆盖。"
   ],
   "remainingStageBlocker": "TC-10必要生产者有界闭包及逐入口成功/故障矩阵未完成；不放行阶段7。",
+  "nightProducerSubset": {
+    "recordedAt": "2026-10-19T02:33:00+08:00",
+    "status": "PASS_ELEVEN_COMMAND_SUBSET_STAGE6_PARTIAL",
+    "caseSource": "scripts/thought-producer-postgres-checks.mts",
+    "commands": [
+      "thought.block.create",
+      "thought.block.update",
+      "thought.disposition",
+      "thought.remark.create",
+      "thought.remark.update",
+      "thought.followUp.create",
+      "thought.followUp.update",
+      "thought.annotation.create",
+      "thought.annotation.reply",
+      "thought.annotation.convert",
+      "thought.annotation.delete"
+    ],
+    "verified": [
+      "each command success and commit-time injected failure rollback",
+      "document read/update forbidden in public producer services",
+      "1000 unrelated roots unchanged; returned row and write counts below 100",
+      "search/tag/detail projections and complete nested parent identity",
+      "learning permission creates durable perception task; failed commit schedules nothing",
+      "affected evening summary invalidated, unaffected morning and other-date summaries retained",
+      "first-write evidence collection registration",
+      "actual HTTP annotation creation uses record-transaction business identity",
+      "npm run test:postgres:stable",
+      "thought-service and thought-workflows-p00 regression",
+      "content-runtime and perception runtime/evidence regression",
+      "record-compression and historical supplement service regression",
+      "business-identifiers regression and module boundaries"
+    ],
+    "resolvedFailures": [
+      "first evidence insert lacked store_fields collection metadata",
+      "actual HTTP annotation creation lacked business ID transaction scope",
+      "module checks rejected direct persistence/app imports; public entries now used"
+    ],
+    "limitations": [
+      "independent attachments, root-command effects, nested delete/restore and AI writes remain",
+      "discovery status still needs full per-entry failure matrix",
+      "SQL actual scan cost and growing related history not fully measured",
+      "no new real browser run or real corpus experiment in this producer subset",
+      "existing F9 dirty files preserved and excluded from the producer commit",
+      "stage6 TC-10 incomplete; stage7 not started"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

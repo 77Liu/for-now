@@ -136,6 +136,11 @@ export function createContentRuntime({
     onStoreMutation: (store, beforeStore) => {
       const staleRunningTaskIds = recordCompressionService.invalidateChangedSources(store, beforeStore);
       for (const taskId of staleRunningTaskIds) backgroundAi?.cancel(taskId);
+    },
+    recordEffects: {
+      sourceDates: store => recordCompressionService.sourceMutationDates(store),
+      invalidate: (store, beforeStore) => recordCompressionService.invalidateSourceClosure(store, beforeStore),
+      cancel: taskId => backgroundAi?.cancel(taskId)
     }
   });
   const foundation = createContentFoundation({

@@ -14,6 +14,7 @@
   },
   "files": [
     "scripts/thought-db-paging-regression.mts",
+    "scripts/thought-producer-postgres-checks.mts",
     "scripts/thought-search-corpus-regression.mts",
     "scripts/thought-browser-probe.mts"
   ]

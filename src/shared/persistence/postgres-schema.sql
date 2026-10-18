@@ -457,6 +457,10 @@ DROP INDEX IF EXISTS for_now.resource_lifecycle_position_idx;
 ALTER TABLE for_now.resource_lifecycle ALTER COLUMN position DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS resource_lifecycle_stable_order_idx
   ON for_now.resource_lifecycle(account_id, updated_at, resource_key);
+CREATE INDEX IF NOT EXISTS store_objects_identity_idx
+  ON for_now.store_objects(account_id, id);
+CREATE INDEX IF NOT EXISTS resource_lifecycle_identity_idx
+  ON for_now.resource_lifecycle(account_id, resource_id);
 
 DROP INDEX IF EXISTS for_now.idempotency_ledger_position_idx;
 ALTER TABLE for_now.idempotency_ledger ALTER COLUMN position DROP NOT NULL;

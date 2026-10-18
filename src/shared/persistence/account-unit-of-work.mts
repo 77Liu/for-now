@@ -4,6 +4,7 @@
  * 状态：active
  * 边界：只理解持久化身份、条件行和变化格式，不解释通知、任务、思绪等领域语义。
  */
+import { allocatedRecordBusinessId, bindBusinessIdResponse, withRecordBusinessIdTransaction } from "./business-identifiers.mjs";
 
 type QueryResult<Row = Record<string, unknown>> = {
   rows: Row[];
@@ -232,6 +233,14 @@ function createObjectPort(
   noteRead: (rows: number) => void,
   noteObjectChanged: (row: ObjectRow) => void
 ) {
+  const ensureCollection = async (collection: string, shape: "array" | "object" = "array") => {
+    const result = await client.query(`
+      INSERT INTO for_now.store_fields(account_id, field, shape, payload)
+      VALUES ($1, $2, $3, NULL)
+      ON CONFLICT (account_id, field) DO NOTHING
+    `, [accountId, required(collection, "collection"), shape]);
+    noteWrite(count(result));
+  };
   const find = async (objectKey: string, { lock = false } = {}) => {
     const result = await client.query<ObjectRow>(`
       SELECT ${objectColumns}
@@ -266,6 +275,34 @@ function createObjectPort(
     noteRead(count(result));
     return structuredClone(result.rows);
   };
+  const findForLocalDates = async (
+    collection: string,
+    localDates: string[],
+    { runningOnly = false } = {}
+  ) => {
+    const dates = stringList(localDates, "localDates");
+    if (!dates.length) return [];
+    if (dates.length > MAX_OBJECT_KEYS || dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+      throw new RangeError("Record command local date selection is invalid");
+    }
+    const result = await client.query<ObjectRow>(`
+      SELECT ${objectColumns}
+      FROM for_now.store_objects
+      WHERE account_id = $1 AND collection = $2 AND parent_key IS NULL
+        AND (NOT $4::boolean OR status = 'running')
+        AND (
+          COALESCE(payload->'payload'->>'localDate', payload->>'localDate') = ANY($3::text[])
+          OR EXISTS (
+            SELECT 1 FROM unnest($3::text[]) selected_date
+            WHERE selected_date BETWEEN payload->'payload'->>'windowStart'
+              AND payload->'payload'->>'windowEnd'
+          )
+        )
+      FOR UPDATE
+    `, [accountId, required(collection, "collection"), dates, runningOnly]);
+    noteRead(count(result));
+    return structuredClone(result.rows);
+  };
   const findTree = async (objectKeys: string[], { lock = false } = {}) => {
     const roots = await findMany(objectKeys, { lock });
     const rows = [...roots];
@@ -290,6 +327,18 @@ function createObjectPort(
     return structuredClone(rows);
   };
   const insert = async (row: ObjectRow) => {
+    if (allocatedRecordBusinessId(row.id)) {
+      const occupied = await client.query(`
+        SELECT id FROM for_now.store_objects WHERE account_id=$1 AND id=$2
+        UNION ALL
+        SELECT resource_id FROM for_now.resource_lifecycle WHERE account_id=$1 AND resource_id=$2
+        LIMIT 1
+      `, [accountId, row.id]);
+      noteRead(count(occupied));
+      if (occupied.rows.length) {
+        throw problem("业务身份分配暂时失败，请重试", "BUSINESS_ID_COLLISION_EXHAUSTED", 503);
+      }
+    }
     const result = await client.query(`
       INSERT INTO for_now.store_objects(
         account_id, object_key, collection, kind, id, parent_key, field,
@@ -336,9 +385,11 @@ function createObjectPort(
     return count(result) === 1;
   };
   return Object.freeze({
+    ensureCollection,
     find,
     findMany,
     findByCollection,
+    findForLocalDates,
     findTree,
     insert,
     update,
@@ -597,7 +648,8 @@ export function createAccountUnitOfWork({
         if (idempotency) {
           const replay = await readIdempotency(client, accountId, idempotency, timestamp);
           if (replay !== undefined) {
-            return { accountId, value: replay as Result, replayed: true, cursor: null, changes: [], reads: 1, writes: 0 };
+            const value = bindBusinessIdResponse(replay as Result, getContext() || {});
+            return { accountId, value, replayed: true, cursor: null, changes: [], reads: 1, writes: 0 };
           }
         }
         let reads = 0;
@@ -607,7 +659,7 @@ export function createAccountUnitOfWork({
         const addChange = (draft: RecordChangeDraft) => {
           changes.push(normalizeChange(draft));
         };
-        const value = await operation({
+        const result = await withRecordBusinessIdTransaction(() => operation({
           accountId,
           objects: createObjectPort(client, accountId,
             rows => { writes += rows; }, rows => { reads += rows; },
@@ -626,7 +678,8 @@ export function createAccountUnitOfWork({
             rows => { reads += rows; }
           ),
           addChange
-        });
+        }));
+        const value = bindBusinessIdResponse(result, getContext() || {});
         if ((writes > 0) !== (changes.length > 0)) {
           throw new Error("Record command writes and ChangeSet must be committed together");
         }

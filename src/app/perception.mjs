@@ -19,6 +19,9 @@ import {
   workingContextProjection,
   workingContextReceiptFingerprint
 } from "./task-context.mjs";
+import { createSourceMutationEffects } from "../../.build/typescript/backend/app/source-record-effects.mjs";
+import { createThoughtRecordRepository } from "../../.build/typescript/backend/shared/persistence/thought-record-repository.mjs";
+import { canonicalJson as mappedCanonicalJson, mapStoreObjects, rebuildStoreObjects } from "../shared/persistence/index.mjs";
 
 export const PERCEPTION_TASK_KIND = "perceptionExtraction";
 export const PERCEPTION_PROMPT_SOURCE_BYTE_LIMIT = 12_000;
@@ -852,7 +855,8 @@ export function createPerceptionAwareRepository({
   createTask,
   scheduleTask,
   refreshTaskInputs = () => {},
-  onStoreMutation = () => {}
+  onStoreMutation = () => {},
+  recordEffects = null
 } = {}) {
   if (!repository?.read
     || !repository?.update
@@ -894,6 +898,22 @@ export function createPerceptionAwareRepository({
   };
   const awareRepository = {
     ...repository,
+    sourceMutationEffects: recordEffects ? createSourceMutationEffects({
+      repository: createThoughtRecordRepository({
+        canonicalJson: mappedCanonicalJson,
+        mapStoreObjects,
+        rebuildStoreObjects
+      }),
+      sourceDates: recordEffects.sourceDates,
+      observe(before, store) {
+        const taskIds = [];
+        observeChanges(sourceSnapshots(before), store, taskIds);
+        return taskIds;
+      },
+      invalidate: recordEffects.invalidate,
+      schedule: scheduleTask,
+      cancel: recordEffects.cancel
+    }) : null,
     async update(operation) {
       const taskIds = [];
       const result = await repository.update(async store => {

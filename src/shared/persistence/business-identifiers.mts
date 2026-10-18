@@ -41,6 +41,7 @@ interface AllocationScope {
   allocated: Set<string>;
   document: unknown;
   random: (size: number) => Uint8Array;
+  recordTransaction?: boolean;
 }
 const scopes = new AsyncLocalStorage<AllocationScope>();
 
@@ -66,6 +67,23 @@ export function withBusinessIdTransaction<T>(
   random: (size: number) => Uint8Array = randomBytes
 ): T {
   return scopes.run({ document, occupied: collectIds(document), allocated: new Set(), random }, operation);
+}
+
+/** 记录事务的身份由数据库精准占用检查核验，不读取完整账户文档。 @since unreleased */
+export function withRecordBusinessIdTransaction<T>(operation: () => T): T {
+  return scopes.run({
+    document: null,
+    occupied: new Set(),
+    allocated: new Set(),
+    random: randomBytes,
+    recordTransaction: true
+  }, operation);
+}
+
+/** 只核验当前记录事务实际分配的新身份，历史或协议身份保持原样。 @since unreleased */
+export function allocatedRecordBusinessId(value: string): boolean {
+  const scope = scopes.getStore();
+  return scope?.recordTransaction === true && scope.allocated.has(value);
 }
 
 /** 创建账户内未占用的业务身份；最多尝试 8 次，失败抛出可重试错误。 @since unreleased */

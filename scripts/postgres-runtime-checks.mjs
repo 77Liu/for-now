@@ -47,6 +47,8 @@ import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
 import "./prompt-test-setup.mjs";
 import { runThoughtDbPagingChecks } from "../.build/typescript/thought-db-regression/scripts/thought-db-paging-regression.mjs";
+import { runThoughtProducerPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-postgres-checks.mjs";
+import { createRecordCompressionService, createAnnotationCommands } from "../src/app/index.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -1262,6 +1264,74 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         now: () => "2026-10-19T00:00:00.000Z" }),
       legacyPage: thoughtChainListPage,
       removeRoot: (store, id) => createThoughtRecordHarness(pagingRepo).mutations.moveThoughtChainToTrash(store, id) });
+    await runThoughtProducerPostgresChecks({
+      database,
+      repo: pagingRepo,
+      account,
+      createQueries: () => pagingQueries,
+      createService: (repository, queryRuntime) => {
+        const now = () => "2026-10-19T00:00:00.000Z";
+        const createId = () => crypto.randomUUID();
+        const hash = value => crypto.createHash("sha256").update(value).digest("hex");
+        const scheduledTaskIds = [];
+        const perception = createPerceptionRuntime({ getAccountId: () => "thought-producer-test", createId, now, hash });
+        const compression = createRecordCompressionService({
+          repository,
+          getAccountId: () => "thought-producer-test",
+          createId,
+          now,
+          hash
+        });
+        let background;
+        const aware = createPerceptionAwareRepository({
+          repository,
+          perception,
+          createTask: (store, input) => background.createInStore(store, input),
+          scheduleTask: taskId => scheduledTaskIds.push(taskId),
+          recordEffects: {
+            sourceDates: store => compression.sourceMutationDates(store),
+            invalidate: (store, before) => compression.invalidateSourceClosure(store, before),
+            cancel: () => {}
+          }
+        });
+        background = createBackgroundAi({
+          repository: aware,
+          tasks: createTaskLifecycle({ createId, now, hash }),
+          notifications: createNotificationService({ createId, now }),
+          targets: perception,
+          generate: async () => { throw new Error("Producer test must not invoke a provider"); },
+          dispatch: () => {},
+          contextKey: () => "producer-test",
+          now,
+          onError: error => { throw error; }
+        });
+        const service = createThoughtService({
+          repository: aware,
+          queryRuntime,
+          createId,
+          now,
+          recordVersion,
+          eventTimeFields,
+          reanchorAnnotations: createAnnotationService({ createId, now }).reanchorAnnotations
+        });
+        const annotations = createAnnotationService({ createId, now });
+        const trash = createTrashService({ createId, now, hash, retentionDays: 30 });
+        const mutations = createTrashMutations({
+          trash,
+          annotations,
+          now,
+          getAccountId: () => "thought-producer-test",
+          cancelTask: () => {}
+        });
+        const annotationCommands = createAnnotationCommands({
+          repository: aware,
+          annotations,
+          moveNestedItemToTrash: mutations.moveNestedItemToTrash,
+          now
+        });
+        return { ...service, scheduledTaskIds, annotationCommands };
+      }
+    });
     await account("repo-test", () => pagingQueries.rebuild());
     const assertProjectionParity = async accountId => account(accountId, async () => {
       const store = await repo.read();

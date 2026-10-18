@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 454,
-  "updated_at": "2026-10-18T17:36:13.125Z",
+  "revision": 455,
+  "updated_at": "2026-10-18T18:16:18.686Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -101,7 +101,10 @@
         "src/app/speech-cache.mjs",
         "public/frontend/features/thoughts/controller.mjs",
         "public/frontend/features/thoughts/view.mjs",
-        "scripts/url-history-regression.mjs"
+        "scripts/url-history-regression.mjs",
+        "src/app/perception.mjs",
+        "src/app/record-compressions.mjs",
+        "src/app/source-record-effects.mts"
       ],
       "forbidden_write_set": [
         "public/frontend/app/runtime/home-runtime.mjs",
@@ -117,12 +120,17 @@
       "integration_order": "核对前驱与全部生产者→领域读模型和schema→同事务维护/回填→有界查询与HTTP兼容→专项/PG/消费者验收→提交和出口裁定",
       "acceptance": "方案TC01—TC12；coverage不完整时禁止启用DB分页；保留原有UI/F9差分",
       "review_ref": "reviews/2026-10-19-stage6-browser-remediation.md",
-      "receipt_ref": "reviews/2026-10-19-stage6-browser-remediation-result.json"
+      "receipt_ref": "reviews/2026-10-19-stage6-browser-remediation-result.json",
+      "execution_window": {
+        "finish_at": "2026-10-19T08:30:00+08:00",
+        "purpose": "本轮夜间执行收尾与Owner评审汇报",
+        "source": "Owner本轮明确指令"
+      }
     }
   ],
   "candidate": null,
   "authorization": {
-    "source": "Owner 2026-10-19：继续持续推进开发。恢复v0.5.16已评审11项需求的严格串行本地实现、验证和提交，替代此前阶段6只读限制。",
+    "source": "Owner 2026-10-19：继续夜间持续开发，未收到Owner停止指令持续推进已评审剩余需求；早晨08:30收尾并汇报需要Owner决策的评审表。沿既定11阶段串行开发，不扩大外部动作授权。",
     "allowed_actions": [
       "当前及后继已评审需求的严格串行本地实现、自查、审查、受影响验证与本地提交",
       "当前阶段必要schema、迁移、运行时、测试及技术方案回填",

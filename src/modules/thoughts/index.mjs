@@ -6,6 +6,10 @@ import {
   safeText
 } from "../../shared/validation/index.mjs";
 import { stripThoughtAnswerLead } from "./prompts.mjs";
+import { createLocalThoughtMutations } from "../../../.build/typescript/backend/modules/thoughts/local-mutations.mjs";
+import { createThoughtLocalCommands } from "../../../.build/typescript/backend/modules/thoughts/local-commands.mjs";
+import { createThoughtRecordRepository } from "../../../.build/typescript/backend/shared/persistence/thought-record-repository.mjs";
+import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../../shared/persistence/index.mjs";
 export { thoughtTask, thoughtPromptSystem, stripThoughtAnswerLead, thoughtPersonalContext, thoughtChainContext, thoughtDraftInput, thoughtStarterPrompt } from "./prompts.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
@@ -382,10 +386,31 @@ export function createThoughtService({
   getCursorScope = () => "",
   queryRuntime = null
 }) {
-  const touchRoot = root => {
-    root.version = recordVersion(root.version) + 1;
-    root.updatedAt = now();
-  };
+  const localMutations = createLocalThoughtMutations({
+    createId,
+    now,
+    recordVersion,
+    cleanAttachmentPaths,
+    eventTimeFields,
+    reanchorAnnotations,
+    reconcileOriginalImages
+  });
+  const localCommands = queryRuntime?.enabled && repository.accountUnitOfWork?.run
+    ? createThoughtLocalCommands({
+        unitOfWork: repository.accountUnitOfWork,
+        repository: createThoughtRecordRepository({
+          canonicalJson,
+          mapStoreObjects,
+          rebuildStoreObjects
+        }),
+        mutations: localMutations,
+        effects: repository.sourceMutationEffects,
+        now
+      })
+    : null;
+  const mutateLocal = (operation, input) => localCommands
+    ? localCommands[operation](input)
+    : repository.update(store => localMutations[operation](store, input));
 
   return {
     createChainInStore(store, {
@@ -609,29 +634,12 @@ export function createThoughtService({
       const originalImages = cleanAttachmentPaths(attachmentPaths);
       if (!content && !originalImages.length) return Promise.resolve({ invalid: true, error: "请填写文字或插入图片" });
       const requestHash = clientRequestId ? requestDigest({ content, eventTime, type, relatedTo, tags, attachmentPaths: originalImages }) : "";
-      const createInStore = store => {
-        const root = relatedTo ? store.thoughts.find(item => item.id === relatedTo && item.type === "question") : null;
-        if (relatedTo && !root) return { missing: true };
-        const entry = {
-          id: createId(),
-          createdAt: now(),
-          ...eventTime,
-          type,
-          content,
-          attachmentPaths: originalImages,
-          tags,
-          relatedTo,
-          disposition: "kept",
-          remarks: [],
-          origin: "manual",
-          authorType: "user",
-          version: 1,
-          ...(clientRequestId ? { clientRequestId, requestHash } : {})
-        };
-        store.thoughts.unshift(entry);
-        if (root) touchRoot(root);
-        return { value: entry };
+      const input = {
+        content, eventTime, type, relatedTo, tags,
+        attachmentPaths: originalImages, clientRequestId, requestHash
       };
+      if (localCommands) return localCommands.createBlock(input);
+      const createInStore = store => localMutations.createBlock(store, input);
       if (!clientRequestId || typeof repository.executeIdempotent !== "function") {
         return repository.update(createInStore);
       }
@@ -643,40 +651,8 @@ export function createThoughtService({
     },
 
     updateBlock({ id, content, eventTimeInput, expectedVersion, attachmentPaths }) {
-      return repository.update(store => {
-        const item = store.thoughts.find(value => value.id === id);
-        if (!item || item.type === "question") return { missing: true };
-        if (expectedVersion != null && Number(expectedVersion) !== recordVersion(item.version)) {
-          return { conflict: true, currentVersion: recordVersion(item.version) };
-        }
-        const originalImages = attachmentPaths !== undefined
-          ? cleanAttachmentPaths(attachmentPaths)
-          : cleanAttachmentPaths(item.attachmentPaths);
-        if (!content && !originalImages.length) return { invalid: true, error: "请保留文字或至少一张图片" };
-        const eventTime = eventTimeFields(eventTimeInput, item);
-        if (!eventTime) return { invalidTime: true };
-        const root = store.thoughts.find(value => value.id === item.relatedTo && value.type === "question");
-        const updatedAt = now();
-        let reconciled = null;
-        if (attachmentPaths !== undefined && typeof reconcileOriginalImages === "function") {
-          reconciled = reconcileOriginalImages(store, "thoughtBlock", id, originalImages, {
-            changedAt: updatedAt,
-            touchResource: false,
-            allowEmptyImages: true
-          });
-          if (!reconciled.value) return reconciled;
-        }
-        if (root) reanchorAnnotations(root, `${item.type}:${item.id}`, item.content, content);
-        item.content = content;
-        item.attachmentPaths = originalImages;
-        Object.assign(item, eventTime);
-        item.updatedAt = updatedAt;
-        item.version = recordVersion(item.version) + 1;
-        if (item.type === "answer" && item.modelDraft) item.editedFromModel = item.modelDraft !== content;
-        if (root) touchRoot(root);
-        const result = { value: item, ...(reconciled?.trashId ? { trashId: reconciled.trashId } : {}) };
-        if (reconciled?.[AFTER_COMMIT]) Object.defineProperty(result, AFTER_COMMIT, { value: reconciled[AFTER_COMMIT] });
-        return result;
+      return mutateLocal("updateBlock", {
+        id, content, eventTimeInput, expectedVersion, attachmentPaths
       });
     },
 
@@ -686,98 +662,24 @@ export function createThoughtService({
     },
 
     setDisposition({ id, disposition }) {
-      return repository.update(store => {
-        const found = store.thoughts.find(value => value.id === id);
-        if (!found) return { missing: true };
-        const updatedAt = now();
-        for (const item of store.thoughts.filter(value => value.id === id || value.relatedTo === id)) {
-          item.disposition = disposition;
-          item.dispositionAt = updatedAt;
-          item.updatedAt = updatedAt;
-          item.version = recordVersion(item.version) + 1;
-        }
-        return { value: found };
-      });
+      return mutateLocal("setDisposition", { id, disposition });
     },
 
     addRemark({ id, text }) {
-      return repository.update(store => {
-        const item = store.thoughts.find(value => value.id === id);
-        if (!item) return { missing: true };
-        const occurredAt = now();
-        const remark = { id: createId(), text, createdAt: occurredAt, occurredAt, version: 1 };
-        item.remarks.push(remark);
-        touchRoot(item);
-        return { value: remark };
-      });
+      return mutateLocal("addRemark", { id, text });
     },
 
     updateRemark({ id, remarkId, text }) {
-      return repository.update(store => {
-        const item = store.thoughts.find(value => value.id === id);
-        const remark = item?.remarks.find(value => value.id === remarkId);
-        if (!remark) return { missing: true };
-        remark.text = text;
-        remark.updatedAt = now();
-        remark.version = recordVersion(remark.version) + 1;
-        touchRoot(item);
-        return { value: remark };
-      });
+      return mutateLocal("updateRemark", { id, remarkId, text });
     },
 
     addFollowUp({ id, question, answer, clientRequestId = "" }) {
-      return repository.update(store => {
-        const root = store.thoughts.find(item => item.id === id && item.type === "question");
-        if (!root) return { missing: true };
-        root.followUps ||= [];
-        if (clientRequestId) {
-          const existing = root.followUps.find(item => item.clientRequestId === clientRequestId);
-          if (existing) {
-            return existing.question === question && (existing.answer || "") === answer
-              ? { value: existing, duplicate: true }
-              : { conflict: true };
-          }
-        }
-        const followUp = {
-          id: createId(),
-          createdAt: now(),
-          questionOccurredAt: now(),
-          question,
-          answer,
-          ...(answer ? { answeredAt: now(), answerOccurredAt: now() } : {}),
-          ...(clientRequestId ? { clientRequestId } : {}),
-          origin: "manual",
-          version: 1
-        };
-        root.followUps.push(followUp);
-        touchRoot(root);
-        return { value: followUp };
-      });
+      return mutateLocal("addFollowUp", { id, question, answer, clientRequestId });
     },
 
     updateFollowUp({ id, followUpId, hasQuestion, question, hasAnswer, answer, expectedVersion }) {
-      return repository.update(store => {
-        const root = store.thoughts.find(item => item.id === id && item.type === "question");
-        const followUp = root?.followUps?.find(item => item.id === followUpId);
-        if (!followUp) return { missing: true };
-        if (expectedVersion != null && Number(expectedVersion) !== recordVersion(followUp.version)) return { conflict: true };
-        if (hasQuestion) {
-          reanchorAnnotations(root, `followup-question:${followUpId}`, followUp.question, question);
-          followUp.question = question;
-        }
-        if (hasAnswer) {
-          const originalAnswerAt = followUp.answerOccurredAt || followUp.answeredAt;
-          reanchorAnnotations(root, `followup-answer:${followUpId}`, followUp.answer || "", answer);
-          followUp.answer = answer;
-          followUp.answeredAt = answer ? now() : null;
-          if (answer) followUp.answerOccurredAt ||= originalAnswerAt || followUp.answeredAt;
-          if (followUp.modelDraft) followUp.editedFromModel = followUp.modelDraft !== answer;
-          followUp.origin = "manual";
-        }
-        followUp.updatedAt = now();
-        followUp.version = recordVersion(followUp.version) + 1;
-        touchRoot(root);
-        return { value: followUp };
+      return mutateLocal("updateFollowUp", {
+        id, followUpId, hasQuestion, question, hasAnswer, answer, expectedVersion
       });
     }
   };
@@ -786,7 +688,6 @@ export function createThoughtService({
 export { createThoughtRecordCommands } from "../../../.build/typescript/backend/modules/thoughts/record-commands.mjs";
 
 import { createThoughtQueryRuntime as createQueryRuntime } from "../../../.build/typescript/backend/modules/thoughts/query-runtime.mjs";
-import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../../shared/persistence/index.mjs";
 /** 装配公开思绪数据库查询与投影维护；业务事实仍是正式思绪对象。 @since unreleased
  * @partial 阶段 6 候选接入，尚未宣布完整出口验收。
  * @partialScope 全部生产者逐入口矩阵待完成；查询、事务及桌面浏览器的局部通过证据另见正式回执。
