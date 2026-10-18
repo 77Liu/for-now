@@ -45,6 +45,9 @@ export type RecordStore = Record<string, RecordEntity[]>;
 export type SourceMutationState = {
   rows: ObjectRow[];
   store: RecordStore;
+  restoredSourceKeys?: string[];
+  restoredRootId?: string;
+  restoredRows?: ObjectRow[];
 };
 export type SourceMutationEffects = {
   prepare(ports: RecordTransaction, state: SourceMutationState): Promise<{

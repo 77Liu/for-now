@@ -11,7 +11,9 @@ import { AFTER_COMMIT } from "../../shared/persistence/record-command-types.mjs"
 import type { ThoughtRecordRepository } from "../../shared/persistence/thought-record-repository.mjs";
 import type { TrashEntry } from "./record-contracts.mjs";
 import { addThoughtClosureChanges } from "./local-changes.mjs";
-import { ensureThoughtLifecycles, markThoughtLifecycleDeleted } from "./record-lifecycle.mjs";
+import {
+  ensureThoughtLifecycles, markThoughtLifecycleDeleted, markThoughtLifecycleRestored
+} from "./record-lifecycle.mjs";
 
 type Observation = Awaited<ReturnType<SourceMutationEffects["prepare"]>> | undefined;
 
@@ -33,10 +35,12 @@ export async function commitThoughtCommand(
   rootId: string,
   {
     observation,
-    trashEntries = []
+    trashEntries = [],
+    restoredAt = ""
   }: {
     observation?: Observation;
     trashEntries?: RecordEntity[];
+    restoredAt?: string;
   } = {}
 ) {
   await observation?.apply();
@@ -47,11 +51,21 @@ export async function commitThoughtCommand(
   const rows = await repository.persistMappedClosure(
     ports, ports.accountId, beforeRows, state.store, {
       managedCollections: [...managed],
-      refreshIndexesForCollections: ["aiTasks", "notifications"]
+      refreshIndexesForCollections: ["aiTasks", "notifications"],
+      restoredRows: state.restoredRows
     }
   );
   const thoughtRows = rows.filter(row => row.collection === "thoughts");
   await ensureThoughtLifecycles(ports.lifecycles, thoughtRows);
+  if (restoredAt) {
+    const previous = new Set(beforeRows.map(row => row.objectKey));
+    await markThoughtLifecycleRestored(
+      ports.lifecycles,
+      thoughtRows.filter(row => !previous.has(row.objectKey)),
+      restoredAt,
+      thoughtRows
+    );
+  }
   const keys = new Set(thoughtRows.map(row => row.objectKey));
   const removed = beforeRows.filter(row => row.collection === "thoughts" && !keys.has(row.objectKey));
   for (const entry of trashEntries) {
@@ -59,7 +73,8 @@ export async function commitThoughtCommand(
     await markThoughtLifecycleDeleted(
       ports.lifecycles,
       removed.filter(row => ids.has(row.id)),
-      entry as TrashEntry
+      entry as TrashEntry,
+      beforeRows.filter(row => row.collection === "thoughts")
     );
   }
   addThoughtClosureChanges(ports, beforeRows, rows, rootId);

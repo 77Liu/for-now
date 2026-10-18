@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 456,
-  "updated_at": "2026-10-18T18:52:21.745Z",
+  "revision": 457,
+  "updated_at": "2026-10-18T19:21:20.063Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -759,6 +759,26 @@
       "refs": [
         "reviews/2026-10-19-stage6-browser-remediation-result.json#nightRootCommandSubset",
         "scripts/thought-producer-postgres-checks.mts",
+        "npm run test:postgres:stable"
+      ]
+    },
+    {
+      "id": "v0516-stage6-trash-producer-verification",
+      "object": {
+        "kind": "source_manifest",
+        "branch": "feat/v0.5.16-sync-latency",
+        "baseline": "7dd702",
+        "requirement_id": "reczz28ORRaxSFnV"
+      },
+      "conclusion": "内容块、备注、追问删除与思绪清单恢复已接入记录事务；二十命令真实PG成功/末尾故障矩阵、正式HTTP账户隔离及稳定PG全套通过。恢复版本与生命周期、只恢复本清单批注、学习权限保持撤销已验证。TC-10继续未关闭。",
+      "limitations": [
+        "独立附件、前台/批注AI写回及发现状态矩阵未完成",
+        "关联历史与日期/回收/历史关系查询的实际扫描成本待验证",
+        "阶段7未开始；无新浏览器/真实语料实验；F9脏文件指纹不变"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTrashCommandSubset",
+        "scripts/thought-trash-http-checks.mts",
         "npm run test:postgres:stable"
       ]
     }

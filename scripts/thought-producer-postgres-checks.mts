@@ -11,6 +11,7 @@ import type { LocalThoughtInput, LocalThoughtResult } from "../src/modules/thoug
 import type { ThoughtLocalCommands } from "../src/modules/thoughts/local-commands.mjs";
 import type { SqlClient } from "../src/modules/thoughts/query-contracts.mjs";
 import type { createThoughtRecordCommands } from "../src/modules/thoughts/record-commands.mjs";
+import type { ThoughtNestedDeleteInput } from "../src/modules/thoughts/trash-commands.mjs";
 
 type Repository = {
   initialize(options: { allowCreate: boolean }): Promise<void>;
@@ -38,6 +39,11 @@ type Context = {
     scheduledTaskIds: string[];
     annotationCommands: AnnotationCommands;
     rootCommands: ReturnType<typeof createThoughtRecordCommands>;
+    trashCommands: {
+      removeThoughtBlock(id: string): Promise<Record<string, unknown> | null>;
+      removeThoughtNested(input: ThoughtNestedDeleteInput): Promise<Record<string, unknown> | null>;
+      restore(id: string): Promise<Record<string, unknown>>;
+    };
   };
 };
 const accountId = "thought-producer-test";
@@ -211,6 +217,9 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
     }));
     await annotationMatrix(context, service.annotationCommands, queries);
     await rootCommandMatrix(context, service, queries);
+    await trashCommandMatrix(context, service, queries, {
+      blockId, remarkId: remark.value.id, followUpId: followUp.value.id
+    });
     const afterOthers = (await database.query(`SELECT object_key, version, payload FROM for_now.store_objects
       WHERE account_id=$1 AND id LIKE 'unrelated-%' ORDER BY object_key`, [accountId])).rows;
     assert.deepEqual(afterOthers, beforeOthers);
@@ -218,8 +227,8 @@ export async function runThoughtProducerPostgresChecks(context: Context) {
     assert.ok(transactions.every(transaction => transaction.writes < 100), JSON.stringify(transactions));
     const commands = (await database.query(`SELECT DISTINCT command_id FROM for_now.record_changes
       WHERE account_id=$1 ORDER BY command_id`, [accountId])).rows.map(row => row.command_id);
-    assert.equal(commands.length, 16);
-    console.log("Thought producer PostgreSQL matrix passed: sixteen public commands, document access forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
+    assert.equal(commands.length, 20);
+    console.log("Thought producer PostgreSQL matrix passed: twenty public commands, document access forbidden, 1000 unrelated roots unchanged, commit-time failures atomic.");
   });
 }
 
@@ -299,11 +308,132 @@ async function rootCommandMatrix(
   await failureCase(context, "thought.delete", () => commands.remove(createdRoot.id));
   assert.deepEqual(service.scheduledTaskIds, scheduledBefore);
   assert.ok(await commands.remove(createdRoot.id));
+  assert.ok(await commands.remove(createdRoot.id));
   assert.equal(await queries.detail(createdRoot.id), null);
   assert.equal((await queries.list({ tag: "根修改标签" })).items.length, 0);
   const lifecycle = (await context.database.query(`SELECT state FROM for_now.resource_lifecycle
     WHERE account_id=$1 AND resource_id=$2`, [accountId, createdRoot.id])).rows[0];
   assert.equal(lifecycle?.state, "deleted");
+  const trashEntry = (await context.database.query(`SELECT id FROM for_now.store_objects
+    WHERE account_id=$1 AND collection='trash' AND payload->>'resourceId'=$2`,
+  [accountId, createdRoot.id])).rows[0];
+  await failureCase(context, "thought.trash.restore", () => service.trashCommands.restore(String(trashEntry.id)));
+  assert.ok((await service.trashCommands.restore(String(trashEntry.id))).value);
+  assert.ok(await queries.detail(createdRoot.id));
+  assert.equal((await context.database.query(`SELECT state FROM for_now.resource_lifecycle
+    WHERE account_id=$1 AND resource_id=$2`, [accountId, createdRoot.id])).rows[0]?.state, "active");
+  const deletedAgain = await commands.remove(createdRoot.id);
+  assert.ok(deletedAgain);
+  await context.repo.update(store => {
+    const item = store.trash.find(item => item.id === deletedAgain.id);
+    assert.ok(item);
+    item.permanentlyPurged = true;
+  });
+  await assert.rejects(commands.remove(createdRoot.id), { code: "RESOURCE_PERMANENTLY_PURGED" });
+  await assert.rejects(service.trashCommands.restore(String(deletedAgain.id)), { code: "RESOURCE_PERMANENTLY_PURGED" });
+}
+
+async function trashCommandMatrix(
+  context: Context,
+  service: ReturnType<Context["createService"]>,
+  queries: Queries,
+  ids: { blockId: string; remarkId: string; followUpId: string }
+) {
+  const commands = service.trashCommands;
+  const targetAnnotation = {
+    targetKey: `idea:${ids.blockId}`, quote: "内容", text: "随块恢复批注",
+    kind: "comment", start: 0, end: 2
+  };
+  const kept = await service.annotationCommands.create("thought", rootId, targetAnnotation);
+  const previouslyDeleted = await service.annotationCommands.create("thought", rootId, {
+    ...targetAnnotation, text: "先前单删批注"
+  });
+  assert.ok(kept.value && previouslyDeleted.value);
+  await service.annotationCommands.remove("thought", rootId, previouslyDeleted.value.id);
+  await failureCase(context, "thought.block.delete", () => commands.removeThoughtBlock(ids.blockId));
+  const entry = await commands.removeThoughtBlock(ids.blockId);
+  assert.ok(entry);
+  assert.equal((await commands.removeThoughtBlock(ids.blockId))?.id, entry.id);
+  assert.equal((await queries.list({ query: "内容块修改词" })).items.length, 0);
+  const beforeSchedule = [...service.scheduledTaskIds];
+  await failureCase(context, "thought.trash.restore", () => commands.restore(String(entry.id)));
+  assert.deepEqual(service.scheduledTaskIds, beforeSchedule);
+  assert.ok((await commands.restore(String(entry.id))).value);
+  assert.deepEqual(service.scheduledTaskIds, beforeSchedule);
+  assert.equal((await queries.list({ query: "内容块修改词" })).items[0]?.id, rootId);
+  const detail = await queries.detail(rootId);
+  const annotations = detail?.annotations as { id: string }[];
+  assert.ok(annotations.some(item => item.id === kept.value!.id));
+  assert.ok(!annotations.some(item => item.id === previouslyDeleted.value!.id));
+  const blockSourceKey = JSON.stringify(["thought", ids.blockId, rootId, `idea:${ids.blockId}`]);
+  const permission = (await context.database.query(`SELECT payload FROM for_now.store_objects
+    WHERE account_id=$1 AND collection='evidencePermissions' AND id=$2`, [accountId, blockSourceKey])).rows[0];
+  assert.equal((permission?.payload as { learningAllowed: boolean })?.learningAllowed, false);
+  const versions = (await context.database.query(`SELECT entity_version, operation FROM for_now.record_changes
+    WHERE account_id=$1 AND entity_id=$2 AND entity_type='thoughtBlock'
+    ORDER BY cursor, ordinal`, [accountId, ids.blockId])).rows;
+  assert.ok(Number(versions.at(-1)?.entity_version) > Number(versions.at(-2)?.entity_version));
+  assert.equal((await commands.restore(String(entry.id))).missing, true);
+  for (const [field, type, id] of [
+    ["remarks", "thoughtRemark", ids.remarkId],
+    ["followUps", "thoughtFollowUp", ids.followUpId]
+  ]) {
+    const input = {
+      parentCollection: "thoughts", parentId: rootId, field, type, id,
+      annotationTargetKeys: field === "followUps" ? [`followup-question:${id}`, `followup-answer:${id}`] : []
+    };
+    await failureCase(context, `thought.${field === "remarks" ? "remark" : "followUp"}.delete`,
+      () => commands.removeThoughtNested(input));
+    const deleted = await commands.removeThoughtNested(input);
+    assert.ok(deleted);
+    await failureCase(context, "thought.trash.restore", () => commands.restore(String(deleted.id)));
+    assert.ok((await commands.restore(String(deleted.id))).value);
+    assert.equal((await context.database.query(`SELECT state FROM for_now.resource_lifecycle
+      WHERE account_id=$1 AND resource_id=$2`, [accountId, id])).rows[0]?.state, "active");
+  }
+  await permanentlyPurgedMatrix(context, commands, ids.blockId);
+  const remarkRoot = await service.rootCommands.create({
+    questionText: "块内备注所属根", tags: [],
+    clientRequestId: "nested-remark-root", requestHash: "nested-remark-root"
+  });
+  const parentRoot = remarkRoot.items?.find(item => item.type === "question");
+  assert.ok(parentRoot);
+  const remarkBlock = await service.createBlock({
+    relatedTo: parentRoot.id, type: "record", content: "块内备注正文", tags: [],
+    clientRequestId: "nested-remark-block"
+  });
+  assert.ok(remarkBlock.value);
+  const blockRemark = await service.addRemark({ id: remarkBlock.value.id, text: "块内备注" });
+  assert.ok(blockRemark.value);
+  const blockRemarkTrash = await commands.removeThoughtNested({
+    parentCollection: "thoughts", parentId: remarkBlock.value.id,
+    field: "remarks", type: "thoughtRemark", id: blockRemark.value.id
+  });
+  assert.ok(blockRemarkTrash);
+  const lifecycleKey = `thoughtBlock:${remarkBlock.value.id}/thoughtRemark:${blockRemark.value.id}`;
+  const state = async () => (await context.database.query(`SELECT state FROM for_now.resource_lifecycle
+    WHERE account_id=$1 AND resource_key=$2`, [accountId, lifecycleKey])).rows[0]?.state;
+  assert.equal(await state(), "deleted");
+  assert.ok((await commands.restore(String(blockRemarkTrash.id))).value);
+  assert.equal(await state(), "active");
+}
+
+async function permanentlyPurgedMatrix(
+  context: Context,
+  commands: ReturnType<Context["createService"]>["trashCommands"],
+  blockId: string
+) {
+  const entry = await commands.removeThoughtBlock(blockId);
+  assert.ok(entry);
+  await context.repo.update(store => {
+    const item = store.trash.find(item => item.id === entry.id);
+    assert.ok(item);
+    item.permanentlyPurged = true;
+  });
+  const before = await snapshot(context.database);
+  await assert.rejects(commands.restore(String(entry.id)), { code: "RESOURCE_PERMANENTLY_PURGED" });
+  await assert.rejects(commands.removeThoughtBlock(blockId), { code: "RESOURCE_PERMANENTLY_PURGED" });
+  assert.deepEqual(await snapshot(context.database), before);
 }
 
 async function annotationMatrix(context: Context, commands: AnnotationCommands, queries: Queries) {

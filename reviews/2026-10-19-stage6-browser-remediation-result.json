@@ -245,6 +245,51 @@
       "existing F9 dirty files preserved; stage6 TC-10 incomplete and stage7 not started"
     ]
   },
+  "nightTrashCommandSubset": {
+    "recordedAt": "2026-10-19T03:21:00+08:00",
+    "baselineCommit": "7dd702",
+    "status": "PASS_TWENTY_COMMAND_SUBSET_STAGE6_PARTIAL",
+    "caseSources": [
+      "scripts/thought-producer-postgres-checks.mts",
+      "scripts/thought-trash-http-checks.mts"
+    ],
+    "addedCommands": [
+      "thought.block.delete",
+      "thought.remark.delete",
+      "thought.followUp.delete",
+      "thought.trash.restore"
+    ],
+    "verified": [
+      "twenty public commands: PG success and commit-time rollback",
+      "root, block, root/block remarks and follow-up restoration",
+      "restore only attached annotations; prior independent deletion stays deleted",
+      "restored version exceeds delete tombstone; exact lifecycle owner active",
+      "historical source permissions reused; learning remains revoked and no extraction scheduled",
+      "permanently purged root/block cannot be deleted or restored",
+      "formal HTTP wiring and cross-account rejection",
+      "1000 unrelated roots unchanged; account document read/update forbidden",
+      "npm run test:postgres:stable full terminal PASS",
+      "JSON trash, thought-service/P00, content-runtime, HTTP orchestration, module checks and backend types"
+    ],
+    "resolvedFailures": [
+      "shared root/block request id incorrectly prevented restoration",
+      "restored historical links were not refreshed and later commands duplicated permissions",
+      "duplicate closure reads exceeded original synthetic matrix budget",
+      "block remark lifecycle owner inferred incorrectly from a removed-only slice"
+    ],
+    "logs": [
+      "/tmp/for-now-night-trash-postgres.log",
+      "/tmp/for-now-night-trash-json.log",
+      "/tmp/for-now-night-trash-runtime.log",
+      "/tmp/for-now-night-trash-modules.log"
+    ],
+    "limitations": [
+      "independent attachments, foreground/annotation AI writes and discovery matrix remain",
+      "related-history growth and actual date/trash/historical-relation SQL scan costs unverified",
+      "no new browser or real corpus experiment",
+      "F9 protected files unchanged; TC-10 open and stage7 not started"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

@@ -293,7 +293,8 @@ export function createContentRuntime({
     repository: contentRepository,
     trash: foundation.trashService,
     mutations: foundation.trashMutations,
-    cleanup: mediaRuntime.attachmentCleanup
+    cleanup: mediaRuntime.attachmentCleanup,
+    now
   });
 
   return {

@@ -174,7 +174,15 @@ function removeCommand(services: ThoughtServices) {
     let entries: RecordEntity[] = [];
     const committed = await unitOfWork.run({ commandId: "thought.delete" }, async ports => {
       const closure = await repository.readThoughtDeleteClosure(ports, id);
-      if (!closure) return null;
+      if (!closure) {
+        const existing = await ports.objects.findTrash("thoughtChain", id);
+        if (existing?.payload.permanentlyPurged === true) {
+          throw Object.assign(new Error("该记录已永久清理，禁止删除或恢复"), {
+            statusCode: 409, code: "RESOURCE_PERMANENTLY_PURGED"
+          });
+        }
+        return existing?.payload || null;
+      }
       const root = closure.store.thoughts.find(item => item.id === id && item.type === "question");
       const currentVersion = Number(root?.version) || 1;
       if (expectedVersion != null && Number(expectedVersion) !== currentVersion) {

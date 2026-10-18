@@ -54,7 +54,7 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
       relation: "thoughtRoot",
       sourceCollection: "thoughts"
     });
-    const rows = await objects.findTree([rootKey, ...blockKeys], { lock: true });
+    const rows = await objects.findTree([rootKey, ...blockKeys], { lock: true, rootRows: [root] });
     return {
       rootKey,
       rows,
@@ -160,8 +160,13 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     store: RecordStore,
     {
       managedCollections = Object.keys(store),
-      refreshIndexesForCollections = []
-    }: { managedCollections?: string[]; refreshIndexesForCollections?: string[] } = {}
+      refreshIndexesForCollections = [],
+      restoredRows = []
+    }: {
+      managedCollections?: string[];
+      refreshIndexesForCollections?: string[];
+      restoredRows?: ObjectRow[];
+    } = {}
   ) {
     const mapping = mapStoreObjects(accountId, store);
     const managed = new Set(managedCollections);
@@ -169,21 +174,29 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     const mappedRows = mapping.objects.filter(row => managed.has(row.collection));
     const before = new Map(previousRows.map(row => [row.objectKey, row]));
     const beforeIdentity = new Map(previousRows.map(row => [recordBusinessIdentity(row), row]));
+    const archived = new Map(restoredRows.map(row => [recordBusinessIdentity(row), row]));
     const after = new Map(mappedRows.map(row => [row.objectKey, row]));
     const persistedRows: ObjectRow[] = [];
     const refreshedIndexes = new Set<string>();
     const refreshCollections = new Set(refreshIndexesForCollections);
+    const restoredKeys = new Set(restoredRows
+      .filter(row => !before.has(row.objectKey))
+      .map(row => row.objectKey));
+    const restoredRelations = new Set(mapping.relations
+      .filter(relation => relation.targetKey && restoredKeys.has(relation.targetKey))
+      .map(relation => relation.objectKey));
     await removeRows(ports, previousRows.filter(row => !after.has(row.objectKey)));
     for (const row of mappedRows) {
       const current = before.get(row.objectKey);
       if (!current) continue;
       if (comparable(current) === comparable(row)) {
+        if (restoredRelations.has(row.objectKey)) refreshedIndexes.add(row.objectKey);
         persistedRows.push(current);
         continue;
       }
       const next = mappedUpdate(current, row);
       if (!await ports.objects.update(next, current.version)) throw conflict();
-      if (refreshCollections.has(row.collection)
+      if (refreshCollections.has(row.collection) || restoredRelations.has(row.objectKey)
         || current.content !== next.content
         || canonicalJson(current.payload?.attachmentPaths || []) !== canonicalJson(next.payload?.attachmentPaths || [])) {
         refreshedIndexes.add(row.objectKey);
@@ -194,8 +207,12 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
       .filter(row => !before.has(row.objectKey))
       .map(row => {
         const previous = beforeIdentity.get(recordBusinessIdentity(row));
+        const deleted = archived.get(recordBusinessIdentity(row));
+        const version = deleted ? Math.max(row.version, deleted.version + 2) : row.version;
         return {
-          ...(previous ? mappedUpdate(previous, row) : row),
+          ...(previous ? mappedUpdate(previous, row) : deleted ? {
+            ...row, version, payload: { ...row.payload, version }
+          } : row),
           position: null
         };
       });
@@ -239,6 +256,104 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     return { ...thoughtClosure, rows, store };
   }
 
+  /** 回收恢复仅加载清单身份、现存所属思绪及来源唯一性冲突记录。 @since unreleased */
+  async function readThoughtRestoreClosure(
+    ports: RecordTransaction,
+    trashId: string,
+    { includeSourceDependents = true } = {}
+  ) {
+    const entry = await ports.objects.find(recordObjectKey("trash", trashId), { lock: true });
+    if (!entry) return null;
+    const value = entry.payload;
+    const location = value.location as Record<string, unknown>;
+    const supported = value.type === "thoughtChain" || value.type === "thoughtBlock"
+      || location?.parentCollection === "thoughts";
+    if (!supported) return { supported: false as const };
+    if (value.permanentlyPurged === true) {
+      throw Object.assign(new Error("该记录已永久清理，禁止删除或恢复"), {
+        statusCode: 409, code: "RESOURCE_PERMANENTLY_PURGED"
+      });
+    }
+    const archived: RecordStore = { thoughts: [] };
+    const payload = value.payload as RecordEntity;
+    const records = payload.items as { item: RecordEntity }[] | undefined;
+    const parentId = value.type === "thoughtChain" ? String(value.resourceId) : String(location.parentId);
+    const closure = includeSourceDependents
+      ? await readThoughtTargetClosure(ports, parentId, { forDeletion: true })
+      : await readThoughtTargetClosure(ports, parentId);
+    const rootId = closure ? String(JSON.parse(closure.rootKey)[1]) : parentId;
+    if (value.type === "thoughtChain") {
+      archived.thoughts = (records || []).map(record => record.item);
+    } else if (value.type === "thoughtBlock") {
+      archived.thoughts = [
+        {
+          id: String(location.parentId),
+          type: "question",
+          ...(value.dependents as object || {})
+        },
+        payload
+      ];
+    } else {
+      const parent = closure?.store.thoughts.find(item => item.id === parentId);
+      archived.thoughts = [{
+        id: parentId,
+        type: parent?.type || "question",
+        ...(parent?.relatedTo ? { relatedTo: parent.relatedTo } : {}),
+        ...(value.dependents as object || {}),
+        [String(location.field)]: [payload]
+      }];
+      if (parentId !== rootId) archived.thoughts.unshift({ id: rootId, type: "question" });
+    }
+    const archivedRows = mapStoreObjects(ports.accountId, archived).objects;
+    const archivedKeys = archivedRows.map(row => row.objectKey);
+    const existingKeys = new Set(closure?.rows.map(row => row.objectKey) || []);
+    const conflicts = await ports.objects.findMany(
+      archivedKeys.filter(key => !existingKeys.has(key)),
+      { lock: true }
+    );
+    const root = archived.thoughts.find(item => item.id === rootId);
+    const source = root?.sourceRef;
+    const sourceRoots = source?.type === "capture"
+      ? await ports.objects.findMany(await ports.relations.findSources(
+          [recordObjectKey("captures", source.id)],
+          { relation: "source", sourceCollection: "thoughts" }
+        ), { lock: true })
+      : [];
+    const rows = [...new Map([
+      ...(closure?.rows || []), ...conflicts, ...sourceRoots, entry
+    ].map(row => [row.objectKey, row])).values()];
+    const store = rebuildRecordCollections(rows, [
+      "thoughts", "trash", "aiTasks", "notifications", "evidencePermissions"
+    ]);
+    return {
+      supported: true as const,
+      rootId,
+      rows,
+      store,
+      archivedRows,
+      archivedKeys
+    };
+  }
+
+  /** 恢复版本必须晚于删除 tombstone，来源副作用读取相同的新版本。 @since unreleased */
+  function advanceRestoredVersions(
+    accountId: string,
+    store: RecordStore,
+    currentRows: ObjectRow[],
+    archivedRows: ObjectRow[]
+  ) {
+    const existing = new Set(currentRows.map(row => row.objectKey));
+    const archived = new Map(archivedRows.map(row => [recordBusinessIdentity(row), row]));
+    const mapping = mapStoreObjects(accountId, { thoughts: store.thoughts });
+    const rows = mapping.objects.map(row => {
+      const deleted = archived.get(recordBusinessIdentity(row));
+      if (!deleted || existing.has(row.objectKey)) return row;
+      const version = Math.max(row.version, deleted.version + 2);
+      return { ...row, version, payload: { ...row.payload, version } };
+    });
+    store.thoughts = rebuildRecordCollections(rows, ["thoughts"]).thoughts;
+  }
+
   async function createThoughtStoreClosure(ports: RecordTransaction, input: { sourceRef?: RecordEntity["sourceRef"] }) {
     const store: RecordStore = { thoughts: [], captures: [] };
     const beforeRows: ObjectRow[] = [];
@@ -270,6 +385,8 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     readThoughtClosure,
     readThoughtTargetClosure,
     readThoughtDeleteClosure,
+    readThoughtRestoreClosure,
+    advanceRestoredVersions,
     persistMappedClosure,
     createThoughtStoreClosure
   };

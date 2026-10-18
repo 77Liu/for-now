@@ -22,8 +22,8 @@ const TRACKED_THOUGHT_LIFECYCLES = new Set([
   "annotation"
 ]);
 
-function thoughtLifecycleRecords(rows: ObjectRow[]) {
-  const byKey = new Map(rows.map(row => [row.objectKey, row]));
+function thoughtLifecycleRecords(rows: ObjectRow[], ownerRows: ObjectRow[] = rows) {
+  const byKey = new Map(ownerRows.map(row => [row.objectKey, row]));
   const keys = new Map<string, string>();
   const resourceKey = (row: ObjectRow): string => {
     if (keys.has(row.objectKey)) return keys.get(row.objectKey)!;
@@ -73,8 +73,13 @@ export async function ensureThoughtLifecycles(lifecycles: RecordTransaction["lif
 }
 
 /** Updates only identities removed in this trash operation. @since unreleased */
-export async function markThoughtLifecycleDeleted(lifecycles: RecordTransaction["lifecycles"], thoughtRows: ObjectRow[], entry: TrashEntry) {
-  const expected = thoughtLifecycleRecords(thoughtRows);
+export async function markThoughtLifecycleDeleted(
+  lifecycles: RecordTransaction["lifecycles"],
+  thoughtRows: ObjectRow[],
+  entry: TrashEntry,
+  ownerRows: ObjectRow[] = thoughtRows
+) {
+  const expected = thoughtLifecycleRecords(thoughtRows, ownerRows);
   const rows = await lifecycles.findByResourceKeys(
     expected.map(row => row.resourceKey)
   );
@@ -107,5 +112,34 @@ export async function markThoughtLifecycleDeleted(lifecycles: RecordTransaction[
       history
     };
     if (!await lifecycles.update(next)) throw conflict();
+  }
+}
+
+/** 业务清单恢复成功后，同事务恢复实际重新出现的身份。 @since unreleased */
+export async function markThoughtLifecycleRestored(
+  lifecycles: RecordTransaction["lifecycles"],
+  thoughtRows: ObjectRow[],
+  restoredAt: string,
+  ownerRows: ObjectRow[] = thoughtRows
+) {
+  const expected = thoughtLifecycleRecords(thoughtRows, ownerRows);
+  const current = await lifecycles.findByResourceKeys(expected.map(row => row.resourceKey));
+  for (const row of current) {
+    if (row.state === "active") continue;
+    const history = [...row.history, { event: "restored", at: restoredAt }];
+    const changes = {
+      state: "active" as const,
+      tombstone: false,
+      updatedAt: restoredAt,
+      restoredAt,
+      purgedAt: "",
+      trashId: "",
+      history
+    };
+    if (!await lifecycles.update({
+      ...row,
+      ...changes,
+      payload: { ...row.payload, ...changes }
+    })) throw conflict();
   }
 }

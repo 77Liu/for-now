@@ -275,6 +275,19 @@ function createObjectPort(
     noteRead(count(result));
     return structuredClone(result.rows);
   };
+  const findTrash = async (type: string, resourceId: string, parentId: string | null = null) => {
+    const result = await client.query<ObjectRow>(`
+      SELECT ${objectColumns}
+      FROM for_now.store_objects
+      WHERE account_id = $1 AND collection = 'trash'
+        AND payload->>'type' = $2 AND payload->>'resourceId' = $3
+        AND ($4::text IS NULL OR payload->'location'->>'parentId' = $4)
+      ORDER BY deleted_at DESC, id DESC
+      LIMIT 1 FOR UPDATE
+    `, [accountId, required(type, "trashType"), required(resourceId, "resourceId"), parentId]);
+    noteRead(count(result));
+    return result.rows[0] ? structuredClone(result.rows[0]) : null;
+  };
   const findForLocalDates = async (
     collection: string,
     localDates: string[],
@@ -303,8 +316,15 @@ function createObjectPort(
     noteRead(count(result));
     return structuredClone(result.rows);
   };
-  const findTree = async (objectKeys: string[], { lock = false } = {}) => {
-    const roots = await findMany(objectKeys, { lock });
+  const findTree = async (
+    objectKeys: string[],
+    { lock = false, rootRows = [] }: { lock?: boolean; rootRows?: ObjectRow[] } = {}
+  ) => {
+    const provided = new Map(rootRows.map(row => [row.objectKey, row]));
+    const roots = [
+      ...objectKeys.flatMap(key => provided.has(key) ? [provided.get(key)!] : []),
+      ...await findMany(objectKeys.filter(key => !provided.has(key)), { lock })
+    ];
     const rows = [...roots];
     const seen = new Set(rows.map(row => row.objectKey));
     let parents = roots.map(row => row.objectKey);
@@ -389,6 +409,7 @@ function createObjectPort(
     find,
     findMany,
     findByCollection,
+    findTrash,
     findForLocalDates,
     findTree,
     insert,
@@ -431,9 +452,10 @@ function createRelationPort(
   };
   const findSources = async (
     targetKeys: string[],
-    { relation = null, sourceCollection = null }: {
+    { relation = null, sourceCollection = null, historicalRootId = null }: {
       relation?: string | null;
       sourceCollection?: string | null;
+      historicalRootId?: string | null;
     } = {}
   ) => {
     const keys = [...new Set(targetKeys.map(key => required(key, "targetKey")))];
@@ -446,14 +468,29 @@ function createRelationPort(
         ON source.account_id = relation_row.account_id
         AND source.object_key = relation_row.object_key
       WHERE relation_row.account_id = $1
-        AND relation_row.target_key = ANY($2::text[])
+        AND (
+          relation_row.target_key = ANY($2::text[])
+          OR ($5::text IS NOT NULL AND relation_row.resolution = 'historical'
+            AND EXISTS (
+              SELECT 1 FROM unnest($2::text[]) selected_key
+              WHERE relation_row.target_collection = (selected_key::jsonb->>0)
+                AND relation_row.target_id = (selected_key::jsonb->>-1)
+            )
+            AND (
+              source.payload->'sourceRef'->>'rootId' = $5
+              OR source.payload->'payload'->'sourceRef'->>'rootId' = $5
+              OR (source.collection = 'evidencePermissions'
+                AND (source.payload->>'sourceKey')::jsonb->>2 = $5)
+            ))
+        )
         AND ($3::text IS NULL OR relation_row.relation = $3)
         AND ($4::text IS NULL OR source.collection = $4)
     `, [
       accountId,
       keys,
       relation == null ? null : required(relation, "relation"),
-      sourceCollection == null ? null : required(sourceCollection, "sourceCollection")
+      sourceCollection == null ? null : required(sourceCollection, "sourceCollection"),
+      historicalRootId == null ? null : required(historicalRootId, "historicalRootId")
     ]);
     noteRead(count(result));
     return result.rows.map(row => row.objectKey);

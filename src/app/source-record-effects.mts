@@ -28,18 +28,28 @@ export function createSourceMutationEffects(dependencies: Dependencies): SourceM
       const sourceKeys = state.rows
         .filter(row => row.collection === "thoughts")
         .map(row => row.objectKey);
+      const restored = state.restoredSourceKeys || [];
+      const rootId = state.restoredRootId || null;
       const relatedKeys: string[] = [];
       for (const collection of sourceCollections) {
-        relatedKeys.push(...await ports.relations.findSources(sourceKeys, {
-          sourceCollection: collection
+        relatedKeys.push(...await ports.relations.findSources([...new Set([...sourceKeys, ...restored])], {
+          sourceCollection: collection,
+          historicalRootId: rootId
         }));
       }
-      const relatedRows = await ports.objects.findTree(relatedKeys, { lock: true });
+      const existing = new Set(state.rows.map(row => row.objectKey));
+      const relatedRows = await ports.objects.findTree(
+        [...new Set(relatedKeys)].filter(key => !existing.has(key)),
+        { lock: true }
+      );
       const notificationKeys = await ports.relations.findSources(
         relatedRows.filter(row => row.collection === "aiTasks").map(row => row.objectKey),
         { sourceCollection: "notifications", relation: "task" }
       );
-      const notifications = await ports.objects.findTree(notificationKeys, { lock: true });
+      const notifications = await ports.objects.findTree(
+        notificationKeys.filter(key => !existing.has(key)),
+        { lock: true }
+      );
       const historical = await ports.objects.find('["historicalUserSupplement"]', { lock: true });
       state.rows = deduplicate([...state.rows, ...relatedRows, ...notifications]);
       const supplementalCollections = [...sourceCollections, "notifications", "trash"];

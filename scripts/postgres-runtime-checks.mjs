@@ -48,6 +48,7 @@ import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
 import "./prompt-test-setup.mjs";
 import { runThoughtDbPagingChecks } from "../.build/typescript/thought-db-regression/scripts/thought-db-paging-regression.mjs";
 import { runThoughtProducerPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-postgres-checks.mjs";
+import { runThoughtTrashHttpChecks } from "../.build/typescript/thought-db-regression/scripts/thought-trash-http-checks.mjs";
 import { createRecordCompressionService, createAnnotationCommands } from "../src/app/index.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1362,7 +1363,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
           thoughtTarget: createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead }),
           now
         });
-        return { ...service, scheduledTaskIds, annotationCommands, rootCommands };
+        const trashCommands = createTrashCommands({
+          repository: aware, trash, mutations, cleanup: null, now
+        });
+        return { ...service, scheduledTaskIds, annotationCommands, rootCommands, trashCommands };
       }
     });
     await account("repo-test", () => pagingQueries.rebuild());
@@ -2210,6 +2214,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(trash.body.items.length, 1);
     assert.equal((await request(app.base, `/api/trash/${trash.body.items[0].id}/restore`, { method: "POST", cookie, body: {} })).status, 200);
     assert.equal((await request(app.base, "/api/state", { cookie })).body.captures.find(item => item.id === captureId).version, state.body.captures[0].version + 1);
+    await runThoughtTrashHttpChecks({ base: app.base, request, cookie, otherCookie });
     const alphaMaskUpload = await request(app.base, "/api/images/upload", {
       method: "POST", cookie, body: { image: `data:image/png;base64,${png.toString("base64")}` }
     });

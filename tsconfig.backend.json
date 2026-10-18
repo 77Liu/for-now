@@ -39,6 +39,7 @@
     "src/modules/thoughts/record-commands.mts",
     "src/modules/thoughts/local-commands.mts",
     "src/modules/thoughts/annotation-commands.mts",
+    "src/modules/thoughts/trash-commands.mts",
     "src/modules/tasks/record-commands.mts",
     "src/modules/notifications/record-commands.mts",
     "src/modules/thoughts/projection.mts",
