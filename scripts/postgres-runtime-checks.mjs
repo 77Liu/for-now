@@ -2141,8 +2141,26 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(detailRoute.status, 200, JSON.stringify(detailRoute.body));
     assert.ok(detailRoute.body.data.thoughts.some(item => item.id === generatedAnswer.id));
     assert.equal(detailRoute.body.data.thoughtPage.found, true);
-    await holdThoughtBrowserProbe({ base: app.base, username: registration.body.user.username,
-      seed: thoughts => account(id, () => repo.update(store => { store.thoughts.push(...thoughts); })) });
+    await holdThoughtBrowserProbe({
+      base: app.base,
+      username: registration.body.user.username,
+      seed: async thoughts => {
+        const fixtureIds = new Set(thoughts.map(item => item.id));
+        await account(id, () => repo.update(store => { store.thoughts.push(...thoughts); }));
+        return async () => {
+          const current = await account(id, () => repo.read());
+          const deleted = current.trash.filter(item => (
+            fixtureIds.has(item.resourceId) || fixtureIds.has(item.location?.parentId)
+          ));
+          for (const item of deleted) {
+            const restored = await request(app.base, `/api/trash/${item.id}/restore`, {
+              method: "POST", cookie, body: {}
+            });
+            assert.equal(restored.status, 200, "Browser fixture recovery must preserve lifecycle");
+          }
+        };
+      }
+    });
     const perceptionSourceRef = {
       resourceType: "capture",
       resourceId: perceptionSource.id,

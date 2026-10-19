@@ -561,8 +561,8 @@ export function createThoughtView({
   function applySavedFollowUp(rootId, saved, { kind, followUpId = "", submitted, rootVersion }) {
     const root = (getSnapshot().thoughts || [])
       .find(item => item.id === rootId && item.type === "question");
-    if (!root) return false;
-    root.followUps ||= [];
+    // 分页摘要只证明根存在；迟到ACK不能补出未加载追问，也不能把它当作已删除。
+    if (!root || Object.hasOwn(root, "blockCount") || !Array.isArray(root.followUps)) return false;
     const current = root.followUps.find(item => item.id === saved.id);
     // 同步可能先于ACK接入同版或新版；事实不回退，但本次表单仍须结算。
     const changed = current

@@ -457,6 +457,41 @@ console.log(
   writeDeferred[0]({ id: "edit-follow", question: "new", answer: "", version: 2 });
   await tick();
   assert.equal(state.thoughts[0].followUps[0].question, "old", "旧账户的追问ACK不能进入新账户快照");
+  // 通过公开控制器提交路径验证ACK，分页摘要不能因根ID/版本相同而获得追问正文。
+  state = {
+    thoughts: [{ id: "ack-root", type: "question", content: "摘要", version: 3, blockCount: 0 }],
+    thoughtPage: { kind: "list" }
+  };
+  const saved = { id: "ack-follow", question: "追问正文", answer: "", version: 1 };
+  const createForm = {
+    ...form,
+    dataset: { followUpRoot: "ack-root" },
+    elements: { question: { value: saved.question }, answer: { value: "" } }
+  };
+  const acknowledge = async () => {
+    listeners.get("submit")({ target: createForm, preventDefault() {} });
+    writeDeferred.at(-1)(saved);
+    await tick();
+  };
+  const summaryBeforeAck = structuredClone(state);
+  await acknowledge();
+  assert.deepEqual(state, summaryBeforeAck, "列表摘要不能接入追问ACK正文");
+  state = {
+    thoughts: [{ id: "ack-root", type: "question", version: 3, followUps: [] }],
+    thoughtPage: { kind: "detail" }
+  };
+  await acknowledge();
+  assert.deepEqual(state.thoughts[0].followUps, [saved]);
+  assert.equal(state.thoughts[0].version, 4);
+  await acknowledge();
+  assert.equal(state.thoughts[0].followUps.length, 1, "重复ACK不增加追问");
+  assert.equal(state.thoughts[0].version, 4);
+  listeners.get("submit")({ target: createForm, preventDefault() {} });
+  state.thoughts[0].followUps = [];
+  state.thoughts[0].version = 5;
+  writeDeferred.at(-1)(saved);
+  await tick();
+  assert.equal(state.thoughts[0].followUps.length, 0, "已删除追问不因旧ACK复活");
   // 跨页窗口中激活的记录决定返回游标，不能使用视口首条的游标。
   const cards = ["visible", "activated"].map((id, index) => ({
     dataset: { chainId: id },

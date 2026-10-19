@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 472,
-  "updated_at": "2026-10-19T02:48:34.492Z",
+  "revision": 474,
+  "updated_at": "2026-10-19T03:36:34.039Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,10 +17,10 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段7/11：F7追问批注阅读状态保持"
+    "phase": "阶段6返修：来源关系、任务恢复成本与干净构建（阶段7检查点已保存）"
   },
   "scope": {
-    "description": "阶段6本地出口通过；继续唯一串行后继F7，消费有界page/detail并保持阅读状态。",
+    "description": "F7本地阅读状态检查点通过；独立审查前驱失败已登记，先返修阶段6R1/R2/R3，阶段8保持未解锁。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "d9d79d",
@@ -56,27 +56,63 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-stage7-reading-state",
+      "id": "v0516-stage6-independent-remediation",
       "mode": "implementation",
       "owner": "主控串行",
-      "requirement_id": "reczz28JmeyoL7D0",
-      "baseline": "f01f0f",
+      "requirement_id": "reczz28ORRaxSFnV",
+      "baseline": "64f2b4",
       "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效",
       "allowed_write_set": [
-        "public/frontend/features/thoughts/**",
-        "public/frontend/shared/thought-page-window.mts",
-        "public/frontend/features/annotations/operations.mjs",
-        "public/frontend/app/runtime/data-runtime.mjs",
-        "public/frontend/app/runtime/page-descriptors-primary.mjs",
-        "scripts/frontend-thoughts-feature-regression.mjs",
-        "scripts/frontend-annotations-feature-regression.mjs",
-        "scripts/thought-browser-probe.mts",
+        "src/modules/thoughts/**",
+        "src/modules/discovery/**",
+        "src/shared/persistence/**",
+        "src/shared/thought-pagination/**",
+        "src/app/content-runtime.mjs",
+        "src/app/content/**",
+        "src/app/annotation-resources.mjs",
+        "src/app/trash.mjs",
+        "src/app/thought-workflows.mjs",
+        "src/app/ai-task-targets.mjs",
+        "src/app/record-commands/**",
+        "src/app/index.mjs",
+        "src/http/thoughts.mjs",
+        "src/modules/content-attachments/**",
+        "scripts/*thought*",
         "scripts/postgres-runtime-checks.mjs",
-        "scripts/thought*",
+        "scripts/*discovery*",
+        "scripts/postgres-integration.mjs",
+        "scripts/prepare-generated-runtime.mjs",
+        "package.json",
         "tsconfig*.json",
-        "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md",
+        "docs/technical-proposals/reczz28ORRaxSFnV-应新规重做F4数据库游标分页-技术方案.md",
         "reviews/2026-10-19*",
-        "coordination/**"
+        "coordination/**",
+        "src/app/runtime-foundation.mjs",
+        "src/app/runtime-http-wiring.mjs",
+        "src/app/startup-projections.mjs",
+        "src/http/startup.mjs",
+        "src/http/openapi/thoughts.mjs",
+        "src/modules/notifications/query.mts",
+        "src/modules/notifications/index.mjs",
+        "public/frontend/features/thoughts/operations.mjs",
+        "scripts/startup-projection-regression.mjs",
+        "scripts/frontend-thoughts-feature-regression.mjs",
+        "scripts/api-v1-contract-regression.mjs",
+        "src/app/speech-cache.mjs",
+        "public/frontend/features/thoughts/controller.mjs",
+        "public/frontend/features/thoughts/view.mjs",
+        "scripts/url-history-regression.mjs",
+        "src/app/perception.mjs",
+        "src/app/record-compressions.mjs",
+        "src/app/source-record-effects.mts",
+        "src/app/runtime-content-http.mjs",
+        "src/http/content-attachments.mjs",
+        "src/http/openapi/content-attachments.mjs",
+        "src/app/background-ai.mjs",
+        "src/modules/tasks/index.mjs",
+        "scripts/record-command-producer-coverage-regression.mts",
+        "scripts/check-modules.mjs",
+        "scripts/recovery*"
       ],
       "forbidden_write_set": [
         "public/frontend/app/runtime/home-runtime.mjs",
@@ -86,13 +122,13 @@
         "src/http/sync.mjs",
         ".trae/skills/tell-me/**",
         "生产数据与凭据",
-        "阶段8至11新功能"
+        "阶段7至11新功能"
       ],
-      "shared_owner": "主控唯一串行写者；F9五文件保持原指纹，不改动或夹带",
-      "integration_order": "核对旧F7与新page/detail边界→统一同一阅读状态端口→公开批注/ACK完整链→专项与真实PG浏览器→审查/提交/出口",
-      "acceptance": "F7 TC01—TC05；未加载摘要不视为已删除；新增/回复/删除/失败/迟到ACK/账户路由变更均保护开合、锚点、焦点；设备partial明确保留",
-      "review_ref": "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md",
-      "receipt_ref": "reviews/2026-10-19-stage7-reading-state-result.json"
+      "shared_owner": "主控唯一串行写者（schema/构建/接口/控制面）",
+      "integration_order": "R1精准关系语义与组合PG→R2恢复记录读取和完整成本→R3干净构建→原矩阵/回归→前驱出口重新裁定",
+      "acceptance": "独立审查R1有效来源正文/附件变化不退为historical且再次转换冲突；R2任务恢复完整链成本不随无关历史重复全读；R3空生成目录模块门确定构建；原30命令与4任务/重启取消回滚保持。",
+      "review_ref": "reviews/2026-10-19-commit-quality-review.md",
+      "receipt_ref": "reviews/2026-10-19-stage6-independent-remediation-result.json"
     }
   ],
   "candidate": null,
@@ -126,9 +162,21 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [],
+  "blockers": [
+    {
+      "id": "v0516-stage6-independent-quality",
+      "status": "OPEN",
+      "owner": "主控串行",
+      "requires_owner": false,
+      "description": "R1有效来源被局部映射降为historical；R2任务恢复按任务数全读账户；R3干净模块检查缺显式测试编译前置。禁止解锁阶段8，当前F7收尾后回阶段6精准返修。",
+      "refs": [
+        "reviews/2026-10-19-commit-quality-review.md",
+        "reviews/2026-10-19-commit-quality-evidence.tar.gz"
+      ]
+    }
+  ],
   "next_action": {
-    "description": "保存阶段6出口提交；沿F7既有唯一阅读状态端口核对摘要页/有界详情和批注ACK边界，补缺并验证TC01—TC05；出口通过后接续阶段8。",
+    "description": "按独立失败证据修复阶段6来源关系，随后缩小任务恢复全流程读取及修复干净模块构建；补PG组合和成本验证后重新裁定前驱出口。",
     "owner": "主控",
     "requires_owner": false
   },
@@ -736,6 +784,24 @@
       "refs": [
         "reviews/2026-10-19-stage6-browser-remediation.md#L210-L233",
         "reviews/2026-10-19-stage6-browser-remediation-result.json#stage6Exit"
+      ]
+    },
+    {
+      "id": "v0516-stage7-local-reading-checkpoint",
+      "object": {
+        "kind": "source_tree",
+        "tree": "8a68c9",
+        "base": "64f2b4"
+      },
+      "conclusion": "摘要迟到ACK边界修复；桌面真实PG批注/收起/草稿/整页与局部呈现/删除/离页链及公开控制器负例通过；完整stablePG、类型和模块检查通过。F7本地检查点保存，前驱独立返修不解除。",
+      "limitations": [
+        "iOS Safari/PWA真机与生产性能未验",
+        "整页验证通过公开状态发布，不冒称自动同步接入完成",
+        "原夹具及深层导入失败保留并已精准修正"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage7-reading-state.md",
+        "reviews/2026-10-19-stage7-reading-state-result.json"
       ]
     }
   ],

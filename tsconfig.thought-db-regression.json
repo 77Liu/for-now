@@ -25,6 +25,7 @@
     "scripts/thought-discovery-postgres-checks.mts",
     "scripts/thought-trash-http-checks.mts",
     "scripts/thought-search-corpus-regression.mts",
+    "scripts/thought-browser-response-hold.mts",
     "scripts/thought-browser-probe.mts"
   ]
 }
