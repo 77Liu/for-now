@@ -2067,6 +2067,10 @@ async function initializeGateDatabase(root: string, pgState: Awaited<ReturnType<
 }
 
 type LocalGateProfile = "default" | "v0516-combined";
+const combinedRecordCommandAllowlist = Object.freeze([
+  "notification.read", "notification.readAll", "task.status", "thought.update",
+  "thought.delete", "thought.create", "thought.aiWriteback"
+]);
 const combinedProfileEnvironment = Object.freeze({
   ACCOUNT_RECOVERY_ENABLED: "1",
   PG_SYNC_READ_MODE: "metadata",
@@ -2074,7 +2078,10 @@ const combinedProfileEnvironment = Object.freeze({
   AI_QUEUE_ENABLED: "1",
   SYNC_ACCOUNT_WAKE_ENABLED: "1",
   THOUGHT_PAGING_ENABLED: "1",
-  INCREMENTAL_SYNC_ENABLED: "1"
+  INCREMENTAL_SYNC_ENABLED: "1",
+  RECORD_COMMAND_ALLOWLIST: combinedRecordCommandAllowlist.join(","),
+  SYNC_V2_ENABLED: "1",
+  SYNC_V2_ACCOUNT_ALLOWLIST: "*"
 });
 function localProfileEnvironment(profile: LocalGateProfile) {
   return profile === "v0516-combined" ? combinedProfileEnvironment : {};
@@ -2169,7 +2176,9 @@ async function readGateConfiguration(root: string) {
     const configModule = await importFromRoot<{ loadAppConfig(input: { rootDir: string }): {
       accountRecovery: { enabled: boolean }; pgIo: { syncReadMode: string; accountAllowlist: string[] };
       aiQueue: { enabled: boolean }; syncAccountWakeEnabled: boolean;
-      features: { thoughtPaging: { enabled: boolean }; incrementalSync: boolean }
+      features: { thoughtPaging: { enabled: boolean }; incrementalSync: boolean };
+      recordCommands: { allowlist: string[] };
+      syncV2: { enabled: boolean; accountAllowlist: string[] }
     } }>(root, "src/config/index.mjs");
     const parsed = configModule.loadAppConfig({ rootDir: root });
     return {
@@ -2179,7 +2188,10 @@ async function readGateConfiguration(root: string) {
       aiQueueEnabled: parsed.aiQueue.enabled,
       syncAccountWakeEnabled: parsed.syncAccountWakeEnabled,
       thoughtPagingEnabled: parsed.features.thoughtPaging.enabled,
-      incrementalSyncEnabled: parsed.features.incrementalSync
+      incrementalSyncEnabled: parsed.features.incrementalSync,
+      recordCommandAllowlist: parsed.recordCommands.allowlist,
+      syncV2Enabled: parsed.syncV2.enabled,
+      syncV2AccountAllowlist: parsed.syncV2.accountAllowlist
     };
 }
 
@@ -2207,7 +2219,9 @@ async function startRuntime(
     const effectiveConfiguration = await readGateConfiguration(root);
     if (profile === "v0516-combined" && (!effectiveConfiguration.accountRecoveryEnabled
       || effectiveConfiguration.pgSyncReadMode !== "metadata" || !effectiveConfiguration.pgSyncAccountAllowlist.includes("*")
-      || !effectiveConfiguration.aiQueueEnabled || !effectiveConfiguration.syncAccountWakeEnabled || !effectiveConfiguration.thoughtPagingEnabled)) {
+      || !effectiveConfiguration.aiQueueEnabled || !effectiveConfiguration.syncAccountWakeEnabled || !effectiveConfiguration.thoughtPagingEnabled
+      || effectiveConfiguration.recordCommandAllowlist.join(",") !== combinedRecordCommandAllowlist.join(",")
+      || !effectiveConfiguration.syncV2Enabled || !effectiveConfiguration.syncV2AccountAllowlist.includes("*"))) {
       fail("Combined profile did not reach the application's unique configuration parser");
     }
     const started = await runtime.start();
@@ -2560,7 +2574,10 @@ async function selfTest(root: string) {
       if (effective.accountRecoveryEnabled !== combined || effective.aiQueueEnabled !== combined
         || effective.syncAccountWakeEnabled !== combined || effective.thoughtPagingEnabled !== combined
         || !effective.incrementalSyncEnabled || effective.pgSyncReadMode !== (combined ? "metadata" : "legacy")
-        || effective.pgSyncAccountAllowlist.join(",") !== (combined ? "*" : "")) {
+        || effective.pgSyncAccountAllowlist.join(",") !== (combined ? "*" : "")
+        || effective.recordCommandAllowlist.join(",") !== (combined ? combinedRecordCommandAllowlist.join(",") : "")
+        || effective.syncV2Enabled !== combined
+        || effective.syncV2AccountAllowlist.join(",") !== (combined ? "*" : "")) {
         fail("Local gate profile lost a flag at the unique configuration parser");
       }
       process.stdout.write(JSON.stringify({ localGateProfile: profile, effectiveConfiguration: effective }) + "\n");
