@@ -86,8 +86,16 @@ export function createAiGenerator({
     const control = createExecutionControl({ signal: signal || context.signal, timeoutMs });
     const guard = () => { control.throwIfStopped(); assertAccountReady(); };
     let releaseAdmission, settings;
+    let reasoningVisible = false;
     try {
       guard();
+      const invocationContract = resolveInvocationContract(scene, triggerType);
+      reasoningVisible = invocationContract.reasoningVisibility === "user_viewable";
+      const productDelta = onDelta
+        ? event => {
+            if (event.type !== "reasoning" || reasoningVisible) onDelta(event);
+          }
+        : null;
       releaseAdmission = admit(safeText(context.user?.id, 100) || "local");
       settings = llmSettingsForScene(settingsOverride || await readSettings(), scene);
       guard();
@@ -184,7 +192,6 @@ export function createAiGenerator({
               ...(onDelta ? { stream_options: { include_usage: true } } : {}),
               ...(json ? { response_format: { type: "json_object" } } : {})
             };
-            const invocationContract = resolveInvocationContract(scene, triggerType);
             const startedAudit = await audit.start({
               id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
               service: "chat-completions", action: "complete", invocationContract,
@@ -259,11 +266,27 @@ export function createAiGenerator({
                 guard();
                 if (!stillCurrent) throw Object.assign(new Error("AI任务来源已变化"), { code: "AI_TASK_STALE", statusCode: 409 });
                 // 最后的同步检查、设置已调用与真实provider入口之间不允许await。
-                const invoke = () => { providerStarted = true; return provider.complete({ apiKey: settings.apiKey, parameters, messages, signal: control.signal, onDelta }); };
+                const invoke = () => {
+                  providerStarted = true;
+                  return provider.complete({
+                    apiKey: settings.apiKey,
+                    parameters,
+                    messages,
+                    signal: control.signal,
+                    onDelta: productDelta
+                  });
+                };
                 const { httpStatus, ...result } = await (dispatch ? dispatch(invoke) : (guard(), invoke()));
                 await finishAttempt({ status: "success", httpStatus, ...result });
                 control.throwIfStopped();
-                return captureReasoning ? (onDelta ? result : { content: result.content, reasoningContent: result.reasoningContent }) : result.content;
+                if (!captureReasoning) return result.content;
+                const projected = onDelta ? { ...result } : { content: result.content };
+                delete projected.reasoningContent;
+                if (reasoningVisible && result.reasoningContent) {
+                  projected.reasoningContent = result.reasoningContent;
+                  projected.reasoningVisibility = invocationContract.reasoningVisibility;
+                }
+                return projected;
               }, { control, dispatchGuard: guard, canRetry: error => !control.reason && error.code === "EMPTY_DEEPSEEK_CONTENT" && attempt + 1 < efforts.length });
             } catch (failure) {
               const error = failure instanceof AggregateError ? failure : control.reason || failure;
@@ -315,6 +338,10 @@ export function createAiGenerator({
     } catch (failure) {
       control.terminate(failure);
       const error = failure instanceof AggregateError ? failure : control.reason || failure;
+      if (!reasoningVisible) {
+        delete error.partialReasoningContent;
+        delete error.reasoningContent;
+      }
       if (/fetch failed|ENOTFOUND|ECONN/i.test(error.message)) throw new Error("无法连接 DeepSeek API，请检查网络后重试");
       error.message = redact(error.message, [settings?.apiKey]);
       throw error;

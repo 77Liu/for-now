@@ -270,6 +270,22 @@ export const captureJournalComponents = Object.freeze({
         rawText: { type: "string" },
         polishedText: { type: "string" },
         condensedText: { type: "string" },
+        polishResult: {
+          type: "object",
+          properties: {
+            reasoningContent: { type: "string" },
+            reasoningVisibility: { const: "user_viewable" }
+          },
+          additionalProperties: false
+        },
+        condenseResult: {
+          type: "object",
+          properties: {
+            reasoningContent: { type: "string" },
+            reasoningVisibility: { const: "user_viewable" }
+          },
+          additionalProperties: false
+        },
         updatedAt: { type: "string" },
         errorCode: { type: "string" },
         condenseErrorCode: { type: "string" }
@@ -318,7 +334,8 @@ export const captureJournalComponents = Object.freeze({
         ...recordFields,
         sourceUpdatedAt: { type: "string", format: "date-time" },
         content: { type: "string" },
-        reasoningContent: { type: "string" }
+        reasoningContent: { type: "string" },
+        reasoningVisibility: { const: "user_viewable" }
       },
       additionalProperties: true
     },

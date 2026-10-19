@@ -43,14 +43,20 @@ export function hasReviewSource(snapshot = {}) {
 
 export function sanitizeAnalysisRecord(value, clone = structuredClone) {
   const item = clone(value || {});
-  delete item.reasoningContent;
+  if (item.reasoningVisibility !== "user_viewable") {
+    delete item.reasoningContent;
+    delete item.reasoningVisibility;
+  }
   delete item.contentTruncated;
   for (const annotation of [
     ...(item.annotations || []),
     ...(item.annotationDrift || [])
   ]) {
     for (const exchange of annotation.shenji || []) {
-      delete exchange.reasoningContent;
+      if (exchange.reasoningVisibility !== "user_viewable") {
+        delete exchange.reasoningContent;
+        delete exchange.reasoningVisibility;
+      }
     }
   }
   return item;

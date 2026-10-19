@@ -32,6 +32,7 @@
     "src/modules/ai/execution-control.mts",
     "src/modules/ai/dispatch-proof.mts",
     "src/modules/ai/invocation-contracts.mts",
+    "src/modules/ai/reasoning-projection.mts",
     "src/app/sync-projection.mts",
     "src/app/source-record-effects.mts",
     "src/app/record-commands/content-attachments.mts",

@@ -27,6 +27,11 @@ export { stageHasBillableDispatch } from "./budget.mjs";
 export { createExecutionControl, createAiAdmission } from "../../../.build/typescript/backend/modules/ai/execution-control.mjs";
 export { createDispatchAttempt } from "../../../.build/typescript/backend/modules/ai/dispatch-proof.mjs";
 export {
+  invocationSceneContract,
   registeredInvocationScenes,
   resolveInvocationContract
 } from "../../../.build/typescript/backend/modules/ai/invocation-contracts.mjs";
+export {
+  businessReasoning,
+  projectProductReasoning
+} from "../../../.build/typescript/backend/modules/ai/reasoning-projection.mjs";

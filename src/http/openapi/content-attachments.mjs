@@ -203,6 +203,8 @@ export const contentAttachmentComponents = Object.freeze({
         id: { type: "string" },
         kind: { const: "imageUnderstanding" },
         content: { type: "string" },
+        reasoningContent: { type: "string" },
+        reasoningVisibility: { const: "user_viewable" },
         sourceAttachmentPaths: {
           type: "array",
           minItems: 1,

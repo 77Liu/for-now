@@ -1,4 +1,5 @@
 import { WEIGHT_BATCH_MAX_ITEMS } from "./drafts.mjs";
+import { reasoningDisclosureMarkup } from "../ui/index.mjs";
 
 const formatBytes=value=>value<1024?`${value} B`:value<1048576?`${(value/1024).toFixed(1)} KB`:`${(value/1048576).toFixed(1)} MB`;
 
@@ -62,11 +63,15 @@ export function createHealthView({
     if(parse)parse.disabled=true;
     const status = query("#health-parse-status");
     if(status)status.textContent="";
+    const reasoning = query("#health-recognition-reasoning");
+    if (reasoning) reasoning.innerHTML = "";
   }
 
   function applyRecognitionResult(type, result) {
     const target = form(type);
     if (!target || !result) return false;
+    const reasoning = query("#health-recognition-reasoning");
+    if (reasoning) reasoning.innerHTML = reasoningDisclosureMarkup(result);
     let normalized = result;
     if (type === "exercise") {
       const { description, ...rest } = result;

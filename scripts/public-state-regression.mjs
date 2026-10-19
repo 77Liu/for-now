@@ -95,7 +95,16 @@ const store = {
   perceptionEvents: [{ id: "private-perception-event", accountId: "member" }],
   ownerExtension: {
     visible: true,
-    tokenBudget: { limit: 5000 }
+    tokenBudget: { limit: 5000 },
+    reasoningContent: "legacy-hidden-reasoning",
+    visibleResult: {
+      reasoningVisibility: "user_viewable",
+      reasoningContent: "visible-reasoning"
+    },
+    privateResult: {
+      reasoningVisibility: "privileged_only",
+      reasoningContent: "private-reasoning"
+    }
   },
   userClaims: [{ id: "private-claim", statement: "MODEL_DETAIL_MARKER" }],
   modelUnknowns: [{ id: "private-unknown", question: "UNKNOWN_DETAIL_MARKER" }],
@@ -155,6 +164,9 @@ assert.equal(Object.hasOwn(ownerState.captures[0], "speechCache"), false);
 assert.equal(Object.hasOwn(ownerState.keepsakes[0], "originalPath"), false);
 assert.equal(Object.hasOwn(ownerState.keepsakes[0], "requestHash"), false);
 assert.equal(ownerState.ownerExtension.tokenBudget.limit, 5000);
+assert.equal(Object.hasOwn(ownerState.ownerExtension, "reasoningContent"), false);
+assert.equal(ownerState.ownerExtension.visibleResult.reasoningContent, "visible-reasoning");
+assert.equal(Object.hasOwn(ownerState.ownerExtension.privateResult, "reasoningContent"), false);
 assert.equal(ownerState.userClaims[0].statement, "MODEL_DETAIL_MARKER");
 assert.equal(ownerState.modelUnknowns[0].question, "UNKNOWN_DETAIL_MARKER");
 assert.deepEqual(ownerState.clusters.map(item => [item.theme, item.count]), [["工作与创造", 1]]);

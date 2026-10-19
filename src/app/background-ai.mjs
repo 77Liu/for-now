@@ -430,6 +430,12 @@ export function createBackgroundAi({
       claimedIdentity = claimed.identity;
       claimedKind = claimed.kind;
       executed = true;
+      if (targetFor(requestedTask).canExecute
+        && !await targetFor(requestedTask).canExecute(requestedTask)) {
+        throw Object.assign(new Error("周期认知复盘已关闭，未调用外部模型"), {
+          code: "PERIODIC_ANALYSIS_CONSENT_REQUIRED"
+        });
+      }
       const store = taskPreparation && taskTransitions.supports({ kind: claimedKind })
         ? (await (claimedKind === "contentImageUnderstanding"
             ? taskPreparation.claimContext(taskId) : taskPreparation.materialContext(taskId)))?.snapshot
@@ -467,7 +473,10 @@ export function createBackgroundAi({
       }
       const generated = await generate(work, {
         signal: controller.signal,
-        isCurrent: async () => Boolean(await currentWork(taskId, work, task.kind))
+        isCurrent: async () => (
+          (!targetFor(task).canExecute || await targetFor(task).canExecute(task))
+          && Boolean(await currentWork(taskId, work, task.kind))
+        )
       });
       const result = work.contextReceipt && generated && typeof generated === "object" && !Array.isArray(generated)
         ? { ...generated, contextReceipt: { ...compactPersonalContextReceipt(work.contextReceipt),

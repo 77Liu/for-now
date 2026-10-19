@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "rootDir": "public/frontend",
+    "outDir": "public/generated",
+    "noEmitOnError": true
+  },
+  "files": [
+    "public/frontend/features/ui/reasoning-disclosure.mts"
+  ]
+}

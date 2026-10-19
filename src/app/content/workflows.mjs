@@ -144,6 +144,8 @@ export function createContentWorkflows({
   workflowContextKey,
   getRecentTrend = () => null,
   getImportanceModelSnapshot = () => null,
+  periodicAnalysisEnabled = false,
+  readPeriodicPreferences = async () => ({}),
   recordCommandConfig = null,
   now,
   today,
@@ -235,6 +237,8 @@ export function createContentWorkflows({
     getAccountId,
     getRecentTrend,
     getImportanceModelSnapshot,
+    periodicAnalysisEnabled,
+    readPeriodicPreferences,
     currentTime,
     createId
   });

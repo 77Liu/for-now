@@ -29,6 +29,7 @@ import {
   thoughtMonthLabel
 } from "./model.mjs";
 import { pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
+import { reasoningDisclosureMarkup } from "../ui/index.mjs";
 
 function requireFunction(value, name) {
   if (typeof value !== "function") {
@@ -113,7 +114,7 @@ export function createThoughtPresentation({
         label: "AI 回答文字朗读"
       })
       : "";
-    const answerEvidence = contextReceiptMarkup(
+    const answerEvidence = reasoningDisclosureMarkup(item) + contextReceiptMarkup(
       item.contextReceipt,
       item.citations,
       item.citationStatus,
@@ -130,7 +131,7 @@ export function createThoughtPresentation({
       followUp.id
     );
     const answerMarkup = followUp.answer
-      ? `<div class="model-answer-content">${contextReceiptMarkup(followUp.contextReceipt, followUp.citations, followUp.citationStatus, followUp.providedReferences)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div></div>`
+      ? `<div class="model-answer-content">${contextReceiptMarkup(followUp.contextReceipt, followUp.citations, followUp.citationStatus, followUp.providedReferences)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div>${reasoningDisclosureMarkup(followUp)}</div>`
       : `<form class="manual-followup-answer" data-followup-manual-answer="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}" data-version="${followUp.version || 1}">
           <textarea rows="3" placeholder="直接写下回答…" aria-label="追问回答" required></textarea>
           <div>

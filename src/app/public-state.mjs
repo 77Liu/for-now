@@ -3,6 +3,7 @@ import { publicCapture } from "../modules/captures/index.mjs";
 import { publicKeepsake } from "../modules/keepsakes/index.mjs";
 import { notificationUnread } from "../modules/notifications/index.mjs";
 import { publicAiTask } from "../modules/tasks/index.mjs";
+import { projectProductReasoning } from "../modules/ai/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 import { deriveStateInsights, deriveThoughtClusters } from "./derived-statistics.mjs";
 import { publicSpeechAssets } from "./speech-cache.mjs";
@@ -42,7 +43,8 @@ export function withoutOwnerMetadata(value, field = "") {
 
 export function storeForUser(store, user, isOwner) {
   const { commercialization: _commercialization, ...visible } = store;
-  return isOwner(user) ? visible : withoutOwnerMetadata(visible);
+  const result = isOwner(user) ? visible : withoutOwnerMetadata(visible);
+  return projectProductReasoning(result);
 }
 
 /**
@@ -90,7 +92,9 @@ export function createPublicStateProjection({
       ...publicFields
     } = store;
     // 不会输出的内部集合无需递归复制；原有可见字段只裁剪一次。
-    const visible = owner ? publicFields : withoutOwnerMetadata(publicFields);
+    const visible = projectProductReasoning(
+      owner ? publicFields : withoutOwnerMetadata(publicFields)
+    );
     const ownerId = safeText(user?.id, 100) || "local";
     const projected = {
       ...(wants("captures") ? { captures: visible.captures.map(publicCapture) } : {}),

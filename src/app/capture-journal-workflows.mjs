@@ -474,6 +474,8 @@ export function createCaptureJournalWorkflows({
       return {
         mode,
         content: markJournalAssistContent(mode, result.content),
+        reasoningContent: result.reasoningContent,
+        reasoningVisibility: result.reasoningVisibility,
         ...binding
       };
     },

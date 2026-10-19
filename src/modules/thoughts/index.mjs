@@ -1,5 +1,6 @@
 import { THOUGHT_PAGING } from "../../../.build/typescript/backend/shared/thought-pagination/index.mjs";
 import crypto from "node:crypto";
+import { businessReasoning, projectProductReasoning } from "../ai/index.mjs";
 import { cleanAttachmentPaths } from "../../shared/attachments/index.mjs";
 import {
   recordVersion as normalizedVersion,
@@ -172,9 +173,9 @@ export const thoughtChainSummary = (root, blocks) => {
 function publicThoughtValue(value) {
   if (Array.isArray(value)) return value.map(publicThoughtValue);
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !["modelDraft", "modelReasoning", "reasoningContent", "requestHash"].includes(key))
-    .map(([key, item]) => [key, publicThoughtValue(item)]));
+  return projectProductReasoning(Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !["modelDraft", "modelReasoning", "requestHash"].includes(key))
+    .map(([key, item]) => [key, publicThoughtValue(item)])));
 }
 
 export function thoughtChainDetail(thoughts, id) {
@@ -340,7 +341,7 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
           sourceVersion: task.inputVersion,
           generation,
           sourceTaskId: task.id,
-          ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
+          ...businessReasoning("thoughtAnswer", result.reasoningContent, 12000),
           ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}),
           ...(Array.isArray(result.citations) ? { citations: structuredClone(result.citations) } : {}),
           ...(Array.isArray(result.providedReferences) ? { providedReferences: structuredClone(result.providedReferences) } : {}),
@@ -363,7 +364,9 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
       current.version = normalizedVersion(current.version) + 1;
       current.clientRequestId = task.clientRequestId;
       current.sourceTaskId = task.id;
-      if (result.reasoningContent) current.reasoningContent = result.reasoningContent;
+      delete current.reasoningContent;
+      delete current.reasoningVisibility;
+      Object.assign(current, businessReasoning("followUpAnswer", result.reasoningContent, 12000));
       if (result.contextReceipt) current.contextReceipt = structuredClone(result.contextReceipt);
       if (Array.isArray(result.citations)) current.citations = structuredClone(result.citations);
       if (result.citationStatus) current.citationStatus = result.citationStatus;
@@ -485,7 +488,7 @@ export function createThoughtService({
           clientRequestId,
           requestHash,
           ...(draft ? { modelDraft: draft, editedFromModel: draft !== content } : {}),
-          ...(reasoningContent ? { reasoningContent } : {})
+          ...businessReasoning("thoughtAnswer", reasoningContent, 12000)
         };
         store.thoughts.unshift(item);
         items.push(item);
@@ -600,7 +603,7 @@ export function createThoughtService({
         generation: store.thoughts.filter(item => item.relatedTo === id && item.type === "answer").length + 1,
         clientRequestId,
         ...(sourceTaskId ? { sourceTaskId } : {}),
-        ...(reasoningContent ? { reasoningContent } : {}),
+        ...businessReasoning("thoughtAnswer", reasoningContent, 12000),
         ...(contextReceipt ? { contextReceipt: structuredClone(contextReceipt) } : {})
       };
       store.thoughts.unshift(answer);

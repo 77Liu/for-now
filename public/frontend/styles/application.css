@@ -2145,3 +2145,22 @@ body.capture-editor-open .sidebar{z-index:0}
 /* 原生选字与系统复制保持；批注工具栏仅扩大自身触摸命中区域。 */
 .commentable{-webkit-user-select:text;user-select:text}
 .selection-tools button{min-width:44px;min-height:44px}
+
+.reasoning-disclosure {
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+.reasoning-disclosure > summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--muted);
+  min-height: 44px;
+}
+.reasoning-text {
+  padding: 0 14px 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}

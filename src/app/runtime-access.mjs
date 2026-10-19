@@ -9,7 +9,8 @@ import {
 } from "../modules/auth/index.mjs";
 import {
   normalizeAiUsage,
-  normalizeLlmSettings
+  normalizeLlmSettings,
+  projectProductReasoning
 } from "../modules/ai/index.mjs";
 import {
   createAdminHttp,
@@ -88,8 +89,11 @@ export async function createRuntimeAccess({
     keepsakeMediaWorkflows
   } = contentRuntime;
 
-  const projectResponse = value => isOwner(requestStorage.getStore()?.user)
-    ? value : withoutReferenceOwnerMetadata(value);
+  const projectResponse = value => projectProductReasoning(
+    isOwner(requestStorage.getStore()?.user)
+      ? value
+      : withoutReferenceOwnerMetadata(value)
+  );
   const { sendJson, bodyJson } = createJsonHttp({
     getContext: () => requestStorage.getStore(),
     maxBodyBytes: httpLimits.standardBodyBytes,

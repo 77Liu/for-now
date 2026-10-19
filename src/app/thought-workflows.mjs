@@ -416,8 +416,7 @@ export function createThoughtWorkflows({
       if (task.kind === "thoughtDraft") {
         task.output = {
           ...work.taskOutput,
-          draft: stripThoughtAnswerLead(result.content),
-          reasoningContent: result.reasoningContent || ""
+          draft: stripThoughtAnswerLead(result.content)
         };
       } else {
         task.output = {
@@ -565,7 +564,8 @@ export function createThoughtWorkflows({
         targetId,
         inputVersion,
         draft: stripThoughtAnswerLead(result.content),
-        reasoningContent: result.reasoningContent
+        reasoningContent: result.reasoningContent,
+        reasoningVisibility: result.reasoningVisibility
       };
     },
 
@@ -601,6 +601,8 @@ export function createThoughtWorkflows({
       return {
         prompt: safeText(result.content, 160).replace(/\s+/g, " "),
         hasHistory: context.hasHistory,
+        reasoningContent: result.reasoningContent,
+        reasoningVisibility: result.reasoningVisibility,
         ...binding
       };
     },

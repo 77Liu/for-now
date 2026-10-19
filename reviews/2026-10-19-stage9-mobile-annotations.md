@@ -25,7 +25,7 @@
 
 ## 设备与证据复用
 
-[F8原回执](../artifacts/local/v0516-f8-acceptance-current.json)的选区TS、公开入口、模型、控制器、装配、global-events和iOS用例指纹均匹配当前源码。前驱变化为批注回执窄合并/回复输入保持、思绪草稿与摘要处理，选择链未重建。本次在交接路径实际复现并返修完整性缺口。
+F8 原回执 `artifacts/local/v0516-f8-acceptance-current.json` 的选区TS、公开入口、模型、控制器、装配、global-events和iOS用例指纹均匹配当前源码。前驱变化为批注回执窄合并/回复输入保持、思绪草稿与摘要处理，选择链未重建。本次在交接路径实际复现并返修完整性缺口。
 
 旧F8 Chrome的公式前后文字、表格、重复词、旧ACK/页面/账户和图片草稿证据按路径复用；不标成本轮重新执行。旧原生测试仅为SE3、iOS27模拟器、375pt WKWebView真实长按与跨段手柄，1pass/0fail/0skip，UTF-16 41字符回读；Safari、安装PWA和真机均未验。映射及原生成功路径未变，当前摘要失效新分支由公开入口和真实Chrome覆盖。
 

@@ -418,6 +418,8 @@ export async function createRuntimeFoundation({
       return snapshot?.accountId === (requestStorage.getStore()?.user?.id || "local") ? snapshot : null;
     },
     readAiUsage: aiRuntime.readAiUsage,
+    periodicAnalysisEnabled: appConfig.periodicAnalysisEnabled,
+    readPeriodicPreferences: aiRuntime.readLlmSettings,
     recordCompressionDailyBudgetCny: appConfig.recordCompressionDailyBudgetCny,
     recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,
     recordCompressionMaxBackfillDatesPerScan: appConfig.recordCompressionMaxBackfillDatesPerScan,

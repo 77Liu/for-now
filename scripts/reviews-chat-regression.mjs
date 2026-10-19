@@ -328,6 +328,10 @@ const workflows = createReviewChatWorkflows({
   generate,
   hash,
   contextKey: accountId,
+  periodicAnalysisEnabled: true,
+  readPeriodicPreferences: async () => ({
+    periodicReviews: { analysisEnabled: accountId() === "account-b" }
+  }),
   currentTime: () => Date.parse("2026-09-29T08:00:00.000Z")
 });
 const eventTime = { occurredAt: timestamp, occurredOn: "2026-09-29" };
@@ -836,6 +840,10 @@ const durableWorkflowOptions = {
   generate: durableGenerate,
   hash,
   contextKey: accountId,
+  periodicAnalysisEnabled: true,
+  readPeriodicPreferences: async () => ({
+    periodicReviews: { analysisEnabled: accountId() === durableAccount }
+  }),
   currentTime: () => Date.parse(timestamp)
 };
 const durableWorkflows = createReviewChatWorkflows(durableWorkflowOptions);

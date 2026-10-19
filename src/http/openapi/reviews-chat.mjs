@@ -213,6 +213,7 @@ export const reviewsChatComponents = Object.freeze({
         message: { type: "string" },
         answer: { type: "string" },
         reasoningContent: { type: "string" },
+        reasoningVisibility: { const: "user_viewable" },
         annotations: { type: "array", items: { type: "object", additionalProperties: true } },
         annotationDrift: { type: "array", items: { type: "object", additionalProperties: true } }
       },
@@ -229,6 +230,7 @@ export const reviewsChatComponents = Object.freeze({
         reviewedAt: { type: "string" },
         reviewDisposition: { type: "string" },
         reasoningContent: { type: "string" },
+        reasoningVisibility: { const: "user_viewable" },
         annotations: { type: "array", items: { type: "object", additionalProperties: true } },
         annotationDrift: { type: "array", items: { type: "object", additionalProperties: true } }
       },

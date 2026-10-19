@@ -292,6 +292,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     }),
     attachments,
     features: Object.freeze({
+      aiReasoningUi: env.AI_REASONING_UI_ENABLED === "1",
       thoughtPaging: Object.freeze({ ...THOUGHT_PAGING, enabled: env.THOUGHT_PAGING_ENABLED === "1" }),
       incrementalSync: String(env.INCREMENTAL_SYNC_ENABLED ?? "1") !== "0"
     }),

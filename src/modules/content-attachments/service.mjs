@@ -558,6 +558,7 @@ export function createContentAttachmentService({
     inputVersion,
     attachmentPaths,
     content,
+    reasoningContent,
     model = "",
     sourceTaskId = "",
     clientRequestId = "",
@@ -568,6 +569,7 @@ export function createContentAttachmentService({
     const parsed = imageUnderstandingResult({
       attachmentPaths,
       content,
+      reasoningContent,
       model,
       sourceTaskId,
       clientRequestId
@@ -589,6 +591,10 @@ export function createContentAttachmentService({
       id: createId(),
       kind: "imageUnderstanding",
       content: parsed.value.content,
+      ...(parsed.value.reasoningContent ? {
+        reasoningContent: parsed.value.reasoningContent,
+        reasoningVisibility: parsed.value.reasoningVisibility
+      } : {}),
       sourceAttachmentPaths: parsed.value.sourceAttachmentPaths,
       createdAt: changedAt,
       origin: "ai-derived",
@@ -607,6 +613,7 @@ export function createContentAttachmentService({
     const parsed = imageUnderstandingResult({
       attachmentPaths: input.attachmentPaths,
       content: input.content,
+      reasoningContent: input.reasoningContent,
       model: input.model,
       sourceTaskId: input.sourceTaskId,
       clientRequestId: input.clientRequestId

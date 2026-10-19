@@ -29,27 +29,41 @@ type SceneContract = Readonly<{
   resultAudience: AiResultAudience;
   reasoningVisibility: AiReasoningVisibility;
   persistenceMode: AiPersistenceMode;
+  persistenceOwner: string | null;
+  dtoOwner: string | null;
+  uiOwner: string | null;
+  reasoningTextPolicy: string | null;
 }>;
 
 const USER_EXPLICIT = ["user_explicit"] as const;
 const USER_OR_AUTO = ["user_explicit", "user_action_auto"] as const;
 
-const liveUserScene = (): SceneContract => ({
+const liveUserScene = (owner: string, policy: string): SceneContract => ({
   allowedTriggers: USER_EXPLICIT,
   defaultTrigger: "user_explicit",
   resultAudience: "user",
   reasoningVisibility: "user_viewable",
-  persistenceMode: "live_only"
+  persistenceMode: "live_only",
+  persistenceOwner: null,
+  dtoOwner: `${owner}.live`,
+  uiOwner: owner,
+  reasoningTextPolicy: policy
 });
 
 const durableUserScene = (
+  owner: string,
+  policy: string,
   allowedTriggers: readonly AiTriggerType[] = USER_EXPLICIT
 ): SceneContract => ({
   allowedTriggers,
   defaultTrigger: "user_explicit",
   resultAudience: "user",
   reasoningVisibility: "user_viewable",
-  persistenceMode: "business_result"
+  persistenceMode: "business_result",
+  persistenceOwner: owner,
+  dtoOwner: `${owner}.detail`,
+  uiOwner: owner,
+  reasoningTextPolicy: policy
 });
 
 const internalScene = (): SceneContract => ({
@@ -57,35 +71,43 @@ const internalScene = (): SceneContract => ({
   defaultTrigger: "system_internal",
   resultAudience: "internal",
   reasoningVisibility: "privileged_only",
-  persistenceMode: "audit_only"
+  persistenceMode: "audit_only",
+  persistenceOwner: null,
+  dtoOwner: null,
+  uiOwner: null,
+  reasoningTextPolicy: null
 });
 
 const SCENES: Readonly<Record<string, SceneContract>> = Object.freeze({
-  thoughtPrompt: liveUserScene(),
-  thoughtDraft: liveUserScene(),
-  thoughtAnswer: durableUserScene(USER_OR_AUTO),
-  followUpAnswer: durableUserScene(),
-  chat: durableUserScene(),
-  diaryLead: liveUserScene(),
-  diaryStructure: liveUserScene(),
-  diaryTopic: liveUserScene(),
-  diaryReflection: durableUserScene(),
-  annotationShenji: durableUserScene(),
-  analysis: durableUserScene(["user_explicit", "scheduled"]),
-  bookRecognition: liveUserScene(),
-  healthRecognition: liveUserScene(),
-  contentImageUnderstanding: durableUserScene(USER_OR_AUTO),
-  capturePolish: durableUserScene(USER_OR_AUTO),
+  thoughtPrompt: liveUserScene("thoughts", "thoughts.content"),
+  thoughtDraft: liveUserScene("thoughts", "thoughts.content"),
+  thoughtAnswer: durableUserScene("thoughts", "thoughts.content", USER_OR_AUTO),
+  followUpAnswer: durableUserScene("thoughts", "thoughts.content"),
+  chat: durableUserScene("chats", "chats.message"),
+  diaryLead: liveUserScene("capture-journal", "journals.content"),
+  diaryStructure: liveUserScene("capture-journal", "journals.content"),
+  diaryTopic: liveUserScene("capture-journal", "journals.content"),
+  diaryReflection: durableUserScene("journals", "journals.content"),
+  annotationShenji: durableUserScene("annotations", "annotations.message"),
+  analysis: durableUserScene("reviews", "reviews.content", ["user_explicit", "scheduled"]),
+  bookRecognition: liveUserScene("library", "books.recognition"),
+  healthRecognition: liveUserScene("health", "health.recognition"),
+  contentImageUnderstanding: durableUserScene("content-attachments", "content-attachments.description", USER_OR_AUTO),
+  capturePolish: durableUserScene("captures", "captures.transcription", USER_OR_AUTO),
   onboardingClaimExtraction: internalScene(),
   perceptionExtraction: internalScene(),
   recordCompression: internalScene(),
   importanceScoring: internalScene(),
-  speechSynthesis: liveUserScene(),
-  speechPreview: liveUserScene(),
-  speechRecognition: liveUserScene(),
+  speechSynthesis: liveUserScene("speech", "speech.text"),
+  speechPreview: liveUserScene("speech", "speech.text"),
+  speechRecognition: liveUserScene("speech", "speech.transcript"),
   visionOcr: internalScene(),
-  documentParsing: liveUserScene(),
-  keepsakeSegmentation: durableUserScene(USER_OR_AUTO)
+  documentParsing: liveUserScene("keepsakes", "keepsakes.document"),
+  keepsakeSegmentation: durableUserScene("keepsakes", "keepsakes.document", USER_OR_AUTO),
+  lite: liveUserScene("account-settings", "settings.connection-test"),
+  mid: liveUserScene("account-settings", "settings.connection-test"),
+  high: liveUserScene("account-settings", "settings.connection-test"),
+  ultra: liveUserScene("account-settings", "settings.connection-test")
 });
 
 export const LLM_SCENARIOS = Object.freeze([
@@ -152,4 +174,13 @@ export function resolveInvocationContract(
  */
 export function registeredInvocationScenes(): readonly string[] {
   return Object.freeze(Object.keys(SCENES));
+}
+
+/** Returns the scene's product owners and policy without allowing caller overrides. @since unreleased */
+export function invocationSceneContract(scene: string): SceneContract {
+  const contract = SCENES[scene] || internalScene();
+  return Object.freeze({
+    ...contract,
+    allowedTriggers: Object.freeze([...contract.allowedTriggers])
+  });
 }

@@ -1,3 +1,5 @@
+import { createReasoningDisclosure } from "../ui/index.mjs";
+
 const IMAGE_UI = Object.freeze({
   cover: Object.freeze({
     input: "#book-cover-image",
@@ -41,6 +43,7 @@ export function createLibraryMedia({
 } = {}) {
   let revision = 0;
   let pasteTarget = "recognition";
+  let reasoning = null;
   const files = { cover: null, recognition: null };
   const previewUrls = { cover: "", recognition: "" };
   const query = selector => libraryView.query(selector);
@@ -130,6 +133,8 @@ export function createLibraryMedia({
   );
 
   function invalidateRecognition() {
+    reasoning?.dispose();
+    reasoning = null;
     revision += 1;
     const parse = query("#parse-book");
     if (parse) parse.disabled = !files.recognition;
@@ -197,6 +202,12 @@ export function createLibraryMedia({
         query(`#book-${key}`).value = result[key] || "";
       }
       status.textContent = result.verification || "识别完成，请确认书目信息。";
+      reasoning?.dispose();
+      const host = query("#book-recognition-reasoning");
+      if (host) {
+        reasoning = createReasoningDisclosure({ host, isCurrent: () => targetCurrent(ticket) });
+        reasoning.replace(result);
+      }
       return true;
     } catch (error) {
       if (targetCurrent(ticket)) status.textContent = error.message;
@@ -263,6 +274,8 @@ export function createLibraryMedia({
   }
 
   function resetSession() {
+    reasoning?.dispose();
+    reasoning = null;
     revision += 1;
     pasteTarget = "recognition";
     for (const role of Object.keys(IMAGE_UI)) {

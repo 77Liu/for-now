@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { businessReasoning } from "../ai/index.mjs";
 import { renderPrompt } from "../../shared/prompts/index.mjs";
 import { recordVersion, safeText } from "../../shared/validation/index.mjs";
 
@@ -275,7 +276,7 @@ export function createReviewRecords({
         reviewDisposition: input.reviewDisposition || "",
         annotations: [],
         annotationDrift: [],
-        ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
+        ...businessReasoning("analysis", input.reasoningContent, 12000),
         ...(input.contextReceipt ? { contextReceipt: clone(input.contextReceipt) } : {})
       };
       if (clientRequestId && hasPersistentIdempotency) {
@@ -300,7 +301,7 @@ export function createReviewRecords({
         reviewDisposition: input.reviewDisposition || "",
         annotations: [],
         annotationDrift: [],
-        ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
+        ...businessReasoning("analysis", input.reasoningContent, 12000),
         ...(input.contextReceipt ? { contextReceipt: clone(input.contextReceipt) } : {})
       }, { clientRequestId, requestHash });
     },

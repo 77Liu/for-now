@@ -501,6 +501,31 @@ TC-01 至 TC-15 全部通过；privileged_only reasoning 任一产品泄露、�
 
 ## 4.1 开发明细（必填；评审时留空，开发结束后填写）
 
+2026-10-19 已按阶段 10 实施。`invocation-contracts.mts` 现登记 trigger、受众、可见性、
+持久策略、领域 policy 及三个 owner；未知 scene 与历史缺少
+`reasoningVisibility` 的记录均安全隐藏。generator 只向 `user_viewable` 产品流返回
+reasoning，但成功、失败和部分响应仍完整写入同一私有审计行。
+
+持久结果由 thoughts、journals、chats、reviews、annotations、
+content-attachments 和 captures 各自按领域正文上限保存
+`reasoningContent/reasoningVisibility`；公开状态、普通 JSON、SSE 和记录详情统一按
+服务端业务投影过滤，Owner 响应也不绕过。默认导出、聊天 history、复盘证据及内部
+上下文不读取 reasoning。draft、prompt、日记辅助、书目和健康识别仅保留当前会话
+投影，健康草稿持久化显式剥离该字段。
+
+账户设置新增默认关闭的 `periodicReviews.analysisEnabled`。周期复盘必须同时满足部署
+kill switch 和账户同意，并在扫描前、排队任务认领、provider 前及保存前复验；关闭不
+删除既有业务结果。感知、压缩和评分继续只有内部任务入口，产品响应不返回其 reasoning。
+
+共享 `ReasoningDisclosure` 位于 `features/ui`，默认折叠、空内容不渲染并仅用文本
+节点展示；五类持久结果及识别/整理落点由对应领域 feature 组合。回答弹窗接入现有会话
+取消信号，关闭时释放 live buffer，切换账户后的迟到片段和结果不能写入新页面。UI 开关
+`AI_REASONING_UI_ENABLED` 默认关闭，不改变审计和服务端权限。
+
+验证覆盖隔离 provider、完整/失败审计、公开投影、周期双门、领域保存、默认导出与
+上下文排除、真实 PostgreSQL 16.14 回读/RLS，以及真实 Chrome 桌面和 390×844 视口。
+未执行真实付费模型调用、生产写入、Safari、安装 PWA 或真机验证。
+
 ## 4.2 测试方案（必填）
 
 |用例编号 / 对应需求|环境与前置条件|输入 / 操作 / 故障注入|预期输出 / 持久化 / 用户行为|监控与通过标准|

@@ -35,6 +35,8 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
       requestV1("/api/v1/startup").then(result=>result.data)
     ]);
   if(owner!==runtime.currentUser?.id||session!==runtime.sessionSerial)return false;
+  document.documentElement.dataset.aiReasoningUiEnabled =
+    String(meta.features?.aiReasoningUi === true);
   if(!Number.isFinite(startupMarks.coreSnapshotReady))markStartup("coreSnapshotReady");assertNativeServerCompatibility(meta);
   runtime.currentUser={...runtime.currentUser,...(meta.user||{})};applyCapabilitySurface(meta.capabilities||[]);
   opening?.applyPreferences?.(runtime.currentUser?.role === "owner" ? meta.openingPreferences : undefined);
@@ -105,6 +107,7 @@ function invalidatePageLoads(){
   runtime.backgroundResultsController?.resetSession();runtime.backgroundResultsLoadErrorReported=false;runtime.backgroundResultsRetryAttempts=0;refreshCoordinator.reset();
 }
 function clearPrivateSessionState(){
+  document.documentElement.dataset.aiReasoningUiEnabled = "false";
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   resetState();

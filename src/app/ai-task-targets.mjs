@@ -1,6 +1,7 @@
 import { answerCitationSources as compileCitationSources } from "./answer-citations.mjs";
 import { safeText, recordVersion } from "../shared/validation/index.mjs";
 import { renderPrompt } from "../shared/prompts/index.mjs";
+import { businessReasoning } from "../modules/ai/index.mjs";
 import { annotationExcerpt, shenjiSystemPrompt } from "../modules/annotations/index.mjs";
 import { thoughtTaskResult } from "../modules/thoughts/index.mjs";
 import { parseClaimExtractionOutput } from "../modules/user-model/index.mjs";
@@ -581,6 +582,12 @@ export function createAiTaskTargets({
           rawText: safeText(result.rawText, 120_000),
           polishedText: safeText(result.polishedText, 120_000),
           condensedText: safeText(result.condensedText, 120_000),
+          polishResult: {
+            ...businessReasoning("capturePolish", result.polishReasoningContent, 120_000)
+          },
+          condenseResult: {
+            ...businessReasoning("capturePolish", result.condenseReasoningContent, 120_000)
+          },
           updatedAt: safeText(result.updatedAt, 100) || now(),
           errorCode: safeText(result.polishErrorCode, 120),
           condenseErrorCode: safeText(result.condenseErrorCode, 120)
@@ -597,6 +604,7 @@ export function createAiTaskTargets({
           inputVersion: work.inputVersion,
           attachmentPaths: work.attachmentPaths,
           content: result.content,
+          reasoningContent: result.reasoningContent,
           model: result.model || "deepseek-flash",
           sourceTaskId: task.id,
           clientRequestId: task.clientRequestId

@@ -139,8 +139,10 @@ export function renderSettingsForm(root, value, speech = {}) {
   if (!form) return normalizeAccountSettings(value);
   const settings = normalizeAccountSettings(value);
   const automatic = root.querySelector("#automatic-thought-answer");
+  const periodic = root.querySelector("#periodic-analysis-enabled");
   const assistantName = root.querySelector("#assistant-name");
   if (automatic) automatic.checked = settings.automaticAnswers.thoughtAnswer;
+  if (periodic) periodic.checked = settings.periodicReviews.analysisEnabled;
   if (assistantName) assistantName.value = settings.assistantName || "神鸡";
 
   const voiceControl = root.querySelector(SETTINGS_SELECTORS.voice);

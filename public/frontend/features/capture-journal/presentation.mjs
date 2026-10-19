@@ -1,4 +1,5 @@
 import { escapeHtml, plainPreview, renderMarkdown } from "../../content/index.mjs";
+import { reasoningDisclosureMarkup } from "../ui/index.mjs";
 import {
   normalizeTtsGenerationRate,
   TTS_GENERATION_RATE_MAX,
@@ -102,7 +103,9 @@ function captureAudioMarkup(item, snapshot, appUrl) {
       ? `<details class="capture-transcription capture-transcription-raw"><summary>原始转写</summary><div class="markdown-content">${escapeHtml(transcription.rawText).replace(/\r\n?|\n/g, "<br>")}</div></details>`
       : "",
     derivedTranscription("AI 整理稿", transcription?.polishedText, 2, "polished"),
-    derivedTranscription("AI 凝练压缩总结稿", transcription?.condensedText, 6, "condensed")
+    reasoningDisclosureMarkup(transcription?.polishResult || {}),
+    derivedTranscription("AI 凝练压缩总结稿", transcription?.condensedText, 6, "condensed"),
+    reasoningDisclosureMarkup(transcription?.condenseResult || {})
   ].join("");
   let transcriptionState = "";
   if (presentation.transcriptionMessage) {
@@ -155,7 +158,7 @@ export function captureCardMarkup({
 function reflectionMarkup(item, reflection, index, contextReceiptMarkup) {
   const stale = reflection.sourceUpdatedAt
     && reflection.sourceUpdatedAt !== (item.updatedAt || item.createdAt);
-  return `<details class="journal-reflection" data-reflection-id="${escapeHtml(reflection.id)}" ${index === 0 ? "open" : ""}><summary><span>助手回望${index ? ` ${item.reflections.length - index}` : ""}</span><small>${stale ? "基于修改前版本 · " : ""}${formatDate(reflection.createdAt)}</small></summary><div class="model-answer-content">${contextReceiptMarkup(reflection.contextReceipt, reflection.citations, reflection.citationStatus, reflection.providedReferences)}<div class="markdown-content">${renderMarkdown(reflection.content)}</div></div></details>`;
+  return `<details class="journal-reflection" data-reflection-id="${escapeHtml(reflection.id)}" ${index === 0 ? "open" : ""}><summary><span>助手回望${index ? ` ${item.reflections.length - index}` : ""}</span><small>${stale ? "基于修改前版本 · " : ""}${formatDate(reflection.createdAt)}</small></summary><div class="model-answer-content">${contextReceiptMarkup(reflection.contextReceipt, reflection.citations, reflection.citationStatus, reflection.providedReferences)}<div class="markdown-content">${renderMarkdown(reflection.content)}</div>${reasoningDisclosureMarkup(reflection)}</div></details>`;
 }
 
 export function journalCardMarkup({ item, contextReceiptMarkup }) {
