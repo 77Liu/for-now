@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 524,
-  "updated_at": "2026-10-19T17:03:28.038Z",
+  "revision": 532,
+  "updated_at": "2026-10-19T17:48:51.236Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -16,11 +16,11 @@
   "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
     "id": "v0.5.16",
-    "status": "BUILDING",
-    "phase": "候选7164df组合验收失败：拆分data sync runtime"
+    "status": "READY_WAIT_OWNER",
+    "phase": "候选2d97b58六项必需门全部通过，已冻结等待Owner发布决定"
   },
   "scope": {
-    "description": "e52db1 release旅程后端及发布保护已通过，前端通知专项因旧夹具缺少record-sync端口失败；修复仅涉及测试夹具与控制面，新候选7164df继续受影响重验。",
+    "description": "v0.5.16十一阶段开发与最终组合验收完成；2d97b58/6527ca在完整回归、release旅程、发布保护及四账户default+完整组合有状态门通过，保持设备/P75/生产边界。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8",
@@ -55,61 +55,15 @@
     ],
     "plan_ref": "docs/versions/v0.5.16/README.md"
   },
-  "active_tasks": [
-    {
-      "id": "v0516-combination-acceptance",
-      "mode": "validation",
-      "owner": "主控串行",
-      "requirement_id": "v0.5.16-candidate",
-      "baseline": "7a7b8193",
-      "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效",
-      "allowed_write_set": [
-        "package.json",
-        "package-lock.json",
-        "public/release-info.js",
-        "ios/release-version.xcconfig",
-        "reviews/2026-10-19-v0516-combination-acceptance.md",
-        "reviews/2026-10-19-v0516-combination-acceptance-result.json",
-        "coordination/**",
-        "public/service-worker.js",
-        "public/frontend/app/runtime/data-runtime.mjs",
-        "public/frontend/app/runtime/record-events.mjs",
-        "scripts/pwa-regression.mjs",
-        "knowledge/module-boundaries.json",
-        "scripts/module-boundary-regression.mjs",
-        "scripts/frontend-notifications-feature-regression.mjs",
-        "public/frontend/app/runtime/data-sync-runtime.mjs",
-        "scripts/frontend-runtime-composition-regression.mjs",
-        "public/frontend/app/runtime/home-runtime.mjs",
-        "public/frontend/app/runtime/home-formatters.mjs",
-        "scripts/ui-regression.mjs",
-        "public/frontend/features/annotations/view.mjs",
-        "public/frontend/features/thoughts/view.mjs",
-        "scripts/mobile-platform-regression.mjs"
-      ],
-      "forbidden_write_set": [
-        ".trae/skills/tell-me/**",
-        "版本元数据之外的应用源码",
-        "生产业务数据与凭据",
-        "push/tag/Release/Preview/生产部署",
-        "真实付费provider调用",
-        "94条真实样本重建或重跑"
-      ],
-      "shared_owner": "主控唯一串行写者",
-      "integration_order": "release:set→PWA完整静态闭包与思绪model懒加载边界返修→候选提交→组合回归/旅程/移动/发布保护→脱敏四账户隔离PG启动恢复→回执与候选冻结",
-      "acceptance": "必需门绑定同一候选全部PASS；Chrome与移动模拟不冒充Safari/PWA安装态/真机；P75与生产放量保持PARTIAL；不执行任何外部发布动作。",
-      "review_ref": "reviews/2026-10-19-v0516-combination-acceptance.md",
-      "receipt_ref": "reviews/2026-10-19-v0516-combination-acceptance-result.json"
-    }
-  ],
+  "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-7164df",
+    "id": "v0.5.16-2d97b58",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "7164df",
-    "tree": "6c327d",
+    "sha": "2d97b5",
+    "tree": "6527ca",
     "version": "0.5.16",
-    "status": "REMEDIATION_REQUIRED",
-    "release_frozen": false,
+    "status": "READY_FOR_RELEASE_WAIT_OWNER",
+    "release_frozen": true,
     "required_gates": [
       "release_metadata_pwa",
       "static_module_contracts",
@@ -120,12 +74,12 @@
     ],
     "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
     "quality_gate": {
-      "release_metadata_pwa": "PENDING",
-      "static_module_contracts": "PENDING",
-      "full_regression": "PENDING",
-      "release_journeys": "FAIL",
+      "release_metadata_pwa": "PASS",
+      "static_module_contracts": "PASS",
+      "full_regression": "PASS",
+      "release_journeys": "PASS",
       "release_protection": "PASS",
-      "stateful_postgres_startup": "NOT_RUN",
+      "stateful_postgres_startup": "PASS",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
       "production_rollout": "NOT_RUN"
@@ -163,9 +117,9 @@
   },
   "blockers": [],
   "next_action": {
-    "description": "把移动平台夹具迁移到合成认证运行时，API与Chrome绑定同一Owner会话后重跑完整frontend段。",
-    "owner": "主控",
-    "requires_owner": false
+    "description": "等待Owner独立发布决定；未经新授权不得push、tag、Release、Preview或生产部署。",
+    "owner": "Owner",
+    "requires_owner": true
   },
   "runtime": {
     "version": "v0.5.15",
@@ -849,6 +803,29 @@
         "reviews/2026-10-19-stage11-record-sync-v2.md",
         "reviews/2026-10-19-stage11-record-sync-v2-result.json",
         "docs/technical-proposals/reczz28ORRaxQJDJ-应新规重做F9记录级同步-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-combination-acceptance",
+      "object": {
+        "kind": "release_candidate",
+        "version": "v0.5.16",
+        "commit": "2d97b5",
+        "tree": "6527ca",
+        "snapshot": "2d0f7999"
+      },
+      "conclusion": "六项必需门全部PASS；四账户脱敏生产快照在PG16.14下default与完整v0516-combined均完成启动、readyz、同库重启、登录读写及任务通知读取，外部副作用0；候选冻结等待Owner。",
+      "limitations": [
+        "浏览器P75 500ms仍PARTIAL",
+        "Safari/安装PWA/移动真机仍PARTIAL",
+        "生产负载与放量NOT_RUN",
+        "无真实付费provider调用，94条真实样本未重跑"
+      ],
+      "refs": [
+        "reviews/2026-10-19-v0516-combination-acceptance.md",
+        "reviews/2026-10-19-v0516-combination-acceptance-result.json",
+        "artifacts/local/v0516-startup-snapshot-2d97b58.json",
+        "git:2d97b5"
       ]
     }
   ],
