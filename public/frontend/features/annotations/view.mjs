@@ -178,7 +178,8 @@ export function createAnnotationView({
         window.scrollX + (rect?.right || 0) + 7
       );
       const top = window.scrollY + group.top - 1;
-      return `<button type="button" style="left:${Math.max(window.scrollX + 2, left)}px;top:${Math.max(window.scrollY + 2, top)}px" data-comment-line="${index}" data-comment-root="${escapeHtml(host?.dataset.commentRoot || "")}" data-annotation-id="${escapeHtml(group.annotationIds[0])}" aria-label="定位本行批注" title="定位本行批注">↗</button>`;
+      const label = `本行 ${group.count} 条批注`;
+      return `<button type="button" style="left:${Math.max(window.scrollX + 2, left)}px;top:${Math.max(window.scrollY + 2, top)}px" data-comment-line="${index}" data-comment-root="${escapeHtml(host?.dataset.commentRoot || "")}" data-annotation-id="${escapeHtml(group.annotationIds[0])}" aria-label="${label}" title="${label}">${group.count}</button>`;
     }).join("");
     layer.hidden = !groups.length;
   }

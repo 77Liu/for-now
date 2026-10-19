@@ -89,7 +89,7 @@
     "test:journeys:daily": "node scripts/user-journey-regression.mjs daily",
     "test:journeys:release": "node scripts/user-journey-regression.mjs release",
     "test:journeys:live": "node scripts/live-user-journey-e2e.mjs",
-    "test:mobile": "node scripts/mobile-platform-regression.mjs",
+    "test:mobile": "npm run build:backend --silent && node scripts/mobile-platform-regression.mjs",
     "test:local-runtime": "node scripts/local-test-control-regression.mjs && node scripts/account-lifecycle-regression.mjs && node scripts/local-test-runtime-regression.mjs && node scripts/local-test-http-regression.mjs",
     "test:local-mode": "node scripts/local-test-mode-regression.mjs",
     "test:persistence": "node scripts/persistence-regression.mjs && node scripts/document-migration-regression.mjs && node scripts/thought-service-regression.mjs",

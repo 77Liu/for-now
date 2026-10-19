@@ -2540,6 +2540,29 @@
       "status": "active"
     },
     {
+      "id": "frontend.app.data-sync-runtime",
+      "type": "application",
+      "root": "public/frontend/app/runtime/data-sync-runtime.mjs",
+      "publicEntry": "public/frontend/app/runtime/data-sync-runtime.mjs",
+      "allowedDependencies": [
+        "frontend.session",
+        "frontend.state",
+        "frontend.feature.thoughts-model"
+      ],
+      "owns": {
+        "data": [
+          "v1 and v2 sync controller composition, scoped rebase and health projection"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/sync-coordinator-regression.mjs",
+        "scripts/frontend-notifications-feature-regression.mjs",
+        "scripts/frontend-runtime-composition-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
       "id": "frontend.app.data-runtime",
       "type": "application",
       "root": "public/frontend/app/runtime/data-runtime.mjs",
@@ -2550,6 +2573,7 @@
         "frontend.time",
         "frontend.ai-task-status",
         "frontend.app.personalized-task-runtime",
+        "frontend.app.data-sync-runtime",
         "frontend.feature.thoughts-model"
       ],
       "owns": {

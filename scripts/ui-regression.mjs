@@ -994,7 +994,7 @@ const mockFetch = `
     if (url === "/api/auth/me") return location.search.includes("ui-unauthenticated-startup=1")
       ?json({authenticated:false,authRequired:true,registrationAvailable:true,user:null,capabilities:[],userCount:2},401)
       :json({ authenticated: true, authRequired: true, registrationAvailable: true, user: window.__accountUser, capabilities:window.__accountUser.role==="owner"?["account-roles"]:[], userCount: 2 });
-    if (url === "/api/auth/users" && (!init.method || init.method === "GET")) return json({users:[window.__accountUser,{id:"member-1",username:"member",role:"user",createdAt:"2026-09-27T00:00:00.000Z"}]});
+    if ((url === "/api/auth/users" || url.startsWith("/api/auth/users?")) && (!init.method || init.method === "GET")) return json({users:[window.__accountUser,{id:"member-1",username:"member",role:"user",createdAt:"2026-09-27T00:00:00.000Z"}]});
     if (/^\\/api\\/auth\\/users\\/[^/]+\\/role$/.test(url) && init.method === "PATCH") {
       window.__roleChanges+=1;
       return json({authenticated:true,user:{id:url.split("/")[4],username:"member",role:JSON.parse(init.body).role,createdAt:"2026-09-27T00:00:00.000Z"}})
@@ -1006,7 +1006,7 @@ const mockFetch = `
     }
     if (url === "/api/auth/password" && init.method === "PATCH") {
       window.__passwordChanges += 1;
-      return json({ authenticated: true, user: window.__accountUser });
+      return json({ authenticated: false, reauthRequired: true, user: null });
     }
     if (url === "/api/auth/logout") {
       if(window.__delayLogout)return new Promise(resolve=>{window.__releaseLogout=()=>{window.__delayLogout=false;resolve(json({authenticated:false}))}});
@@ -3043,11 +3043,22 @@ try {
   await sleep(80);
   const commentAnchorTop = await evaluate(`document.querySelector('[data-analysis-id="analysis-1"] .analysis-content').getBoundingClientRect().top`);
   await evaluate(`(() => { const text = document.querySelector('[data-analysis-id="analysis-1"] .analysis-content strong').firstChild, range = document.createRange(), selection = getSelection(); range.selectNodeContents(text); selection.removeAllRanges(); selection.addRange(range); document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })); return true; })()`);
-  assert.equal(await waitUntil(`document.querySelector("#selection-tools").hidden?(document.dispatchEvent(new Event("selectionchange")),false):true`), true);
+  const reviewSelectionReady = await waitUntil(`!document.querySelector("#selection-tools").hidden`);
+  assert.equal(reviewSelectionReady, true, reviewSelectionReady ? "" : JSON.stringify(await evaluate(`(async() => {
+    const selection=getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null,node=range?.startContainer;
+    const host=(node?.nodeType===3?node.parentElement:node)?.closest?.(".commentable"),root=window.__analyses.find(item=>item.id==="analysis-1");
+    const annotation=await import("/generated/annotation-selection.mjs");
+    return{selected:selection?.toString(),collapsed:selection?.isCollapsed,rangeCount:selection?.rangeCount,
+      hostRoot:host?.dataset.commentRoot,hostTarget:host?.dataset.commentTarget,hostConnected:host?.isConnected,
+      hostRects:host?.getClientRects().length,rootKeys:Object.keys(root||{}),rootBlockCount:root?.blockCount,
+      rangeValue:range&&host?annotation.annotationRangeValue(document,host,range):null,hostText:host?annotation.annotationText(host):"",
+      toolsHidden:document.querySelector("#selection-tools").hidden,route:location.href,
+      analysisOpen:document.querySelector('[data-analysis-id="analysis-1"]')?.open};
+  })()`)));
   await evaluate(`document.querySelector('[data-selection-action="comment"]').click(); true`);
   await sleep(80);
   const commentPanelLayout=await evaluate(`(()=>{const panel=document.querySelector("#comment-panel").getBoundingClientRect(),main=document.querySelector("main").getBoundingClientRect(),top=document.querySelector('[data-analysis-id="analysis-1"] .analysis-content').getBoundingClientRect().top;return{open:!document.querySelector("#comment-panel").hidden,title:document.querySelector("#comment-panel h2").textContent,sideBySide:main.right<=panel.left+1,stable:Math.abs(top-${commentAnchorTop})<3,before:${commentAnchorTop},after:top}})()`);
-  assert.deepEqual({open:commentPanelLayout.open,title:commentPanelLayout.title,sideBySide:commentPanelLayout.sideBySide},{open:true,title:"认知复盘批注",sideBySide:true});
+  assert.deepEqual({open:commentPanelLayout.open,title:commentPanelLayout.title,sideBySide:commentPanelLayout.sideBySide},{open:true,title:"认知复盘 · 0条批注 · 0条回复",sideBySide:true});
   assert.equal(commentPanelLayout.stable,true,JSON.stringify(commentPanelLayout));
   await evaluate(`(()=>{const input=document.querySelector("#comment-text");input.value="关闭后仍保留的纯文字评论";input.dispatchEvent(new Event("input",{bubbles:true}));input.click();return true})()`);
   assert.equal(await evaluate(`!document.querySelector("#comment-panel").hidden`),true,"comment panel interaction stays open");
@@ -3428,7 +3439,8 @@ try {
     all.elements.question.value="保存后的追问";all.elements.answer.value="保存后的回答";
     window.__failFollowUpPatch="edit";all.requestSubmit();return true
   })()`);
-  assert.equal(await waitUntil(`document.querySelector("#toast").textContent.includes("追问编辑失败")&&!document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"] button[type="submit"]').disabled`),true);
+  const editFailureReady=await waitUntil(`(document.querySelector('#all-thoughts [data-followup-id="follow-up-1"] .followup-status').textContent.includes("追问编辑失败")||document.querySelector("#toast").textContent.includes("追问编辑失败"))&&!document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"] button[type="submit"]').disabled`);
+  assert.equal(editFailureReady,true,editFailureReady?"":JSON.stringify(await evaluate(`(()=>{const entry=document.querySelector('#all-thoughts [data-followup-id="follow-up-1"]'),form=entry?.querySelector('[data-followup-edit="follow-up-1"]'),button=form?.querySelector('button[type="submit"]');return{status:entry?.querySelector(".followup-status")?.textContent,toast:document.querySelector("#toast").textContent,fail:window.__failFollowUpPatch,disabled:button?.disabled,hidden:form?.hidden,question:form?.elements.question.value,answer:form?.elements.answer.value,requests:window.__apiRequests.slice(-8)}})()`)));
   assert.deepEqual(await evaluate(`(() => {const form=document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"]');return{question:form.elements.question.value,answer:form.elements.answer.value,hidden:form.hidden}})()`),{
     question:"保存后的追问",answer:"保存后的回答",hidden:false
   });
@@ -3801,6 +3813,7 @@ try {
   const commercializationMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-commercialization-mobile.png",Buffer.from(commercializationMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
+  assert.equal(await evaluate(`window.__failNextStateRefresh`),false,"synthetic route refresh failure must be cleared before account navigation");
   await evaluate(`document.querySelector('[data-view="account"]').click(); true`);
   assert.equal(
     await waitUntil(`document.querySelectorAll("#account-role-list .account-role-row").length===2`),
@@ -3832,7 +3845,9 @@ try {
   await evaluate(`document.querySelector("#account-username").value="keeper"; document.querySelector("#username-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__usernameChanges===1&&document.querySelector("#account-page-name").textContent==="keeper"`), true);
   await evaluate(`document.querySelector("#password-form [name='currentPassword']").value="old-password-1"; document.querySelector("#password-form [name='newPassword']").value="new-password-2"; document.querySelector("#password-form [name='confirmPassword']").value="new-password-2"; document.querySelector("#password-form").requestSubmit(); true`);
-  assert.equal(await waitUntil(`window.__passwordChanges===1&&document.querySelector("#password-status").textContent.includes("密码已更新")`), true);
+  assert.equal(await waitUntil(`window.__passwordChanges===1&&!document.querySelector("#auth-gate").hidden&&document.querySelector("#auth-status").textContent.includes("密码已更新")`), true);
+  await evaluate(`(()=>{const form=document.querySelector("#login-form");form.elements.username.value="owner";form.elements.password.value="new-password-2";form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#auth-gate").hidden&&document.querySelector("#account-name").textContent==="owner"`),true);
   await evaluate(`document.querySelector('[data-view="settings"]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector("#view-settings").classList.contains("active")&&!document.querySelector("#view-settings").inert&&!document.querySelector("#view-settings").hasAttribute("aria-busy")`),true);
   assert.deepEqual(await evaluate(`(() => {const rate=document.querySelector("#tts-generation-rate"),voice=document.querySelector("#tts-default-voice"),preview=document.querySelector("#tts-voice-preview"),assistant=document.querySelector("#assistant-name").closest("label"),exclusive=document.querySelector("[data-exclusive-agent-comment]");return{profileModels:document.querySelectorAll("[data-profile-model]").length,profileEfforts:document.querySelectorAll("[data-profile-effort]").length,sceneTiers:document.querySelectorAll("[data-ai-scenario]").length,annotationSceneTiers:document.querySelectorAll('[data-ai-scenario="annotationShenji"]').length,sceneEfforts:document.querySelectorAll("[data-ai-effort]").length,responseStyles:document.querySelectorAll("[data-response-style]").length,annotationStyles:document.querySelectorAll('[data-response-style="annotationShenji"]').length,exclusiveLabel:exclusive?.querySelector("span")?.textContent,exclusiveAfterAssistant:assistant.nextElementSibling===exclusive,voice:voice.value,voices:voice.options.length,previewName:preview.getAttribute("aria-label"),previewTitle:preview.title,min:rate.min,max:rate.max,value:rate.value,accessibleName:rate.getAttribute("aria-label"),valueText:rate.getAttribute("aria-valuetext"),label:document.querySelector("#tts-generation-rate-value").textContent}})()`), {

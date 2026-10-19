@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 517,
-  "updated_at": "2026-10-19T16:16:59.706Z",
+  "revision": 524,
+  "updated_at": "2026-10-19T17:03:28.038Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,10 +17,10 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "候选e52db1组合验收失败：返修通知专项v2端口夹具"
+    "phase": "候选7164df组合验收失败：拆分data sync runtime"
   },
   "scope": {
-    "description": "v0.5.16版本元数据已更新，PWA静态闭包与模块夹具返修完成；固定e52db1候选执行组合回归、release旅程、发布保护及有状态全局门。",
+    "description": "e52db1 release旅程后端及发布保护已通过，前端通知专项因旧夹具缺少record-sync端口失败；修复仅涉及测试夹具与控制面，新候选7164df继续受影响重验。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8",
@@ -77,7 +77,15 @@
         "scripts/pwa-regression.mjs",
         "knowledge/module-boundaries.json",
         "scripts/module-boundary-regression.mjs",
-        "scripts/frontend-notifications-feature-regression.mjs"
+        "scripts/frontend-notifications-feature-regression.mjs",
+        "public/frontend/app/runtime/data-sync-runtime.mjs",
+        "scripts/frontend-runtime-composition-regression.mjs",
+        "public/frontend/app/runtime/home-runtime.mjs",
+        "public/frontend/app/runtime/home-formatters.mjs",
+        "scripts/ui-regression.mjs",
+        "public/frontend/features/annotations/view.mjs",
+        "public/frontend/features/thoughts/view.mjs",
+        "scripts/mobile-platform-regression.mjs"
       ],
       "forbidden_write_set": [
         ".trae/skills/tell-me/**",
@@ -95,10 +103,10 @@
     }
   ],
   "candidate": {
-    "id": "v0.5.16-e52db1",
+    "id": "v0.5.16-7164df",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "e52db1",
-    "tree": "e7b737",
+    "sha": "7164df",
+    "tree": "6c327d",
     "version": "0.5.16",
     "status": "REMEDIATION_REQUIRED",
     "release_frozen": false,
@@ -114,9 +122,9 @@
     "quality_gate": {
       "release_metadata_pwa": "PENDING",
       "static_module_contracts": "PENDING",
-      "full_regression": "NOT_RUN",
+      "full_regression": "PENDING",
       "release_journeys": "FAIL",
-      "release_protection": "NOT_RUN",
+      "release_protection": "PASS",
       "stateful_postgres_startup": "NOT_RUN",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
@@ -155,7 +163,7 @@
   },
   "blockers": [],
   "next_action": {
-    "description": "补齐通知专项createRecordSyncLoop端口夹具，执行受影响前端组合门后提交新候选；e52db1失败保持历史。",
+    "description": "把移动平台夹具迁移到合成认证运行时，API与Chrome绑定同一Owner会话后重跑完整frontend段。",
     "owner": "主控",
     "requires_owner": false
   },

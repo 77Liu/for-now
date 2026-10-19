@@ -3,6 +3,7 @@ import { publishDomains, state } from "../../state/index.mjs";
 import { createHomeChatRenderer } from "./home-chat-renderer.mjs";
 import { createHomeCheckinRenderer } from "./home-checkin-renderer.mjs";
 import { createHomeSelectionQuoteModal } from "./home-selection-quote-modal.mjs";
+import { compactNumber, formatCny, formatDuration, shiftLocalDateKey } from "./home-formatters.mjs";
 
 export function createHomeRuntime({
   runtime,$,$$,eventDate,eventTimestamp,formatDate,formatDateKey,
@@ -120,32 +121,6 @@ function llmProfile(scene = "thoughtAnswer") {
   return {tier, ...profile, effort};
 }
 
-const shiftLocalDateKey = (dateKey, days) => {
-  const [year, month, day] = String(dateKey).split("-").map(Number);
-  const shiftedDate = new Date(Date.UTC(year, month - 1, day + days));
-  return shiftedDate.toISOString().slice(0, 10);
-};
-const compactNumber=value=>new Intl.NumberFormat("zh-CN",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0);
-const formatCny = value => {
-  const number = Number(value) || 0;
-  const absolute = Math.abs(number);
-  let digits = 6;
-  if (absolute === 0) digits = 2;
-  else if (absolute >= 100) digits = 0;
-  else if (absolute >= 10) digits = 1;
-  else if (absolute >= 1) digits = 2;
-  else if (absolute >= 0.1) digits = 3;
-  else if (absolute >= 0.01) digits = 4;
-  const sign = number < 0 ? "-" : "";
-  return `${sign}¥${absolute.toFixed(digits)}`;
-};
-
-const formatDuration = value => {
-  const milliseconds = Number(value) || 0;
-  if (milliseconds >= 60000) return `${(milliseconds / 60000).toFixed(1)} 分钟`;
-  if (milliseconds >= 1000) return `${(milliseconds / 1000).toFixed(1)} 秒`;
-  return `${Math.round(milliseconds)} ms`;
-};
 function openCommercialSource(view,id,date){
   if(view==="together"&&date){runtime.activeDate=eventDate({occurredAt:date});renderDate();renderChat()}
   if(view==="thoughts")openThoughtDetail(id);else switchView(view);

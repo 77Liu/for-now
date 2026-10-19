@@ -69,7 +69,11 @@ export function createThoughtView({
     try {
       const storage = draftStorage();
       const previous = JSON.parse(storage?.getItem(draftKey) || "{}");
-      storage?.setItem(draftKey, JSON.stringify({ ...previous, thoughtForms: [...retainedDrafts.values()] }));
+      const next = { ...previous };
+      if (retainedDrafts.size) next.thoughtForms = [...retainedDrafts.values()];
+      else delete next.thoughtForms;
+      if (Object.keys(next).length) storage?.setItem(draftKey, JSON.stringify(next));
+      else storage?.removeItem?.(draftKey);
     } catch { /* 受限存储保留内存草稿，沿用既有 session-drafts 的失败语义。 */ }
   }
   function currentDrafts() {
