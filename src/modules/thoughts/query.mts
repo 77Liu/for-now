@@ -13,6 +13,7 @@
 import crypto from "node:crypto";
 import { THOUGHT_PAGING } from "../../shared/thought-pagination/index.mjs";
 import { createThoughtRecordRepository } from "../../shared/persistence/thought-record-repository.mjs";
+import type { RecordEntity } from "../../shared/persistence/record-command-types.mjs";
 import { readThoughtDetailRows } from "./projection.mjs";
 import type { ProjectionContext, ThoughtCursor, ThoughtPageInput, ThoughtPageRow, ThoughtQueryDependencies } from "./query-contracts.mjs";
 import { normalizeThoughtSearch, thoughtSearchGrams, THOUGHT_INDEX_SCHEMA } from "./query-contracts.mjs";
@@ -110,4 +111,15 @@ export async function getThoughtChainDetail(context: ProjectionContext, rootId: 
   if (!rows.length) return null;
   const graph = createThoughtRecordRepository(dependencies);
   return dependencies.detail(graph.rebuildRecordCollections(rows, ["thoughts"]).thoughts, rootId);
+}
+
+/** 编辑入口只读取当前内容块的原字段，附属备注和批注仍由链详情读取。 @since unreleased */
+export async function getThoughtBlockInput({ client, accountId }: ProjectionContext, blockId: string) {
+  const result = await client.query<{ payload: RecordEntity; version: number }>(`
+    SELECT payload,version FROM for_now.store_objects
+    WHERE account_id=$1 AND object_key=$2 AND collection='thoughts'
+      AND parent_key IS NULL AND payload->>'type'<>'question'
+  `, [accountId, JSON.stringify(["thoughts", blockId])]);
+  const row = result.rows[0];
+  return row ? { ...row.payload, version: row.version } : null;
 }

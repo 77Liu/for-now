@@ -677,6 +677,233 @@
       "original real search/browser evidence reused; no production write or paid call; protected F9 fingerprints unchanged"
     ]
   },
+  "nightAutomaticAnswerSubset": {
+    "baseCommit": "e937f2",
+    "verifiedAt": "2026-10-19T06:01:00+08:00",
+    "status": "PASS_AUTOMATIC_ANSWER_SUBSET_UNCOMMITTED",
+    "caseSource": "scripts/thought-task-lifecycle-postgres-checks.mts",
+    "verified": [
+      "formal thought root create commit-tail failure fully rolls back",
+      "new root creates queued task with deferred input binding without model readiness work in its write transaction",
+      "formal background claim waits while onboarding extraction is running and invokes no provider",
+      "deferred waiting task does not persist an empty requestedInputHash",
+      "extraction failure releases task with real input hash and removes deferred binding",
+      "next claim reaches rejecting synthetic provider; record writeback preserves terminal error",
+      "full test:postgres:stable, personalized AI model gate and record command coverage passed"
+    ],
+    "logs": [
+      "/tmp/for-now-night-task-auto-postgres.log",
+      "/tmp/for-now-night-task-auto-model.log",
+      "/tmp/for-now-night-task-auto-record.log"
+    ],
+    "limitations": [
+      "this execution preceded the cancelling restart recovery change",
+      "current source differs; this result does not claim current full source PASS",
+      "content runtime and module checks not rerun after automatic-answer correction",
+      "source hashes and commit not refreshed because command execution is unavailable",
+      "TC10 remains open; stage7 not started"
+    ]
+  },
+  "nightCancellingRecoverySubset": {
+    "baseCommit": "e937f2",
+    "recordedAt": "2026-10-19T06:27:00+08:00",
+    "status": "PASS_SOURCE_SIMULATION_POSTGRES_NOT_RUN_UNCOMMITTED",
+    "caseSource": "scripts/thought-task-lifecycle-postgres-checks.mts",
+    "sourceManifest": [
+      { "path": "src/app/background-ai.mjs", "sha256_6": "59d2dd" },
+      { "path": "src/modules/tasks/index.mjs", "sha256_6": "b59590" },
+      { "path": "scripts/thought-task-lifecycle-postgres-checks.mts", "sha256_6": "38cb81" },
+      { "path": "scripts/postgres-runtime-checks.mjs", "sha256_6": "dffa38" }
+    ],
+    "manifestMethod": "Tool Read text reconstructed with terminal LF; pure JavaScript SHA256 checked against known vectors. Five protected file hashes match prior byte hashes after LF reconstruction. Formal shell byte verification remains pending.",
+    "sourceFiles": [
+      "src/app/background-ai.mjs",
+      "scripts/thought-task-lifecycle-postgres-checks.mts"
+    ],
+    "verified": [
+      "V8 tool read current background-ai source and invoked resume with synthetic in-memory dependencies",
+      "negative control reconstructed former resume selection and reproduced four tasks remaining cancelling with zero transitions",
+      "current source resolves four required cancelling tasks and notifications to cancelled",
+      "in-memory commit rejection preserves original state; replay creates no extra transitions",
+      "no context preparation, legacy updater, provider or dispatch in the synthetic recovery",
+      "reused unchanged compiled transition/task-repository/ChangeDraft modules with current task and notification lifecycle sources",
+      "compiled-command memory simulation creates eight update changes; four commands each read three/write two rows, task and notification versions rise from one to two",
+      "five protected F9 files retain the previously recorded hashes after Read terminal-LF reconstruction",
+      "editor diagnostics returned no entries for both modified source files"
+    ],
+    "resolvedSimulationFailures": [
+      "V8 lacks structuredClone; synthetic clone uses JSON serialization",
+      "first negative-control tool script had syntax error; reformatted and rerun successfully"
+    ],
+    "pendingValidation": [
+      "Node module assembly and TypeScript build",
+      "four formal background scheduler cancelling recovery PG cases and commit-tail rollback",
+      "task/notification final state, no dispatch/provider, replay no-op and three-read/two-write budgets in PG",
+      "content runtime, model gate, record command and module checks on the current candidate",
+      "formal filesystem-byte source and protected F9 hash verification, control-plane event and local commit"
+    ],
+    "limitations": [
+      "module dependencies were replaced with synthetic adapters; simulation is not PostgreSQL or production evidence",
+      "command directory capacity reached persists for both command tools",
+      "desktop terminal supplies no content or screenshot despite granted permissions",
+      "only file reads/edits and tool-runtime simulation remain available",
+      "new PG recovery fixture directly assembles background scheduler and record transitions; full content runtime importance-batch compatibility pump is outside this status-command test",
+      "TC10 full exit not granted; stage7 not started; no production or paid action"
+    ]
+  },
+  "nightDiscoveryClosureSubset": {
+    "baseCommit": "e937f2",
+    "recordedAt": "2026-10-19T06:40:00+08:00",
+    "status": "PASS_SOURCE_SQL_SIMULATION_POSTGRES_NOT_RUN_UNCOMMITTED",
+    "sourceManifest": [
+      { "path": "src/modules/thoughts/discovery-query.mts", "sha256_6": "133d2b" },
+      { "path": "scripts/thought-db-paging-regression.mts", "sha256_6": "981475" }
+    ],
+    "manifestMethod": "Read text reconstructed with terminal LF; formal byte verification pending.",
+    "sourceFiles": [
+      "src/modules/thoughts/discovery-query.mts",
+      "scripts/thought-db-paging-regression.mts"
+    ],
+    "verified": [
+      "current source adds trusted account plus LIMIT 5001 to selected candidate root/body-block query",
+      "V8 source simulation returns all 0/5000 rows without truncation",
+      "5001 synthetic rows reject with THOUGHT_DISCOVERY_TOO_LARGE and status 503 before graph assembly",
+      "uses existing 5000-row closure constant without new runtime configuration"
+    ],
+    "resolvedSimulationFailures": [
+      "initial conversion left a const type annotation",
+      "generic annotation with nested Record type was not fully removed; corrected source conversion passed"
+    ],
+    "pendingValidation": [
+      "formal PG query over a selected root with 5000 associated content blocks rejects oversized closure",
+      "TypeScript build, module and affected discovery/producer tests",
+      "current full stable PG and source/byte manifest refresh",
+      "control-plane defect event and local commit"
+    ],
+    "limitations": [
+      "V8 executed source with type annotations removed and synthetic SQL responses",
+      "no real SQL plan, RLS execution or current Node/TS build has run",
+      "command directory capacity reached still blocks terminal work",
+      "TC10/stage6 exit not granted; stage7 not started"
+    ]
+  },
+  "nightBlockInputSubset": {
+    "baseCommit": "e937f2",
+    "recordedAt": "2026-10-19T06:47:00+08:00",
+    "status": "PASS_SOURCE_SQL_SIMULATION_POSTGRES_NOT_RUN_UNCOMMITTED",
+    "sourceManifest": [
+      { "path": "src/modules/thoughts/query.mts", "sha256_6": "078a7b" },
+      { "path": "src/modules/thoughts/query-runtime.mts", "sha256_6": "cca9f0" },
+      { "path": "src/modules/thoughts/index.mjs", "sha256_6": "b237e1" },
+      { "path": "scripts/thought-db-paging-regression.mts", "sha256_6": "981475" },
+      { "path": "scripts/thought-producer-postgres-checks.mts", "sha256_6": "c38bcc" },
+      { "path": "scripts/thought-trash-http-checks.mts", "sha256_6": "c72186" }
+    ],
+    "manifestMethod": "Read text reconstructed with terminal LF; formal byte verification pending.",
+    "sourceFiles": [
+      "src/modules/thoughts/query.mts",
+      "src/modules/thoughts/query-runtime.mts",
+      "src/modules/thoughts/index.mjs",
+      "scripts/thought-db-paging-regression.mts",
+      "scripts/thought-producer-postgres-checks.mts",
+      "scripts/thought-trash-http-checks.mts"
+    ],
+    "verified": [
+      "block editing preparation now selects record input through the domain query runtime when paging is enabled",
+      "V8 executes current block lookup function with synthetic responses, one parameterized identity SQL per request",
+      "current thought service source getBlock called injected precise query twice with full account read forbidden and zero document reads",
+      "trusted account, non-root block type, database version and missing-null response checked"
+    ],
+    "pendingValidation": [
+      "formal producer service getBlock succeeds with account document read/update prohibited",
+      "real PostgreSQL lookup returns exactly one row in one query and rejects root/missing/foreign account",
+      "formal HTTP block edit/version/stale conflict/cross-account rejection in existing trash matrix",
+      "TypeScript/module/content/discovery/record checks and full current stable PG",
+      "current byte manifests, control-plane event and local commit"
+    ],
+    "limitations": [
+      "synthetic source simulation does not prove current TypeScript build, real SQL or full HTTP path",
+      "command directory capacity reached persists",
+      "current source adds this change after earlier PG runs; no current-candidate complete claim",
+      "TC10/stage6 exit not granted; stage7 not started"
+    ]
+  },
+  "nightStaticAuditSubset": {
+    "baseCommit": "e937f2",
+    "recordedAt": "2026-10-19T06:55:00+08:00",
+    "status": "PARTIAL_STATIC_REVIEW_EXECUTION_BLOCKED",
+    "verified": [
+      "Git HEAD and branch reference still identify feat/v0.5.16-sync-latency at e937f2",
+      "canonical coordination file still has revision 469; prepared update has not been applied",
+      "reviewed current cancellation recovery, discovery closure limit and block input query wiring",
+      "reviewed formal HTTP input completion and version conflict branches plus added PG fixture assertions",
+      "seven affected TypeScript files have no editor diagnostics; this is not a TypeScript build",
+      "read all local line-link targets in producer index and focused review table; cited content and ranges correspond",
+      "focused review table now explicitly includes unverified precise block input changes"
+    ],
+    "pendingValidation": [
+      "actual workspace diff and filesystem-byte source/protected-file verification",
+      "current full stable PostgreSQL suite including all added cases",
+      "current TypeScript/module/content/model/record/discovery checks",
+      "local commit and canonical coordination update through the designated command"
+    ],
+    "limitations": [
+      "command execution still fails with command directory capacity reached",
+      "file and editor inspection do not prove runtime or SQL behavior",
+      "stage6 TC10 remains open; stage7 not started",
+      "no asynchronous background execution or 08:30 scheduled report has been created"
+    ]
+  },
+  "resumedValidationSubset": {
+    "baseCommit": "e937f2",
+    "verifiedAt": "2026-10-19T09:06:00+08:00",
+    "status": "PASS_CURRENT_REMEDIATION_SUBSET_STAGE6_EXIT_PENDING",
+    "sourceManifest": [
+      { "path": "src/app/background-ai.mjs", "sha256_6": "59d2dd" },
+      { "path": "src/modules/tasks/index.mjs", "sha256_6": "b59590" },
+      { "path": "src/modules/thoughts/discovery-query.mts", "sha256_6": "133d2b" },
+      { "path": "src/modules/thoughts/query.mts", "sha256_6": "078a7b" },
+      { "path": "src/modules/thoughts/query-runtime.mts", "sha256_6": "cca9f0" },
+      { "path": "src/modules/thoughts/index.mjs", "sha256_6": "b237e1" },
+      { "path": "scripts/postgres-runtime-checks.mjs", "sha256_6": "dffa38" },
+      { "path": "scripts/thought-task-lifecycle-postgres-checks.mts", "sha256_6": "38cb81" },
+      { "path": "scripts/thought-db-paging-regression.mts", "sha256_6": "981475" },
+      { "path": "scripts/thought-producer-postgres-checks.mts", "sha256_6": "c38bcc" },
+      { "path": "scripts/thought-trash-http-checks.mts", "sha256_6": "c72186" }
+    ],
+    "manifestMethod": "Actual filesystem bytes hashed with Python hashlib.sha256; all prior reconstructed source hashes and five protected F9 hashes matched.",
+    "environment": "Local macOS, Node 24.19.0, PostgreSQL 16.14, test:postgres:stable signed Node preparation, isolated synthetic databases and rejecting/mock providers.",
+    "verified": [
+      "full npm run test:postgres:stable exited 0, including current TypeScript runtime and fixture builds",
+      "formal automatic root answer creation, deferred model waiting, release and next claim passed",
+      "four cancelling tasks restart to cancelled with notifications, commit-tail rollback, replay no-op and zero provider/dispatch passed in PG",
+      "oversized selected discovery closure rejects at SQL row limit in real PG",
+      "formal producer service precise block read passed with account document read/update forbidden",
+      "block SQL lookup returns one row in one query; root/missing/foreign-account lookup returns null",
+      "formal HTTP block edit/version/stale conflict/cross-account denial and deletion restoration passed",
+      "thirty producer success/failure matrix, related-history scale plans, task creation/transitions/lifecycle, full HTTP/restart/independent export restore passed",
+      "content runtime, full personalized AI model gate, thought service, discovery, record commands, module boundaries, frontend thoughts and document links passed",
+      "canonical control audit passed; development-resumed event applied through unique entry at revision 470"
+    ],
+    "logs": [
+      "/tmp/for-now-stage6-resumed-postgres.log",
+      "/tmp/for-now-stage6-resumed-content.log",
+      "/tmp/for-now-stage6-resumed-model.log",
+      "/tmp/for-now-stage6-resumed-thoughts.log",
+      "/tmp/for-now-stage6-resumed-discovery.log",
+      "/tmp/for-now-stage6-resumed-record.log",
+      "/tmp/for-now-stage6-resumed-modules.log",
+      "/tmp/for-now-stage6-resumed-frontend.log",
+      "/tmp/for-now-stage6-resumed-links.log"
+    ],
+    "limitations": [
+      "this closes pending runtime validation of the listed repairs; stage6 final exit audit and local commit remain pending",
+      "earlier simulation and execution-blocked records preserve their original historical conclusions",
+      "real corpus and actual browser evidence reused; this PG run records corpus NOT_RUN",
+      "personal context remains outside-transaction full read; other task families retain compatibility lifecycle",
+      "no production writes, deployment, paid calls or stage7 implementation"
+    ]
+  },
   "protectedFiles": [
     {
       "path": "public/frontend/app/runtime/home-runtime.mjs",

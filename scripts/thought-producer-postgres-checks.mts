@@ -37,6 +37,7 @@ type Context = {
   account<T>(id: string, operation: () => Promise<T>): Promise<T>;
   createQueries(repo: Repository): Queries;
   createService(repo: Repository, queries: Queries): ThoughtLocalCommands & {
+    getBlock(id: string): Promise<RecordStore["thoughts"][number] | null>;
     scheduledTaskIds: string[];
     cancelledTaskIds: string[];
     annotationCommands: AnnotationCommands;
@@ -176,6 +177,11 @@ async function blockCommandMatrix(context: Context, service: ReturnType<Context[
     assert.equal(replay.value?.id, block.value.id);
     assert.equal(replay.duplicate, true);
     await assert.rejects(service.createBlock({ ...blockInput, content: "重用标识冲突" }), { code: "IDEMPOTENCY_KEY_REUSED" });
+    const currentBlock = await service.getBlock(block.value.id);
+    assert.equal(currentBlock?.content, blockInput.content);
+    assert.equal(currentBlock?.version, 1);
+    assert.equal(await service.getBlock(rootId), null);
+    assert.equal(await service.getBlock("missing-producer-block"), null);
     await failureCase(context, "thought.block.create", () => service.createBlock({
       ...blockInput, clientRequestId: "producer-failed-block"
     }));

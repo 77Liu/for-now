@@ -31,7 +31,7 @@ import {
   userModelCoreReadiness, createPerceptionAwareRepository, createPerceptionRuntime,
   createNotificationRecordCommands, createTaskRecordCommands,
   createThoughtRecordCommands, createTrashMutations, createTrashCommands, createContentAttachmentRecordCommands,
-  createContentAiRecordCommands, createAiTaskTargets
+  createContentAiRecordCommands, createAiTaskTargets, prepareUserModelExtraction
 } from "../src/app/index.mjs";
 import { createCaptureRecords } from "../src/modules/captures/index.mjs";
 import { createAnnotationService } from "../src/modules/annotations/index.mjs";
@@ -45,7 +45,7 @@ import {
   stripThoughtAnswerLead
 } from "../src/modules/thoughts/index.mjs";
 import { evidenceSourceKey } from "../src/modules/user-model/index.mjs";
-import { onboardingV2Schema } from "../src/modules/onboarding/index.mjs";
+import { onboardingV2Schema, normalizeOnboardingV2 } from "../src/modules/onboarding/index.mjs";
 import { eventTimeFields } from "../src/shared/time/index.mjs";
 import { recordVersion } from "../src/shared/validation/index.mjs";
 import { createTrashService } from "../src/modules/trash/index.mjs";
@@ -1409,14 +1409,21 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         notifications: createNotificationService({
           createId: () => crypto.randomUUID(), now: () => "2026-10-19T00:00:00.000Z"
         }),
+        normalizeOnboarding: normalizeOnboardingV2,
+        prepareModel: prepareUserModelExtraction,
         createBackground: createBackgroundAi,
-        createRuntime: overrides => createThoughtRuntimeFixture(createContentRuntime, {
-          ...overrides.repository, queryRecords: undefined, installRecordProjection: undefined
-        }, "thought-producer-test", {
-          ...overrides,
-          repository: { ...overrides.repository, queryRecords: undefined, installRecordProjection: undefined },
-          thoughtPagingConfig: { enabled: false }
-        }).backgroundAi
+        createRuntime: overrides => {
+          const fixture = createThoughtRuntimeFixture(createContentRuntime, {
+            ...overrides.repository, queryRecords: undefined, installRecordProjection: undefined
+          }, "thought-producer-test", {
+            ...overrides,
+            repository: { ...overrides.repository, queryRecords: undefined, installRecordProjection: undefined },
+            thoughtPagingConfig: { enabled: false }
+          });
+          return Object.assign(fixture.backgroundAi, {
+            createRoot: input => fixture.rootCommands.create(input)
+          });
+        }
       });
     });
     await account("repo-test", () => pagingQueries.rebuild());

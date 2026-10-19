@@ -412,6 +412,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
     task.inputVersion = work.inputVersion || 0;
     task.subtargetVersion = work.subtargetVersion || 0;
     task.inputHash = work.inputHash || "";
+    delete task.deferredInputBinding;
     task.status = "queued";
     task.updatedAt = now();
     task.error = "";
@@ -490,7 +491,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
       if (!Object.hasOwn(task, "requestedSubtargetVersion")) {
         task.requestedSubtargetVersion = task.subtargetVersion || 0;
       }
-      if (!Object.hasOwn(task, "requestedInputHash")) {
+      if (!Object.hasOwn(task, "requestedInputHash") && task.deferredInputBinding !== true) {
         task.requestedInputHash = task.inputHash || "";
       }
       task.status = WAITING_FOR_USER_MODEL_STATUS;

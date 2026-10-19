@@ -11,6 +11,7 @@
  * @partialUsage 默认关闭 THOUGHT_PAGING_ENABLED；仅供隔离验收，不开启生产查询。
  */
 import type { ObjectRow } from "../../shared/persistence/account-unit-of-work.mjs";
+import { RECORD_QUERY_LIMITS } from "../../shared/persistence/record-query-limits.mjs";
 import { createThoughtRecordRepository } from "../../shared/persistence/thought-record-repository.mjs";
 import type { ProjectionContext, ThoughtDiscoveryInput, ThoughtQueryDependencies } from "./query-contracts.mjs";
 import { assertThoughtIndexReady } from "./query.mjs";
@@ -71,7 +72,14 @@ export async function queryThoughtDiscoveryCandidates(context: ProjectionContext
       UNION ALL SELECT object_key FROM for_now.store_relations
         WHERE account_id=$1 AND relation='thoughtRoot' AND target_key=ANY($2::text[])
     )
-  `, [accountId, rootKeys]);
+    LIMIT $3
+  `, [accountId, rootKeys, RECORD_QUERY_LIMITS.closureRows + 1]);
+  if (objects.rows.length > RECORD_QUERY_LIMITS.closureRows) {
+    throw Object.assign(new Error("发现候选关联内容过大，请缩小查询范围"), {
+      statusCode: 503,
+      code: "THOUGHT_DISCOVERY_TOO_LARGE"
+    });
+  }
   const graph = createThoughtRecordRepository(dependencies);
   return {
     thoughts: graph.rebuildRecordCollections(objects.rows, ["thoughts"]).thoughts,

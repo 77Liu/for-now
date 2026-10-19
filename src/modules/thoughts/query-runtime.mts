@@ -17,7 +17,9 @@ import type { ProjectionContext, ThoughtProjection, ThoughtQueryDependencies, Th
 import { createThoughtProjection } from "./projection.mjs";
 import { queryThoughtDiscoveryCandidates } from "./discovery-query.mjs";
 import { THOUGHT_PAGING } from "../../shared/thought-pagination/index.mjs";
-import { assertThoughtIndexReady, getThoughtChainDetail, listThoughtChainsPage } from "./query.mjs";
+import {
+  assertThoughtIndexReady, getThoughtBlockInput, getThoughtChainDetail, listThoughtChainsPage
+} from "./query.mjs";
 import { assertThoughtProducerBindings, incompleteThoughtProducers } from "./producer-coverage.mjs";
 import type { ThoughtProducerBindings } from "./producer-coverage.mjs";
 export type ThoughtQueryRepository = {
@@ -133,6 +135,11 @@ export function createThoughtQueryRuntime({ repository, dependencies, enabled }:
     detail: (rootId: string) => {
       assertReady();
       return query(context => getThoughtChainDetail(context, rootId, dependencies));
+    },
+    /** 取得编辑所需当前块字段；读取前仍核对完整生产者装配。 @since unreleased */
+    blockInput: (blockId: string) => {
+      assertReady();
+      return query(context => getThoughtBlockInput(context, blockId));
     },
     async rebuild() {
       let afterRootId = "";

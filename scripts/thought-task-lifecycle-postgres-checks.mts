@@ -21,8 +21,10 @@ type Background = {
   enqueue(input: Record<string, unknown>): Promise<{ task?: RecordEntity }>;
   releaseWaiting(): Promise<number>;
   run(id: string): Promise<void>;
+  resume(): Promise<void>;
   registerHandler(kind: string, handler: Record<string, unknown>): void;
   cleanupForAccountRecovery(identity: Record<string, unknown>, guard: unknown): Promise<unknown>;
+  createRoot?(input: Record<string, unknown>): Promise<{ task?: RecordEntity; items?: RecordEntity[] }>;
 };
 type Factory = (options: Record<string, unknown>) => Background;
 type Context = {
@@ -33,6 +35,8 @@ type Context = {
   createRuntime: Factory;
   tasks: unknown;
   notifications: unknown;
+  normalizeOnboarding(value: unknown): unknown;
+  prepareModel(store: RecordStore): { value: { inputHash: string } };
 };
 const accountId = "thought-producer-test";
 const rootId = "lifecycle-root";
@@ -282,6 +286,142 @@ async function cleanupMatrix(context: Context) {
     .every(item => item.reads <= 3 && item.writes <= 2));
 }
 
+async function automaticAnswerMatrix(context: Context) {
+  await context.repo.update(store => {
+    store.onboardingV2 = context.normalizeOnboarding({
+      migration: { selectedFlow: "v2" },
+      session: {
+        revision: 1,
+        answers: { currentContext: { rawText: "自动回答等待整理", contextAllowed: true, version: 1 } }
+      }
+    }) as RecordStore["onboardingV2"];
+    const extraction = context.prepareModel(store).value;
+    store.aiTasks.push({
+      id: "lifecycle-model-inflight", kind: "onboardingClaimExtraction", targetId: "onboarding-v2",
+      status: "running", inputVersion: 1, inputHash: extraction.inputHash, createdAt: timestamp
+    });
+  });
+  const probe = instrument(context);
+  let providers = 0;
+  const background = context.createRuntime({
+    repository: probe.repository,
+    runDeepSeek: async () => {
+      providers += 1;
+      throw Object.assign(new Error("synthetic provider failure"), { code: "LIFECYCLE_PROVIDER_PROBE" });
+    }
+  });
+  assert.ok(background.createRoot);
+  const createInput = {
+    questionText: "自动回答事务外等候",
+    tags: [],
+    eventTime: { occurredAt: timestamp, occurredOn: "2026-10-19" },
+    clientRequestId: "lifecycle-auto-root",
+    requestHash: "lifecycle-auto-root",
+    generateAnswer: true
+  };
+  await failCommit(context.database, "thought.create", () => background.createRoot!(createInput));
+  const created = await background.createRoot(createInput);
+  const taskId = String(created.task?.id);
+  assert.equal(created.task?.deferredInputBinding, true);
+  assert.equal(created.task?.status, "queued");
+  await background.run(taskId);
+  const waiting = (await context.repo.read()).aiTasks.find(task => task.id === taskId)!;
+  assert.equal(waiting.status, "waiting_for_user_model");
+  assert.equal(Object.hasOwn(waiting, "requestedInputHash"), false, "unbound input cannot pin an empty hash");
+  assert.equal(providers, 0);
+  await context.repo.update(store => {
+    store.aiTasks.find(task => task.id === "lifecycle-model-inflight")!.status = "failed";
+  });
+  await background.releaseWaiting();
+  const promoted = (await context.repo.read()).aiTasks.find(task => task.id === taskId)!;
+  assert.equal(promoted.status, "queued", "unbound waiting task can release after model preparation ends");
+  assert.ok(promoted.inputHash);
+  assert.equal(Object.hasOwn(promoted, "deferredInputBinding"), false);
+  await background.run(taskId);
+  assert.equal(providers, 1, "released automatic task passes input verification and reaches the provider");
+  assert.equal((await context.repo.read()).aiTasks.find(task => task.id === taskId)?.errorCode, "LIFECYCLE_PROVIDER_PROBE");
+}
+
+async function cancellingRecoveryMatrix(context: Context) {
+  await context.repo.update(store => {
+    for (const task of store.aiTasks) {
+      if (!["queued", "running", "cancelling", "waiting_for_user_model"].includes(String(task.status))) continue;
+      task.status = "cancelled";
+      const notification = store.notifications.find(item => item.taskId === task.id);
+      if (notification) notification.status = "cancelled";
+    }
+    for (const kind of kinds) {
+      const id = `lifecycle-restart-cancelling:${kind}`;
+      store.aiTasks.push({
+        id,
+        ...input(kind, id),
+        status: "cancelling",
+        attempt: 1,
+        createdAt: timestamp,
+        cancellationRequestedAt: timestamp,
+        error: "目标已删除，正在停止生成"
+      });
+      store.notifications.push({
+        id: `notification:${id}`,
+        taskId: id,
+        status: "cancelling",
+        createdAt: timestamp,
+        readAt: ""
+      });
+    }
+  });
+  const probe = instrument(context);
+  let providers = 0;
+  let dispatched = 0;
+  const background = context.createBackground({
+    repository: probe.repository,
+    tasks: context.tasks,
+    notifications: context.notifications,
+    recordCommands: {
+      enabled: (name: string) => name === "task.status",
+      tasks: {
+        cancel: () => { throw new Error("Restart cannot invoke user cancellation"); },
+        bindInput: () => { throw new Error("Restart cannot bind cancelled input"); }
+      },
+      transitions: createTaskTransitionCommands({
+        unitOfWork: probe.repository.accountUnitOfWork,
+        mapping: context.mapping
+      })
+    },
+    targets: {
+      prepare() { throw new Error("Restart cancellation cannot compile context"); },
+      save() { throw new Error("Restart cancellation cannot save model output"); },
+      result: () => null
+    },
+    now: () => timestamp,
+    contextKey: () => accountId,
+    onError: (error: unknown) => { throw error; },
+    dispatch: () => { dispatched += 1; },
+    generate: async () => {
+      providers += 1;
+      throw new Error("Restart cancellation cannot invoke a provider");
+    }
+  });
+  await failCommit(context.database, "task.recover", () => background.resume());
+  assert.equal(dispatched, 0);
+  await background.resume();
+  const store = await context.repo.read();
+  for (const kind of kinds) {
+    const id = `lifecycle-restart-cancelling:${kind}`;
+    const task = store.aiTasks.find(item => item.id === id)!;
+    assert.equal(task.status, "cancelled");
+    assert.equal(task.errorCode, "AI_TASK_CANCELLED");
+    assert.equal(task.completedAt, timestamp);
+    assert.equal(store.notifications.find(item => item.taskId === id)?.status, "cancelled");
+  }
+  const recovered = await snapshot(context.database);
+  await background.resume();
+  assert.deepEqual(await snapshot(context.database), recovered);
+  assert.equal(dispatched, 0);
+  assert.equal(providers, 0);
+  assert.ok(probe.measures.every(item => item.reads <= 3 && item.writes <= 2));
+}
+
 /** 等待准备和隔离收尾按正式调度/权限链验证，保留来源记录。 @since unreleased */
 export async function runThoughtTaskLifecyclePostgresChecks(context: Context) {
   await context.repo.update(store => {
@@ -306,5 +446,9 @@ export async function runThoughtTaskLifecyclePostgresChecks(context: Context) {
   const before = await sources();
   await cleanupMatrix(context);
   assert.deepEqual(await sources(), before);
-  console.log("Thought task lifecycle PostgreSQL passed: four waiting releases prepare outside transactions, immutable sources, revision race rejection, four restricted cleanup kinds, formal quarantine callback, exact two-row writes, tail rollback and stale-attempt/replay no-op.");
+  await automaticAnswerMatrix(context);
+  const beforeRecovery = await sources();
+  await cancellingRecoveryMatrix(context);
+  assert.deepEqual(await sources(), beforeRecovery);
+  console.log("Thought task lifecycle PostgreSQL passed: four waiting releases prepare outside transactions, immutable sources, revision race rejection, four restricted cleanup kinds, formal quarantine callback, automatic answer deferred waiting/release, four cancelling restart recoveries, exact two-row writes, tail rollback and stale-attempt/replay no-op.");
 }

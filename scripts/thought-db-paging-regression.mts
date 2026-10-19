@@ -151,6 +151,12 @@ async function verifyDiscovery(context: Context, queries: QueryRuntime) {
     store.captures = [{ id: "paging-capture", content: "中文焦虑成长", version: 1,
       createdAt: "2026-10-18T12:00:00.000Z" }];
   });
+  const answerInput = await queries.blockInput("paging-answer");
+  assert.equal(answerInput?.content, "AI未回看专用答案");
+  assert.equal(answerInput?.version, 1);
+  assert.equal(await queries.blockInput(fixture(0).id), null);
+  assert.equal(await queries.blockInput("missing-block"), null);
+  assert.equal(await context.account("repo-test", () => queries.blockInput("paging-answer")), null);
   const bounded = context.discovery(queries);
   const legacy = context.discovery(null);
   for (const input of [
@@ -195,6 +201,49 @@ async function verifyDiscovery(context: Context, queries: QueryRuntime) {
       { ...current, id: "other-speech", sourceId: "other-root" }];
   });
   assert.deepEqual((await context.speechAssets(sources)).map(item => item.id), ["paging-speech"]);
+}
+
+async function verifyDiscoveryClosureLimit(context: Context, queries: QueryRuntime) {
+  const rootId = fixture(0).id;
+  const accountId = "thought-paging-db";
+  const childKeys = Array.from({ length: 5000 }, (_, index) => (
+    JSON.stringify(["thoughts", `paging-discovery-large-${index + 1}`])
+  ));
+  await context.database.query(`
+    INSERT INTO for_now.store_objects(
+      account_id,object_key,collection,kind,id,parent_key,field,position,
+      child_fields,content,status,author_type,version,payload
+    )
+    SELECT $1,'["thoughts","paging-discovery-large-'||n||'"]',
+      'thoughts','thought','paging-discovery-large-'||n,NULL,'thoughts',NULL,
+      '[]','过大候选内容','ready','user',1,
+      jsonb_build_object('id','paging-discovery-large-'||n,'type','idea','version',1)
+    FROM generate_series(1,5000) n
+  `, [accountId]);
+  try {
+    await context.database.query(`
+      INSERT INTO for_now.store_relations(
+        account_id,object_key,relation,target_key,target_collection,target_id,resolution
+      )
+      SELECT $1,'["thoughts","paging-discovery-large-'||n||'"]',
+        'thoughtRoot',$2,'thoughts',$3,'live'
+      FROM generate_series(1,5000) n
+    `, [accountId, JSON.stringify(["thoughts", rootId]), rootId]);
+    await assert.rejects(queries.discovery({
+      query: "AI未回看专用答案",
+      types: ["answer"],
+      freshOnly: false,
+      limit: 1,
+      includeTotals: false,
+      now: Date.parse("2026-10-19T00:00:00.000Z"),
+      before: null
+    }), { code: "THOUGHT_DISCOVERY_TOO_LARGE" });
+  } finally {
+    await context.database.query(`DELETE FROM for_now.store_relations
+      WHERE account_id=$1 AND object_key=ANY($2::text[])`, [accountId, childKeys]);
+    await context.database.query(`DELETE FROM for_now.store_objects
+      WHERE account_id=$1 AND object_key=ANY($2::text[])`, [accountId, childKeys]);
+  }
 }
 
 async function verifyScale(context: Context, queries: QueryRuntime) {
@@ -276,6 +325,12 @@ export async function runThoughtDbPagingChecks(context: Context): Promise<QueryR
     await verifySearchAndDetail(context, queries);
     await verifyAtomicity(context, queries);
     await verifyDiscovery(context, queries);
+    trace.length = 0;
+    assert.equal((await queries.blockInput("paging-answer"))?.content, "AI未回看专用答案");
+    assert.equal(trace.length, 1);
+    assert.equal(trace[0].rows, 1);
+    assert.ok(trace[0].sql.includes("object_key=$2"));
+    await verifyDiscoveryClosureLimit(context, queries);
     const first = await queries.list({});
     await repo.update(store => {
       store.thoughts.push(fixture(1001));
@@ -302,6 +357,6 @@ export async function runThoughtDbPagingChecks(context: Context): Promise<QueryR
     assert.match(JSON.stringify(plans.rows), /thought_chain_occurred_idx/u);
     await verifyScale(context, queries);
   });
-  console.log("Thought DB paging passed: 1001 next/prev, scope, search parity, bounded DTO/detail, atomicity, legacy producer and explicit rebuild.");
+  console.log("Thought DB paging passed: 1001 next/prev, scope, search parity, bounded DTO/detail and discovery closure rejection, atomicity, legacy producer and explicit rebuild.");
   return queries;
 }

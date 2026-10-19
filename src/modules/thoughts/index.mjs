@@ -658,6 +658,7 @@ export function createThoughtService({
     },
 
     async getBlock(id) {
+      if (queryRuntime?.enabled) return queryRuntime.blockInput(id);
       const store = await repository.read();
       return store.thoughts.find(item => item.id === id && item.type !== "question") || null;
     },

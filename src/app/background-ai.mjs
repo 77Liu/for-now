@@ -210,7 +210,9 @@ export function createBackgroundAi({
         return { budgetQueueFull: true };
       }
     }
-    const waiting = prepared ? prepared.waiting : Boolean(shouldWaitForModel(store, input));
+    // 新根的自动回答先登记未绑定任务；实际认领时在事务外核验模型资格。
+    const waiting = prepared ? prepared.waiting
+      : !deferInputBinding && Boolean(shouldWaitForModel(store, input));
     const requestedIntent = prepared ? prepared.intent : waiting ? inspectRequestedIntent(store, input) : null;
     if (waiting && !requestedIntent) return { missing: true };
     return notifyCreated(store, tasks.create(
@@ -716,10 +718,15 @@ export function createBackgroundAi({
     const snapshot = await repository.read();
     const ids = [];
     for (const task of snapshot.aiTasks) {
-      if (!taskTransitions.supports(task) || !["queued", "running"].includes(task.status)) continue;
+      if (!taskTransitions.supports(task)
+        || !["queued", "running", "cancelling"].includes(task.status)) continue;
       const ready = await transitionTask(task.id, "recover", store => {
         const current = store.aiTasks.find(item => item.id === task.id);
         if (!current) return false;
+        if (current.status === "cancelling") {
+          cancelled(store, current);
+          return false;
+        }
         if (current.status === "running") {
           tasks.recover([current]);
           targetFor(current).fail?.(store, current, { code: "TASK_INTERRUPTED" });

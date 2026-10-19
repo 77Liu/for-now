@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 type Response = {
   status: number;
-  body: { id?: string; trashId?: string; items?: { id: string; type: string }[] };
+  body: { id?: string; content?: string; version?: number; trashId?: string; items?: { id: string; type: string }[] };
 };
 type Request = (
   base: string,
@@ -28,6 +28,20 @@ export async function runThoughtTrashHttpChecks({
   const root = items.find(item => item.type === "question");
   const block = items.find(item => item.type === "idea");
   assert.ok(root && block);
+  const editRoute = `/api/thoughts/${block.id}`;
+  assert.equal((await request(base, editRoute, {
+    method: "PATCH", cookie: otherCookie, body: { content: "跨账户禁止修改" }
+  })).status, 404);
+  const edited = await request(base, editRoute, {
+    method: "PATCH", cookie, body: { content: "HTTP 精准内容块修改", expectedVersion: 1 }
+  });
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+  assert.equal(edited.body.content, "HTTP 精准内容块修改");
+  assert.equal(edited.body.version, 2);
+  const staleEdit = await request(base, editRoute, {
+    method: "PATCH", cookie, body: { content: "旧版本不可覆盖", expectedVersion: 1 }
+  });
+  assert.equal(staleEdit.status, 409);
   const remark = await request(base, `/api/thoughts/${block.id}/remarks`, {
     method: "POST", cookie, body: { text: "HTTP 块内备注" }
   });

@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 468,
-  "updated_at": "2026-10-18T21:54:33.741Z",
+  "revision": 471,
+  "updated_at": "2026-10-19T01:06:26.590Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -130,7 +130,7 @@
       "execution_window": {
         "finish_at": "2026-10-19T08:30:00+08:00",
         "purpose": "本轮夜间执行收尾与Owner评审汇报",
-        "source": "Owner本轮明确指令"
+        "source": "原夜间08:30收尾时间已过；Owner09:02确认继续当前开发，沿原持续授权推进。"
       }
     }
   ],
@@ -171,15 +171,15 @@
       "status": "OPEN",
       "owner": "主控",
       "blocks": "阶段6出口及阶段7实施",
-      "reason": "四类必要任务的入队/重试/认领/等待释放/恢复及账户隔离收尾均接入局部记录事务；上下文与等待资格在事务外准备。全部生产者调用链和维护边界的最终审计未完成，TC10保持OPEN。",
+      "reason": "当前源码真实stable PG、TS构建、正式HTTP和受影响模型/内容/发现/记录/模块/前端专项通过，已验证自动回答等待、取消中恢复、发现超限和块精准读取；返修提交及完整阶段6出口终审仍待完成，TC10未核定。",
       "evidence": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskLifecycleSubset",
-        "reviews/2026-10-19-stage6-browser-remediation.md"
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#resumedValidationSubset",
+        "reviews/2026-10-19-stage6-browser-remediation.md#L204-L208"
       ]
     }
   ],
   "next_action": {
-    "description": "继续阶段6全部生产者调用链和维护边界终审；完整出口通过后沿唯一串行路径推进，08:30收尾Owner评审表。",
+    "description": "提交并验证不含F9保护差分的阶段6返修候选，再完成TC01—TC12及维护边界终审；出口满足后登记唯一串行后继阶段7。",
     "owner": "主控",
     "requires_owner": false
   },
