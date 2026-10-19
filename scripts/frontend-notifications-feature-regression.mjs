@@ -9,6 +9,13 @@ import { createDataRuntime } from "../public/frontend/app/runtime/data-runtime.m
 import { state } from "../public/frontend/state/index.mjs";
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
+const createIdleRecordSyncLoop = () => ({
+  async start() { return false; },
+  stop() {},
+  async pull() { return false; },
+  async rebase() { return false; },
+  cursor() { return 0; }
+});
 
 {
   const runtime = {};
@@ -27,6 +34,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     createRequestCoordinator: () => ({}),
     createRefreshCoordinator: () => ({ refresh: async () => targetLoaded }),
     createIncrementalSync: () => ({}),
+    createRecordSyncLoop: createIdleRecordSyncLoop,
     $: () => ({ hidden: false }),
     getActionsCoordinator: () => ({}),
     renderStateChart() {},
@@ -555,6 +563,7 @@ console.log("Frontend notifications feature checks passed.");
     apiClient: { request: async (_url, options) => { receivedSignal = options.signal; return { data: { cursor: 0, changes: [] } }; } },
     syncStore: {}, createRequestCoordinator: () => ({ metrics: async () => gate.promise }),
     createRefreshCoordinator: () => ({}), createIncrementalSync: value => { ports = value; return {}; },
+    createRecordSyncLoop: createIdleRecordSyncLoop,
     $: () => ({}), getActionsCoordinator: () => ({}), renderStateChart() {}, renderHomeMood() {},
     reconcileActiveThoughtRoute() {}, clearRouteLoadFailure() {}, renderVisibleRoute() {}, renderRouteLoadFailure() {},
     syncBackgroundTaskResults: async () => {}, ensureBackgroundResultsController: () => ({}), backgroundResultsRetryLimit: 3

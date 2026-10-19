@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 515,
-  "updated_at": "2026-10-19T15:50:56.169Z",
+  "revision": 517,
+  "updated_at": "2026-10-19T16:16:59.706Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,10 +17,10 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "版本组合验收：更新元数据并固定候选"
+    "phase": "候选e52db1组合验收失败：返修通知专项v2端口夹具"
   },
   "scope": {
-    "description": "11个串行阶段本地出口完成；进入v0.5.16版本元数据、组合回归、移动模拟、发布保护及有状态全局启动恢复验收。",
+    "description": "v0.5.16版本元数据已更新，PWA静态闭包与模块夹具返修完成；固定e52db1候选执行组合回归、release旅程、发布保护及有状态全局门。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8",
@@ -76,7 +76,8 @@
         "public/frontend/app/runtime/record-events.mjs",
         "scripts/pwa-regression.mjs",
         "knowledge/module-boundaries.json",
-        "scripts/module-boundary-regression.mjs"
+        "scripts/module-boundary-regression.mjs",
+        "scripts/frontend-notifications-feature-regression.mjs"
       ],
       "forbidden_write_set": [
         ".trae/skills/tell-me/**",
@@ -93,7 +94,35 @@
       "receipt_ref": "reviews/2026-10-19-v0516-combination-acceptance-result.json"
     }
   ],
-  "candidate": null,
+  "candidate": {
+    "id": "v0.5.16-e52db1",
+    "branch": "feat/v0.5.16-sync-latency",
+    "sha": "e52db1",
+    "tree": "e7b737",
+    "version": "0.5.16",
+    "status": "REMEDIATION_REQUIRED",
+    "release_frozen": false,
+    "required_gates": [
+      "release_metadata_pwa",
+      "static_module_contracts",
+      "full_regression",
+      "release_journeys",
+      "release_protection",
+      "stateful_postgres_startup"
+    ],
+    "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
+    "quality_gate": {
+      "release_metadata_pwa": "PENDING",
+      "static_module_contracts": "PENDING",
+      "full_regression": "NOT_RUN",
+      "release_journeys": "FAIL",
+      "release_protection": "NOT_RUN",
+      "stateful_postgres_startup": "NOT_RUN",
+      "browser_p75_500ms": "PARTIAL",
+      "safari_installed_pwa_real_device": "PARTIAL",
+      "production_rollout": "NOT_RUN"
+    }
+  },
   "authorization": {
     "source": "Owner 2026-10-19：继续夜间持续开发，未收到Owner停止指令持续推进已评审剩余需求；早晨08:30收尾并汇报需要Owner决策的评审表。沿既定11阶段串行开发，不扩大外部动作授权。",
     "allowed_actions": [
@@ -126,7 +155,7 @@
   },
   "blockers": [],
   "next_action": {
-    "description": "补齐模块边界隔离夹具的TypeScript编译前置，再形成候选提交并执行release旅程。",
+    "description": "补齐通知专项createRecordSyncLoop端口夹具，执行受影响前端组合门后提交新候选；e52db1失败保持历史。",
     "owner": "主控",
     "requires_owner": false
   },
