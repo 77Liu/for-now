@@ -3,7 +3,7 @@
   "date": "2026-10-19",
   "baselineCommit": "fe5a0a",
   "ruleCommit": "9c4916",
-  "status": "PASS_DESKTOP_BROWSER_SUBSET_STAGE6_PARTIAL",
+  "status": "PASS_STAGE6_LOCAL_EXIT_PRODUCTION_AND_DEVICES_PARTIAL",
   "sourceManifest": [
     {
       "path": "public/frontend/features/thoughts/controller.mjs",
@@ -162,7 +162,7 @@
     "首屏骨架渲染后的同scope空DOM吞掉刷新恢复草稿，已修复合并顺序。",
     "URL历史专项仍断言旧page=2/累计前缀，已更新为已确认的单页与规范化契约，保留前后退/滚动/删除覆盖。"
   ],
-  "remainingStageBlocker": "TC-10必要生产者有界闭包及逐入口成功/故障矩阵未完成；不放行阶段7。",
+  "remainingStageBlocker": null,
   "nightProducerSubset": {
     "recordedAt": "2026-10-19T02:33:00+08:00",
     "status": "PASS_ELEVEN_COMMAND_SUBSET_STAGE6_PARTIAL",
@@ -902,6 +902,94 @@
       "real corpus and actual browser evidence reused; this PG run records corpus NOT_RUN",
       "personal context remains outside-transaction full read; other task families retain compatibility lifecycle",
       "no production writes, deployment, paid calls or stage7 implementation"
+    ]
+  },
+  "stage6Exit": {
+    "status": "PASS_LOCAL_STAGE_EXIT",
+    "repairCommit": "f01f0f",
+    "previousCleanTree": "d9a120",
+    "candidateSourceTree": "af09da",
+    "candidateKind": "staged Git tree archived without five protected F9 diffs; final commit adds only review/control documents",
+    "stablePostgres": {
+      "command": "npm run test:postgres:stable",
+      "exitCode": 0,
+      "environment": "macOS, signed Node 24.19.0, isolated PostgreSQL 16.14, mock/rejecting providers",
+      "log": "/tmp/for-now-stage6-exit-candidate-postgres.log",
+      "result": "/tmp/for-now-stage6-exit-candidate-postgres-exit.json"
+    },
+    "otherValidation": [
+      {
+        "command": "npm run check:modules",
+        "exitCode": 0,
+        "log": "/tmp/for-now-stage6-exit-modules.log"
+      },
+      {
+        "command": "npm run test:startup",
+        "exitCode": 0,
+        "log": "/tmp/for-now-stage6-exit-startup.log"
+      },
+      {
+        "command": "node scripts/server-runtime-regression.mjs",
+        "exitCode": 0,
+        "log": "/tmp/for-now-stage6-exit-runtime.log"
+      },
+      {
+        "command": "npm run check:links",
+        "exitCode": 0,
+        "log": "/tmp/for-now-stage6-exit-links.log"
+      }
+    ],
+    "scopeRefresh": {
+      "status": "PASS",
+      "fixture": "scripts/thought-db-paging-regression.mts#verifyCurrentScopeRefresh",
+      "verified": [
+        "deep page reads the same twenty IDs and newer visible version after both visible and unloaded roots change",
+        "list has three queries with at most twenty-one returned rows per query and no account document read",
+        "detail reads only the selected root in two queries",
+        "foreign account, changed filter cursor and unready schema reject",
+        "schema restoration returns the current page without fallback"
+      ],
+      "consumerBoundary": "RC-05 bounded page/detail fixture only; RC-08 actual record change consumption and duplicate/out-of-order delivery remain stage11"
+    },
+    "configuration": {
+      "status": "PASS",
+      "fixture": "scripts/thought-paging-build-regression.mts",
+      "verified": [
+        "compiled backend and generated frontend use identical bytes from the existing shared constant",
+        "changing page capacity on one side rejects; changing both sides consistently passes",
+        "missing frontend artifact rejects",
+        "formal createRuntimeFoundation rejects mismatch before database or prompt assembly"
+      ]
+    },
+    "producerClosure": {
+      "status": "PASS",
+      "families": 11,
+      "publicMutationCommands": 30,
+      "requiredTaskKinds": 4,
+      "evidence": "reviews/2026-10-19-stage6-browser-remediation.md#L152-L170",
+      "guard": "actual command functions and repository maintenance ports required before SQL; legacy thought mutations reject before writes",
+      "maintenanceBoundary": "initialize/register, invalidating offline import and explicit batched rebuild are controlled maintenance paths, never online fallback"
+    },
+    "testCases": {
+      "TC-01": "PASS",
+      "TC-02": "PASS",
+      "TC-03": "PASS",
+      "TC-04": "PASS",
+      "TC-05": "PASS_REUSED_REAL_CORPUS",
+      "TC-06": "PASS_DESKTOP_DEVICE_PARTIAL",
+      "TC-07": "PASS",
+      "TC-08": "PASS",
+      "TC-09": "PASS_STAGE6_CONTRACT_STAGE11_CONSUMPTION_NOT_RUN",
+      "TC-10": "PASS",
+      "TC-11": "PASS",
+      "TC-12": "PASS"
+    },
+    "limitations": [
+      "real corpus this run NOT_RUN; reuse 94 sanitized samples and 33 queries/780 expected hits from unchanged search implementation",
+      "actual browser reuse unchanged desktop paging/detail/draft evidence; mobile devices and production workload/latency untested",
+      "personal AI context remains a full read outside short transactions; other task families and deleted-item purge retain compatibility costs",
+      "stage11 actual record merge/rebase, paid providers, deployment and production writes NOT_RUN",
+      "local stage exit permits only the authorized serial successor F7; it is not whole-version release approval"
     ]
   },
   "protectedFiles": [

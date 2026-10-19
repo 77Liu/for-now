@@ -40,6 +40,7 @@
     "src/app/record-commands/task-creation.mts",
     "src/shared/concurrency/account-commits.mts",
     "src/shared/thought-pagination/index.mts",
+    "src/shared/thought-pagination/build-contract.mts",
     "src/modules/thoughts/record-commands.mts",
     "src/modules/thoughts/local-commands.mts",
     "src/modules/thoughts/annotation-commands.mts",

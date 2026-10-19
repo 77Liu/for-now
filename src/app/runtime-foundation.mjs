@@ -1,5 +1,6 @@
 import { createAccountCommitNotifier } from "../shared/concurrency/index.mjs";
 import { createAccountRuntimeState } from "../../.build/typescript/backend/app/account-runtime-state.mjs";
+import { assertThoughtPagingBuildContract } from "../../.build/typescript/backend/shared/thought-pagination/build-contract.mjs";
 import { normalizePersistedDocument } from "../shared/persistence/index.mjs";
 import { normalizeLlmSettings, normalizeAiUsage, llmSettingsForScene } from "../modules/ai/index.mjs";
 import crypto from "node:crypto";
@@ -64,6 +65,9 @@ export async function createRuntimeFoundation({
     throw new Error(
       "AUTH_REQUIRED=0 no longer starts a business application; use authenticated isolated PostgreSQL or LOCAL_TEST_MODE"
     );
+  }
+  if (appConfig.features.thoughtPaging.enabled) {
+    await assertThoughtPagingBuildContract(rootDir);
   }
   installPromptCatalog(await loadPromptCatalog({
     rootDir,

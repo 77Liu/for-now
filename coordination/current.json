@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 471,
-  "updated_at": "2026-10-19T01:06:26.590Z",
+  "revision": 472,
+  "updated_at": "2026-10-19T02:48:34.492Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,10 +17,10 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段6/11：新F4生产者有界闭包返修"
+    "phase": "阶段7/11：F7追问批注阅读状态保持"
   },
   "scope": {
-    "description": "Owner恢复持续串行开发；阶段1/5返修已验收，当前实现新F4数据库分页及其必要生产者接入；通过阶段出口后继续唯一后继。",
+    "description": "阶段6本地出口通过；继续唯一串行后继F7，消费有界page/detail并保持阅读状态。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "d9d79d",
@@ -56,61 +56,27 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-stage6-db-thought-paging",
+      "id": "v0516-stage7-reading-state",
       "mode": "implementation",
       "owner": "主控串行",
-      "requirement_id": "reczz28ORRaxSFnV",
-      "baseline": "d9d79d",
+      "requirement_id": "reczz28JmeyoL7D0",
+      "baseline": "f01f0f",
       "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效",
       "allowed_write_set": [
-        "src/modules/thoughts/**",
-        "src/modules/discovery/**",
-        "src/shared/persistence/**",
-        "src/shared/thought-pagination/**",
-        "src/app/content-runtime.mjs",
-        "src/app/content/**",
-        "src/app/annotation-resources.mjs",
-        "src/app/trash.mjs",
-        "src/app/thought-workflows.mjs",
-        "src/app/ai-task-targets.mjs",
-        "src/app/record-commands/**",
-        "src/app/index.mjs",
-        "src/http/thoughts.mjs",
-        "src/modules/content-attachments/**",
-        "scripts/*thought*",
-        "scripts/postgres-runtime-checks.mjs",
-        "scripts/*discovery*",
-        "scripts/postgres-integration.mjs",
-        "scripts/prepare-generated-runtime.mjs",
-        "package.json",
-        "tsconfig*.json",
-        "docs/technical-proposals/reczz28ORRaxSFnV-应新规重做F4数据库游标分页-技术方案.md",
-        "reviews/2026-10-19*",
-        "coordination/**",
-        "src/app/runtime-foundation.mjs",
-        "src/app/runtime-http-wiring.mjs",
-        "src/app/startup-projections.mjs",
-        "src/http/startup.mjs",
-        "src/http/openapi/thoughts.mjs",
-        "src/modules/notifications/query.mts",
-        "src/modules/notifications/index.mjs",
-        "public/frontend/features/thoughts/operations.mjs",
-        "scripts/startup-projection-regression.mjs",
+        "public/frontend/features/thoughts/**",
+        "public/frontend/shared/thought-page-window.mts",
+        "public/frontend/features/annotations/operations.mjs",
+        "public/frontend/app/runtime/data-runtime.mjs",
+        "public/frontend/app/runtime/page-descriptors-primary.mjs",
         "scripts/frontend-thoughts-feature-regression.mjs",
-        "scripts/api-v1-contract-regression.mjs",
-        "src/app/speech-cache.mjs",
-        "public/frontend/features/thoughts/controller.mjs",
-        "public/frontend/features/thoughts/view.mjs",
-        "scripts/url-history-regression.mjs",
-        "src/app/perception.mjs",
-        "src/app/record-compressions.mjs",
-        "src/app/source-record-effects.mts",
-        "src/app/runtime-content-http.mjs",
-        "src/http/content-attachments.mjs",
-        "src/http/openapi/content-attachments.mjs",
-        "src/app/background-ai.mjs",
-        "src/modules/tasks/index.mjs",
-        "scripts/record-command-producer-coverage-regression.mts"
+        "scripts/frontend-annotations-feature-regression.mjs",
+        "scripts/thought-browser-probe.mts",
+        "scripts/postgres-runtime-checks.mjs",
+        "scripts/thought*",
+        "tsconfig*.json",
+        "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md",
+        "reviews/2026-10-19*",
+        "coordination/**"
       ],
       "forbidden_write_set": [
         "public/frontend/app/runtime/home-runtime.mjs",
@@ -120,18 +86,13 @@
         "src/http/sync.mjs",
         ".trae/skills/tell-me/**",
         "生产数据与凭据",
-        "阶段7至11新功能"
+        "阶段8至11新功能"
       ],
-      "shared_owner": "主控唯一串行写者（schema/构建/接口/控制面）",
-      "integration_order": "核对前驱与全部生产者→领域读模型和schema→同事务维护/回填→有界查询与HTTP兼容→专项/PG/消费者验收→提交和出口裁定",
-      "acceptance": "方案TC01—TC12；coverage不完整时禁止启用DB分页；保留原有UI/F9差分",
-      "review_ref": "reviews/2026-10-19-stage6-browser-remediation.md",
-      "receipt_ref": "reviews/2026-10-19-stage6-browser-remediation-result.json",
-      "execution_window": {
-        "finish_at": "2026-10-19T08:30:00+08:00",
-        "purpose": "本轮夜间执行收尾与Owner评审汇报",
-        "source": "原夜间08:30收尾时间已过；Owner09:02确认继续当前开发，沿原持续授权推进。"
-      }
+      "shared_owner": "主控唯一串行写者；F9五文件保持原指纹，不改动或夹带",
+      "integration_order": "核对旧F7与新page/detail边界→统一同一阅读状态端口→公开批注/ACK完整链→专项与真实PG浏览器→审查/提交/出口",
+      "acceptance": "F7 TC01—TC05；未加载摘要不视为已删除；新增/回复/删除/失败/迟到ACK/账户路由变更均保护开合、锚点、焦点；设备partial明确保留",
+      "review_ref": "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md",
+      "receipt_ref": "reviews/2026-10-19-stage7-reading-state-result.json"
     }
   ],
   "candidate": null,
@@ -165,21 +126,9 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [
-    {
-      "id": "stage6-producer-closure",
-      "status": "OPEN",
-      "owner": "主控",
-      "blocks": "阶段6出口及阶段7实施",
-      "reason": "当前源码真实stable PG、TS构建、正式HTTP和受影响模型/内容/发现/记录/模块/前端专项通过，已验证自动回答等待、取消中恢复、发现超限和块精准读取；返修提交及完整阶段6出口终审仍待完成，TC10未核定。",
-      "evidence": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#resumedValidationSubset",
-        "reviews/2026-10-19-stage6-browser-remediation.md#L204-L208"
-      ]
-    }
-  ],
+  "blockers": [],
   "next_action": {
-    "description": "提交并验证不含F9保护差分的阶段6返修候选，再完成TC01—TC12及维护边界终审；出口满足后登记唯一串行后继阶段7。",
+    "description": "保存阶段6出口提交；沿F7既有唯一阅读状态端口核对摘要页/有界详情和批注ACK边界，补缺并验证TC01—TC05；出口通过后接续阶段8。",
     "owner": "主控",
     "requires_owner": false
   },
@@ -753,125 +702,6 @@
       ]
     },
     {
-      "id": "v0516-stage6-root-producer-verification",
-      "object": {
-        "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "7e0d4f",
-        "requirement_id": "reczz28ORRaxSFnV"
-      },
-      "conclusion": "阶段6根命令来源副作用与共用提交管道完成；十六公开命令真实PG成功/末尾故障矩阵及稳定PG全套通过。批注漂移保留完整所属业务身份与递增版本，子项和回收项同步变化完整。TC-10仍未关闭。",
-      "limitations": [
-        "独立附件、子项删除恢复、前台/批注AI写回及发现状态矩阵未完成",
-        "关联历史增长与日期SQL实际扫描成本未证实有界",
-        "无新增真实浏览器/真实搜索实验；阶段7未开始"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightRootCommandSubset",
-        "scripts/thought-producer-postgres-checks.mts",
-        "npm run test:postgres:stable"
-      ]
-    },
-    {
-      "id": "v0516-stage6-trash-producer-verification",
-      "object": {
-        "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "7dd702",
-        "requirement_id": "reczz28ORRaxSFnV"
-      },
-      "conclusion": "内容块、备注、追问删除与思绪清单恢复已接入记录事务；二十命令真实PG成功/末尾故障矩阵、正式HTTP账户隔离及稳定PG全套通过。恢复版本与生命周期、只恢复本清单批注、学习权限保持撤销已验证。TC-10继续未关闭。",
-      "limitations": [
-        "独立附件、前台/批注AI写回及发现状态矩阵未完成",
-        "关联历史与日期/回收/历史关系查询的实际扫描成本待验证",
-        "阶段7未开始；无新浏览器/真实语料实验；F9脏文件指纹不变"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTrashCommandSubset",
-        "scripts/thought-trash-http-checks.mts",
-        "npm run test:postgres:stable"
-      ]
-    },
-    {
-      "id": "v0516-stage6-attachment-producer-verification",
-      "object": {
-        "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "5aae56",
-        "requirement_id": "reczz28ORRaxSFnV"
-      },
-      "conclusion": "独立附件四类目标的读取/准备及四个修改入口使用目标闭包与事务内指定路径库存；二十四公开修改命令PG成功/末尾故障矩阵、正式HTTP账户隔离和稳定PG全套通过。批注所属与图片引用索引、失败无取消回调通过。TC-10未关闭。",
-      "limitations": [
-        "后台图片/批注AI通用updater、前台回答及发现状态矩阵待完成",
-        "关联历史增长与物理SQL扫描未完全验证",
-        "无新浏览器/真实语料实验；F9保护指纹未变；阶段7未开始"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightAttachmentSubset",
-        "scripts/thought-attachment-postgres-checks.mjs",
-        "npm run test:postgres:stable"
-      ]
-    },
-    {
-      "id": "v0516-stage6-ai-writeback-verification",
-      "object": {
-        "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "ab761ee",
-        "requirement_id": "reczz28ORRaxSFnV"
-      },
-      "conclusion": "图片/批注AI终态与前台回答接入目标记录事务，二十七公开命令PG矩阵、正式HTTP五类回答任务和稳定PG全套通过；修订号绑定上下文，重放/失败/取消均验证。TC-10未关闭。",
-      "limitations": [
-        "发现逐入口矩阵、关联历史增长和物理SQL成本仍待完成",
-        "上下文准备与任务认领兼容全账户路径仍存在，不能称AI整链有界",
-        "无新浏览器/真实语料实验；F9保护指纹不变；阶段7未开始"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightAiWritebackSubset",
-        "scripts/thought-ai-postgres-checks.mjs",
-        "npm run test:postgres:stable"
-      ]
-    },
-    {
-      "id": "v0516-stage6-discovery-producer-verification",
-      "object": {
-        "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "c6bb64",
-        "requirement_id": "reczz28ORRaxSFnV"
-      },
-      "conclusion": "三个发现状态入口独立记录command；三十公开命令PG成功/末尾故障矩阵、正式开启分页HTTP版本/账户拒绝与稳定PG全套通过。根版本、正文和标签保持，发现状态/投影/ChangeDraft同事务。TC-10未关闭。",
-      "limitations": [
-        "关联历史增长、日期/回收/关系SQL实际扫描与完整生产者硬门仍待完成",
-        "上下文准备/任务认领兼容路径待审计，不由终态局部化推断整链有界",
-        "无新浏览器/真实语料实验；F9保护指纹不变；阶段7未开始"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightDiscoverySubset",
-        "scripts/thought-discovery-postgres-checks.mts",
-        "npm run test:postgres:stable"
-      ]
-    },
-    {
-      "id": "v0516-stage6-closure-scale-verification",
-      "object": {
-        "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "a7f8aa",
-        "requirement_id": "reczz28ORRaxSFnV"
-      },
-      "conclusion": "普通RLS角色下四类记录SQL在十倍无关历史增长时扫描行保持；600关联终态任务下领域编辑和末尾故障原子回滚、5000统一闭包限制、三十命令原预算与稳定PG全套通过。TC-10仍未关闭。",
-      "limitations": [
-        "计划证据限定当前样本；完整生产者硬门与上下文/任务认领/启动恢复必要兼容写仍待审计",
-        "无新浏览器/真实语料实验；F9保护指纹不变；阶段7未开始"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightClosureSubset",
-        "scripts/thought-closure-postgres-checks.mts",
-        "npm run test:postgres:stable"
-      ]
-    },
-    {
       "id": "stage6-night-producer-gate",
       "object": {
         "kind": "source_manifest",
@@ -889,59 +719,23 @@
       ]
     },
     {
-      "id": "v0516-stage6-task-transitions",
+      "id": "v0516-stage6-local-exit",
       "object": {
-        "kind": "source_manifest",
-        "base_commit": "39ee55",
-        "receipt": "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskTransitionsSubset"
+        "kind": "source_tree",
+        "repair_commit": "f01f0f",
+        "candidate_source_tree": "af09da",
+        "receipt": "reviews/2026-10-19-stage6-browser-remediation-result.json#stage6Exit"
       },
-      "conclusion": "四类必要任务认领/等待/恢复精准状态事务、兼容思绪写保护通过；PG两行写、末尾故障、竞态和完整HTTP/重启/导出恢复通过。",
+      "conclusion": "无F9差分独立候选完整stable PG退出0；三十公开生产者、四类任务、HTTP/重启/独立恢复、有界page/detail scope与启动配置不匹配拒绝通过，阶段6本地出口通过；登记唯一后继F7。",
       "limitations": [
-        "入队/重试继续返修，TC-10未关闭，阶段7未开始",
-        "个人上下文事务外读取、其他任务族兼容路径保留",
-        "F9保护指纹未变，无生产写或付费调用"
+        "TC09本阶段仅page/detail scope fixture；阶段11实际记录变化消费尚未执行",
+        "真实搜索/桌面浏览器有效证据复用；移动真机与生产负载/延迟未验",
+        "个人上下文事务外全读、其他任务族和已删清单永久清理仍有兼容成本",
+        "未部署/生产写/付费；默认分页开关关闭"
       ],
       "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation.md",
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskTransitionsSubset",
-        "scripts/thought-task-transition-postgres-checks.mts"
-      ]
-    },
-    {
-      "id": "v0516-stage6-task-creation",
-      "object": {
-        "kind": "source_manifest",
-        "base_commit": "e45d7f",
-        "receipt": "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskCreationSubset"
-      },
-      "conclusion": "四类正式后台入队与重试改为精准记录事务；RLS请求/重试查询在十倍历史下各扫描一行；上下文事务外准备并以修订号绑定；真实PG成功/末尾故障、等待/重放/冲突/调度、准备后竞态及HTTP/重启/导出恢复全套通过。",
-      "limitations": [
-        "TC10仍未关闭，等待释放上下文事务内编译、账户恢复回调及完整链终审待返修",
-        "个人上下文全量读取与其他任务族兼容生命周期保留现状；阶段7未开始",
-        "未执行新浏览器、真实语料、生产或付费实验，F9保护指纹保持"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskCreationSubset",
-        "reviews/2026-10-19-stage6-browser-remediation.md"
-      ]
-    },
-    {
-      "id": "v0516-stage6-task-lifecycle",
-      "object": {
-        "kind": "source_manifest",
-        "base_commit": "274a7a",
-        "receipt": "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskLifecycleSubset"
-      },
-      "conclusion": "四类等待释放与认领资格事务外准备、修订绑定和固定上下文时刻；账户隔离真实回调精确两行收尾。真实PG四类成功/末尾回滚/旧尝试/权限拒绝/竞态及全套HTTP/重启/导出恢复通过。",
-      "limitations": [
-        "TC10完整调用链终审未完成；阶段7未开始",
-        "个人上下文事务外全量读取与其他任务族兼容路径保留",
-        "复用真实搜索和浏览器证据；无生产写或付费调用；F9保护指纹保持"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightTaskLifecycleSubset",
-        "reviews/2026-10-19-stage6-browser-remediation.md",
-        "scripts/thought-task-lifecycle-postgres-checks.mts"
+        "reviews/2026-10-19-stage6-browser-remediation.md#L210-L233",
+        "reviews/2026-10-19-stage6-browser-remediation-result.json#stage6Exit"
       ]
     }
   ],

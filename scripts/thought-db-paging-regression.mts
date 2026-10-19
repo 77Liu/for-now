@@ -95,6 +95,70 @@ async function verifySearchAndDetail(context: Context, queries: QueryRuntime) {
   }
 }
 
+async function verifyCurrentScopeRefresh(
+  context: Context,
+  queries: QueryRuntime,
+  trace: Array<{ sql: string; rows: number }>
+) {
+  const first = await queries.list({});
+  const second = await queries.list({ afterId: first.nextId });
+  const input = { afterId: second.nextId };
+  const current = await queries.list(input);
+  const visibleId = String(current.items[4].id);
+  const outsideId = String(first.items[0].id);
+  const oldVersion = Number(current.items[4].version);
+  for (const rootId of [visibleId, outsideId]) {
+    await context.repo.accountUnitOfWork.run({ commandId: "thought.scope-refresh-fixture" }, async ports => {
+      const row = await ports.objects.find(JSON.stringify(["thoughts", rootId]), { lock: true });
+      assert.ok(row);
+      const content = `当前范围刷新 ${rootId}`;
+      const version = row.version + 1;
+      await ports.objects.update({
+        ...row,
+        content,
+        version,
+        payload: { ...row.payload, content, version }
+      }, row.version);
+      ports.addChange({
+        entityType: "thoughtChain",
+        entityId: rootId,
+        version,
+        operation: "update",
+        changedFields: ["content", "version"]
+      });
+    });
+  }
+  trace.length = 0;
+  const refreshed = await queries.list(input);
+  assert.deepEqual(refreshed.items.map(item => item.id), current.items.map(item => item.id));
+  assert.equal(refreshed.items[4].version, oldVersion + 1);
+  assert.match(String(refreshed.items[4].content), /当前范围刷新/u);
+  assert.equal(refreshed.items.some(item => item.id === outsideId), false);
+  assert.equal(trace.length, 3);
+  assert.ok(trace.every(item => item.rows <= 21));
+  assert.ok(trace.every(item => !/store_fields|store_relations/u.test(item.sql)));
+  trace.length = 0;
+  const detail = await queries.detail(visibleId);
+  assert.equal(detail?.version, oldVersion + 1);
+  assert.equal(detail?.content, refreshed.items[4].content);
+  assert.equal(trace.length, 2);
+  assert.ok(trace.every(item => item.rows <= 1));
+  assert.equal(await context.account("repo-test", () => queries.detail(visibleId)), null);
+  await assert.rejects(queries.list({ ...input, tag: "其他范围" }), { code: "INVALID_CURSOR" });
+  await context.database.query(`
+    UPDATE for_now.record_projection_status SET schema_version=0 WHERE account_id='thought-paging-db'
+  `);
+  try {
+    await assert.rejects(queries.list(input), { code: "THOUGHT_INDEX_UNAVAILABLE" });
+  } finally {
+    await context.database.query(`
+      UPDATE for_now.record_projection_status SET schema_version=1 WHERE account_id='thought-paging-db'
+    `);
+  }
+  assert.deepEqual(await queries.list(input), refreshed);
+  console.log("Thought current scope refresh passed: deep page and detail read current versions, exclude unloaded roots, remain bounded and reject account/filter/schema mismatch.");
+}
+
 async function verifyAtomicity(context: Context, queries: QueryRuntime) {
   const rootId = fixture(0).id;
   const before = await queries.list({ query: "第0条" });
@@ -356,6 +420,7 @@ export async function runThoughtDbPagingChecks(context: Context): Promise<QueryR
     `, [accountId]));
     assert.match(JSON.stringify(plans.rows), /thought_chain_occurred_idx/u);
     await verifyScale(context, queries);
+    await verifyCurrentScopeRefresh(context, queries, trace);
   });
   console.log("Thought DB paging passed: 1001 next/prev, scope, search parity, bounded DTO/detail and discovery closure rejection, atomicity, legacy producer and explicit rebuild.");
   return queries;

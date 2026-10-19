@@ -13,6 +13,7 @@
     "noEmitOnError": true
   },
   "files": [
+    "scripts/thought-paging-build-regression.mts",
     "scripts/thought-producer-gate-regression.mts",
     "scripts/thought-runtime-fixture.mts",
     "scripts/thought-task-transition-postgres-checks.mts",

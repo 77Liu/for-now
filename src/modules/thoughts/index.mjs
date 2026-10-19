@@ -692,10 +692,10 @@ export { assertThoughtProducerFlags } from "../../../.build/typescript/backend/m
 
 import { createThoughtQueryRuntime as createQueryRuntime } from "../../../.build/typescript/backend/modules/thoughts/query-runtime.mjs";
 /** 装配公开思绪数据库查询与投影维护；业务事实仍是正式思绪对象。 @since unreleased
- * @partial 阶段 6 候选接入，尚未宣布完整出口验收。
- * @partialScope 全部生产者逐入口矩阵待完成；查询、事务及桌面浏览器的局部通过证据另见正式回执。
+ * @partial 本地开发候选；尚未执行生产放量。
+ * @partialScope 移动真机与生产查询/延迟观察未验；本地生产者及有界查询证据见阶段 6 正式回执。
  * @partialVersion v0.5.16 阶段 6 未发布候选。
- * @partialReason 当前切片仅完成已记录的局部及 PostgreSQL 验证。
+ * @partialReason 隔离 PostgreSQL 与桌面浏览器不能替代生产放量和移动设备证据。
  * @partialAuthorization Owner 2026-10-19「继续持续推进开发」。
  * @partialUsage 默认关闭 THOUGHT_PAGING_ENABLED；仅供隔离验收，不开启生产查询。
  */

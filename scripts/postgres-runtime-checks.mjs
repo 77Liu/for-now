@@ -65,6 +65,7 @@ import { runThoughtProducerGateChecks } from "../.build/typescript/thought-db-re
 import { runThoughtTaskTransitionPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-transition-postgres-checks.mjs";
 import { runThoughtTaskCreationPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-creation-postgres-checks.mjs";
 import { runThoughtTaskLifecyclePostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-lifecycle-postgres-checks.mjs";
+import { runThoughtPagingBuildChecks } from "../.build/typescript/thought-db-regression/scripts/thought-paging-build-regression.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -1296,6 +1297,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       WHERE account_id = 'repo-test' AND cursor = 3
     `)).rows, [{ cursor: "3", version: 3, operation: "delete" }]);
     await runThoughtSearchCorpusChecks(database);
+    await runThoughtPagingBuildChecks();
     await runThoughtProducerGateChecks(options => {
       let runtime;
       createThoughtRuntimeFixture(input => {
