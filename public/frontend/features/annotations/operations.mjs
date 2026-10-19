@@ -47,15 +47,19 @@ export function createAnnotationOperations({
     if (ui.pendingSelection === selection) annotationView.invalidateSelection("选区来源已变化，输入已保留，请重新选择正文。");
     throw new Error("选区已失效，请重新选择正文；输入已保留。");
   }
-  async function acceptCreated(rootKey, annotation, originRoot, originAnnotations, operation, canPresent = () => true) {
-    if (model.mergeConfirmed(rootKey, annotation, { create: true, originRoot, originAnnotations })) return true;
+  /** 已确认写入不能靠旧ACK重建目标；补读只发布到仍在查看的根。 */
+  async function refreshSavedRoot(rootKey, operation, canPresent) {
     if (!canPresent()) return false;
     try {
-      if (!data.refreshRoot || await data.refreshRoot(rootKey) === false) throw new Error("读取未完成");
+      if (!data.refreshRoot || await data.refreshRoot(rootKey) === false) {
+        throw new Error("读取未完成");
+      }
       assertCurrent(operation);
       if (!canPresent()) return false;
       if (ui.refreshFailureRoot === rootKey) ui.refreshFailureRoot = "";
-      if (!model.counts(rootKey).loaded) throw new Error("完整批注尚未读取");
+      if (!model.counts(rootKey).loaded) {
+        throw new Error("完整批注尚未读取");
+      }
       return true;
     } catch (error) {
       assertCurrent(operation);
@@ -64,6 +68,15 @@ export function createAnnotationOperations({
       annotationView.refreshCounts(rootKey);
       return false;
     }
+  }
+  async function acceptCreated(rootKey, annotation, originRoot, originAnnotations, operation, canPresent = () => true) {
+    const merged = model.mergeConfirmed(rootKey, annotation, {
+      create: true,
+      originRoot,
+      originAnnotations
+    });
+    if (merged) return true;
+    return refreshSavedRoot(rootKey, operation, canPresent);
   }
 
   /** 仅重读已保存但呈现未同步的当前根；账户生命周期失效不得发布，未完整读取仍保留恢复提示。 @since unreleased */
@@ -342,26 +355,40 @@ export function createAnnotationOperations({
     const input = form.querySelector("input");
     const button = form.querySelector("button");
     const annotationId = form.dataset.commentReply;
+    const submittedText = input.value;
     button.disabled = true;
     try {
       const saved = await request(
         model.endpoint(rootKey, `/${annotationId}/replies`),
-        { method: "POST", body: JSON.stringify({ text: input.value }) }
+        {
+          method: "POST",
+          body: JSON.stringify({ text: submittedText })
+        }
       );
       assertCurrent(operation);
-      const annotation = model.mergeReply(rootKey, annotationId, saved);
-      if (annotation) {
-        if (ui.activeRootKey === rootKey) {
-          ui.activeAnnotationId = annotationId;
-          annotationView.refreshAnnotation(annotation);
-        }
+      if (input.value === submittedText) input.value = "";
+      let annotation = model.mergeReply(rootKey, annotationId, saved);
+      const canPresent = () => ui.activeRootKey === rootKey;
+      const presentationSynced = annotation && model.counts(rootKey).loaded
+        ? true
+        : await refreshSavedRoot(rootKey, operation, canPresent);
+      assertCurrent(operation);
+      annotation = model.rootFor(rootKey)?.annotations?.find(item => item.id === annotationId);
+      if (canPresent()) {
+        ui.activeAnnotationId = annotation?.id || "";
+        if (annotation && presentationSynced) annotationView.refreshAnnotation(annotation);
+        else annotationView.renderPanel();
       }
-      showToast("回复已保存");
+      showToast(
+        presentationSynced
+          ? "回复已保存"
+          : "回复已保存，当前呈现尚未同步；可在批注面板重试读取。",
+        presentationSynced ? "success" : "error"
+      );
     } catch (error) {
-      if (isCurrent(operation)) {
-        showToast(error.message, "error");
-        button.disabled = false;
-      }
+      if (isCurrent(operation)) showToast(error.message, "error");
+    } finally {
+      if (isCurrent(operation) && button.isConnected) button.disabled = false;
     }
   }
 
@@ -441,18 +468,32 @@ export function createAnnotationOperations({
         model.endpoint(rootKey, `/${annotation.id}/convert`),
         {
           method: "PATCH",
-          body: JSON.stringify({ kind, ...(text ? { text } : {}) })
+          body: JSON.stringify({
+            kind,
+            ...(text ? { text } : {})
+          })
         }
       );
       assertCurrent(operation);
-      const current = model.mergeConfirmed(rootKey, updated);
+      let current = model.mergeConfirmed(rootKey, updated);
+      const canPresent = () => ui.activeRootKey === rootKey;
+      const presentationSynced = current && model.counts(rootKey).loaded
+        ? true
+        : await refreshSavedRoot(rootKey, operation, canPresent);
+      assertCurrent(operation);
+      current = model.rootFor(rootKey)?.annotations?.find(item => item.id === updated.id);
       if (ui.activeRootKey === rootKey) {
         annotationView.removeAnchors(annotation.id);
         if (current) annotationView.applyAnchor(rootKey, current);
         ui.activeAnnotationId = current?.id || "";
         annotationView.renderPanel();
       }
-      showToast(`已转为${annotationPresentation(current || updated).label}`);
+      showToast(
+        presentationSynced
+          ? `已转为${annotationPresentation(current || updated).label}`
+          : "标记已保存，当前呈现尚未同步；可在批注面板重试读取。",
+        presentationSynced ? "success" : "error"
+      );
     } catch (error) {
       if (isCurrent(operation)) showToast(error.message, "error");
     }

@@ -1,7 +1,22 @@
 {
   "schema_version": 1,
   "task": "v0516-stage7-reading-state",
-  "status": "PASS_LOCAL_CHECKPOINT_PREDECESSOR_REMEDIATION_REQUIRED",
+  "status": "PASS_LOCAL",
+  "predecessor_resumption": {
+    "commit": "bd5f6b",
+    "verified_tree": "e801f8",
+    "status": "PASS",
+    "checks": [
+      { "command": "npm run test:postgres:stable", "exit": 0 },
+      { "command": "npm run check:modules", "exit": 0 },
+      { "command": "npm run typecheck:frontend", "exit": 0 },
+      { "command": "node scripts/frontend-thoughts-feature-regression.mjs", "exit": 0 },
+      { "command": "node scripts/frontend-annotations-feature-regression.mjs", "exit": 0 }
+    ],
+    "evidence_reuse": "Reading implementation, browser probe and response hold unchanged; desktop UI results reused, not new mouse execution",
+    "next_stage": "F6 annotation entry and counts",
+    "ref": "reviews/2026-10-19-stage6-independent-remediation-result.json"
+  },
   "base": {
     "commit": "64f2b4"
   },
@@ -172,7 +187,7 @@
   "limits": [
     "No iOS Safari/PWA real device, production writes or performance approval",
     "94 real samples reused, no new corpus search run",
-    "Stage8 remains closed until independent stage6 R1/R2/R3 repaired"
+    "Stage6 R1/R2/R3 repaired and locally verified; release-level gates remain separate"
   ],
   "predecessor_review": "reviews/2026-10-19-commit-quality-review.md",
   "protected_f9_files": {

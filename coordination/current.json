@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 493,
-  "updated_at": "2026-10-19T09:03:38.678Z",
+  "revision": 495,
+  "updated_at": "2026-10-19T09:42:42.549Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段6独立返修本地出口通过；原子提交后复核F7接续"
+    "phase": "阶段8 F6本地出口通过：提交后接续阶段9"
   },
   "scope": {
-    "description": "阶段6R1/R2/R3最终候选e801f8本地验收通过；F7既有阅读检查点待前驱提交后接续，阶段8尚未开始。",
+    "description": "阶段8回复/转换缺目标精准补读、失败恢复和新输入保持返修完成；公开端口及真实认证PG桌面通过，最终标准PG各子套件通过。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
-      "commit": "d9d79d",
-      "source": "返修候选533053及正式回执；Owner 2026-10-19明确继续持续推进开发。"
+      "commit": "bd5f6b",
+      "source": "阶段6原子返修本地提交；F7未变实现及受影响专项复核通过"
     },
     "inputs": [
       "docs/technical-proposals/V0516-跨需求共用底座与串行开发-技术方案.md",
@@ -56,68 +56,31 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-stage6-independent-remediation",
+      "id": "v0516-stage8-annotation-counts",
       "mode": "implementation",
       "owner": "主控串行",
-      "requirement_id": "reczz28ORRaxSFnV",
-      "baseline": "64f2b4",
+      "requirement_id": "reczz28JmUJNsOl9",
+      "baseline": "bd5f6b",
       "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效",
       "allowed_write_set": [
-        "src/modules/thoughts/**",
-        "src/modules/discovery/**",
-        "src/shared/persistence/**",
-        "src/shared/thought-pagination/**",
-        "src/app/content-runtime.mjs",
-        "src/app/content/**",
+        "public/frontend/features/annotations/**",
+        "public/frontend/shared/annotation-counts.mts",
+        "public/frontend/features/thoughts/presentation.mjs",
+        "public/frontend/features/thoughts/controller.mjs",
+        "public/frontend/features/thoughts/loader.mjs",
+        "public/frontend/app/runtime/collaboration-runtime.mjs",
         "src/app/annotation-resources.mjs",
-        "src/app/trash.mjs",
-        "src/app/thought-workflows.mjs",
-        "src/app/ai-task-targets.mjs",
-        "src/app/record-commands/**",
-        "src/app/index.mjs",
-        "src/http/thoughts.mjs",
-        "src/modules/content-attachments/**",
+        "src/modules/annotations/**",
+        "scripts/*annotation*",
         "scripts/*thought*",
         "scripts/postgres-runtime-checks.mjs",
-        "scripts/*discovery*",
-        "scripts/postgres-integration.mjs",
-        "scripts/prepare-generated-runtime.mjs",
-        "package.json",
-        "tsconfig*.json",
-        "docs/technical-proposals/reczz28ORRaxSFnV-应新规重做F4数据库游标分页-技术方案.md",
-        "reviews/2026-10-19*",
-        "coordination/**",
-        "src/app/runtime-foundation.mjs",
-        "src/app/runtime-http-wiring.mjs",
-        "src/app/startup-projections.mjs",
-        "src/http/startup.mjs",
-        "src/http/openapi/thoughts.mjs",
-        "src/modules/notifications/query.mts",
-        "src/modules/notifications/index.mjs",
-        "public/frontend/features/thoughts/operations.mjs",
-        "scripts/startup-projection-regression.mjs",
-        "scripts/frontend-thoughts-feature-regression.mjs",
-        "scripts/api-v1-contract-regression.mjs",
-        "src/app/speech-cache.mjs",
-        "public/frontend/features/thoughts/controller.mjs",
-        "public/frontend/features/thoughts/view.mjs",
-        "scripts/url-history-regression.mjs",
-        "src/app/perception.mjs",
-        "src/app/record-compressions.mjs",
-        "src/app/source-record-effects.mts",
-        "src/app/runtime-content-http.mjs",
-        "src/http/content-attachments.mjs",
-        "src/http/openapi/content-attachments.mjs",
-        "src/app/background-ai.mjs",
-        "src/modules/tasks/index.mjs",
-        "scripts/record-command-producer-coverage-regression.mts",
-        "scripts/check-modules.mjs",
-        "scripts/recovery*",
-        "src/app/task-context.mjs",
-        "src/app/record-compression-context.mjs",
-        "src/modules/record-compressions/input.mjs",
-        "src/modules/record-compressions/index.mjs",
-        "src/app/personal-context.mjs"
+        "tsconfig.frontend.json",
+        "tsconfig.thought-db-regression.json",
+        "knowledge/module-boundaries.json",
+        "docs/technical-proposals/F6-批注入口与计数一致-技术方案.md",
+        "reviews/2026-10-19-stage7-reading-state*",
+        "reviews/2026-10-19-stage8*",
+        "coordination/**"
       ],
       "forbidden_write_set": [
         "public/frontend/app/runtime/home-runtime.mjs",
@@ -127,13 +90,13 @@
         "src/http/sync.mjs",
         ".trae/skills/tell-me/**",
         "生产数据与凭据",
-        "阶段7至11新功能"
+        "阶段9至11新功能"
       ],
-      "shared_owner": "主控唯一串行写者（schema/构建/接口/控制面）",
-      "integration_order": "R1精准关系语义与组合PG→R2恢复记录读取和完整成本→R3干净构建→原矩阵/回归→前驱出口重新裁定",
-      "acceptance": "独立审查R1有效来源正文/附件变化不退为historical且再次转换冲突；R2任务恢复完整链成本不随无关历史重复全读；R3空生成目录模块门确定构建；原30命令与4任务/重启取消回滚保持。",
-      "review_ref": "reviews/2026-10-19-stage6-independent-remediation.md",
-      "receipt_ref": "reviews/2026-10-19-stage6-independent-remediation-result.json"
+      "shared_owner": "主控唯一串行写者",
+      "integration_order": "既有F6实现与新版分页完整性审查→公开端口专项→真实PG/浏览器必要补验→出口裁定",
+      "acceptance": "一个主要入口；线程/回复/标记/漂流分列；未加载不是零；重复ACK与同步不重复计数；删除失败及迟到结果不复活旧对象；阅读状态保持。",
+      "review_ref": "reviews/2026-10-19-stage8-annotation-counts.md",
+      "receipt_ref": "reviews/2026-10-19-stage8-annotation-counts-result.json"
     }
   ],
   "candidate": null,
@@ -169,7 +132,7 @@
   },
   "blockers": [],
   "next_action": {
-    "description": "提交阶段6原子返修，再复核F7未变阅读实现和前驱接入，登记下一串行阶段。",
+    "description": "核对真实写集与固定候选等同后提交阶段8；随后登记阶段9 F8既有选区/标记实现复核。",
     "owner": "主控",
     "requires_owner": false
   },
@@ -749,11 +712,11 @@
         "tree": "8a68c9",
         "base": "64f2b4"
       },
-      "conclusion": "摘要迟到ACK边界修复；桌面真实PG批注/收起/草稿/整页与局部呈现/删除/离页链及公开控制器负例通过；完整stablePG、类型和模块检查通过。F7本地检查点保存，前驱独立返修不解除。",
+      "conclusion": "阶段6bd5f6b返修通过后复核F7未变阅读实现；e801f8完整PG/模块/前端类型及公开专项PASS。既有桌面PG浏览器证据按未变实现复用，阶段7本地出口通过，接续阶段8。",
       "limitations": [
         "iOS Safari/PWA真机与生产性能未验",
-        "整页验证通过公开状态发布，不冒称自动同步接入完成",
-        "原夹具及深层导入失败保留并已精准修正"
+        "整页消费用公开状态发布验证，自动同步接入另属阶段11",
+        "本轮复用未变桌面UI证据，未重做鼠标操作"
       ],
       "refs": [
         "reviews/2026-10-19-stage7-reading-state.md",
@@ -764,18 +727,38 @@
       "id": "v0516-stage6-independent-final-exit",
       "object": {
         "kind": "git_tree",
-        "tree": "e801f8"
+        "tree": "e801f8",
+        "commit": "bd5f6b"
       },
       "conclusion": "R1/R2/R3本地出口PASS；干净模块门和完整stablePG188.59秒通过，30公开生产者/4任务/HTTP/取消重启/独立恢复/回滚保持。最终关系、完整成本、旧回执、评分索引、日期及源码职责排版审查通过。",
       "limitations": [
         "合成隔离PostgreSQL16.14；94真实样本复用未重跑",
         "合法输入池/许可元数据仍随自身增长；兼容评分生产者及其他任务族成本不声称全部记录级",
-        "移动真机、生产负载、真实付费和发布级全局门未执行",
-        "本地原子提交尚待执行"
+        "移动真机、生产负载、真实付费和发布级全局门未执行"
       ],
       "refs": [
         "reviews/2026-10-19-stage6-independent-remediation.md",
         "reviews/2026-10-19-stage6-independent-remediation-result.json"
+      ]
+    },
+    {
+      "id": "v0516-stage8-annotation-counts-final-exit",
+      "object": {
+        "kind": "source_manifest",
+        "tree": "e3deda",
+        "receipt": "reviews/2026-10-19-stage8-annotation-counts-result.json"
+      },
+      "conclusion": "阶段8本地出口PASS：回复/转换缺目标精准补读与失败重试、新输入/焦点/选区保持；公开ACK/删除失败/不复活/会话专项通过。认证开启隔离PG真实Chrome保存→回复→转换→删除与正式详情回读一致。固定候选模块/类型/前端/协作专项exit0；标准PG四段子套件全部完成通过标记。",
+      "limitations": [
+        "最终标准PG后台父进程未保存退出码；日志四段通过且进程退出，不补造exit0",
+        "直接Node首轮整套媒体生成失败已保留；标准测试Node入口复验通过",
+        "iOS Safari/PWA真机与原生长按、生产负载未验",
+        "本地提交尚待执行；本轮不push/tag/deploy"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage8-annotation-counts.md",
+        "reviews/2026-10-19-stage8-annotation-counts-result.json",
+        "artifacts/local/v0516-f6-acceptance-current.json"
       ]
     }
   ],

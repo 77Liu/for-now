@@ -465,10 +465,26 @@ export function createAnnotationView({
     refreshCounts(ui.activeRootKey);
     model.stashAssistantDraft(current.querySelector("[data-shenji-form]"));
     const composerOpen = !current.querySelector("[data-shenji-form]")?.hidden;
+    const replyInput = current.querySelector("[data-comment-reply] input");
+    const replyDraft = replyInput ? {
+      value: replyInput.value,
+      focused: document.activeElement === replyInput,
+      start: replyInput.selectionStart,
+      end: replyInput.selectionEnd,
+      direction: replyInput.selectionDirection
+    } : null;
     const template = document.createElement("template");
     template.innerHTML = annotationCard(annotation).trim();
     const next = template.content.firstElementChild;
     current.replaceWith(next);
+    const nextReply = next.querySelector("[data-comment-reply] input");
+    if (replyDraft && nextReply) {
+      nextReply.value = replyDraft.value;
+      if (replyDraft.focused) {
+        nextReply.focus({ preventScroll: true });
+        nextReply.setSelectionRange(replyDraft.start, replyDraft.end, replyDraft.direction);
+      }
+    }
     const composer = next.querySelector("[data-shenji-form]");
     model.hydrateAssistantForm(composer);
     if (composer) composer.hidden = !composerOpen;
