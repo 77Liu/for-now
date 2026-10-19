@@ -2318,6 +2318,12 @@ function createStartupEffectObserver(
   };
 }
 
+function assertAttachmentFreeSaveInventoryReads(count: number) {
+  if (count !== 0) {
+    fail(`Attachment-free authenticated save performed ${count} PostgreSQL attachment-inventory reads`);
+  }
+}
+
 async function verify(root: string, snapshotFile: string, profile: LocalGateProfile = "default") {
   const snapshotValue = await loadSnapshot(root, snapshotFile);
   if (profile === "v0516-combined" && snapshotValue.schemaVersion !== 2) fail("Combined startup gate requires schema2 real account documents; schema1 is historical and incomplete");
@@ -2458,9 +2464,7 @@ async function verify(root: string, snapshotFile: string, profile: LocalGateProf
     });
     if (save.response.status !== 201) fail(`Authenticated save round-trip write failed (${save.response.status})`);
     inventoryReadsDuringSave = gateCounts.postgresAttachmentInventoryReads - inventoryReadsBeforeSave;
-    if (inventoryReadsDuringSave <= 0) {
-      fail("Authenticated save did not perform an account-scoped PostgreSQL attachment-inventory read");
-    }
+    assertAttachmentFreeSaveInventoryReads(inventoryReadsDuringSave);
     phase = "authenticated save persistence read";
     const stateAfter = await fetchJson(`${second.baseUrl}/api/state`, { headers });
     if (!stateAfter.response.ok || !stateAfter.body.includes(marker)) fail("Authenticated save/read round trip did not persist");
@@ -2501,7 +2505,7 @@ async function verify(root: string, snapshotFile: string, profile: LocalGateProf
       forbiddenEffects: { provider: gateCounts.provider, outbound: gateCounts.outbound, media: gateCounts.media },
       emptyCleanupResumeCallsPerStartup: [firstResumeCalls, secondResumeCalls],
       postgresAttachmentInventoryReads: gateCounts.postgresAttachmentInventoryReads,
-      postgresAttachmentInventoryReadsDuringSave: inventoryReadsDuringSave,
+      postgresAttachmentInventoryReadsDuringAttachmentFreeSave: inventoryReadsDuringSave,
       evidence: ["runtime.start", "readyz", "same-postgres-stop-restart", "authenticated-state-read", "save-read-round-trip", "task-read", "notification-read"]
     };
   } catch (error) {
@@ -2538,6 +2542,14 @@ async function verify(root: string, snapshotFile: string, profile: LocalGateProf
 }
 
 async function selfTest(root: string) {
+  assertAttachmentFreeSaveInventoryReads(0);
+  let attachmentFreeSaveRejected = false;
+  try { assertAttachmentFreeSaveInventoryReads(1); }
+  catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("Attachment-free authenticated save performed 1")) throw error;
+    attachmentFreeSaveRejected = true;
+  }
+  if (!attachmentFreeSaveRejected) fail("Attachment-free save inventory regression was not rejected");
   for (const profile of ["default", "v0516-combined"] as const) {
     const restore = installGateEnvironment(os.tmpdir(), {
       data: "postgresql://localhost:1/gate_data", auth: "postgresql://localhost:1/gate_auth", budget: "postgresql://localhost:1/gate_budget"
