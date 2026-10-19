@@ -48,7 +48,6 @@ type PersistenceApi = {
   writeAccountDocument(client: PgClient, accountId: string, name: string, value: JsonRecord): Promise<void>;
   mapAccountDocument(accountId: string, name: string, value: JsonRecord): JsonRecord;
   rebuildAccountDocument(mapping: JsonRecord): JsonRecord;
-  readAuthDocument(client: PgClient): Promise<{ users?: JsonRecord[] } | null>;
   mapStoreObjects(accountId: string, store: JsonRecord): StoreMapping;
   readPostgresStoreObjects(client: PgClient, accountId: string): Promise<StoreMapping>;
   rebuildStoreObjects(mapping: StoreMapping): JsonRecord;
@@ -1532,15 +1531,15 @@ async function pgClient(connectionString: string): Promise<PgClient> {
   return client;
 }
 
-async function readSourceAccountIds(root: string, connectionString: string): Promise<string[]> {
-  const persistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
-  const client = await pgClient(connectionString);
+async function readSourceAccountIdsFromClient(client: PgClient): Promise<string[]> {
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    const auth = await persistence.readAuthDocument(client);
+    const rows = (await client.query("SELECT id FROM for_now_auth.users ORDER BY id")).rows;
     await client.query("COMMIT");
-    const ids = (auth?.users || []).map(user => String(user.id || "")).filter(Boolean).sort();
-    if (new Set(ids).size !== ids.length) fail("Production auth snapshot contains duplicate account IDs");
+    const ids = rows.map(row => typeof row.id === "string" ? row.id : "");
+    if (ids.some(id => !id) || new Set(ids).size !== ids.length) {
+      fail("Production auth snapshot contains invalid or duplicate account IDs");
+    }
     return ids;
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
@@ -1548,6 +1547,10 @@ async function readSourceAccountIds(root: string, connectionString: string): Pro
   } finally {
     await client.end();
   }
+}
+
+async function readSourceAccountIds(connectionString: string): Promise<string[]> {
+  return await readSourceAccountIdsFromClient(await pgClient(connectionString));
 }
 
 async function createSanitizedAccount(
@@ -1820,7 +1823,7 @@ async function snapshot(root: string, outputFile: string) {
   if (!/^[a-f0-9]{40,64}$/iu.test(candidateSha) || !/^[a-f0-9]{40,64}$/iu.test(candidateTree)) {
     fail("Snapshot requires the fixed candidate full SHA and tree");
   }
-  const firstAccountIds = await readSourceAccountIds(root, sourceAuthUrl);
+  const firstAccountIds = await readSourceAccountIds(sourceAuthUrl);
   if (!firstAccountIds.length) fail("Source auth snapshot has no users to validate");
   const sourcePersistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
   const client = await pgClient(sourceDataUrl);
@@ -1837,7 +1840,7 @@ async function snapshot(root: string, outputFile: string) {
     );
     accounts.push({ ...account, documents: await sanitizeAccountDocuments(root, source.accountId, source.documents, redactionKey, timeBaseline) });
   }
-  const finalAccountIds = await readSourceAccountIds(root, sourceAuthUrl);
+  const finalAccountIds = await readSourceAccountIds(sourceAuthUrl);
   if (JSON.stringify(firstAccountIds) !== JSON.stringify(finalAccountIds)) {
     fail("Production account set changed during snapshot; retry from a new read-only transaction");
   }
@@ -3762,7 +3765,63 @@ async function selfTest(root: string) {
     if (!rejected) fail("Invalid/missing/secret-extension account document was accepted");
   }
 
-  // 四账号只读源事务须先完整读取、COMMIT并等待end，再进行本机处理。
+  // 认证来源只精准读取旧生产schema也具备的账户ID，禁止拉取密码、会话或迁移后列。
+  const makeSourceAuthClient = (failQuery = "", rows: JsonRecord[] = [
+    { id: "slice-a" }, { id: "slice-b" }, { id: "slice-c" }, { id: "slice-d" }
+  ]) => {
+    const trace: string[] = [];
+    let closed = false;
+    const client: PgClient = {
+      async connect() {
+        fail("Account ID collector must receive an already-connected source client");
+      },
+      async query(sql) {
+        if (closed) fail("Synthetic auth source query ran after close");
+        trace.push(sql);
+        if (sql === failQuery) throw new Error("Synthetic auth source read failed");
+        if (sql === "SELECT id FROM for_now_auth.users ORDER BY id") return { rows };
+        return { rows: [] };
+      },
+      async end() {
+        closed = true;
+        trace.push("end-complete");
+      }
+    };
+    return { client, trace, isClosed: () => closed };
+  };
+  const sourceAuthFixture = makeSourceAuthClient();
+  const sourceAccountIds = await readSourceAccountIdsFromClient(sourceAuthFixture.client);
+  if (sourceAccountIds.join(",") !== "slice-a,slice-b,slice-c,slice-d"
+    || !sourceAuthFixture.isClosed()
+    || sourceAuthFixture.trace.join("|") !== [
+      "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+      "SELECT id FROM for_now_auth.users ORDER BY id",
+      "COMMIT",
+      "end-complete"
+    ].join("|")) fail("Source account ID collector widened its query or changed transaction lifetime");
+  for (const failure of ["SELECT id FROM for_now_auth.users ORDER BY id", "COMMIT"]) {
+    const rejected = makeSourceAuthClient(failure);
+    let failed = false;
+    try { await readSourceAccountIdsFromClient(rejected.client); }
+    catch (error) {
+      if (!(error instanceof Error) || !error.message.startsWith("Synthetic auth source")) throw error;
+      failed = true;
+    }
+    if (!failed || !rejected.isClosed() || !rejected.trace.includes("ROLLBACK")
+      || rejected.trace.at(-1) !== "end-complete") fail("Failed account ID read did not rollback and close");
+  }
+  for (const rows of [[{ id: "" }], [{ id: "duplicate" }, { id: "duplicate" }], [{ id: 1 }]]) {
+    const rejected = makeSourceAuthClient("", rows);
+    let failed = false;
+    try { await readSourceAccountIdsFromClient(rejected.client); }
+    catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("invalid or duplicate account IDs")) throw error;
+      failed = true;
+    }
+    if (!failed || !rejected.isClosed()) fail("Invalid account ID source was accepted or left open");
+  }
+
+  // 四账号只读数据事务须先完整读取、COMMIT并等待end，再进行本机处理。
   const fixtureAccountIds = ["slice-a", "slice-b", "slice-c", "slice-d"];
   const makeSourceClient = (failQuery = "") => {
     const trace: string[] = [];
@@ -3849,7 +3908,7 @@ async function selfTest(root: string) {
     missingDocumentRejected = error instanceof Error && error.message.includes("required account document is missing");
   }
   if (!missingDocumentRejected || !missingDocumentSource.isClosed() || !missingDocumentSource.trace.includes("ROLLBACK")) fail("Missing source document did not fail closed and release the source connection");
-  process.stdout.write("Account document checks passed: actual map/rebuild/normalize, private credential replacement, preserved ledger/controlled states/negative TTS rate, explicit missing documents and shared READ ONLY source lifetime.\n");
+  process.stdout.write("Account document checks passed: precise legacy-schema account ID read, actual map/rebuild/normalize, private credential replacement, preserved ledger/controlled states/negative TTS rate, explicit missing documents and shared READ ONLY source lifetime.\n");
   process.stdout.write("Startup gate synthetic checks passed: construction is inert, task classifications survive redaction, and media/dispatch effects are blocked.\n");
 }
 
