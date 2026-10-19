@@ -272,9 +272,31 @@ function homeMemorySource(item){
   if(item.type==="quote")return `拾句 · ${item.sourceTitle||"来源未记"} · ${date}`;
   return `思绪 · ${date}`
 }
-function renderHomeMemories({advance=false}={}){
+let renderedMemoryScope = null;
+/** 状态通知只重建可见首页；显式首页准备允许在揭幕前装配。账户/会话变化先清旧DOM和索引。 */
+function renderHomeMemories({advance=false,preparing=false}={}){
   const container=$("#home-memory-grid"),status=$("#home-memory-status"),shuffle=$("#home-shuffle");
   if(!container)return;
+  const scope = JSON.stringify([runtime.currentUser?.id || "local", runtime.sessionSerial]);
+  const scopeChanged = renderedMemoryScope !== scope;
+  if (scopeChanged) {
+    runtime.homeMemoryKeys = [];
+    runtime.homeMemoryByKey = new Map();
+  }
+  const surface = container.closest(".view");
+  const visible = (runtime.pageRouter?.currentRoute()?.view || "today") === "today"
+    && (preparing || (!surface?.hidden && surface?.classList.contains("active")
+      && !document.body.classList.contains("auth-locked")));
+  if (!visible) {
+    if (scopeChanged && renderedMemoryScope !== null) {
+      container.replaceChildren();
+      status.textContent = "";
+      shuffle.hidden = true;
+    }
+    renderedMemoryScope = scope;
+    return;
+  }
+  renderedMemoryScope = scope;
   const pool=Array.isArray(state.homeMemories)?state.homeMemories:createHomeMemoryPool(state),poolByKey=new Map(pool.map(item=>[item.key,item])),limit=Math.min(3,pool.length);
   runtime.homeMemoryByKey=poolByKey;
   let selected=advance?[]:runtime.homeMemoryKeys.map(key=>poolByKey.get(key)).filter(Boolean).slice(0,limit);
@@ -368,7 +390,7 @@ function renderHomeKeepsake(){
 }
 function renderHomeMood(){renderCheckinSurfaces(["checkins"])}
 function renderHome(){
-  renderHomeMemories();
+  renderHomeMemories({preparing:true});
   renderHomeKeepsake();
   renderHomeMood()
 }

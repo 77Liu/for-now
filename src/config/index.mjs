@@ -82,6 +82,57 @@ export function loadRecordCommandConfig(env = process.env) {
   });
 }
 
+const syncInteger = (env, name, fallback, minimum, maximum) => {
+  const raw = env[name];
+  const value = raw === undefined || raw === "" ? fallback : Number(raw);
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer from ${minimum} to ${maximum}`);
+  }
+  return value;
+};
+
+/** v2 record sync is disabled by default and requires an explicit account allowlist. @since unreleased */
+export function loadSyncV2Config(env = process.env) {
+  if (env.SYNC_V2_ENABLED !== undefined && !["0", "1"].includes(env.SYNC_V2_ENABLED)) {
+    throw new Error("SYNC_V2_ENABLED must be 0 or 1");
+  }
+  const accountAllowlist = String(env.SYNC_V2_ACCOUNT_ALLOWLIST || "")
+    .split(",")
+    .map(value => value.trim())
+    .filter(Boolean);
+  if (accountAllowlist.includes("*") && accountAllowlist.length !== 1) {
+    throw new Error("SYNC_V2_ACCOUNT_ALLOWLIST wildcard must stand alone");
+  }
+  const retentionDaysText = String(env.SYNC_CHANGE_RETENTION_DAYS || "").trim();
+  const retentionRowsText = String(env.SYNC_CHANGE_RETENTION_ROWS || "").trim();
+  if (Boolean(retentionDaysText) !== Boolean(retentionRowsText)) {
+    throw new Error("SYNC_CHANGE_RETENTION_DAYS and SYNC_CHANGE_RETENTION_ROWS must be configured together");
+  }
+  const retentionDays = retentionDaysText
+    ? syncInteger(env, "SYNC_CHANGE_RETENTION_DAYS", 0, 1, 365)
+    : null;
+  const retentionRowsPerAccount = retentionRowsText
+    ? syncInteger(env, "SYNC_CHANGE_RETENTION_ROWS", 0, 100, 1_000_000)
+    : null;
+  const enabled = env.SYNC_V2_ENABLED === "1";
+  if (enabled && !accountAllowlist.length) {
+    throw new Error("SYNC_V2_ENABLED=1 requires SYNC_V2_ACCOUNT_ALLOWLIST");
+  }
+  return Object.freeze({
+    enabled,
+    accountAllowlist: Object.freeze(accountAllowlist),
+    batchLimit: syncInteger(env, "SYNC_V2_BATCH_LIMIT", 200, 1, 500),
+    batchHardLimit: 500,
+    waitMsMax: syncInteger(env, "SYNC_V2_WAIT_MS_MAX", 1500, 0, 1500),
+    rebaseMaxScopes: syncInteger(env, "SYNC_REBASE_MAX_SCOPES", 5, 1, 5),
+    retentionDays,
+    retentionRowsPerAccount,
+    accountEnabled: accountId => enabled && (
+      accountAllowlist.includes("*") || accountAllowlist.includes(accountId)
+    )
+  });
+}
+
 export function loadAttachmentConfig(env = process.env) {
   return Object.freeze({
     mode: env.ATTACHMENT_STORAGE || "local",
@@ -173,8 +224,24 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     throw new Error("PostgreSQL runtime requires a standalone data source; local-test/upstream proxy is unsupported");
   }
   const recordCommands = loadRecordCommandConfig(env);
+  const syncV2 = loadSyncV2Config(env);
   if (recordCommands.allowlist.length && persistenceBackend !== "postgres") {
     throw new Error("RECORD_COMMAND_ALLOWLIST requires PERSISTENCE_BACKEND=postgres");
+  }
+  const thoughtPagingEnabled = env.THOUGHT_PAGING_ENABLED === "1";
+  const requiredSyncCommands = [
+    "thought.create",
+    "thought.update",
+    "thought.delete",
+    "thought.aiWriteback",
+    "task.status"
+  ];
+  if (syncV2.enabled && (
+    persistenceBackend !== "postgres"
+    || !thoughtPagingEnabled
+    || requiredSyncCommands.some(command => !recordCommands.enabled(command))
+  )) {
+    throw new Error("SYNC_V2_ENABLED=1 requires PostgreSQL, thought paging and complete thought record commands");
   }
   const inviteCodeHash = String(env.INVITE_CODE_HASH || "").toLowerCase();
   const authRequired = env.AUTH_REQUIRED === "1" || Boolean(inviteCodeHash);
@@ -249,6 +316,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     aiQueue: loadAiQueueConfig(env),
     pgIo: loadPgIoConfig(env),
     recordCommands,
+    syncV2,
     syncAccountWakeEnabled: env.SYNC_ACCOUNT_WAKE_ENABLED === "1",
     dataDir: path.resolve(rootDir, env.DATA_DIR || "data"),
     port: Number(env.PORT || 4173),
@@ -293,8 +361,9 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     attachments,
     features: Object.freeze({
       aiReasoningUi: env.AI_REASONING_UI_ENABLED === "1",
-      thoughtPaging: Object.freeze({ ...THOUGHT_PAGING, enabled: env.THOUGHT_PAGING_ENABLED === "1" }),
-      incrementalSync: String(env.INCREMENTAL_SYNC_ENABLED ?? "1") !== "0"
+      thoughtPaging: Object.freeze({ ...THOUGHT_PAGING, enabled: thoughtPagingEnabled }),
+      incrementalSync: String(env.INCREMENTAL_SYNC_ENABLED ?? "1") !== "0",
+      recordSyncV2: syncV2.enabled
     }),
     platform: Object.freeze({
       serviceTokenHash: platformServiceTokenHash,

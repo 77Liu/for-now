@@ -15,6 +15,9 @@ export function createDataRuntime({
   createRequestCoordinator,
   createRefreshCoordinator,
   createIncrementalSync,
+  createRecordSyncLoop,
+  applyRecordBatch,
+  rebaseRecordScopes,
   $,
   getActionsCoordinator,
   renderStateChart,
@@ -40,7 +43,10 @@ const refreshCoordinator=createRefreshCoordinator({
   session:sessionScope,
   requestState:async()=>{
     const route=runtime.pageRouter?.currentRoute(),key=routeDataKey(route),snapshot=await requestRouteState(route);
-    return key===routeDataKey(runtime.pageRouter?.currentRoute())?{...state,...snapshot}:state
+    if(key!==routeDataKey(runtime.pageRouter?.currentRoute()))return state;
+    if(!runtime.featureFlags?.recordSyncV2)return{...state,...snapshot};
+    const{thoughts:_recordThoughts,thoughtPage:_recordPage,...legacySnapshot}=snapshot;
+    return{...state,...legacySnapshot}
   },
   afterReplace:consumer=>restorePendingProjections(consumer)
 });
@@ -237,7 +243,12 @@ async function loadRouteState(route,requestSerial=++runtime.routeDataRequestSeri
   try{
     const snapshot=await requestRouteState(route);
     if(requestSerial!==runtime.routeDataRequestSerial||owner!==runtime.currentUser?.id||session!==sessionSerial)return false;
-    clearRouteLoadFailure(route);mergeStateSnapshot(snapshot);runtime.loadedRouteKey=key;runtime.fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);runtime.routeDataReady=true;renderVisibleRoute();runtime.runtimeFeatureRegistry?.notifyState(state,new Set(Object.keys(snapshot||{})));reconcileActiveThoughtRoute();return true
+    const recordOwned=runtime.featureFlags?.recordSyncV2&&runtime.applicationLifecycleReady;
+    const incoming=recordOwned?(({thoughts:_recordThoughts,thoughtPage:_recordPage,...rest})=>rest)(snapshot):snapshot;
+    clearRouteLoadFailure(route);mergeStateSnapshot(incoming);runtime.loadedRouteKey=key;runtime.fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);runtime.routeDataReady=true;
+    if(recordOwned)await runtime.syncController?.rebaseRecords?.();
+    renderVisibleRoute();runtime.runtimeFeatureRegistry?.notifyState(state,new Set(Object.keys(incoming||{})));reconcileActiveThoughtRoute();
+    return true
   }catch(error){
     if(requestSerial===runtime.routeDataRequestSerial&&owner===runtime.currentUser?.id&&session===sessionSerial){runtime.routeLoadFailureKey=key;renderRouteLoadFailure(route);showToast("当前页面读取失败，已有记录没有变化。","error")}
     return false
@@ -386,7 +397,13 @@ async function restorePendingProjections(recovery=null){
 async function applyIncrementalSnapshot(snapshot,changes,consumer=captureDataScope()){
   if(!consumer.isCurrent())return false;
   let incoming = snapshot, thoughtWindowInvalidated = false;
-  if (runtime.featureFlags?.thoughtPaging?.enabled && Object.hasOwn(snapshot || {}, "thoughts")) {
+  if(runtime.featureFlags?.recordSyncV2&&Object.hasOwn(incoming||{},"thoughts")){
+    const{thoughts:_recordOwnedThoughts,...legacyOnly}=incoming;
+    incoming=legacyOnly
+  }
+  if (!runtime.featureFlags?.recordSyncV2
+    && runtime.featureFlags?.thoughtPaging?.enabled
+    && Object.hasOwn(snapshot || {}, "thoughts")) {
     const { thoughts: _fullThoughts, ...other } = snapshot;
     const route = runtime.pageRouter?.currentRoute();
     if (route?.view === "thoughts" && route.kind !== "detail" && state.thoughtPage?.kind === "list") {
@@ -437,7 +454,7 @@ async function updateSyncHealth(event){
   };
   runtime.runtimeFeatureRegistry?.notifyState(state,new Set(["syncHealth"]))
 }
-runtime.syncController=createIncrementalSync({
+const legacySyncController=createIncrementalSync({
   coordinator:requestCoordinator,
   request:(url,options)=>requestV1(url,options),
   getScope:syncScope,
@@ -446,7 +463,9 @@ runtime.syncController=createIncrementalSync({
   applySnapshot:applyIncrementalSnapshot,
   resnapshot:async consumer=>{
     if(!consumer.isCurrent())return false;
-    const applied=await refreshState(["checkins","dailyRecords","captures","journals","thoughts","chat","review","books","keepsakes","quotes","notifications","onboardingV2","feedback"],{isCurrent:consumer.isCurrent});
+    const domains=["checkins","dailyRecords","captures","journals","chat","review","books","keepsakes","quotes","notifications","onboardingV2","feedback"];
+    if(!runtime.featureFlags?.recordSyncV2)domains.splice(4,0,"thoughts");
+    const applied=await refreshState(domains,{isCurrent:consumer.isCurrent});
     if(!consumer.isCurrent())return false;
     if(applied===false)throw new Error("同步重读尚未应用");
     const actionsApplied=await getActionsCoordinator().load({isCurrent:consumer.isCurrent});
@@ -455,6 +474,97 @@ runtime.syncController=createIncrementalSync({
   },
   onStatus:event=>void updateSyncHealth(event)
 });
+function activeRecordScopes(){
+  const route=runtime.pageRouter?.currentRoute()||{view:"today",query:{}};
+  if(route.view==="thoughts"&&route.kind==="detail"&&route.resourceId){
+    const scopeKey=`thoughtDetail:${route.resourceId}`;
+    return{activeScopeKey:scopeKey,scopes:[{scopeKey,kind:"thoughtDetail",id:route.resourceId}]}
+  }
+  const scopeKey=route.view==="thoughts"?"thoughtPage:active":"thoughtPage:home";
+  return{activeScopeKey:scopeKey,scopes:[{
+    scopeKey,kind:"thoughtPage",query:route.query?.q||"",tag:route.query?.tag||"",
+    sort:route.query?.sort==="created"?"created":"occurred",
+    cursor:route.view==="thoughts"?(route.query?.cursor||""):"",
+    direction:route.view==="thoughts"?(route.query?.direction||"next"):"next"
+  }]}
+}
+const recordEntityKey=key=>JSON.stringify([key.entityType,key.parentType,key.parentId,key.entityId]);
+function hydrateRecordScopes(cursor,consumer){
+  if(!consumer.isCurrent())return false;
+  const request=activeRecordScopes(),scope=request.scopes[0];
+  if(!scope)return false;
+  const detail=scope.kind==="thoughtDetail";
+  if(detail&&state.thoughtPage?.kind!=="detail")return false;
+  if(!detail&&state.thoughtPage?.kind!=="list")return false;
+  const rootId=detail?scope.id:"";
+  const values=(state.thoughts||[]).filter(item=>!item?._sync&&(detail
+    ?item.id===rootId||item.relatedTo===rootId
+    :item.type==="question"));
+  const entities=values.map(item=>{
+    const block=detail&&item.id!==rootId,key={
+      entityType:block?"thoughtBlock":"thoughtChain",
+      entityId:item.id,
+      parentType:block?"thoughtChain":null,
+      parentId:block?rootId:null
+    };
+    return{key,version:Math.max(1,Number(item.version)||1),deliveryCursor:cursor,
+      projection:structuredClone(item),tombstone:false}
+  });
+  rebaseRecordScopes({
+    highWaterCursor:cursor,
+    activeScopeKey:request.activeScopeKey,
+    scopes:[{
+      scopeKey:scope.scopeKey,descriptorVersion:1,kind:scope.kind,entities,
+      orderedEntityKeys:entities.map(entity=>recordEntityKey(entity.key)),
+      metadata:{...(state.thoughtPage||{})}
+    }]
+  },recordSyncContext(consumer));
+  return consumer.isCurrent()
+}
+const recordSyncContext=consumer=>({
+  accountId:consumer.owner,
+  workspace:consumer.workspace,
+  generation:consumer.generation
+});
+const recordSyncController=createRecordSyncLoop({
+  request:(url,options)=>requestV1(url,options),
+  getScope:syncScope,
+  getWorkspace:syncWorkspace,
+  getSignal:()=>sessionScope.capture().signal,
+  getScopes:activeRecordScopes,
+  hydrateScopes:hydrateRecordScopes,
+  applyBatch:async(batch,consumer)=>{
+    if(!consumer.isCurrent())return{committed:false,staleScopeKeys:[]};
+    const result=applyRecordBatch(batch,recordSyncContext(consumer));
+    if(!consumer.isCurrent())return{committed:false,staleScopeKeys:[]};
+    if(Array.isArray(batch.changes)&&batch.changes.length)publishDomains(new Set(["thoughts"]));
+    await restorePendingProjections(consumer);
+    return result
+  },
+  rebaseScopes:async(payload,consumer)=>{
+    if(!consumer.isCurrent())return false;
+    const result=rebaseRecordScopes(payload,recordSyncContext(consumer));
+    if(!consumer.isCurrent())return false;
+    publishDomains(new Set(["thoughts"]));
+    await restorePendingProjections(consumer);
+    return result
+  },
+  onStatus:event=>void updateSyncHealth(event)
+});
+runtime.syncController={
+  async start(owner,options={}){
+    const [legacy,records]=await Promise.all([
+      legacySyncController.start(owner,options),
+      recordSyncController.start(owner,{recordSync:runtime.featureFlags?.recordSyncV2===true})
+    ]);
+    return Boolean(legacy||records)
+  },
+  stop(){legacySyncController.stop();recordSyncController.stop()},
+  async pull(){return Promise.all([legacySyncController.pull(),recordSyncController.pull()])},
+  async drain(options){return legacySyncController.drain(options)},
+  rebaseRecords(){return recordSyncController.rebase()},
+  cursor:()=>({v1:legacySyncController.cursor(),v2:recordSyncController.cursor()})
+};
 const {
   notificationUnread, renderNotificationSummary, publishNotificationState,
   scheduleNotificationPoll, readNotificationSnapshot, loadNotifications

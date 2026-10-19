@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "rootDir": ".",
+    "outDir": ".build/typescript/record-sync-regression",
+    "noEmitOnError": true
+  },
+  "files": [
+    "scripts/record-sync-v2-regression.mts",
+    "src/shared/persistence/record-sync-repository.mts",
+    "public/frontend/state/record-sync.mts"
+  ]
+}

@@ -579,6 +579,12 @@ TC-01 至 TC-15 全部通过；change mismatch、跨账户、未覆盖类型启�
 
 ## 4.1 开发明细（必填；评审时留空，开发结束后填写）
 
+2026-10-19 已完成本地实现。新增独立 `record_changes/account_sync_heads` 读取仓储、同快照思绪 page/detail rebase、`GET /api/v2/sync` 与 `POST /api/v2/sync/rebase`；v1 保持独立。首批 registry 只在 PostgreSQL、思绪分页、五项必要记录命令、实际生产者装配和账户白名单同时成立时开放 `thoughtChain/thoughtBlock` 公开投影；通知、任务、证据等类型登记为 deferred，未登记类型拒绝整批。
+
+前端 `state` 持有实体 Map、scope membership、版本/tombstone 与 legacy thoughts 投影；v2 transport 独立于 v1 续接，只在 state 成功后持久 cursor。create/delete、排序影响或服务端 `refetch` 会自动做 active scope rebase；刷新用本地 cursor 加当前有界 route snapshot 恢复 Map，不持久整账户正文。账户/工作区/generation、未知类型、同投递版本冲突和迟到响应均拒绝提交。
+
+本地专项、完整回归、源码检查、隔离 PostgreSQL 16.14 和真实 Chrome 通过正确性出口。服务端 PG 长轮询 8 样本 P75 为 124.1ms，内存协议基线 P75 为 0.10ms；真实 Chrome 单样本从 HTTP 响应到可观察 paint 的工具上界约 1.1s，不能证明 P75≤500ms，因此 TC-12/发布性能门保持 partial。Safari、安装 PWA、真机和生产放量未执行。
+
 ## 4.2 测试方案（必填）
 
 |用例编号 / 对应需求|环境与前置条件|输入 / 操作 / 故障注入|预期输出 / 持久化 / 用户行为|监控与通过标准|

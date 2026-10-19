@@ -188,7 +188,9 @@ export function createHttpApplication({
         );
       }
       if (await ownerHttp.handle(req, res, url)) return;
-      if (url.pathname.startsWith("/api/v1/")) {
+      if (url.pathname.startsWith("/api/v1/")
+        || url.pathname === "/api/v2/sync"
+        || url.pathname === "/api/v2/sync/rebase") {
         const handled = await apiV1.handle(req, res, url);
         return handled === false
           ? apiV1.error(res, 404, "Not found", "NOT_FOUND")

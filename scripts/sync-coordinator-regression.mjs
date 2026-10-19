@@ -6,9 +6,11 @@ import { performance } from "node:perf_hooks";
 import { createAccountCommitNotifier } from "../src/shared/concurrency/index.mjs";
 import { createJsonStoreRepository } from "../src/shared/persistence/index.mjs";
 import assert from "node:assert/strict";
-import { createSyncHttp } from "../src/http/index.mjs";
+import { createSyncHttp, createJsonHttp, createApiV1Http } from "../src/http/index.mjs";
+import { createEmptyStore, createPublicStateProjection, withoutReferenceOwnerMetadata } from "../src/app/index.mjs";
 import {
   createIncrementalSync,
+  createRecordSyncLoop,
   createIndexedDbSyncStore,
   createMemorySyncStore,
   createRequestCoordinator,
@@ -1078,6 +1080,361 @@ for (const kind of ["missing-resnapshot", "terminal-false"]) {
   assert.equal(state, "new-incremental");
   loop.stop();
 }
+
+// 公共投影→v1封装→JSON序列化是同一同步消费链，不将响应引用交给业务写者。
+for (const role of ["owner", "user"]) {
+  const user = { id: "account-a", role };
+  const document = {
+    ...createEmptyStore(),
+    captures: [{ id: "serialized-capture", content: "原文保留", tokenBudget: { private: true } }],
+    thoughts: [{ id: "serialized-question", type: "question", content: "工作记录", tags: [],
+      occurredAt: "2026-10-16T08:00:00.000Z", occurredOn: "2026-10-16",
+      providedReferences: [{ resourceType: "onboardingV2", citationId: "private-reference" },
+        { resourceType: "thought", citationId: "visible-reference" }],
+      contextReceipt: { referenceRequest: { providedCount: 2 } } }],
+    notifications: [{ id: "serialized-notification", status: "succeeded", readAt: "" }],
+    trash: [{ id: "serialized-trash" }]
+  };
+  const original = structuredClone(document);
+  const projector = createPublicStateProjection({
+    getUser: () => user, isOwner: value => value.role === "owner",
+    speechProvider: { configured: false, defaultVoice: "", voices: [], supportedAsrMimeTypes: [] },
+    visionProvider: { configured: false }, hash: value => String(value),
+    now: () => "2026-10-16T12:00:00.000Z", today: () => "2026-10-16"
+  });
+  const domains = ["captures", "thoughts", "aiTasks", "notifications", "speechCache", "trash"];
+  const changes = domains.map((domain, index) => ({ cursor: index + 1, domain }));
+  const handler = createSyncHttp({
+    repository: { readSyncSnapshot: async () => ({ document, metadata: { sync: { cursor: changes.length, changes } } }) },
+    publicState: projector
+  });
+  const json = createJsonHttp({ getContext: () => ({ user }), maxBodyBytes: 1000,
+    projectResponse: value => role === "owner" ? value : withoutReferenceOwnerMetadata(value) });
+  const v1 = createApiV1Http({ getContext: () => ({ user, method: "GET" }), sendJson: json.sendJson });
+  const response = { writeHead(status) { this.status = status; }, end(body) { this.body = body; } };
+  await handler.handleV1({ method: "GET" }, response,
+    new URL("http://local.test/api/v1/sync?cursor=0"), v1);
+  assert.equal(response.status, 200);
+  const received = JSON.parse(response.body).data.snapshot;
+  const expected = projector(document);
+  for (const key of ["captures", "thoughts", "aiTasks", "notifications", "notificationUnread", "speech", "trashCount", "clusters", "insights"]) {
+    assert.deepEqual(received[key], expected[key], `${role}: synchronous serialized ${key}`);
+  }
+  assert.equal(received.thoughts[0].providedReferences.length, role === "owner" ? 2 : 1);
+  assert.equal(JSON.stringify(received).includes("private-reference"), role === "owner");
+  assert.deepEqual(document, original, "sync serialization cannot mutate persisted document");
+}
+
+const recordRows = [{
+  cursor: "1",
+  ordinal: 0,
+  commandId: "thought.update",
+  entityType: "thoughtChain",
+  entityId: "root-a",
+  parentType: null,
+  parentId: null,
+  version: 2,
+  operation: "update",
+  changedFields: ["content"],
+  scopeKeys: ["thought:list", "thought:root-a"],
+  summary: null,
+  createdAt: "2026-10-19T00:00:00.000Z"
+}, {
+  cursor: "1",
+  ordinal: 1,
+  commandId: "thought.update",
+  entityType: "notification",
+  entityId: "notification-a",
+  parentType: null,
+  parentId: null,
+  version: 2,
+  operation: "update",
+  changedFields: ["status"],
+  scopeKeys: ["notification:list"],
+  summary: null,
+  createdAt: "2026-10-19T00:00:00.000Z"
+}];
+const recordClient = {
+  async query(sql) {
+    if (sql.includes("FROM for_now.account_sync_heads")) {
+      return { rows: [{ currentCursor: "1" }], rowCount: 1 };
+    }
+    if (sql.includes("COALESCE(min(cursor)")) {
+      return { rows: [{ oldestCursor: "1" }], rowCount: 1 };
+    }
+    if (sql.includes("WITH cursor_counts")) {
+      return { rows: structuredClone(recordRows), rowCount: recordRows.length };
+    }
+    throw new Error(`Unexpected record sync SQL: ${sql}`);
+  }
+};
+const recordDetail = {
+  id: "root-a",
+  type: "question",
+  content: "record sync current",
+  version: 2,
+  blocks: []
+};
+const recordSync = operation => operation({
+  context: { client: recordClient, accountId: "account-a" },
+  list: async () => ({
+    items: [{ id: "root-a", type: "question", content: "summary", version: 2 }],
+    nextId: "",
+    prevId: "",
+    tags: []
+  }),
+  detail: async () => recordDetail
+});
+const syncV2 = {
+  enabled: true,
+  batchLimit: 200,
+  batchHardLimit: 500,
+  waitMsMax: 1500,
+  rebaseMaxScopes: 5,
+  accountEnabled: id => id === "account-a"
+};
+const recordHandler = createSyncHttp({
+  repository: {
+    readSyncSnapshot: async () => ({
+      document: createEmptyStore(),
+      metadata: { sync: { cursor: 0, changes: [] } }
+    }),
+    syncScope: () => "record-test"
+  },
+  publicState: value => value,
+  getAccountId: () => "account-a",
+  assertAccess: async () => {},
+  bodyJson: async req => req.body,
+  recordSync,
+  syncV2
+});
+const recordJson = createJsonHttp({
+  getContext: () => ({ user: { id: "account-a", role: "owner" } }),
+  maxBodyBytes: 1000
+});
+const recordApi = createApiV1Http({
+  getContext: () => ({ user: { id: "account-a", role: "owner" } }),
+  sendJson: recordJson.sendJson
+});
+const recordResponse = () => ({
+  headers: {},
+  setHeader(name, value) { this.headers[name] = value; },
+  writeHead(status) { this.status = status; },
+  end(body) { this.body = body; this.writableEnded = true; }
+});
+const getRecordResponse = recordResponse();
+await recordHandler.handleV1(
+  { method: "GET" },
+  getRecordResponse,
+  new URL("http://local.test/api/v2/sync?cursor=0"),
+  recordApi
+);
+assert.equal(getRecordResponse.status, 200);
+const recordBatch = JSON.parse(getRecordResponse.body).data;
+assert.equal(recordBatch.nextCursor, 1);
+assert.equal(recordBatch.changes.length, 1);
+assert.equal(recordBatch.changes[0].key.entityType, "thoughtChain");
+assert.equal(recordBatch.changes[0].summary.content, "record sync current");
+
+const rebaseResponse = recordResponse();
+await recordHandler.handleV1(
+  {
+    method: "POST",
+    body: {
+      activeScopeKey: "thoughtDetail:root-a",
+      scopes: [{
+        scopeKey: "thoughtDetail:root-a",
+        kind: "thoughtDetail",
+        id: "root-a"
+      }]
+    }
+  },
+  rebaseResponse,
+  new URL("http://local.test/api/v2/sync/rebase"),
+  recordApi
+);
+assert.equal(rebaseResponse.status, 200);
+const recordRebase = JSON.parse(rebaseResponse.body).data;
+assert.equal(recordRebase.highWaterCursor, 1);
+assert.equal(recordRebase.scopes[0].entities[0].projection.content, "record sync current");
+
+recordRows[0].entityType = "unregistered";
+const unknownResponse = recordResponse();
+await recordHandler.handleV1(
+  { method: "GET" },
+  unknownResponse,
+  new URL("http://local.test/api/v2/sync?cursor=0"),
+  recordApi
+);
+assert.equal(unknownResponse.status, 503);
+assert.equal(JSON.parse(unknownResponse.body).error.code, "SYNC_ENTITY_TYPE_UNREGISTERED");
+recordRows[0].entityType = "thoughtChain";
+
+const recordWakeNotifier = createAccountCommitNotifier();
+const wakeRows = [];
+let wakeCursor = 0;
+const wakeClient = {
+  async query(sql, values = []) {
+    if (sql.includes("FROM for_now.account_sync_heads")) {
+      return { rows: [{ currentCursor: String(wakeCursor) }], rowCount: 1 };
+    }
+    if (sql.includes("COALESCE(min(cursor)")) {
+      return {
+        rows: [{
+          oldestCursor: String(wakeRows[0]?.cursor || wakeCursor + 1)
+        }],
+        rowCount: 1
+      };
+    }
+    if (sql.includes("WITH cursor_counts")) {
+      const after = Number(values[1] || 0);
+      const rows = wakeRows.filter(row => Number(row.cursor) > after);
+      return { rows: structuredClone(rows), rowCount: rows.length };
+    }
+    throw new Error(`Unexpected record wake SQL: ${sql}`);
+  }
+};
+const wakeHandler = createSyncHttp({
+  repository: {
+    readSyncSnapshot: async () => ({
+      document: createEmptyStore(),
+      metadata: { sync: { cursor: 0, changes: [] } }
+    }),
+    syncScope: () => "record-wake"
+  },
+  publicState: value => value,
+  notifier: recordWakeNotifier,
+  getAccountId: () => "account-a",
+  assertAccess: async () => {},
+  recordSync: operation => operation({
+    context: { client: wakeClient, accountId: "account-a" },
+    list: async () => ({ items: [], nextId: "", prevId: "", tags: [] }),
+    detail: async id => ({
+      id,
+      type: "question",
+      content: `wake-${wakeCursor}`,
+      version: wakeCursor,
+      blocks: []
+    })
+  }),
+  syncV2
+});
+const wakeSamples = [];
+for (let index = 0; index < 8; index += 1) {
+  const after = wakeCursor;
+  const response = recordResponse();
+  const startedAt = performance.now();
+  const waiting = wakeHandler.handleV1(
+    { method: "GET" },
+    response,
+    new URL(`http://local.test/api/v2/sync?cursor=${after}&waitMs=1500`),
+    recordApi
+  );
+  await flush();
+  wakeCursor += 1;
+  wakeRows.push({
+    ...recordRows[0],
+    cursor: String(wakeCursor),
+    entityId: `wake-root-${wakeCursor}`,
+    version: wakeCursor
+  });
+  recordWakeNotifier.notifyAccountCommitted({
+    accountId: "account-a",
+    storageScope: "record-wake"
+  });
+  await waiting;
+  assert.equal(response.status, 200);
+  assert.equal(JSON.parse(response.body).data.nextCursor, wakeCursor);
+  wakeSamples.push(performance.now() - startedAt);
+}
+recordWakeNotifier.stop();
+const wakeSorted = [...wakeSamples].sort((left, right) => left - right);
+console.log("F9_RECORD_V2_WAKE_METRICS " + JSON.stringify({
+  samples: wakeSamples,
+  p75CommitToResponseMs: wakeSorted[Math.ceil(wakeSorted.length * 0.75) - 1]
+}));
+
+const recordLoopRequests = [];
+const recordLoopTimers = [];
+let recordLoopMode = "valid";
+let hydratedRecordCursor = null;
+let recordLoopRebases = 0;
+const recordLoopStorage = new Map();
+const recordLoop = createRecordSyncLoop({
+  request: async (url, options) => {
+    recordLoopRequests.push({ url, options });
+    if (url === "/api/v2/sync/rebase") {
+      recordLoopRebases += 1;
+      return {
+        data: {
+          highWaterCursor: recordLoopRebases === 1 ? 4 : 5,
+          activeScopeKey: "thoughtPage:active",
+          scopes: []
+        }
+      };
+    }
+    if (recordLoopMode === "unknown") {
+      throw Object.assign(new Error("unknown"), { code: "SYNC_ENTITY_TYPE_UNKNOWN" });
+    }
+    return {
+      data: {
+        fromCursor: 4,
+        nextCursor: 5,
+        highWaterCursor: 5,
+        hasMore: false,
+        changes: [{
+          key: { entityType: "thoughtChain" },
+          operation: "create",
+          refetch: "page"
+        }]
+      }
+    };
+  },
+  applyBatch: async batch => ({
+    committed: true,
+    staleScopeKeys: batch.changes.length ? [] : []
+  }),
+  rebaseScopes: async () => ({ committed: true }),
+  hydrateScopes: async cursor => {
+    hydratedRecordCursor = cursor;
+    return true;
+  },
+  getScopes: () => ({
+    activeScopeKey: "thoughtPage:active",
+    scopes: [{
+      scopeKey: "thoughtPage:active",
+      kind: "thoughtPage"
+    }]
+  }),
+  getScope: () => "1",
+  getWorkspace: () => "",
+  getSignal: () => new AbortController().signal,
+  storage: {
+    getItem: key => recordLoopStorage.get(key) ?? null,
+    setItem: (key, value) => recordLoopStorage.set(key, value)
+  },
+  windowTarget: null,
+  documentTarget: null,
+  setTimer: callback => {
+    recordLoopTimers.push(callback);
+    return recordLoopTimers.length;
+  },
+  clearTimer() {}
+});
+assert.equal(await recordLoop.start("account-a", { recordSync: true }), true);
+assert.equal(recordLoop.cursor(), 5);
+assert.equal(recordLoopRequests[0].url, "/api/v2/sync/rebase");
+assert.match(recordLoopRequests[1].url, /^\/api\/v2\/sync\?/);
+assert.equal(recordLoopRequests[2].url, "/api/v2/sync/rebase");
+recordLoop.stop();
+const beforeRecordRestart = recordLoopRequests.length;
+assert.equal(await recordLoop.start("account-a", { recordSync: true }), true);
+assert.equal(hydratedRecordCursor, 5);
+assert.match(recordLoopRequests[beforeRecordRestart].url, /^\/api\/v2\/sync\?/);
+recordLoopMode = "unknown";
+await assert.rejects(recordLoop.pull(), { code: "SYNC_ENTITY_TYPE_UNKNOWN" });
+assert.equal(recordLoop.cursor(), 5, "failed record batch cannot advance cursor");
+recordLoop.stop();
 
 let speechSyncFixture = null;
 let speechProjectionCalls = 0;

@@ -536,6 +536,10 @@ export function createRuntimeHttpWiring({
     try { return openingPreferences((await aiRuntime.readLlmSettings()).opening); }
     catch { return openingPreferences(); }
   };
+  const featuresFor = user => ({
+    ...appConfig.features,
+    recordSyncV2: appConfig.syncV2.accountEnabled(user?.id || "")
+  });
   const readThoughtRoute = async route => {
     const queries = contentRuntime.thoughtQueries;
     const query = route.query || {};
@@ -579,7 +583,7 @@ export function createRuntimeHttpWiring({
         releaseVersion,
         openingPreferences: await readOpeningPreferences(user),
         capabilities: capabilitiesFor(user),
-        features: appConfig.features,
+        features: featuresFor(user),
         governanceUrl: isOwner(user) && appConfig.platform.serviceTokenHash
           ? "/platform/"
           : "",
@@ -601,6 +605,9 @@ export function createRuntimeHttpWiring({
     publicState: publicStateFromStore,
     notifier: syncNotifier,
     getAccountId: () => accountRuntime.currentAccountId(),
+    bodyJson,
+    recordSync: contentRuntime.thoughtQueries?.recordSync || null,
+    syncV2: appConfig.syncV2,
     assertAccess: async req => {
       const id = requestStorage.getStore()?.user?.id;
       const auth = access.localTestRuntime.enabled
@@ -693,7 +700,7 @@ export function createRuntimeHttpWiring({
         user: publicUser(user),
         ...(isOwner(user) ? { openingPreferences: await readOpeningPreferences(user) } : {}),
         capabilities: capabilitiesFor(user),
-        features: appConfig.features,
+        features: featuresFor(user),
         governanceUrl: isOwner(user) && appConfig.platform.serviceTokenHash
           ? "/platform/"
           : ""

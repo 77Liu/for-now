@@ -320,3 +320,281 @@ export function createScopedIncrementalSync({
     cursor: () => cursor || 0
   };
 }
+
+type RecordScopeRequest = {
+  activeScopeKey: string;
+  scopes: Record<string, unknown>[];
+};
+type RecordConsumption = SyncConsumption & { generation: number };
+type RecordSyncLoopOptions = {
+  request(url: string, options: {
+    method?: string;
+    body?: string;
+    signal: AbortSignal;
+  }): Promise<unknown>;
+  applyBatch(batch: Record<string, unknown>, context: RecordConsumption): Promise<{
+    committed: boolean;
+    staleScopeKeys: string[];
+  }> | {
+    committed: boolean;
+    staleScopeKeys: string[];
+  };
+  rebaseScopes(payload: Record<string, unknown>, context: RecordConsumption): Promise<unknown> | unknown;
+  hydrateScopes?(cursor: number, context: RecordConsumption): Promise<boolean> | boolean;
+  getScopes(): RecordScopeRequest;
+  storage?: Pick<Storage, "getItem" | "setItem"> | null;
+  windowTarget?: Target | null;
+  documentTarget?: Target | null;
+  pollMs?: number;
+  getScope?: () => string;
+  getWorkspace?: () => string;
+  getSignal?: () => AbortSignal | undefined;
+  onStatus?: (event: Status) => void;
+  setTimer?: (callback: () => void, delay: number) => unknown;
+  clearTimer?: (timer: unknown) => void;
+  now?: () => number;
+};
+
+/** Independent v2 read loop; v1 keeps serving entity types that have not migrated. @since unreleased */
+export function createRecordSyncLoop(options: RecordSyncLoopOptions) {
+  const request = options.request;
+  const storage = options.storage ?? globalThis.localStorage;
+  const windowTarget = options.windowTarget ?? globalThis.window;
+  const documentTarget = options.documentTarget ?? globalThis.document;
+  const pollMs = options.pollMs ?? 1500;
+  const setTimer = options.setTimer ?? globalThis.setTimeout;
+  const clearTimer = options.clearTimer
+    ?? (timer => globalThis.clearTimeout(timer as ReturnType<typeof setTimeout>));
+  const getScope = options.getScope ?? (() => "");
+  const getWorkspace = options.getWorkspace ?? (() => "");
+  const getSignal = options.getSignal ?? (() => undefined);
+  const onStatus = options.onStatus ?? (() => {});
+  const now = options.now ?? (() => Date.now());
+  let owner = "", workspace = "", scope = "", cursor = 0;
+  let lifecycle = 0, failures = 0, readSerial = 0, timer: unknown = null;
+  let pending: { serial: number; controller: AbortController; promise: Promise<boolean> } | null = null;
+  let recovery: {
+    context: RecordConsumption;
+    controller: AbortController;
+    promise: Promise<boolean>;
+  } | null = null;
+  let stopped = true, enabled = false;
+  let unsubscribeSignal = () => {};
+  const context = (): RecordConsumption => {
+    const expected = { owner, workspace, scope, generation: lifecycle };
+    return {
+      ...expected,
+      isCurrent: () => !stopped && owner === expected.owner
+        && workspace === getWorkspace() && scope === getScope()
+        && lifecycle === expected.generation
+    };
+  };
+  const cursorKey = () => `cike-record-sync-v2:${owner}:${encodeURIComponent(workspace)}`;
+  const saveCursor = (value: number) => {
+    cursor = value;
+    try { storage?.setItem(cursorKey(), String(value)); } catch {}
+  };
+  const readCursor = () => {
+    try {
+      const raw = storage?.getItem(cursorKey());
+      const value = Number(raw);
+      return raw != null && Number.isSafeInteger(value) && value >= 0 ? value : null;
+    } catch {
+      return null;
+    }
+  };
+  const clearPoll = () => {
+    if (timer != null) clearTimer(timer);
+    timer = null;
+  };
+  const cancel = () => {
+    readSerial += 1;
+    pending?.controller.abort();
+    pending = null;
+  };
+  const retryWait = () => Math.min(60_000, Math.max(1000, pollMs)
+    * 2 ** Math.min(6, Math.max(0, failures - 1)));
+  const visible = () => !documentTarget || documentTarget.visibilityState !== "hidden";
+  const schedule = (delay: number) => {
+    if (!enabled || stopped || timer != null || !context().isCurrent()) return;
+    timer = setTimer(() => {
+      timer = null;
+      if (!visible()) return schedule(pollMs);
+      void pull(true).catch(() => {});
+    }, delay);
+  };
+  const runRebase = async (consumer: RecordConsumption, controller: AbortController) => {
+    if (!consumer.isCurrent()) return false;
+    const requestScopes = options.getScopes();
+    const signal = AbortSignal.any([controller.signal, getSignal() || new AbortController().signal]);
+    const response = await request("/api/v2/sync/rebase", {
+      method: "POST",
+      body: JSON.stringify(requestScopes),
+      signal
+    });
+    if (!consumer.isCurrent()) return false;
+    const payload = (response as { data?: Record<string, unknown> })?.data
+      || response as Record<string, unknown>;
+    await options.rebaseScopes(payload, consumer);
+    if (!consumer.isCurrent()) return false;
+    const next = Number(payload.highWaterCursor);
+    if (!Number.isSafeInteger(next) || next < 0) throw new Error("同步恢复游标无效");
+    saveCursor(next);
+    failures = 0;
+    onStatus({ type: "record-rebase", owner, workspace, scope, cursor });
+    return true;
+  };
+  const rebase = (consumer = context()): Promise<boolean> => {
+    if (!consumer.isCurrent()) return Promise.resolve(false);
+    if (recovery?.context.isCurrent()) return recovery.promise;
+    clearPoll();
+    cancel();
+    const controller = new AbortController();
+    const current = { context: consumer, controller, promise: Promise.resolve(false) };
+    recovery = current;
+    current.promise = runRebase(consumer, controller).finally(() => {
+      if (recovery === current) {
+        recovery = null;
+        if (consumer.isCurrent()) schedule(failures ? retryWait() : 0);
+      }
+    });
+    return current.promise;
+  };
+  const finishPull = (serial: number, startedAt: number) => {
+    if (pending?.serial !== serial) return;
+    pending = null;
+    if (context().isCurrent()) {
+      schedule(failures ? retryWait() : Math.max(0, 50 - (now() - startedAt)));
+    }
+  };
+  const pull = (wait = false): Promise<boolean> => {
+    if (!enabled || stopped || !context().isCurrent()) return Promise.resolve(false);
+    if (recovery?.context.isCurrent()) return Promise.resolve(false);
+    if (pending) return pending.promise;
+    clearPoll();
+    const consumer = context(), controller = new AbortController();
+    const serial = ++readSerial;
+    const startedAt = now();
+    const execution = (async () => {
+      try {
+        const query = new URLSearchParams({
+          cursor: String(cursor),
+          waitMs: String(wait ? Math.min(1500, pollMs) : 0)
+        });
+        const response = await request(`/api/v2/sync?${query}`, { signal: controller.signal });
+        if (!consumer.isCurrent()) return false;
+        const batch = (response as { data?: Record<string, unknown> })?.data
+          || response as Record<string, unknown>;
+        const applied = await options.applyBatch(batch, consumer);
+        if (!consumer.isCurrent()) return false;
+        const next = Number(batch.nextCursor);
+        if (!Number.isSafeInteger(next) || next < cursor) throw new Error("记录同步游标无效");
+        const changes = Array.isArray(batch.changes) ? batch.changes as Array<Record<string, unknown>> : [];
+        const serverRequiresRebase = changes.some(change => (
+          change.refetch === "page"
+          || change.refetch === "detail"
+          || change.operation === "create"
+          || change.operation === "delete"
+        ));
+        if (applied.staleScopeKeys.length || serverRequiresRebase) await rebase(consumer);
+        else saveCursor(next);
+        failures = 0;
+        onStatus({
+          type: "record-pull",
+          owner,
+          workspace,
+          scope,
+          cursor,
+          changes: changes.length,
+          durationMs: now() - startedAt
+        });
+        return Boolean((batch.changes as unknown[])?.length);
+      } catch (caught) {
+        if (!consumer.isCurrent()) return false;
+        const error = caught as Failure;
+        if (["SYNC_CURSOR_MISSING", "SYNC_CURSOR_EXPIRED", "SYNC_CURSOR_AHEAD", "SYNC_REBASE_REQUIRED"]
+          .includes(error.code || "")) {
+          await rebase(consumer);
+          return true;
+        }
+        failures += 1;
+        onStatus({
+          type: "record-error",
+          owner,
+          workspace,
+          scope,
+          cursor,
+          code: error.code || "SYNC_V2_FAILED"
+        });
+        throw error;
+      } finally {
+        finishPull(serial, startedAt);
+      }
+    })();
+    pending = { serial, controller, promise: execution };
+    return execution;
+  };
+  const onForeground = () => {
+    clearPoll();
+    void pull(false).catch(() => {});
+  };
+  const onVisibility = () => {
+    if (visible()) onForeground();
+    else {
+      clearPoll();
+      cancel();
+    }
+  };
+  const stop = () => {
+    lifecycle += 1;
+    stopped = true;
+    clearPoll();
+    cancel();
+    recovery?.controller.abort();
+    recovery = null;
+    unsubscribeSignal();
+    unsubscribeSignal = () => {};
+    windowTarget?.removeEventListener?.("online", onForeground);
+    windowTarget?.removeEventListener?.("pageshow", onForeground);
+    documentTarget?.removeEventListener?.("visibilitychange", onVisibility);
+    owner = "";
+    workspace = "";
+    scope = "";
+    cursor = 0;
+    failures = 0;
+  };
+  return {
+    async start(nextOwner: string, { recordSync = false } = {}) {
+      stop();
+      owner = String(nextOwner || "");
+      enabled = Boolean(owner && recordSync);
+      if (!enabled) return false;
+      workspace = getWorkspace();
+      scope = getScope();
+      stopped = false;
+      const signal = getSignal();
+      if (signal?.aborted) {
+        stop();
+        return false;
+      }
+      signal?.addEventListener("abort", stop, { once: true });
+      unsubscribeSignal = () => signal?.removeEventListener("abort", stop);
+      windowTarget?.addEventListener?.("online", onForeground);
+      windowTarget?.addEventListener?.("pageshow", onForeground);
+      documentTarget?.addEventListener?.("visibilitychange", onVisibility);
+      const savedCursor = readCursor();
+      const hydrated = savedCursor != null && options.hydrateScopes
+        ? await options.hydrateScopes(savedCursor, context())
+        : false;
+      if (hydrated) cursor = savedCursor!;
+      else await rebase();
+      if (!context().isCurrent()) return false;
+      await pull(false);
+      return context().isCurrent();
+    },
+    stop,
+    pull,
+    rebase,
+    cursor: () => cursor
+  };
+}

@@ -29,6 +29,7 @@
     "scripts/thought-trash-http-checks.mts",
     "scripts/thought-search-corpus-regression.mts",
     "scripts/thought-browser-response-hold.mts",
-    "scripts/thought-browser-probe.mts"
+    "scripts/thought-browser-probe.mts",
+    "scripts/record-sync-browser-probe.mts"
   ]
 }

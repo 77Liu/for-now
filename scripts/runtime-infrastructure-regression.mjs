@@ -53,6 +53,27 @@ assert.throws(() => config({
 }), /must not contain duplicates/);
 assert.equal(defaults.features.incrementalSync, true);
 assert.equal(defaults.features.thoughtPaging.enabled, false);
+assert.equal(defaults.features.recordSyncV2, false);
+assert.equal(defaults.syncV2.accountEnabled("account-a"), false);
+assert.throws(() => config({ SYNC_V2_ENABLED: "1" }), /requires SYNC_V2_ACCOUNT_ALLOWLIST/);
+assert.throws(() => config({
+  SYNC_V2_ENABLED: "1",
+  SYNC_V2_ACCOUNT_ALLOWLIST: "*"
+}), /requires PostgreSQL, thought paging and complete thought record commands/);
+const syncV2Config = config({
+  PERSISTENCE_BACKEND: "postgres",
+  THOUGHT_PAGING_ENABLED: "1",
+  RECORD_COMMAND_ALLOWLIST: "thought.create,thought.update,thought.delete,thought.aiWriteback,task.status",
+  SYNC_V2_ENABLED: "1",
+  SYNC_V2_ACCOUNT_ALLOWLIST: "account-a",
+  SYNC_V2_BATCH_LIMIT: "25"
+});
+assert.equal(syncV2Config.syncV2.accountEnabled("account-a"), true);
+assert.equal(syncV2Config.syncV2.accountEnabled("account-b"), false);
+assert.equal(syncV2Config.syncV2.batchLimit, 25);
+assert.throws(() => config({
+  SYNC_CHANGE_RETENTION_DAYS: "7"
+}), /must be configured together/);
 assert.equal(config({ INCREMENTAL_SYNC_ENABLED: "0" }).features.incrementalSync, false);
 assert.deepEqual(defaults.limits, {
   aiQps: 20, aiConcurrency: 20, segmentationQps: 5, segmentationConcurrency: 5,

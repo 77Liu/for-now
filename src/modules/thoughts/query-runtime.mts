@@ -136,6 +136,20 @@ export function createThoughtQueryRuntime({ repository, dependencies, enabled }:
       assertReady();
       return query(context => getThoughtChainDetail(context, rootId, dependencies));
     },
+    /** F9 reuses one trusted read transaction for sync head, page and detail rebase. @since unreleased */
+    recordSync: <Result,>(operation: (reader: {
+      context: ProjectionContext;
+      list(input: ThoughtPageInput): ReturnType<typeof listThoughtChainsPage>;
+      detail(rootId: string): ReturnType<typeof getThoughtChainDetail>;
+    }) => Promise<Result>) => {
+      assertReady();
+      if (!enabled) throw incompleteThoughtProducers(["runtime:thoughtPagingDisabled"]);
+      return query(context => operation({
+        context,
+        list: input => listThoughtChainsPage(context, input),
+        detail: rootId => getThoughtChainDetail(context, rootId, dependencies)
+      }));
+    },
     /** 取得编辑所需当前块字段；读取前仍核对完整生产者装配。 @since unreleased */
     blockInput: (blockId: string) => {
       assertReady();

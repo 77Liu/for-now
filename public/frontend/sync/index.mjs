@@ -1,5 +1,8 @@
 import { workspaceSyncStore } from "../../generated/workspace-sync-store.mjs";
-import { createScopedIncrementalSync } from "../../generated/incremental-sync.mjs";
+import {
+  createRecordSyncLoop as createRecordSyncLoopImpl,
+  createScopedIncrementalSync
+} from "../../generated/incremental-sync.mjs";
 import { BUSINESS_ID_BYTES, encodeBusinessId, isBusinessCreationPath, isBusinessId } from "../../generated/business-identifiers.mjs";
 import { remapBusinessReferences, remapBusinessUrl } from "../../generated/business-id-remap.mjs";
 
@@ -721,4 +724,8 @@ export function createSyncChannel({
 /** 增量同步公开入口；可选作用域/取消端口自unreleased起由有界TS实现提供。 */
 export function createIncrementalSync(options = {}) {
   return createScopedIncrementalSync({ ...options, channel: options.channel ?? createSyncChannel() });
+}
+
+export function createRecordSyncLoop(options = {}) {
+  return createRecordSyncLoopImpl(options);
 }

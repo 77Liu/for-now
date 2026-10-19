@@ -1,4 +1,5 @@
 import { holdThoughtBrowserProbe } from "../.build/typescript/thought-db-regression/scripts/thought-browser-probe.mjs";
+import { holdRecordSyncBrowserProbe } from "../.build/typescript/thought-db-regression/scripts/record-sync-browser-probe.mjs";
 import {
   attachmentProducerFixtures, runAttachmentProducerPostgresChecks, runAttachmentProducerHttpChecks
 } from "./thought-attachment-postgres-checks.mjs";
@@ -1047,6 +1048,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     {
       accountRecoveryEnabled = false,
       thoughtPagingEnabled = false,
+      syncV2Enabled = false,
       recordCommandAllowlist = thoughtPagingEnabled
         ? "thought.create,thought.update,thought.delete,thought.aiWriteback,task.status"
         : ""
@@ -1061,6 +1063,8 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         ACCOUNT_RECOVERY_ENABLED: accountRecoveryEnabled ? "1" : "0",
         RECORD_COMMAND_ALLOWLIST: recordCommandAllowlist,
         THOUGHT_PAGING_ENABLED: thoughtPagingEnabled ? "1" : "0",
+        SYNC_V2_ENABLED: syncV2Enabled ? "1" : "0",
+        SYNC_V2_ACCOUNT_ALLOWLIST: syncV2Enabled ? "*" : "",
         SYNC_ACCOUNT_WAKE_ENABLED: "1",
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
@@ -1845,7 +1849,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       accountId: "repo-test", store: empty()
     })), /entered runtime/);
 
-    let app = await startApp("runtime_test", dataDir, "postgres", { thoughtPagingEnabled: true });
+    let app = await startApp("runtime_test", dataDir, "postgres", {
+      thoughtPagingEnabled: true,
+      syncV2Enabled: true
+    });
     await assert.rejects(startApp(), /Only one application instance/);
     assert.equal((await request(app.base, "/api/state")).status, 401);
     const register = username => request(app.base, "/api/auth/register", {
@@ -1889,7 +1896,8 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     await stop(app.child);
     app = await startApp("runtime_test", dataDir, "postgres", {
       accountRecoveryEnabled: true,
-      thoughtPagingEnabled: true
+      thoughtPagingEnabled: true,
+      syncV2Enabled: true
     });
     const recoveryReady = await request(app.base, "/readyz");
     assert.equal(recoveryReady.status, 200, JSON.stringify(recoveryReady.body));
@@ -2012,6 +2020,22 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(receiptState.body.data.status, "committed");
     assert.equal(receiptState.body.data.responseAvailable, false);
     assert.equal((await request(app.base, "/api/settings", { cookie })).body.automaticAnswers.thoughtAnswer, false);
+    const initialRecordRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: "thoughtPage:postgres",
+        scopes: [{
+          scopeKey: "thoughtPage:postgres",
+          kind: "thoughtPage",
+          query: "数据库问题",
+          direction: "next"
+        }]
+      }
+    });
+    assert.equal(initialRecordRebase.status, 200, JSON.stringify(initialRecordRebase.body));
+    const recordCursor = initialRecordRebase.body.data.highWaterCursor;
+    assert.equal(Number.isSafeInteger(recordCursor), true);
     const disabledChain = await request(app.base, "/api/thought-chains", {
       method: "POST", cookie,
       body: { question: "默认关闭自动回答", occurredAt: "2026-09-29T01:00:00.000Z", generateAnswer: true, clientRequestId: "postgres-disabled-chain" }
@@ -2147,6 +2171,80 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(detailRoute.status, 200, JSON.stringify(detailRoute.body));
     assert.ok(detailRoute.body.data.thoughts.some(item => item.id === generatedAnswer.id));
     assert.equal(detailRoute.body.data.thoughtPage.found, true);
+    const recordProducerTypes = (await database.query(`
+      SELECT DISTINCT entity_type FROM for_now.record_changes
+      WHERE account_id=$1 AND cursor>$2
+      ORDER BY entity_type
+    `, [id, recordCursor])).rows.map(row => row.entity_type);
+    console.log("F9_RECORD_PRODUCER_TYPES " + JSON.stringify(recordProducerTypes));
+    const recordBatch = await request(
+      app.base,
+      `/api/v2/sync?cursor=${recordCursor}&waitMs=0`,
+      { cookie }
+    );
+    assert.equal(recordBatch.status, 200, JSON.stringify(recordBatch.body));
+    assert.ok(recordBatch.body.data.nextCursor > recordCursor);
+    assert.ok(recordBatch.body.data.changes.some(change => (
+      change.key.entityType === "thoughtChain"
+      && change.key.entityId === backgroundTask.targetId
+    )));
+    assert.equal(Object.hasOwn(recordBatch.body.data, "snapshot"), false);
+    assert.equal(JSON.stringify(recordBatch.body.data).includes("requestHash"), false);
+    const recordDetailRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+        scopes: [{
+          scopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+          kind: "thoughtDetail",
+          id: backgroundTask.targetId
+        }]
+      }
+    });
+    assert.equal(recordDetailRebase.status, 200, JSON.stringify(recordDetailRebase.body));
+    assert.equal(recordDetailRebase.body.data.highWaterCursor >= recordBatch.body.data.nextCursor, true);
+    assert.ok(recordDetailRebase.body.data.scopes[0].entities.some(entity => (
+      entity.key.entityType === "thoughtBlock"
+      && entity.key.entityId === generatedAnswer.id
+    )));
+    const otherRecordRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie: otherCookie,
+      body: {
+        activeScopeKey: "thoughtPage:other",
+        scopes: [{ scopeKey: "thoughtPage:other", kind: "thoughtPage" }]
+      }
+    });
+    assert.equal(otherRecordRebase.status, 200, JSON.stringify(otherRecordRebase.body));
+    assert.deepEqual(otherRecordRebase.body.data.scopes[0].entities, []);
+    await database.query(`
+      DELETE FROM for_now.record_changes
+      WHERE account_id=$1 AND cursor<=$2
+    `, [id, recordBatch.body.data.nextCursor]);
+    const expiredRecordCursor = await request(
+      app.base,
+      `/api/v2/sync?cursor=${recordCursor}&waitMs=0`,
+      { cookie }
+    );
+    assert.equal(expiredRecordCursor.status, 410, JSON.stringify(expiredRecordCursor.body));
+    assert.equal(expiredRecordCursor.body.error.details.rebaseRequired, true);
+    const postTrimRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+        scopes: [{
+          scopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+          kind: "thoughtDetail",
+          id: backgroundTask.targetId
+        }]
+      }
+    });
+    assert.equal(postTrimRebase.status, 200, JSON.stringify(postTrimRebase.body));
+    assert.ok(postTrimRebase.body.data.scopes[0].entities.some(entity => (
+      entity.key.entityId === generatedAnswer.id
+    )));
     await holdThoughtBrowserProbe({
       base: app.base,
       username: registration.body.user.username,
@@ -2484,6 +2582,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const files = await fs.readdir(dataDir, { recursive: true });
     assert.equal(files.filter(name => /(?:store|auth|llm-settings|ai-usage|ai-cost-plan)\.json$/.test(name)).length, 0);
     await assert.rejects(startApp("runtime_test", dataDir, "json"), /switched persistence backend/);
+    await holdRecordSyncBrowserProbe({
+      base: app.base,
+      username: registration.body.user.username
+    });
 
     // Export runtime mutations using a consistent relational snapshot; boot it
     // in an independently created database using the same session and contents.
