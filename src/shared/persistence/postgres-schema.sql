@@ -721,3 +721,378 @@ CREATE INDEX IF NOT EXISTS store_objects_task_request_idx
 CREATE INDEX IF NOT EXISTS store_objects_task_retry_idx
   ON for_now.store_objects(account_id, task_retry_of)
   WHERE collection = 'aiTasks';
+
+-- migration:task-recovery-index-v1
+CREATE INDEX IF NOT EXISTS store_objects_task_recovery_idx
+  ON for_now.store_objects(account_id, id, status)
+  WHERE collection = 'aiTasks' AND parent_key IS NULL
+    AND status IN ('queued', 'running', 'cancelling', 'waiting_for_user_model');
+
+-- migration:task-model-input-index-v1
+CREATE INDEX IF NOT EXISTS store_objects_task_model_input_idx
+  ON for_now.store_objects(
+    account_id, (payload->>'inputHash'),
+    (COALESCE(payload->>'createdAt', '')) DESC, position ASC NULLS LAST, id
+  )
+  WHERE collection = 'aiTasks' AND kind = 'aiTask'
+    AND payload->>'kind' = 'onboardingClaimExtraction'
+    AND payload->>'targetId' = 'onboarding-v2';
+
+-- migration:task-context-order-index-v1
+ALTER TABLE for_now.store_objects
+  ADD COLUMN IF NOT EXISTS context_sort_time text GENERATED ALWAYS AS (
+    COALESCE(NULLIF(payload->>'occurredAt', ''), NULLIF(payload->>'occurredOn', ''),
+      NULLIF(payload->>'createdAt', ''), NULLIF(payload->>'updatedAt', ''), '')
+  ) STORED;
+CREATE INDEX IF NOT EXISTS store_objects_context_recent_idx
+  ON for_now.store_objects(account_id, collection, context_sort_time DESC, id DESC)
+  WHERE parent_key IS NULL;
+CREATE INDEX IF NOT EXISTS store_objects_context_position_idx
+  ON for_now.store_objects(account_id, collection, position, context_sort_time, id)
+  WHERE parent_key IS NULL;
+CREATE INDEX IF NOT EXISTS store_objects_context_unpositioned_idx
+  ON for_now.store_objects(account_id, collection)
+  WHERE parent_key IS NULL AND position IS NULL;
+ALTER TABLE for_now.store_objects
+  ADD COLUMN IF NOT EXISTS permission_resource_type text GENERATED ALWAYS AS (
+    CASE WHEN collection = 'evidencePermissions' THEN (id::jsonb)->>0 END
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS permission_resource_id text GENERATED ALWAYS AS (
+    CASE WHEN collection = 'evidencePermissions' THEN (id::jsonb)->>1 END
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS permission_root_id text GENERATED ALWAYS AS (
+    CASE WHEN collection = 'evidencePermissions' THEN (id::jsonb)->>2 END
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS permission_target_key text GENERATED ALWAYS AS (
+    CASE WHEN collection = 'evidencePermissions' THEN (id::jsonb)->>3 END
+  ) STORED;
+CREATE INDEX IF NOT EXISTS store_objects_context_permission_idx
+  ON for_now.store_objects(account_id, permission_resource_type,
+    permission_resource_id, permission_root_id, permission_target_key)
+  WHERE collection = 'evidencePermissions';
+
+-- migration:task-learning-source-index-v1
+CREATE INDEX IF NOT EXISTS store_objects_learning_permission_idx
+  ON for_now.store_objects(account_id, permission_resource_type,
+    permission_resource_id, permission_root_id, permission_target_key)
+  WHERE collection = 'evidencePermissions' AND payload->'learningAllowed' = 'true'::jsonb;
+
+-- migration:task-material-candidate-index-v1
+CREATE INDEX IF NOT EXISTS store_objects_material_candidate_idx
+  ON for_now.store_objects(account_id, collection, object_key)
+  WHERE parent_key IS NULL
+    AND payload->'contextAllowed' IS DISTINCT FROM 'false'::jsonb
+    AND payload->'allowInContext' IS DISTINCT FROM 'false'::jsonb
+    AND payload->>'disposition' IS DISTINCT FROM 'discarded'
+    AND COALESCE(payload->'deletedAt'
+      IN ('null'::jsonb, 'false'::jsonb, '0'::jsonb, '""'::jsonb), true);
+
+-- migration:task-source-calendar-index-v1
+-- A conservative calendar lookup only. Domain builders remain authoritative
+-- for occurrence, permissions, authorship, sampling and fingerprints.
+CREATE OR REPLACE FUNCTION for_now.source_calendar_hints(document jsonb)
+RETURNS text[] LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
+DECLARE
+  candidate text;
+  local_day date;
+  result text[] := ARRAY[]::text[];
+BEGIN
+  FOR candidate IN
+    SELECT entry.value #>> '{}'
+    FROM jsonb_path_query(document, '$.** ? (@.type() == "object")') node
+    CROSS JOIN LATERAL jsonb_each(node) entry
+    WHERE entry.key IN ('occurredAt', 'occurredOn', 'createdAt', 'updatedAt',
+      'generatedAt', 'questionOccurredAt', 'answerOccurredAt', 'answeredAt')
+  LOOP
+    candidate := btrim(candidate,
+      U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF');
+    IF candidate ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN
+      BEGIN
+        local_day := substring(candidate, 1, 10)::date;
+        IF to_char(local_day, 'YYYY-MM-DD') = substring(candidate, 1, 10) THEN
+          FOR day_offset IN -2..2 LOOP
+            result := array_append(result, to_char(local_day + day_offset, 'YYYY-MM-DD'));
+          END LOOP;
+        ELSIF candidate ~ '([Zz]|[+-][0-9]{2}:?[0-9]{2})$' THEN
+          result := result || ARRAY['*', '0000-00-00', '9999-99-99'];
+        END IF;
+      EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
+        IF candidate ~ '([Zz]|[+-][0-9]{2}:?[0-9]{2})$' THEN
+          result := result || ARRAY['*', '0000-00-00', '9999-99-99'];
+        END IF;
+      END;
+    ELSIF candidate ~ '([Zz]|[+-][0-9]{2}:?[0-9]{2})$' THEN
+      result := result || ARRAY['*', '0000-00-00', '9999-99-99'];
+    END IF;
+  END LOOP;
+  RETURN ARRAY(SELECT DISTINCT item FROM unnest(result) item ORDER BY item);
+END $$;
+CREATE OR REPLACE FUNCTION for_now.source_occurrence_may_be_unknown(document jsonb)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
+DECLARE
+  candidate text;
+BEGIN
+  IF document->>'eventTimePrecision' = 'unknown' THEN RETURN true; END IF;
+  candidate := document->>'occurredAt';
+  IF candidate ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*([Zz]|[+-][0-9]{2}:?[0-9]{2})$'
+    AND COALESCE(document->>'eventTimePrecision', '') NOT IN ('date', 'day', 'date_only') THEN
+    BEGIN
+      PERFORM candidate::timestamptz;
+      RETURN false;
+    EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
+      NULL;
+    END;
+  END IF;
+  candidate := document->>'occurredOn';
+  IF candidate ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
+    BEGIN
+      RETURN to_char(candidate::date, 'YYYY-MM-DD') <> candidate;
+    EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
+      NULL;
+    END;
+  END IF;
+  RETURN true;
+END
+$$;
+CREATE OR REPLACE FUNCTION for_now.source_has_text(value jsonb)
+RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT jsonb_typeof(value) = 'string' AND length(btrim(value #>> '{}',
+    U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF')) > 0
+$$;
+CREATE OR REPLACE FUNCTION for_now.source_unknown_candidate(document jsonb, source_field text)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
+BEGIN
+  IF source_field = 'followUps' THEN
+    RETURN (
+      for_now.source_has_text(document->'question')
+      AND for_now.source_occurrence_may_be_unknown(document || jsonb_build_object('occurredAt',
+        COALESCE(NULLIF(document->>'questionOccurredAt', ''), document->>'occurredAt', '')))
+    ) OR (
+      for_now.source_has_text(document->'answer')
+      AND for_now.source_occurrence_may_be_unknown(document || jsonb_build_object('occurredAt',
+        COALESCE(NULLIF(document->>'answerOccurredAt', ''), NULLIF(document->>'answeredAt', ''), '')))
+    );
+  ELSIF source_field = 'reflections' THEN
+    RETURN for_now.source_occurrence_may_be_unknown(document || jsonb_build_object('occurredAt',
+      COALESCE(NULLIF(document->>'occurredAt', ''), document->>'generatedAt', '')));
+  END IF;
+  RETURN for_now.source_occurrence_may_be_unknown(document);
+END $$;
+-- Only candidate existence and occurrence/validity metadata cross this boundary.
+-- The domain collector still applies parent permissions and counts each candidate.
+CREATE OR REPLACE FUNCTION for_now.source_unknown_projection(document jsonb, source_field text)
+RETURNS jsonb LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
+DECLARE
+  result jsonb;
+  entry record;
+BEGIN
+  SELECT COALESCE(jsonb_object_agg(key, value), '{}'::jsonb) INTO result
+  FROM jsonb_each(document)
+  WHERE key IN ('id', 'type', 'occurredAt', 'occurredOn', 'eventTimePrecision',
+    'questionOccurredAt', 'answerOccurredAt', 'answeredAt', 'generatedAt',
+    'deleted', 'tombstone', 'status', 'validationState',
+    'contextAllowed', 'allowInContext', 'disposition');
+  IF document->'deletedAt' NOT IN ('null'::jsonb, 'false'::jsonb, '0'::jsonb, '""'::jsonb) THEN
+    result := result || '{"deletedAt":true}'::jsonb;
+  END IF;
+  FOR entry IN SELECT key, value FROM jsonb_each(document) LOOP
+    IF source_field <> 'reflections'
+      AND entry.key IN ('question', 'answer', 'recognitionDescription', 'trendAnalysis', 'verification') THEN
+      IF for_now.source_has_text(entry.value) THEN
+        result := result || jsonb_build_object(entry.key, 'present');
+      END IF;
+    ELSIF source_field = 'reflections' AND entry.key IN ('content', 'answer', 'text') THEN
+      IF entry.value NOT IN ('null'::jsonb, 'false'::jsonb, '0'::jsonb, '""'::jsonb) THEN
+        result := result || jsonb_build_object(entry.key,
+          CASE WHEN for_now.source_has_text(entry.value)
+            THEN '"present"'::jsonb ELSE 'true'::jsonb END);
+      END IF;
+    ELSIF entry.key = 'transcription' AND entry.value->>'status' = 'ready' THEN
+      result := result || jsonb_build_object('transcription',
+        '{"status":"ready"}'::jsonb || for_now.source_unknown_projection(entry.value, 'transcription'));
+    ELSIF source_field = 'transcription' AND entry.key IN ('rawText', 'polishedText', 'condensedText') THEN
+      IF for_now.source_has_text(entry.value) THEN
+        result := result || jsonb_build_object(entry.key, 'present');
+      END IF;
+    ELSIF entry.key = 'imageUnderstandings' AND jsonb_typeof(entry.value) = 'array' THEN
+      result := result || jsonb_build_object('imageUnderstandings', (
+        SELECT COALESCE(jsonb_agg(for_now.source_unknown_projection(item, 'image')), '[]'::jsonb)
+        FROM jsonb_array_elements(entry.value) item
+      ));
+    ELSIF source_field = 'image' AND entry.key IN ('text', 'summary', 'description') THEN
+      IF entry.value NOT IN ('null'::jsonb, 'false'::jsonb, '0'::jsonb, '""'::jsonb) THEN
+        result := result || jsonb_build_object(entry.key,
+          CASE WHEN for_now.source_has_text(entry.value)
+            THEN '"present"'::jsonb ELSE 'true'::jsonb END);
+      END IF;
+    END IF;
+  END LOOP;
+  RETURN result;
+END $$;
+ALTER TABLE for_now.store_objects
+  ADD COLUMN IF NOT EXISTS source_calendar_hints text[] GENERATED ALWAYS AS (
+    CASE WHEN collection IN ('checkins', 'dailyRecords', 'thoughts', 'journals', 'captures', 'quotes', 'keepsakes')
+      AND (parent_key IS NULL OR field IN ('remarks', 'followUps', 'reflections'))
+      THEN for_now.source_calendar_hints(payload) ELSE ARRAY[]::text[] END
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS source_occurrence_may_be_unknown boolean GENERATED ALWAYS AS (
+    CASE WHEN collection IN ('checkins', 'dailyRecords', 'thoughts', 'journals', 'captures', 'quotes', 'keepsakes')
+      AND (parent_key IS NULL OR field IN ('remarks', 'followUps', 'reflections'))
+      THEN COALESCE(for_now.source_unknown_candidate(payload, field), true) ELSE false END
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS source_unknown_projection jsonb GENERATED ALWAYS AS (
+    CASE WHEN collection IN ('checkins', 'dailyRecords', 'thoughts', 'journals', 'captures', 'quotes', 'keepsakes')
+      AND (parent_key IS NULL OR field IN ('remarks', 'followUps', 'reflections'))
+      THEN for_now.source_unknown_projection(payload, field) ELSE '{}'::jsonb END
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS source_calendar_first text GENERATED ALWAYS AS (
+    (for_now.source_calendar_hints(payload))[1]
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS source_calendar_last text GENERATED ALWAYS AS (
+    (for_now.source_calendar_hints(payload))[cardinality(for_now.source_calendar_hints(payload))]
+  ) STORED;
+CREATE INDEX IF NOT EXISTS store_objects_source_calendar_idx
+  ON for_now.store_objects USING gin(source_calendar_hints)
+  WHERE collection IN ('checkins', 'dailyRecords', 'thoughts', 'journals', 'captures', 'quotes', 'keepsakes');
+CREATE INDEX IF NOT EXISTS store_objects_unknown_occurrence_idx
+  ON for_now.store_objects(account_id, object_key)
+  WHERE source_occurrence_may_be_unknown;
+CREATE INDEX IF NOT EXISTS store_objects_source_calendar_bounds_idx
+  ON for_now.store_objects(account_id, source_calendar_last, source_calendar_first, object_key)
+  WHERE collection IN ('checkins', 'dailyRecords', 'thoughts', 'journals', 'captures', 'quotes', 'keepsakes');
+CREATE INDEX IF NOT EXISTS store_objects_compression_state_idx
+  ON for_now.store_objects(account_id, status, object_key)
+  WHERE collection = 'aiTasks' AND payload->>'kind' = 'recordCompression';
+
+CREATE OR REPLACE FUNCTION for_now.compression_task_range(document jsonb)
+RETURNS text[] LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
+DECLARE
+  candidate text;
+  start_day date;
+  end_day date;
+BEGIN
+  FOREACH candidate IN ARRAY ARRAY[document->>'windowEnd', document->>'localDate'] LOOP
+    IF candidate ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
+      BEGIN
+        end_day := candidate::date;
+        IF to_char(end_day, 'YYYY-MM-DD') = candidate THEN EXIT; END IF;
+        end_day := NULL;
+      EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
+        end_day := NULL;
+      END;
+    END IF;
+  END LOOP;
+  IF end_day IS NULL THEN RETURN NULL; END IF;
+  candidate := document->>'windowStart';
+  IF candidate ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
+    BEGIN
+      start_day := candidate::date;
+      IF to_char(start_day, 'YYYY-MM-DD') <> candidate THEN start_day := NULL; END IF;
+    EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
+      start_day := NULL;
+    END;
+  END IF;
+  start_day := COALESCE(start_day, end_day - 6);
+  IF start_day > end_day OR end_day - start_day >= 365 THEN RETURN NULL; END IF;
+  RETURN ARRAY[to_char(start_day, 'YYYY-MM-DD'), to_char(end_day, 'YYYY-MM-DD')];
+END $$;
+ALTER TABLE for_now.store_objects
+  ADD COLUMN IF NOT EXISTS compression_task_timezone text GENERATED ALWAYS AS (
+    CASE WHEN collection = 'aiTasks' THEN payload->'payload'->>'timezone' END
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS compression_task_prompt_version text GENERATED ALWAYS AS (
+    CASE WHEN collection = 'aiTasks' THEN payload->'payload'->>'promptVersion' END
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS compression_task_range_start text GENERATED ALWAYS AS (
+    CASE WHEN collection = 'aiTasks' AND payload->'payload'->>'operation' = 'historicalSupplement'
+      THEN (for_now.compression_task_range(payload->'payload'))[1] END
+  ) STORED,
+  ADD COLUMN IF NOT EXISTS compression_task_range_end text GENERATED ALWAYS AS (
+    CASE WHEN collection = 'aiTasks' AND payload->'payload'->>'operation' = 'historicalSupplement'
+      THEN (for_now.compression_task_range(payload->'payload'))[2] END
+  ) STORED;
+CREATE INDEX IF NOT EXISTS store_objects_historical_task_range_idx
+  ON for_now.store_objects(account_id, compression_task_timezone,
+    compression_task_range_start, compression_task_range_end, compression_task_prompt_version, object_key)
+  WHERE collection = 'aiTasks' AND payload->>'kind' = 'recordCompression'
+    AND status = 'succeeded' AND payload->'payload'->>'operation' = 'historicalSupplement';
+CREATE INDEX IF NOT EXISTS store_objects_historical_task_coverage_idx
+  ON for_now.store_objects(account_id, compression_task_timezone,
+    compression_task_prompt_version, compression_task_range_start, object_key)
+  WHERE collection = 'aiTasks' AND payload->>'kind' = 'recordCompression'
+    AND status = 'succeeded' AND payload->'payload'->>'operation' = 'historicalSupplement';
+
+-- migration:task-importance-score-index-v1
+-- Retain the original field for lossless legacy reads. Only writes to that
+-- field maintain this query index; ordinary answer preparation never expands it.
+CREATE TABLE IF NOT EXISTS for_now.importance_score_index (
+  account_id text NOT NULL,
+  field text NOT NULL DEFAULT 'importanceScores' CHECK (field = 'importanceScores'),
+  ordinal bigint NOT NULL CHECK (ordinal > 0),
+  source_key text,
+  source_version jsonb,
+  content_sha256 jsonb,
+  payload jsonb NOT NULL,
+  PRIMARY KEY (account_id, ordinal),
+  FOREIGN KEY (account_id, field) REFERENCES for_now.store_fields(account_id, field)
+    ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS importance_score_source_idx
+  ON for_now.importance_score_index(account_id, source_key, source_version, content_sha256);
+ALTER TABLE for_now.importance_score_index ENABLE ROW LEVEL SECURITY;
+ALTER TABLE for_now.importance_score_index FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'for_now'
+      AND tablename = 'importance_score_index' AND policyname = 'account_isolation'
+  ) THEN
+    CREATE POLICY account_isolation ON for_now.importance_score_index
+      USING (account_id = current_setting('app.account_id', true))
+      WITH CHECK (account_id = current_setting('app.account_id', true));
+  END IF;
+END $$;
+CREATE OR REPLACE FUNCTION for_now.refresh_importance_score_index()
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE
+  scores jsonb;
+BEGIN
+  scores := CASE WHEN jsonb_typeof(NEW.payload) = 'array'
+    THEN NEW.payload ELSE '[]'::jsonb END;
+  INSERT INTO for_now.importance_score_index(
+    account_id, ordinal, source_key, source_version, content_sha256, payload
+  )
+  SELECT NEW.account_id, score.ordinal, score.value->>'sourceKey',
+    score.value->'sourceVersion', score.value->'contentSha256', score.value
+  FROM jsonb_array_elements(scores) WITH ORDINALITY score(value, ordinal)
+  ON CONFLICT (account_id, ordinal) DO UPDATE SET
+    source_key = EXCLUDED.source_key,
+    source_version = EXCLUDED.source_version,
+    content_sha256 = EXCLUDED.content_sha256,
+    payload = EXCLUDED.payload
+  WHERE importance_score_index.payload IS DISTINCT FROM EXCLUDED.payload;
+  DELETE FROM for_now.importance_score_index
+  WHERE account_id = NEW.account_id AND ordinal > jsonb_array_length(scores);
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS importance_score_index_write ON for_now.store_fields;
+CREATE TRIGGER importance_score_index_write
+  AFTER INSERT OR UPDATE OF payload ON for_now.store_fields
+  FOR EACH ROW WHEN (NEW.field = 'importanceScores')
+  EXECUTE FUNCTION for_now.refresh_importance_score_index();
+INSERT INTO for_now.importance_score_index(
+  account_id, ordinal, source_key, source_version, content_sha256, payload
+)
+SELECT configuration.account_id, score.ordinal, score.value->>'sourceKey',
+  score.value->'sourceVersion', score.value->'contentSha256', score.value
+FROM for_now.store_fields configuration
+CROSS JOIN LATERAL jsonb_array_elements(CASE
+  WHEN jsonb_typeof(configuration.payload) = 'array' THEN configuration.payload
+  ELSE '[]'::jsonb END) WITH ORDINALITY score(value, ordinal)
+WHERE configuration.field = 'importanceScores'
+ON CONFLICT (account_id, ordinal) DO UPDATE SET
+  source_key = EXCLUDED.source_key,
+  source_version = EXCLUDED.source_version,
+  content_sha256 = EXCLUDED.content_sha256,
+  payload = EXCLUDED.payload
+WHERE importance_score_index.payload IS DISTINCT FROM EXCLUDED.payload;

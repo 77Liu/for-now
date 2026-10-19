@@ -251,26 +251,31 @@ function sourceIdentity(module, recordId, targetKey = "", resourceType = module)
     + (targetKey ? ":" + encodeURIComponent(targetKey) : "");
 }
 
-function makeCandidate({
-  state,
-  accountId,
-  timezone,
-  localDate,
-  asOf,
-  record,
-  resourceType,
-  module,
-  subtype,
-  targetKey = "",
-  permissionTargetKey,
-  rootId = "",
-  origin = "user_original",
-  derivedFrom,
-  text = "",
-  occurredAt,
-  measurements = [],
-  sourcePermission
-}) {
+function makeCandidate(parameters) {
+  if (parameters.state.route) {
+    parameters.state.route(parameters);
+    return;
+  }
+  const {
+    state,
+    accountId,
+    timezone,
+    localDate,
+    asOf,
+    record,
+    resourceType,
+    module,
+    subtype,
+    targetKey = "",
+    permissionTargetKey,
+    rootId = "",
+    origin = "user_original",
+    derivedFrom,
+    text = "",
+    occurredAt,
+    measurements = [],
+    sourcePermission
+  } = parameters;
   const recordId = safeId(record?.id);
   if (!recordId || !isValidRecord(record)) return;
   const occurrence = state.window ? recordOccurrenceWindow({ ...record,
@@ -837,12 +842,191 @@ function makeHash(hash) {
 }
 
 /**
+ * 同次趋势装配按页分流到实际日/槽输入；仅保留候选与统计，不保留账户原始树。
+ * 未知发生时间累计到所有增量槽，包括没有任何正文的槽。
+ * @since unreleased
+ */
+export function createRecordCompressionInputProjection({
+  accountId,
+  asOf,
+  timezones = [DEFAULT_RECORD_TIMEZONE],
+  hash,
+  maxTextChars = RECORD_COMPRESSION_INPUT_TEXT_BUDGET,
+  promptVersion,
+  localDates = null
+}) {
+  const builders = new Map();
+  const completed = new Map();
+  let unknownCount = 0;
+  let projectedUnknownCount = null;
+  let sealed = false;
+  const timezoneSet = [...new Set(timezones)];
+  const requestedDates = localDates && new Map(localDates.map(request => [
+    request.timezone, new Set(request.localDates)
+  ]));
+  const keyFor = ({ timezone, localDate, windowKey = "" }) => (
+    JSON.stringify([timezone, localDate, windowKey])
+  );
+  const ensure = request => {
+    const key = keyFor(request);
+    if (!builders.has(key)) {
+      builders.set(key, createInputBuilder({
+        accountId,
+        asOf,
+        hash,
+        maxTextChars,
+        promptVersion,
+        ...request
+      }));
+    }
+    return builders.get(key);
+  };
+  const route = (parameters, timezone, incremental) => {
+    const { record, occurredAt } = parameters;
+    if (!safeId(record?.id) || !isValidRecord(record)) return;
+    const occurrence = incremental ? recordOccurrenceWindow({
+      ...record,
+      ...(occurredAt ? { occurredAt } : {})
+    }) : null;
+    if (incremental && !occurrence) {
+      unknownCount += 1;
+      return;
+    }
+    const localDate = incremental ? occurrence.window.localDate
+      : sourceDate(record, timezone, occurredAt);
+    if (!localDate) return;
+    if (requestedDates && !requestedDates.get(timezone)?.has(localDate)) return;
+    const builder = ensure({
+      timezone,
+      localDate,
+      windowKey: incremental ? occurrence.window.windowKey : ""
+    });
+    builder.state.store = parameters.state.store;
+    try {
+      makeCandidate({
+        ...parameters,
+        ...builder.options,
+        state: builder.state,
+        sourcePermission: parameters.sourcePermission
+      });
+    } finally {
+      builder.state.store = null;
+    }
+  };
+  const add = (store, sourcePermission) => {
+    if (sealed) throw new TypeError("Compression projection is already sealed");
+    if (!objectValue(store)) throw new TypeError("A store object is required");
+    for (const [timezone, incremental] of [
+      ...timezoneSet.map(timezone => [timezone, false]),
+      [DEFAULT_RECORD_TIMEZONE, true]
+    ]) {
+      const state = {
+        store,
+        window: incremental ? {} : null,
+        route: parameters => route(parameters, timezone, incremental)
+      };
+      const options = {
+        accountId,
+        timezone,
+        asOf: parseInstant(asOf),
+        sourcePermission
+      };
+      collectSources(store, options, state);
+    }
+  };
+  const seal = () => {
+    sealed = true;
+  };
+  const addUnknownSources = (store, sourcePermission, ignoredRoots = []) => {
+    if (sealed) throw new TypeError("Compression projection is already sealed");
+    if (!objectValue(store)) throw new TypeError("A store object is required");
+    projectedUnknownCount ??= 0;
+    const ignored = new Set(ignoredRoots.map(root => JSON.stringify([root.resourceType, root.resourceId])));
+    const state = {
+      store,
+      window: {},
+      route: ({ record, occurredAt, resourceType, subtype }) => {
+        if (["question", "journal"].includes(subtype)
+          && ignored.has(JSON.stringify([resourceType, record?.id]))) return;
+        if (safeId(record?.id) && isValidRecord(record)
+          && !recordOccurrenceWindow({ ...record, ...(occurredAt ? { occurredAt } : {}) })) {
+          projectedUnknownCount += 1;
+        }
+      }
+    };
+    collectSources(store, {
+      accountId,
+      timezone: DEFAULT_RECORD_TIMEZONE,
+      asOf: parseInstant(asOf),
+      sourcePermission
+    }, state);
+  };
+  const includeDate = (timezone, localDate) => {
+    if (sealed) throw new TypeError("Compression projection is already sealed");
+    if (!timezoneSet.includes(timezone) || !parseDateKey(localDate)) {
+      throw new TypeError("Compression projection date identity differs");
+    }
+    if (requestedDates) {
+      if (!requestedDates.has(timezone)) requestedDates.set(timezone, new Set());
+      requestedDates.get(timezone).add(localDate);
+    }
+  };
+  const inputForDate = request => {
+    if (!sealed) throw new TypeError("Compression projection needs every source page");
+    if (request.accountId !== accountId || request.asOf !== asOf
+      || !timezoneSet.includes(request.timezone)) {
+      throw new TypeError("Compression projection request identity differs");
+    }
+    const key = keyFor(request);
+    if (!completed.has(key)) {
+      const builder = ensure(request);
+      const excludedUnknown = projectedUnknownCount ?? unknownCount;
+      if (builder.state.window && excludedUnknown) {
+        builder.state.coverage.total += excludedUnknown;
+        builder.state.coverage.excluded += excludedUnknown;
+        builder.state.warnings.add("发生时间或日期精度未知，未参与增量窗口");
+      }
+      completed.set(key, builder.finish());
+      builders.delete(key);
+    }
+    return completed.get(key);
+  };
+  return Object.freeze({ add, addUnknownSources, seal, inputForDate, includeDate });
+}
+
+function collectSources(store, options, state) {
+  collectCheckins(store, options, state);
+  collectDailyRecords(store, options, state);
+  collectThoughts(store, options, state);
+  collectJournals(store, options, state);
+  collectCaptures(store, options, state);
+  collectQuotes(store, options, state);
+  collectKeepsakes(store, options, state);
+}
+
+/**
  * Build a bounded, permission-filtered snapshot for one account-local day.
  * sourcePermission receives { accountId, sourceRef, sourceKey } and must return true
  * or an object with allowed/contextAllowed: true. Missing or malformed answers deny
  * the source. Stored evidencePermissions remain authoritative and cannot be overridden.
  */
-export function buildRecordCompressionInput(store, {
+export function buildRecordCompressionInput(store, options = {}) {
+  const builder = createRecordCompressionInputBuilder(options);
+  builder.add(store);
+  return builder.finish();
+}
+
+/**
+ * 按完整所属根分页累计同一窗口；完成前不抽样、不裁正文或定稿指纹。
+ * 每页使用本页真实许可；调用方必须覆盖全部合法来源且不得拆开父子权限边界。
+ * @since unreleased
+ */
+export function createRecordCompressionInputBuilder(options = {}) {
+  const { add, finish } = createInputBuilder(options);
+  return Object.freeze({ add, finish });
+}
+
+function createInputBuilder({
   accountId,
   localDate,
   timezone = DEFAULT_RECORD_TIMEZONE,
@@ -853,7 +1037,6 @@ export function buildRecordCompressionInput(store, {
   maxTextChars = RECORD_COMPRESSION_INPUT_TEXT_BUDGET,
   windowKey = ""
 } = {}) {
-  if (!objectValue(store)) throw new TypeError("A store object is required");
   if (!safeId(accountId)) throw new TypeError("accountId is required");
   if (!parseDateKey(localDate)) throw new TypeError("localDate must be a valid YYYY-MM-DD date");
   const normalizedTimezone = safeText(timezone) || DEFAULT_RECORD_TIMEZONE;
@@ -875,7 +1058,7 @@ export function buildRecordCompressionInput(store, {
   );
   const state = {
     window,
-    store,
+    store: null,
     hash: makeHash(hash),
     coverage: { total: 0, included: 0, excluded: 0, truncated: false },
     manifest: [],
@@ -889,14 +1072,45 @@ export function buildRecordCompressionInput(store, {
     asOf: asOfInstant,
     sourcePermission
   };
-  collectCheckins(store, options, state);
-  collectDailyRecords(store, options, state);
-  collectThoughts(store, options, state);
-  collectJournals(store, options, state);
-  collectCaptures(store, options, state);
-  collectQuotes(store, options, state);
-  collectKeepsakes(store, options, state);
+  let finished = false;
+  const add = (store, permission = sourcePermission) => {
+    if (finished) throw new TypeError("Compression input is already finalized");
+    if (!objectValue(store)) throw new TypeError("A store object is required");
+    state.store = store;
+    const pageOptions = { ...options, sourcePermission: permission };
+    try {
+      collectCheckins(store, pageOptions, state);
+      collectDailyRecords(store, pageOptions, state);
+      collectThoughts(store, pageOptions, state);
+      collectJournals(store, pageOptions, state);
+      collectCaptures(store, pageOptions, state);
+      collectQuotes(store, pageOptions, state);
+      collectKeepsakes(store, pageOptions, state);
+    } finally {
+      state.store = null;
+    }
+  };
+  const finish = () => {
+    if (finished) throw new TypeError("Compression input is already finalized");
+    finished = true;
+    return finishCompressionInput(state, {
+      accountId,
+      localDate,
+      normalizedTimezone,
+      asOfInstant,
+      promptVersion,
+      maxChars,
+      window,
+      start,
+      end
+    });
+  };
+  return { add, finish, state, options };
+}
 
+function finishCompressionInput(state, {
+  accountId, localDate, normalizedTimezone, asOfInstant, promptVersion, maxChars, window, start, end
+}) {
   const knownOriginGroups = Object.fromEntries(Object.entries(state.groups).map(([module, candidates]) => [
     module,
     list(candidates).filter(candidate => candidate.origin !== "unknown_origin")

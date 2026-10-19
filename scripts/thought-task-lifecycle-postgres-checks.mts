@@ -419,7 +419,10 @@ async function cancellingRecoveryMatrix(context: Context) {
   assert.deepEqual(await snapshot(context.database), recovered);
   assert.equal(dispatched, 0);
   assert.equal(providers, 0);
-  assert.ok(probe.measures.every(item => item.reads <= 3 && item.writes <= 2));
+  assert.ok(probe.measures.filter(item => item.commandId === "task.recover")
+    .every(item => item.reads <= 3 && item.writes <= 2), JSON.stringify(probe.measures));
+  assert.ok(probe.measures.filter(item => item.commandId === "task.recoveryCandidates")
+    .every(item => item.reads <= 500 && item.writes === 0), JSON.stringify(probe.measures));
 }
 
 /** 等待准备和隔离收尾按正式调度/权限链验证，保留来源记录。 @since unreleased */

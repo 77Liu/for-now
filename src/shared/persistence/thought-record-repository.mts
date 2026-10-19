@@ -41,7 +41,12 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
 
   function rebuildRecordCollections(rows: ObjectRow[], collections: string[]) {
     return rebuildStoreObjects({
-      fields: collections.map(field => ({ field, shape: "array", payload: null })),
+      fields: collections.map(field => ({
+        field,
+        shape: rows.some(row => row.collection === field && JSON.parse(row.objectKey).length === 1)
+          ? "object" : "array",
+        payload: null
+      })),
       objects: normalizedClosureRows(rows)
     });
   }
@@ -140,13 +145,49 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     };
   }
 
-  async function refreshIndexes(ports: RecordTransaction, mapping: Mapping, objectKeys: Set<string>) {
-    for (const objectKey of objectKeys) {
+  function relationSignatures(mapping: Mapping, referenceKeys: Map<string, string>) {
+    const signatures = new Map<string, string[]>();
+    for (const relation of mapping.relations) {
+      const values = signatures.get(relation.objectKey) || [];
+      values.push(canonicalJson([
+        relation.relation,
+        referenceKeys.get(JSON.stringify([relation.objectKey, relation.relation]))
+      ]));
+      signatures.set(relation.objectKey, values);
+    }
+    return new Map([...signatures].map(([key, values]) => [key, canonicalJson(values.sort())]));
+  }
+
+  async function resolveClosureRelations(
+    ports: RecordTransaction, accountId: string, store: RecordStore,
+    mapping: Mapping, referenceKeys: Map<string, string>, owners: Set<string>
+  ) {
+    const localKeys = new Set(mapping.objects.map(row => row.objectKey));
+    const externalKeys = new Set(mapping.relations
+      .filter(row => owners.has(row.objectKey))
+      .map(row => referenceKeys.get(JSON.stringify([row.objectKey, row.relation]))!)
+      .filter(key => key && !localKeys.has(key)));
+    if (!externalKeys.size) return mapping;
+    const references = await ports.objects.findMany([...externalKeys]);
+    const resolvedKeys = new Set(references.map(row => row.objectKey));
+    references.push(...await ports.objects.findSourceAlternatives(
+      [...externalKeys].filter(key => !resolvedKeys.has(key))
+    ));
+    return mapStoreObjects(accountId, store, { references });
+  }
+
+  async function refreshIndexes(
+    ports: RecordTransaction, mapping: Mapping,
+    relationKeys: Set<string>, attachmentKeys: Set<string>
+  ) {
+    for (const objectKey of relationKeys) {
       await ports.relations.removeForObject(objectKey);
-      await ports.attachments.removeForObject(objectKey);
       for (const relation of mapping.relations) {
         if (relation.objectKey === objectKey) await ports.relations.insert(relation);
       }
+    }
+    for (const objectKey of attachmentKeys) {
+      await ports.attachments.removeForObject(objectKey);
       for (const attachment of mapping.attachmentRefs) {
         if (attachment.ownerKey === objectKey) await ports.attachments.insert(attachment);
       }
@@ -168,7 +209,8 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
       restoredRows?: ObjectRow[];
     } = {}
   ) {
-    const mapping = mapStoreObjects(accountId, store);
+    const referenceKeys = new Map<string, string>();
+    const mapping = mapStoreObjects(accountId, store, { referenceKeys });
     const managed = new Set(managedCollections);
     const previousRows = beforeRows.filter(row => managed.has(row.collection));
     const mappedRows = mapping.objects.filter(row => managed.has(row.collection));
@@ -177,7 +219,14 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
     const archived = new Map(restoredRows.map(row => [recordBusinessIdentity(row), row]));
     const after = new Map(mappedRows.map(row => [row.objectKey, row]));
     const persistedRows: ObjectRow[] = [];
-    const refreshedIndexes = new Set<string>();
+    const refreshedRelations = new Set<string>();
+    const refreshedAttachments = new Set<string>();
+    const beforeReferenceKeys = new Map<string, string>();
+    const beforeMapping = mapStoreObjects(accountId,
+      rebuildRecordCollections(beforeRows, [...new Set(beforeRows.map(row => row.collection))]),
+      { referenceKeys: beforeReferenceKeys });
+    const previousRelations = relationSignatures(beforeMapping, beforeReferenceKeys);
+    const nextRelations = relationSignatures(mapping, referenceKeys);
     const refreshCollections = new Set(refreshIndexesForCollections);
     const restoredKeys = new Set(restoredRows
       .filter(row => !before.has(row.objectKey))
@@ -190,17 +239,20 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
       const current = before.get(row.objectKey);
       if (!current) continue;
       if (comparable(current) === comparable(row)) {
-        if (restoredRelations.has(row.objectKey)) refreshedIndexes.add(row.objectKey);
+        if (restoredRelations.has(row.objectKey)) refreshedRelations.add(row.objectKey);
         persistedRows.push(current);
         continue;
       }
       const next = mappedUpdate(current, row);
       if (!await ports.objects.update(next, current.version)) throw conflict();
       if (refreshCollections.has(row.collection) || restoredRelations.has(row.objectKey)
-        || current.content !== next.content
+        || previousRelations.get(row.objectKey) !== nextRelations.get(row.objectKey)) {
+        refreshedRelations.add(row.objectKey);
+      }
+      if (current.content !== next.content
         || canonicalJson(current.payload?.attachmentPaths || []) !== canonicalJson(next.payload?.attachmentPaths || [])
         || canonicalJson(current.payload?.imageUnderstandings || []) !== canonicalJson(next.payload?.imageUnderstandings || [])) {
-        refreshedIndexes.add(row.objectKey);
+        refreshedAttachments.add(row.objectKey);
       }
       persistedRows.push(next);
     }
@@ -217,8 +269,10 @@ export function createThoughtRecordRepository(mapping: StoreMapping) {
           position: null
         };
       });
-    await insertRows(ports, mapping, insertedRows);
-    await refreshIndexes(ports, mapping, refreshedIndexes);
+    const resolved = await resolveClosureRelations(ports, accountId, store, mapping,
+      referenceKeys, new Set([...refreshedRelations, ...insertedRows.map(row => row.objectKey)]));
+    await insertRows(ports, resolved, insertedRows);
+    await refreshIndexes(ports, resolved, refreshedRelations, refreshedAttachments);
     return [...persistedRows, ...insertedRows];
   }
 

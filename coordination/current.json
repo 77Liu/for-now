@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 474,
-  "updated_at": "2026-10-19T03:36:34.039Z",
+  "revision": 493,
+  "updated_at": "2026-10-19T09:03:38.678Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,10 +17,10 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段6返修：来源关系、任务恢复成本与干净构建（阶段7检查点已保存）"
+    "phase": "阶段6独立返修本地出口通过；原子提交后复核F7接续"
   },
   "scope": {
-    "description": "F7本地阅读状态检查点通过；独立审查前驱失败已登记，先返修阶段6R1/R2/R3，阶段8保持未解锁。",
+    "description": "阶段6R1/R2/R3最终候选e801f8本地验收通过；F7既有阅读检查点待前驱提交后接续，阶段8尚未开始。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "d9d79d",
@@ -112,7 +112,12 @@
         "src/modules/tasks/index.mjs",
         "scripts/record-command-producer-coverage-regression.mts",
         "scripts/check-modules.mjs",
-        "scripts/recovery*"
+        "scripts/recovery*",
+        "src/app/task-context.mjs",
+        "src/app/record-compression-context.mjs",
+        "src/modules/record-compressions/input.mjs",
+        "src/modules/record-compressions/index.mjs",
+        "src/app/personal-context.mjs"
       ],
       "forbidden_write_set": [
         "public/frontend/app/runtime/home-runtime.mjs",
@@ -127,7 +132,7 @@
       "shared_owner": "主控唯一串行写者（schema/构建/接口/控制面）",
       "integration_order": "R1精准关系语义与组合PG→R2恢复记录读取和完整成本→R3干净构建→原矩阵/回归→前驱出口重新裁定",
       "acceptance": "独立审查R1有效来源正文/附件变化不退为historical且再次转换冲突；R2任务恢复完整链成本不随无关历史重复全读；R3空生成目录模块门确定构建；原30命令与4任务/重启取消回滚保持。",
-      "review_ref": "reviews/2026-10-19-commit-quality-review.md",
+      "review_ref": "reviews/2026-10-19-stage6-independent-remediation.md",
       "receipt_ref": "reviews/2026-10-19-stage6-independent-remediation-result.json"
     }
   ],
@@ -162,21 +167,9 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [
-    {
-      "id": "v0516-stage6-independent-quality",
-      "status": "OPEN",
-      "owner": "主控串行",
-      "requires_owner": false,
-      "description": "R1有效来源被局部映射降为historical；R2任务恢复按任务数全读账户；R3干净模块检查缺显式测试编译前置。禁止解锁阶段8，当前F7收尾后回阶段6精准返修。",
-      "refs": [
-        "reviews/2026-10-19-commit-quality-review.md",
-        "reviews/2026-10-19-commit-quality-evidence.tar.gz"
-      ]
-    }
-  ],
+  "blockers": [],
   "next_action": {
-    "description": "按独立失败证据修复阶段6来源关系，随后缩小任务恢复全流程读取及修复干净模块构建；补PG组合和成本验证后重新裁定前驱出口。",
+    "description": "提交阶段6原子返修，再复核F7未变阅读实现和前驱接入，登记下一串行阶段。",
     "owner": "主控",
     "requires_owner": false
   },
@@ -750,43 +743,6 @@
       ]
     },
     {
-      "id": "stage6-night-producer-gate",
-      "object": {
-        "kind": "source_manifest",
-        "ref": "reviews/2026-10-19-stage6-browser-remediation-result.json#nightProducerGateSubset"
-      },
-      "conclusion": "实际命令装配/开关/维护端口硬门通过；正式完整内容运行时三十生产者成功/故障与稳定PG套件通过。",
-      "limitations": [
-        "task claim/enqueue/retry/wait/recovery compatibility writes remain unbounded",
-        "future compatibility bypass protection remains open",
-        "stage6 partial; stage7 not started"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation.md",
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#nightProducerGateSubset"
-      ]
-    },
-    {
-      "id": "v0516-stage6-local-exit",
-      "object": {
-        "kind": "source_tree",
-        "repair_commit": "f01f0f",
-        "candidate_source_tree": "af09da",
-        "receipt": "reviews/2026-10-19-stage6-browser-remediation-result.json#stage6Exit"
-      },
-      "conclusion": "无F9差分独立候选完整stable PG退出0；三十公开生产者、四类任务、HTTP/重启/独立恢复、有界page/detail scope与启动配置不匹配拒绝通过，阶段6本地出口通过；登记唯一后继F7。",
-      "limitations": [
-        "TC09本阶段仅page/detail scope fixture；阶段11实际记录变化消费尚未执行",
-        "真实搜索/桌面浏览器有效证据复用；移动真机与生产负载/延迟未验",
-        "个人上下文事务外全读、其他任务族和已删清单永久清理仍有兼容成本",
-        "未部署/生产写/付费；默认分页开关关闭"
-      ],
-      "refs": [
-        "reviews/2026-10-19-stage6-browser-remediation.md#L210-L233",
-        "reviews/2026-10-19-stage6-browser-remediation-result.json#stage6Exit"
-      ]
-    },
-    {
       "id": "v0516-stage7-local-reading-checkpoint",
       "object": {
         "kind": "source_tree",
@@ -802,6 +758,24 @@
       "refs": [
         "reviews/2026-10-19-stage7-reading-state.md",
         "reviews/2026-10-19-stage7-reading-state-result.json"
+      ]
+    },
+    {
+      "id": "v0516-stage6-independent-final-exit",
+      "object": {
+        "kind": "git_tree",
+        "tree": "e801f8"
+      },
+      "conclusion": "R1/R2/R3本地出口PASS；干净模块门和完整stablePG188.59秒通过，30公开生产者/4任务/HTTP/取消重启/独立恢复/回滚保持。最终关系、完整成本、旧回执、评分索引、日期及源码职责排版审查通过。",
+      "limitations": [
+        "合成隔离PostgreSQL16.14；94真实样本复用未重跑",
+        "合法输入池/许可元数据仍随自身增长；兼容评分生产者及其他任务族成本不声称全部记录级",
+        "移动真机、生产负载、真实付费和发布级全局门未执行",
+        "本地原子提交尚待执行"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-independent-remediation.md",
+        "reviews/2026-10-19-stage6-independent-remediation-result.json"
       ]
     }
   ],

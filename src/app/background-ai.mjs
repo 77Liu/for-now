@@ -70,11 +70,25 @@ export function createBackgroundAi({
     : null;
   if (taskTransitions && (typeof taskTransitions.supports !== "function"
     || typeof taskTransitions.transition !== "function"
+    || typeof taskTransitions.candidates !== "function"
+    || typeof taskTransitions.recover !== "function"
     || typeof taskTransitions.cleanup !== "function"
     || typeof taskTransitions.prepareSnapshot !== "function")) {
     throw new TypeError("Task transition record command is invalid");
   }
   const taskCreation = recordCommands?.enabled?.("task.status") ? recordCommands?.creation : null;
+  const taskPreparation = recordCommands?.enabled?.("task.status")
+    ? recordCommands?.preparation
+    : null;
+  if (taskPreparation && (typeof taskPreparation.readTask !== "function"
+    || typeof taskPreparation.claimContext !== "function"
+    || typeof taskPreparation.creationContext !== "function"
+    || typeof taskPreparation.materialContext !== "function"
+    || typeof taskPreparation.creationMaterialContext !== "function")) {
+    throw new TypeError("Task preparation query is invalid");
+  }
+  const needsModelMaterial = input => taskPreparation
+    && !["contentImageUnderstanding"].includes(input?.kind);
   if (taskCreation && (typeof taskCreation.supports !== "function"
     || typeof taskCreation.create !== "function"
     || typeof taskCreation.prepareSnapshot !== "function"
@@ -83,15 +97,36 @@ export function createBackgroundAi({
   }
   const transitionTask = async (taskId, action, mutate, prepare = null) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const revision = await repository.accountUnitOfWork.readRevision();
-      const snapshot = await repository.read();
-      if (revision !== await repository.accountUnitOfWork.readRevision()) continue;
+      let revision;
+      let snapshot;
+      let contextGeneratedAt = "";
+      if (taskPreparation) {
+        const assembly = await taskPreparation.claimContext(taskId);
+        if (!assembly) return null;
+        ({ revision, snapshot } = assembly);
+        const task = snapshot.aiTasks.find(item => item.id === taskId);
+        if (action === "releaseWaiting" && task
+          && task.status === WAITING_FOR_USER_MODEL_STATUS
+          && taskHasRequiredTarget(snapshot, task)
+          && (typeof inspectIntent !== "function"
+            || requestedIntentMatches(task, inspectRequestedIntent(snapshot, task)))
+          && !shouldWaitForModel(snapshot, task)) {
+          contextGeneratedAt = now();
+          const materials = await taskPreparation.materialContext(taskId, contextGeneratedAt);
+          if (!materials || revision !== materials.revision) continue;
+          snapshot = materials.snapshot;
+        }
+      } else {
+        revision = await repository.accountUnitOfWork.readRevision();
+        snapshot = await repository.read();
+        if (revision !== await repository.accountUnitOfWork.readRevision()) continue;
+      }
       const task = snapshot.aiTasks.find(item => item.id === taskId);
       if (!task) return null;
       if (!taskTransitions?.supports(task)) return repository.update(mutate);
       const context = prepare ? taskTransitions.prepareSnapshot(snapshot) : null;
       const prepared = prepare
-        ? prepare(context, context.aiTasks.find(item => item.id === taskId))
+        ? prepare(context, context.aiTasks.find(item => item.id === taskId), contextGeneratedAt)
         : null;
       try {
         return await taskTransitions.transition({
@@ -252,7 +287,11 @@ export function createBackgroundAi({
   };
   const currentWork = async (taskId, expectedWork, kind) => {
     await beforePrepare({ kind });
-    const store = await repository.read();
+    const store = taskPreparation && taskTransitions.supports({ kind })
+      ? (await (kind === "contentImageUnderstanding"
+          ? taskPreparation.claimContext(taskId) : taskPreparation.materialContext(taskId)))?.snapshot
+      : await repository.read();
+    if (!store) return null;
     const task = store.aiTasks.find(item => item.id === taskId);
     if (!task || task.status !== "running") return null;
     const work = prepareTarget(store, task);
@@ -267,17 +306,26 @@ export function createBackgroundAi({
       throw new TypeError("Content AI writeback requires AccountUnitOfWork revision reads");
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const before = await unitOfWork.readRevision();
-      const store = await repository.read();
-      const after = await unitOfWork.readRevision();
-      if (before !== after) continue;
+      let store;
+      let revision;
+      if (taskPreparation && taskTransitions.supports({ kind: expectedWork.scene })) {
+        const assembly = await (expectedWork.scene === "contentImageUnderstanding"
+          ? taskPreparation.claimContext(taskId) : taskPreparation.materialContext(taskId));
+        if (!assembly) return null;
+        ({ snapshot: store, revision } = assembly);
+      } else {
+        const before = await unitOfWork.readRevision();
+        store = await repository.read();
+        revision = await unitOfWork.readRevision();
+        if (before !== revision) continue;
+      }
       const task = store.aiTasks.find(item => item.id === taskId);
       const work = task && prepareTarget(store, task);
       const contextChanged = expectedWork.contextFingerprint
         && expectedWork.contextFingerprint !== work?.contextFingerprint;
       if (!task || task.status !== "running"
         || !taskInputMatches(task, work) || contextChanged) return null;
-      return { revision: after };
+      return { revision };
     }
     return null;
   };
@@ -349,8 +397,9 @@ export function createBackgroundAi({
   };
   const settleAfterRun = async (taskId, executed) => {
     try {
-      const store = await repository.read();
-      const task = store.aiTasks.find(item => item.id === taskId);
+      const task = taskPreparation
+        ? await taskPreparation.readTask(taskId)
+        : (await repository.read()).aiTasks.find(item => item.id === taskId);
       if (!task || !["succeeded", "failed", "cancelled", "stale"].includes(task.status)) return;
       if (executed || task.kind === "importanceScoring") await targetFor(task).settled?.(task);
       // 所有抽取终态都重新评估队列；门禁自行判定最新合法来源是否仍在途。
@@ -371,8 +420,9 @@ export function createBackgroundAi({
     let claimedKind = "";
     let usesRecordClaim = false;
     try {
-      const initial = await repository.read();
-      const requestedTask = initial.aiTasks.find(item => item.id === taskId);
+      const requestedTask = taskPreparation
+        ? await taskPreparation.readTask(taskId)
+        : (await repository.read()).aiTasks.find(item => item.id === taskId);
       usesRecordClaim = Boolean(taskTransitions?.supports(requestedTask));
       await beforePrepare(requestedTask);
       const claimed = await claimTask(taskId);
@@ -380,7 +430,11 @@ export function createBackgroundAi({
       claimedIdentity = claimed.identity;
       claimedKind = claimed.kind;
       executed = true;
-      const store = await repository.read(), task = store.aiTasks.find(item => item.id === taskId);
+      const store = taskPreparation && taskTransitions.supports({ kind: claimedKind })
+        ? (await (claimedKind === "contentImageUnderstanding"
+            ? taskPreparation.claimContext(taskId) : taskPreparation.materialContext(taskId)))?.snapshot
+        : await repository.read();
+      let task = store?.aiTasks.find(item => item.id === taskId);
       const work = task && prepareTarget(store, task);
       if (task?.deferredInputBinding === true) {
         if (!bindTaskInputRecord) {
@@ -392,7 +446,7 @@ export function createBackgroundAi({
             code: "AI_TASK_STALE"
           });
         }
-        Object.assign(task, bound);
+        task = { ...task, ...bound };
       }
       if (!task || !taskInputMatches(task, work)) {
         const recordWriteback = recordWritebackFor(task?.kind);
@@ -486,8 +540,7 @@ export function createBackgroundAi({
       })
     );
   };
-  const prepareCreation = (store, input, source) => {
-    const createdAt = now();
+  const prepareCreation = (store, input, source, createdAt = now()) => {
     const normalized = tasks.normalizeRequest(input);
     if (store.aiTasks.some(task => task.clientRequestId === normalized.clientRequestId
       || (source && task.retryOf === source.id))) {
@@ -507,19 +560,38 @@ export function createBackgroundAi({
   };
   async function createRecordTask(input, { retryOf = "", includeInternal = false } = {}) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const revision = await repository.accountUnitOfWork.readRevision();
-      const snapshot = await repository.read();
-      if (revision !== await repository.accountUnitOfWork.readRevision()) continue;
-      const source = retryOf && snapshot.aiTasks.find(task => task.id === retryOf);
+      const createdAt = now();
+      let revision;
+      let snapshot;
+      if (taskPreparation) {
+        const assembly = await taskPreparation.creationContext(input, retryOf);
+        if (!assembly) return { missing: true };
+        ({ revision, snapshot } = assembly);
+      } else {
+        revision = await repository.accountUnitOfWork.readRevision();
+        snapshot = await repository.read();
+        if (revision !== await repository.accountUnitOfWork.readRevision()) continue;
+      }
+      let source = retryOf && snapshot.aiTasks.find(task => task.id === retryOf);
       if (retryOf && !source) return { missing: true };
       if (source && isInternalAiTask(source)
         && (!includeInternal || source.kind === RECORD_COMPRESSION_TASK_KIND)) {
         return { missing: true };
       }
-      if (source && !taskHasRequiredTarget(snapshot, source)) return { missing: true };
       const request = retryOf ? retryInputFor(source) : input;
       if (!taskCreation.supports(request)) return null;
-      const prepared = prepareCreation(taskCreation.prepareSnapshot(snapshot), request, source);
+      if (source && !taskHasRequiredTarget(snapshot, source)) return { missing: true };
+      const duplicate = snapshot.aiTasks.some(task => (
+        task.clientRequestId === request.clientRequestId
+        || (retryOf && task.retryOf === retryOf)
+      ));
+      if (needsModelMaterial(request) && !duplicate && !shouldWaitForModel(snapshot, request)) {
+        const materials = await taskPreparation.creationMaterialContext(input, retryOf, createdAt);
+        if (!materials || revision !== materials.revision) continue;
+        snapshot = materials.snapshot;
+        source = retryOf && snapshot.aiTasks.find(task => task.id === retryOf);
+      }
+      const prepared = prepareCreation(taskCreation.prepareSnapshot(snapshot), request, source, createdAt);
       try {
         return await taskCreation.create({
           input: request, retryOf, snapshot, expectedRevision: revision,
@@ -630,7 +702,7 @@ export function createBackgroundAi({
     return { ...result, queuedCount: result.taskIds.length };
   }
 
-  const prepareWaitingRelease = (store, task) => {
+  const prepareWaitingRelease = (store, task, preparedAt = "") => {
     if (task.status !== WAITING_FOR_USER_MODEL_STATUS) return { ready: false };
     if (!taskHasRequiredTarget(store, task)) return { missing: true };
     const intent = inspectRequestedIntent(store, task);
@@ -638,7 +710,7 @@ export function createBackgroundAi({
       return { changed: true };
     }
     if (shouldWaitForModel(store, task)) return { ready: false };
-    const contextGeneratedAt = now();
+    const contextGeneratedAt = preparedAt || now();
     const candidate = { ...task, contextGeneratedAt };
     return {
       ready: true,
@@ -673,8 +745,12 @@ export function createBackgroundAi({
   async function releaseWaiting() {
     const recordScheduled = [];
     if (taskTransitions) {
-      const snapshot = await repository.read();
-      for (const task of snapshot.aiTasks) {
+      let hasLegacy = false;
+      for await (const task of taskCandidates([WAITING_FOR_USER_MODEL_STATUS])) {
+        if (!taskTransitions.supports(task)) {
+          hasLegacy = true;
+          continue;
+        }
         if (task.status !== WAITING_FOR_USER_MODEL_STATUS || !taskTransitions.supports(task)) continue;
         const promoted = await transitionTask(task.id, "releaseWaiting", (store, prepared) => {
           const current = store.aiTasks.find(item => item.id === task.id);
@@ -685,8 +761,7 @@ export function createBackgroundAi({
           schedule(task.id);
         }
       }
-      if (!snapshot.aiTasks.some(task => task.status === WAITING_FOR_USER_MODEL_STATUS
-        && !taskTransitions.supports(task))) return recordScheduled.length;
+      if (!hasLegacy) return recordScheduled.length;
     }
     const scheduledIds = await repository.update(store => {
       const scheduled = [];
@@ -713,26 +788,42 @@ export function createBackgroundAi({
     }
     return true;
   };
+  async function* taskCandidates(statuses) {
+    let afterId = "";
+    while (true) {
+      const page = await taskTransitions.candidates(statuses, afterId);
+      if (!page.length) return;
+      for (const task of page) yield task;
+      afterId = page.at(-1).id;
+    }
+  }
   async function resumeRecordTasks() {
     if (!taskTransitions) return { ids: [], hasLegacy: true };
-    const snapshot = await repository.read();
     const ids = [];
-    for (const task of snapshot.aiTasks) {
+    let hasLegacy = false;
+    for await (const task of taskCandidates(["queued", "running", "cancelling"])) {
+      if (!taskTransitions.supports(task)) {
+        hasLegacy ||= ["queued", "running"].includes(task.status);
+        continue;
+      }
       if (!taskTransitions.supports(task)
         || !["queued", "running", "cancelling"].includes(task.status)) continue;
-      const ready = await transitionTask(task.id, "recover", store => {
-        const current = store.aiTasks.find(item => item.id === task.id);
-        if (!current) return false;
-        if (current.status === "cancelling") {
-          cancelled(store, current);
-          return false;
+      const ready = await taskTransitions.recover({
+        taskId: task.id,
+        mutate: store => {
+          const current = store.aiTasks.find(item => item.id === task.id);
+          if (!current) return false;
+          if (current.status === "cancelling") {
+            cancelled(store, current);
+            return false;
+          }
+          if (current.status === "running") {
+            tasks.recover([current]);
+            targetFor(current).fail?.(store, current, { code: "TASK_INTERRUPTED" });
+            notify(store, current, "failed", current.error);
+          }
+          return queuedTaskReady(store, current);
         }
-        if (current.status === "running") {
-          tasks.recover([current]);
-          targetFor(current).fail?.(store, current, { code: "TASK_INTERRUPTED" });
-          notify(store, current, "failed", current.error);
-        }
-        return queuedTaskReady(store, current);
       });
       if (ready) {
         ids.push(task.id);
@@ -741,8 +832,7 @@ export function createBackgroundAi({
     }
     return {
       ids,
-      hasLegacy: snapshot.aiTasks.some(task => !taskTransitions.supports(task)
-        && ["queued", "running"].includes(task.status))
+      hasLegacy
     };
   }
   const recoverLegacyTasks = store => {
@@ -911,7 +1001,9 @@ export function createBackgroundAi({
       };
     },
     async get(id) {
-      const task = (await repository.read()).aiTasks.find(item => item.id === id);
+      const task = taskPreparation
+        ? await taskPreparation.readTask(id)
+        : (await repository.read()).aiTasks.find(item => item.id === id);
       return task && !isInternalAiTask(task) ? publicAiTask(task) : null;
     },
     async getResult(id) {

@@ -7,6 +7,13 @@ import { execFileSync } from "node:child_process";
 import { analyzeEntrypointSource } from "./lib/entrypoint-source-analysis.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+// Compile the test entrypoints inspected below; a clean checkout must not depend on prior PG tests.
+for (const project of ["tsconfig.ai-migrations.json", "tsconfig.thought-db-regression.json"]) {
+  execFileSync(process.execPath, [path.join(ROOT, "node_modules/typescript/bin/tsc"), "-p", project], {
+    cwd: ROOT,
+    stdio: "inherit"
+  });
+}
 const registryPath = path.join(ROOT, "knowledge/module-boundaries.json");
 const registry = JSON.parse(await fs.readFile(registryPath, "utf8"));
 assert.equal(registry.version, 1, "Unsupported module boundary registry version");

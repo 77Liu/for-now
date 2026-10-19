@@ -147,9 +147,15 @@ function inputForDate(store, {
   hash,
   maxTextChars,
   startDate = "",
-  windowKey = ""
+  windowKey = "",
+  inputProjection = null
 }) {
   if (startDate && localDate < startDate) return null;
+  if (inputProjection) {
+    return inputProjection.inputForDate({
+      accountId, localDate, timezone, asOf, hash, maxTextChars, windowKey
+    });
+  }
   return buildRecordCompressionInput(store, {
     windowKey,
     accountId,
@@ -174,7 +180,8 @@ function historicalSupplementInputFrom(store, {
   windowStart,
   windowEnd,
   batchIndex = 0,
-  startDate = ""
+  startDate = "",
+  inputProjection = null
 }) {
   const endDate = validLocalDate(windowEnd)
     ? windowEnd
@@ -195,7 +202,8 @@ function historicalSupplementInputFrom(store, {
       timezone,
       asOf,
       hash,
-      maxTextChars
+      maxTextChars,
+      inputProjection
     })
   }));
   const sourceRows = new Map();
@@ -333,7 +341,9 @@ function currentHistoricalUserSources(store, options, extraDates = []) {
 }
 
 function permittedHistoricalTextDates(store, options) {
-  const dates = sourceLocalDates(store, options.timezone, options.asOf);
+  const dates = options.inputProjection
+    ? options.inputProjection.sourceLocalDates(options.timezone, options.asOf)
+    : sourceLocalDates(store, options.timezone, options.asOf);
   return dates.filter(localDate => {
     const input = inputForDate(store, { ...options, localDate });
     const manifestById = new Map(list(input?.sourceManifest).map(source => [source.sourceId, source]));
@@ -707,7 +717,8 @@ function contextTrendFrom(store, {
   asOf,
   hash,
   maxTextChars,
-  startDate = ""
+  startDate = "",
+  inputProjection = null
 }) {
   const localDates = sevenLocalDatesForTimezone(timezone, asOf).filter(date => !startDate || date >= startDate);
   const currentInputs = new Map();
@@ -719,7 +730,8 @@ function contextTrendFrom(store, {
       timezone,
       asOf,
       hash,
-      maxTextChars
+      maxTextChars,
+      inputProjection
     });
     currentInputs.set(localDate, {
       sourceManifest: selected.flatMap(row => row.input.sourceManifest),
@@ -905,7 +917,8 @@ function separateTrendContext(store, trendResult, {
   timezone,
   asOf,
   hash,
-  maxTextChars
+  maxTextChars,
+  inputProjection = null
 }) {
   const payload = structuredClone(trendResult.payload);
   const sourceById = new Map(list(payload.sources).map(source => [source.sourceId, source]));
@@ -943,7 +956,8 @@ function separateTrendContext(store, trendResult, {
       timezone,
       asOf,
       hash,
-      maxTextChars
+      maxTextChars,
+      inputProjection
     });
     for (const { input, summary } of selected) {
     const sourceManifest = new Map(list(input.sourceManifest).map(source => [source.sourceId, source]));
@@ -1078,6 +1092,113 @@ function currentTrendFrom(store, options) {
   };
 }
 
+/**
+ * 列出趋势实际消费的日期，以及历史覆盖率需要证明有无原文的区间。
+ * 日期输入仍由现有领域构建器完成；区间只需保留一个完整日的合法原文见证。
+ * @since unreleased
+ */
+function trendReadRequirements(store, options) {
+  const dates = new Map();
+  const historicalTasks = new Map();
+  const requestTasks = request => historicalTasks.set(JSON.stringify(request), request);
+  const add = (timezone, localDate) => {
+    if (!validTimezone(timezone) || !validLocalDate(localDate)) return;
+    if (!dates.has(timezone)) dates.set(timezone, new Set());
+    dates.get(timezone).add(localDate);
+  };
+  const recent = timezone => {
+    for (const date of sevenLocalDatesForTimezone(timezone, options.asOf)) {
+      if (!options.startDate || date >= options.startDate) add(timezone, date);
+    }
+  };
+  const historicalTimezones = new Set([options.historicalTimezone || options.timezone]);
+  for (const task of list(store.aiTasks)) {
+    if (task.status === "failed" && task.payload?.operation === HISTORICAL_SUPPLEMENT_OPERATION
+      && compressionTaskAccountMatches(task, options) && validTimezone(task.payload.timezone)) {
+      historicalTimezones.add(task.payload.timezone);
+    }
+  }
+  if (options.startDate) {
+    requestTasks({
+      timezone: options.historicalTimezone || options.timezone,
+      startDate: options.startDate,
+      promptVersion: HISTORICAL_USER_SUPPLEMENT_PROMPT_VERSION
+    });
+  }
+  recent(options.timezone);
+  // Quote separation consumes all seven dates even when the main day view is
+  // bounded by startDate.
+  for (const date of sevenLocalDatesForTimezone(options.timezone, options.asOf)) {
+    add(options.timezone, date);
+  }
+  for (const task of list(store.aiTasks)) {
+    const payload = task.payload || {};
+    if (task.status === "failed" && !compressionTaskAccountMatches(task, options)) continue;
+    if (task.status === "failed" && payload.operation === DAILY_OPERATION) {
+      add(payload.timezone, payload.localDate);
+    }
+    if (payload.operation !== HISTORICAL_SUPPLEMENT_OPERATION) continue;
+    if (task.status === "failed") {
+      historicalTimezones.add(payload.timezone);
+      const range = historicalTaskRange(task, payload.timezone);
+      if (range && validTimezone(payload.timezone)) requestTasks(range);
+      if (options.startDate && validTimezone(payload.timezone)) {
+        requestTasks({
+          timezone: payload.timezone, startDate: options.startDate,
+          promptVersion: HISTORICAL_USER_SUPPLEMENT_PROMPT_VERSION
+        });
+      }
+    }
+    const relevant = task.status === "failed" || (
+      options.startDate
+      && task.status === "succeeded"
+      && historicalTimezones.has(payload.timezone)
+      && payload.promptVersion === HISTORICAL_USER_SUPPLEMENT_PROMPT_VERSION
+    );
+    if (!relevant || !validTimezone(payload.timezone)) continue;
+    const range = historicalTaskRange(task, payload.timezone,
+      task.status === "failed" ? "" : options.startDate);
+    if (!range) continue;
+    for (const date of localDateRange(range.windowStart, range.windowEnd)) {
+      add(payload.timezone, date);
+    }
+  }
+  const presence = historicalPresenceRequirements(store, options, historicalTimezones, dates, recent, add);
+  return {
+    dates: [...dates].map(([timezone, values]) => ({
+      timezone,
+      localDates: [...values].sort()
+    })),
+    presence,
+    historicalTasks: [...historicalTasks.values()]
+  };
+}
+
+function historicalPresenceRequirements(store, options, historicalTimezones, dates, recent, add) {
+  const presence = [];
+  for (const timezone of historicalTimezones) {
+    if (!validTimezone(timezone)) continue;
+    recent(timezone);
+    for (const record of list(store.historicalUserSupplement?.records)) {
+      if (!options.startDate || record.source?.localDate >= options.startDate) {
+        add(timezone, record.source?.localDate);
+      }
+    }
+    if (!options.startDate) continue;
+    // Coverage tests only ask about gaps between range boundaries and older
+    // unprocessed dates. A whole-day witness preserves each existential test.
+    const boundaries = [...dates.get(timezone) || []].sort();
+    let after = options.startDate;
+    for (const date of boundaries) {
+      if (date > after) {
+        presence.push({ timezone, startDate: after, endDate: dateKeyOffset(date, -1) });
+      }
+      if (date >= after) after = dateKeyOffset(date, 1);
+    }
+  }
+  return presence;
+}
+
 export {
   COMPRESSION_SOURCE_COLLECTIONS,
   compressionTaskAccountMatches,
@@ -1114,6 +1235,7 @@ export {
   sourceLocalDates,
   sourceRefFor,
   textForCitation,
+  trendReadRequirements,
   validLocalDate,
   validTimezone
 };

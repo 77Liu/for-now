@@ -13,6 +13,9 @@
     "noEmitOnError": true
   },
   "files": [
+    "scripts/thought-materials-postgres-checks.mts",
+    "scripts/thought-source-relations-postgres-checks.mts",
+    "scripts/thought-recovery-cost-postgres-checks.mts",
     "scripts/thought-paging-build-regression.mts",
     "scripts/thought-producer-gate-regression.mts",
     "scripts/thought-runtime-fixture.mts",

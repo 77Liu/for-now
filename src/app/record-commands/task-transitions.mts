@@ -2,7 +2,7 @@
  * 思绪、追问、批注和图片任务的认领、等待及恢复状态事务。
  * 建立时间：2026-10-19
  * 状态：active
- * 边界：个人上下文在事务外读取并以修订号绑定；事务只写本任务及其通知。
+ * 边界：恢复只读任务、通知及必要目标；模型准备在事务外以修订号绑定。
  */
 import type {
   AccountUnitOfWork, RecordEntity, RecordStore, ObjectRow, RecordTransaction
@@ -10,6 +10,8 @@ import type {
 import { createTaskRecordRepository } from "../../shared/persistence/task-record-repository.mjs";
 import type { StoreMapping } from "../../shared/persistence/record-command-types.mjs";
 import { addThoughtClosureChanges } from "../../modules/thoughts/local-changes.mjs";
+import { createThoughtRecordRepository } from "../../shared/persistence/thought-record-repository.mjs";
+import { recordObjectKey } from "../../shared/persistence/record-command-types.mjs";
 
 const supportedKinds = new Set([
   "thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding"
@@ -35,6 +37,34 @@ const conflict = () => Object.assign(new Error("任务上下文已变化，请�
   statusCode: 409,
   code: "VERSION_CONFLICT"
 });
+
+async function recoveryTargets(ports: RecordTransaction, task: RecordEntity, mapping: StoreMapping) {
+  const collections: Record<string, string> = {
+    thought: "thoughts",
+    capture: "captures",
+    journal: "journals",
+    chat: "chats",
+    analysis: "analyses",
+    book: "books",
+    quote: "quotes"
+  };
+  const collection = collections[String(task.resourceType)]
+    || (["thoughtAnswer", "followUpAnswer"].includes(String(task.kind)) ? "thoughts" : "");
+  if (!collection) return {};
+  const targetKey = recordObjectKey(collection, String(task.targetId || ""));
+  const field = task.kind === "followUpAnswer" ? "followUps" : "annotations";
+  const requiresChild = ["followUpAnswer", "annotationShenji"].includes(String(task.kind))
+    || (task.kind === "contentImageUnderstanding"
+      && (task.payload as { targetType?: string } | undefined)?.targetType === "comment");
+  const keys = [targetKey];
+  if (requiresChild) {
+    keys.push(JSON.stringify([collection, task.targetId, field, task.subtargetId]));
+  }
+  const rows = await ports.objects.findMany(keys);
+  const store = createThoughtRecordRepository(mapping).rebuildRecordCollections(rows, [collection]);
+  freezeContext(store);
+  return store;
+}
 
 function freezeContext(value: unknown): void {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return;
@@ -85,6 +115,49 @@ export function createTaskTransitionCommands({
   mapping: StoreMapping;
 }) {
   const supports = supportsRecordTask;
+  /** 游标分页恢复候选；没有模型任务时不读取个人上下文。 @since unreleased */
+  const candidates = async (statuses: string[], afterId = "") => {
+    const result = await unitOfWork.run({ commandId: "task.recoveryCandidates" },
+      ports => ports.objects.findTaskPage(statuses, afterId));
+    return result.value.map(row => row.payload as RecordEntity);
+  };
+  /** 纯恢复不接受账户快照；同事务校验本任务、通知和主/子目标。 @since unreleased */
+  const recover = async <Result,>(input: {
+    taskId: string;
+    mutate(store: RecordStore): Result;
+  }) => {
+    const committed = await unitOfWork.run({ commandId: "task.recover" }, async ports => {
+      const repository = createTaskRecordRepository(ports);
+      const taskRow = await repository.find(input.taskId);
+      if (!taskRow) return null;
+      if (!supports(taskRow.payload)) throw new TypeError("Task recovery kind is unsupported");
+      if (!["queued", "running", "cancelling"].includes(taskRow.status)) return false;
+      const notification = await repository.notification(taskRow);
+      if (taskRow.payload.internal !== true && !notification) {
+        throw Object.assign(new Error("任务通知缺失，原数据已保留"), {
+          statusCode: 503,
+          code: "ACCOUNT_DATA_INVALID"
+        });
+      }
+      const task = structuredClone(taskRow.payload);
+      const targets = task.status === "queued" ? await recoveryTargets(ports, task, mapping) : {};
+      const context: RecordStore = Object.freeze({
+        ...targets,
+        aiTasks: [task],
+        notifications: notification ? [structuredClone(notification.payload)] : []
+      });
+      const result = input.mutate(context);
+      if (context.aiTasks.length !== 1 || task.id !== input.taskId
+        || context.notifications.length !== (notification ? 1 : 0)
+        || (notification && context.notifications[0].id !== notification.id)) {
+        throw new TypeError("Task recovery must preserve task and notification identities");
+      }
+      await updateStatusRows(ports, [taskRow, ...(notification ? [notification] : [])],
+        [task, ...context.notifications], mapping);
+      return result;
+    });
+    return committed.value;
+  };
   const transition = async <Result,>(input: Input<Result>) => {
     if (!["claim", "releaseWaiting", "recover"].includes(input.action)) {
       throw new TypeError("Task transition action is invalid");
@@ -168,6 +241,8 @@ export function createTaskTransitionCommands({
   return Object.freeze({
     supports,
     transition,
+    candidates,
+    recover,
     cleanup,
     prepareSnapshot(snapshot: RecordStore): RecordStore {
       const context = structuredClone(snapshot);

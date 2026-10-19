@@ -62,7 +62,10 @@ export type Mapping = {
 };
 export type StoreMapping = {
   canonicalJson(value: unknown): string;
-  mapStoreObjects(accountId: string, store: RecordStore): Mapping;
+  mapStoreObjects(accountId: string, store: RecordStore, options?: {
+    references?: ObjectRow[];
+    referenceKeys?: Map<string, string>;
+  }): Mapping;
   rebuildStoreObjects(value: {
     fields: { field: string; shape: string; payload: null }[];
     objects: ObjectRow[];

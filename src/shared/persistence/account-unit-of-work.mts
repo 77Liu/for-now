@@ -280,6 +280,32 @@ function createObjectPort(
     noteRead(count(result));
     return structuredClone(result.rows);
   };
+  const findSourceAlternatives = async (objectKeys: string[]) => {
+    const rows: ObjectRow[] = [];
+    for (const objectKey of new Set(objectKeys)) {
+      const parts = JSON.parse(objectKey) as string[];
+      const [collection, rootId, field] = parts;
+      const id = parts.at(-1);
+      const reply = field === "replies" || parts[4] === "replies";
+      if (!["annotations", "replies"].includes(field) || !rootId || !id) continue;
+      const result = await client.query<ObjectRow>(`
+        SELECT ${objectColumns} FROM for_now.store_objects
+        WHERE account_id = $1 AND collection = $2 AND id = $3
+          AND kind = ANY($4::text[])
+          AND object_key::jsonb->>1 = $5
+          AND ($6::text IS NULL OR object_key::jsonb->>3 = $6)
+        LIMIT 2
+      `, [accountId, collection, id,
+        reply ? ["annotationReply"] : ["annotation", "annotationDrift"], rootId,
+        parts[4] === "replies" ? parts[3] : null]);
+      noteRead(count(result));
+      if (result.rows.length > 1) {
+        throw problem("来源子项身份重复，原数据已保留", "ACCOUNT_DATA_INVALID", 503);
+      }
+      rows.push(...result.rows);
+    }
+    return structuredClone(rows);
+  };
   const findTrash = async (type: string, resourceId: string, parentId: string | null = null) => {
     const result = await client.query<ObjectRow>(`
       SELECT ${objectColumns}
@@ -323,6 +349,18 @@ function createObjectPort(
       throw problem("任务请求身份重复，原数据已保留", "ACCOUNT_DATA_INVALID", 503);
     }
     return result.rows[0] ? structuredClone(result.rows[0]) : null;
+  };
+  const findTaskPage = async (statuses: string[], afterId = "") => {
+    const selected = stringList(statuses, "taskStatuses");
+    const result = await client.query<ObjectRow>(`
+      SELECT ${objectColumns} FROM for_now.store_objects
+      WHERE account_id=$1 AND collection='aiTasks' AND parent_key IS NULL
+        AND status IN ('queued','running','cancelling','waiting_for_user_model')
+        AND status=ANY($2::text[]) AND id>$3
+      ORDER BY id LIMIT $4
+    `, [accountId, selected, afterId, RECORD_QUERY_LIMITS.keyBatch]);
+    noteRead(count(result));
+    return structuredClone(result.rows);
   };
   const findForLocalDates = async (
     collection: string,
@@ -467,10 +505,12 @@ function createObjectPort(
     ensureCollection,
     find,
     findMany,
+    findSourceAlternatives,
     findByCollection,
     findTrash,
     findAnnotation,
     findTaskRequest,
+    findTaskPage,
     findForLocalDates,
     findTree,
     insert,

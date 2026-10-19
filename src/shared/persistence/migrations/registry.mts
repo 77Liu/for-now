@@ -54,6 +54,48 @@ export const POSTGRES_SCHEMA_COMPONENTS: readonly MigrationDescriptor[] = Object
     order: 70,
     ownerRequirementId: "reczz28ORRaxSFnV",
     marker: "migration:task-request-index-v1"
+  }),
+  Object.freeze({
+    id: "task-recovery-index-v1",
+    order: 80,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-recovery-index-v1"
+  }),
+  Object.freeze({
+    id: "task-model-input-index-v1",
+    order: 90,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-model-input-index-v1"
+  }),
+  Object.freeze({
+    id: "task-context-order-index-v1",
+    order: 100,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-context-order-index-v1"
+  }),
+  Object.freeze({
+    id: "task-learning-source-index-v1",
+    order: 110,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-learning-source-index-v1"
+  }),
+  Object.freeze({
+    id: "task-source-calendar-index-v1",
+    order: 120,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-source-calendar-index-v1"
+  }),
+  Object.freeze({
+    id: "task-material-candidate-index-v1",
+    order: 130,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-material-candidate-index-v1"
+  }),
+  Object.freeze({
+    id: "task-importance-score-index-v1",
+    order: 140,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-importance-score-index-v1"
   })
 ]);
 

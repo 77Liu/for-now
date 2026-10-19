@@ -154,7 +154,11 @@ export function aiTaskTargetReference(store, task) {
   };
 }
 
-export function mapStoreObjects(accountId, store) {
+/**
+ * 映射待保存闭包。references 仅接受同账户仓库已核验的外部身份，不输出其对象或附件。
+ * referenceKeys 收集关系的完整目标键，供调用方精准解析闭包外目标。
+ */
+export function mapStoreObjects(accountId, store, { references = [], referenceKeys = null } = {}) {
   // Reject values that JSON/JSONB would silently change.
   if (canonicalJson(store) !== canonicalJson(JSON.parse(JSON.stringify(store)))) throw new Error("Lossy JSON migration value");
   const fields = [], objects = [], relations = [], attachmentRefs = [], lifecycles = [], idempotency = [];
@@ -306,12 +310,19 @@ export function mapStoreObjects(accountId, store) {
     }
   }
 
+  // External identities are supplied by an account-scoped query, never written as part of this store.
+  for (const reference of references) {
+    if (identities.has(reference.objectKey)) continue;
+    identities.set(reference.objectKey, reference);
+    originals.set(reference.objectKey, reference.payload);
+  }
   const link = (row, relation, collection, id, required = false, targetKey = keyOf([collection, id])) => {
     if (!id) {
       if (required) throw new Error(`Missing ${relation} reference in ${row.objectKey}`);
       return;
     }
     const target = identities.get(targetKey);
+    referenceKeys?.set(keyOf([row.objectKey, relation]), targetKey);
     if (required && (!target || (relation === "thoughtRoot" && originals.get(target.objectKey).type !== "question"))) {
       throw new Error(`Unresolved ${relation} reference in ${row.objectKey}`);
     }
@@ -325,19 +336,41 @@ export function mapStoreObjects(accountId, store) {
     const collection = RESOURCE_COLLECTIONS[sourceRef.resourceType];
     if (!collection || !sourceRef.resourceId) return;
     const directKey = keyOf([collection, sourceRef.resourceId]);
-    let targetKey = identities.has(directKey) ? directKey : null;
-    if (!targetKey && sourceRef.rootId) {
-      const candidates = objects.filter(candidate => {
-        if (candidate.collection !== collection || candidate.id !== sourceRef.resourceId) return false;
-        try {
-          return JSON.parse(candidate.objectKey).includes(sourceRef.rootId);
-        } catch {
-          return false;
-        }
-      });
-      if (candidates.length === 1) targetKey = candidates[0].objectKey;
+    const match = /^(remark|followup-question|followup-answer|reflection|note|annotation|annotation-reply):(.+)$/
+      .exec(String(sourceRef.targetKey || ""));
+    const field = match?.[1] === "remark" ? "remarks"
+      : match?.[1].startsWith("followup-") ? "followUps"
+        : match?.[1] === "reflection" ? "reflections"
+          : match?.[1] === "note" ? "notes"
+            : match?.[1] === "annotation" ? "annotations"
+              : match?.[1] === "annotation-reply" ? "replies" : "";
+    if (!field || !sourceRef.rootId
+      || (field !== "replies" && match[2] !== sourceRef.resourceId)) {
+      link(row, relation, collection, sourceRef.resourceId, false, directKey);
+      return;
     }
-    link(row, relation, collection, sourceRef.resourceId, false, targetKey || directKey);
+    const replyParentId = field === "replies" && match[2] !== sourceRef.resourceId
+      ? match[2] : "";
+    const nestedKey = replyParentId
+      ? keyOf([collection, sourceRef.rootId, "annotations", replyParentId, "replies", sourceRef.resourceId])
+      : keyOf([collection, sourceRef.rootId, field, sourceRef.resourceId]);
+    const driftKey = field === "annotations"
+      ? keyOf([collection, sourceRef.rootId, "annotationDrift", sourceRef.resourceId])
+      : "";
+    const candidates = field === "replies"
+      ? [...identities.values()].filter(candidate => {
+          const parts = JSON.parse(candidate.objectKey);
+          return candidate.collection === collection
+            && candidate.id === sourceRef.resourceId
+            && parts[1] === sourceRef.rootId
+            && parts.length === 6
+            && ["annotations", "annotationDrift"].includes(parts[2])
+            && (!replyParentId || parts[3] === replyParentId)
+            && parts[4] === "replies";
+        }).map(candidate => candidate.objectKey)
+      : [nestedKey, driftKey].filter(key => key && identities.has(key));
+    const targetKey = candidates.length === 1 ? candidates[0] : nestedKey;
+    link(row, relation, collection, sourceRef.resourceId, false, targetKey);
   };
   for (const row of objects) {
     const item = originals.get(row.objectKey);

@@ -36,7 +36,10 @@ export function createAiTaskTargets({
 }) {
   const projectTaskContext = (store, options) => {
     try {
-      return workingContextProjection(store, options);
+      return workingContextProjection(store, {
+        ...options,
+        rawMaterials: store.taskRawMaterials || null
+      });
     } catch (error) {
       if (error?.code === "STALE_PERSONAL_CONTEXT") return null;
       throw error;
@@ -463,7 +466,8 @@ export function createAiTaskTargets({
       const accountId = getAccountId();
       const coreUserModel = coreUserModelProjection(store);
       const generatedAt = task.contextGeneratedAt || task.createdAt || now();
-      const recentTrend = getRecentTrend(store, generatedAt);
+      const recentTrend = Object.hasOwn(store, "taskRecentTrend")
+        ? store.taskRecentTrend : getRecentTrend(store, generatedAt);
       const workingContext = projectTaskContext(store, {
         accountId,
         scene: task.kind,

@@ -58,6 +58,9 @@ import "./prompt-test-setup.mjs";
 import { runThoughtDbPagingChecks } from "../.build/typescript/thought-db-regression/scripts/thought-db-paging-regression.mjs";
 import { runThoughtProducerPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-postgres-checks.mjs";
 import { runThoughtClosurePostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-closure-postgres-checks.mjs";
+import { runThoughtSourceRelationPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-source-relations-postgres-checks.mjs";
+import { runThoughtRecoveryCostPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-recovery-cost-postgres-checks.mjs";
+import { runThoughtMaterialsPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-materials-postgres-checks.mjs";
 import { runThoughtTrashHttpChecks } from "../.build/typescript/thought-db-regression/scripts/thought-trash-http-checks.mjs";
 import { createRecordCompressionService, createAnnotationCommands } from "../src/app/index.mjs";
 import { createThoughtRuntimeFixture } from "../.build/typescript/thought-db-regression/scripts/thought-runtime-fixture.mjs";
@@ -1145,6 +1148,9 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await database.query("SELECT count(*)::int AS n FROM for_now.store_fields WHERE account_id = 'atomic-user'")).rows[0].n, 0);
     await database.query("DROP TRIGGER reject_provision ON for_now.store_fields");
     await runThoughtClosurePostgresChecks(database);
+    await runThoughtSourceRelationPostgresChecks(database);
+    await runThoughtRecoveryCostPostgresChecks(database);
+    await runThoughtMaterialsPostgresChecks(database, { canonicalJson, mapStoreObjects, rebuildStoreObjects });
 
     await account("repo-test", () => repo.initialize({ allowCreate: true }));
     await account("repo-other", () => repo.initialize({ allowCreate: true }));
@@ -1393,7 +1399,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         database,
         repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
         createBackground: (repository, dispatch) => createThoughtRuntimeFixture(createContentRuntime, {
-          ...repository, queryRecords: undefined, installRecordProjection: undefined
+          ...repository, installRecordProjection: undefined
         }, "thought-producer-test", {
           // 该运行时已安装唯一投影；此夹具只验正式后台装配，不重复安装查询。
           thoughtPagingConfig: { enabled: false },
@@ -1416,10 +1422,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         createBackground: createBackgroundAi,
         createRuntime: overrides => {
           const fixture = createThoughtRuntimeFixture(createContentRuntime, {
-            ...overrides.repository, queryRecords: undefined, installRecordProjection: undefined
+            ...overrides.repository, installRecordProjection: undefined
           }, "thought-producer-test", {
             ...overrides,
-            repository: { ...overrides.repository, queryRecords: undefined, installRecordProjection: undefined },
+            repository: { ...overrides.repository, installRecordProjection: undefined },
             thoughtPagingConfig: { enabled: false }
           });
           return Object.assign(fixture.backgroundAi, {

@@ -118,8 +118,8 @@ export function createContentRuntime({
     maxBackfillDatesPerScan: recordCompressionMaxBackfillDatesPerScan,
     startDate: recordCompressionStartDate
   });
-  const getRecentTrend = (store, asOf) => (
-    recordCompressionService.getCurrentTrend(store, asOf)
+  const getRecentTrend = (store, asOf, inputProjection = null) => (
+    recordCompressionService.getCurrentTrend(store, asOf, inputProjection)
   );
   const thoughtQueries = createThoughtQueries({
     repository,
@@ -247,6 +247,9 @@ export function createContentRuntime({
     getImportanceModelSnapshot,
     prepareImportanceContext,
     getRecentTrend,
+    createTrendInputProjection: recordCompressionService.createTrendInputProjection,
+    trendTimezones: recordCompressionService.trendTimezones,
+    trendReadRequirements: recordCompressionService.trendReadRequirements,
     mediaRuntime,
     getAccountId,
     backgroundContextKey,

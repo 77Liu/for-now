@@ -3,6 +3,7 @@ import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
 import {
   DEFAULT_RECORD_TIMEZONE,
   emptyHistoricalUserSupplement,
+  createRecordCompressionInputProjection,
   estimateHistoricalUserSupplementOutputTokens,
   estimateHistoricalUserSupplementTokens,
   HISTORICAL_USER_SUPPLEMENT_INPUT_TOKEN_BUDGET,
@@ -28,6 +29,7 @@ import {
   validateHistoricalUserSupplement
 } from "../modules/record-compressions/index.mjs";
 import { taskInputMatches, WAITING_FOR_BUDGET_STATUS } from "../modules/tasks/index.mjs";
+import { taskContextSourcePermission } from "./task-context.mjs";
 import {
   COMPRESSION_SOURCE_COLLECTIONS,
   compressionTaskAccountMatches,
@@ -48,6 +50,7 @@ import {
   objectValue,
   permittedHistoricalTextDates,
   sourceLocalDates,
+  trendReadRequirements,
   validLocalDate,
   validTimezone
 } from "./record-compression-context.mjs";
@@ -1062,7 +1065,43 @@ export function createRecordCompressionService({
       }
       return staleRunningTaskIds;
     },
-    getCurrentTrend(store, asOf = now()) {
+    /** 构建同次只读趋势输入；每页许可仍由实际来源与账户判定。 @since unreleased */
+    createTrendInputProjection(requestedAccountId, asOf, requirements = null) {
+      if (requestedAccountId !== accountId()) throw new TypeError("Trend account differs");
+      const projection = createRecordCompressionInputProjection({
+        accountId: requestedAccountId,
+        asOf,
+        timezones: [...new Set([
+          timezone(), historicalTimezone(),
+          ...(requirements?.dates || []).map(row => row.timezone)
+        ])],
+        hash,
+        maxTextChars,
+        localDates: requirements?.dates || null,
+        promptVersion: RECORD_COMPRESSION_PROMPT_VERSION
+      });
+      return {
+        ...projection,
+        add: store => projection.add(store, ({ sourceRef }) => (
+          taskContextSourcePermission(store, sourceRef, requestedAccountId)
+        )),
+        addUnknownSources: (store, ignoredRoots = []) => projection.addUnknownSources(store, ({ sourceRef }) => (
+          taskContextSourcePermission(store, sourceRef, requestedAccountId)
+        ), ignoredRoots)
+      };
+    },
+    trendReadRequirements(store, asOf) {
+      return trendReadRequirements(store, {
+        accountId: accountId(),
+        timezone: timezone(),
+        historicalTimezone: historicalTimezone(),
+        asOf,
+        hash,
+        startDate
+      });
+    },
+    trendTimezones: () => [timezone(), historicalTimezone()],
+    getCurrentTrend(store, asOf = now(), inputProjection = null) {
       const currentAccountId = accountId();
       const currentTimezone = timezone();
       const result = currentTrendFrom(store, {
@@ -1072,7 +1111,8 @@ export function createRecordCompressionService({
         asOf,
         hash,
         maxTextChars,
-        startDate
+        startDate,
+        inputProjection
       });
       return result;
     }

@@ -19,9 +19,17 @@ import { createNotificationRecordCommands } from "../record-commands/notificatio
 import { createContentAiRecordCommands } from "../record-commands/content-ai.mjs";
 import { createTaskTransitionCommands } from "../../../.build/typescript/backend/app/record-commands/task-transitions.mjs";
 import { createTaskCreationCommands } from "../../../.build/typescript/backend/app/record-commands/task-creation.mjs";
+import { createTaskPreparationQueries } from "../../../.build/typescript/backend/app/record-commands/task-preparation.mjs";
+import { createTaskMaterialAssembly } from "../../../.build/typescript/backend/app/record-commands/task-materials.mjs";
+import { createTaskTrendAssembly } from "../../../.build/typescript/backend/app/record-commands/task-trend.mjs";
 import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../../shared/persistence/index.mjs";
 import { createTaskRecordCommands } from "../../modules/tasks/index.mjs";
-import { userModelRequiresCoreReady } from "../user-model.mjs";
+import { onboardingV2ContextEntries } from "../../modules/onboarding/index.mjs";
+import { evidenceSourceKey, parseEvidenceSourceKey } from "../../modules/user-model/index.mjs";
+import { importanceSourcePermissionKeys, legalImportanceSources } from "../task-context.mjs";
+import { sourceLocalDates } from "../record-compression-context.mjs";
+import { personalContextRecordSelection } from "../personal-context.mjs";
+import { prepareUserModelExtraction, userModelRequiresCoreReady } from "../user-model.mjs";
 import { prepareReferenceRequest, verifyReferenceAnswer } from "../answer-citations.mjs";
 
 const taskFailure = (message, statusCode, code) => Object.assign(
@@ -86,6 +94,9 @@ export function createContentBackground({
   getImportanceModelSnapshot = () => null,
   prepareImportanceContext = async () => null,
   getRecentTrend = () => null,
+  createTrendInputProjection = null,
+  trendTimezones = null,
+  trendReadRequirements = null,
   mediaRuntime,
   getAccountId,
   backgroundContextKey,
@@ -141,6 +152,17 @@ export function createContentBackground({
         notifications: notificationService
       })
     : null;
+  const trendQueries = createTaskTrendAssembly({
+    mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+    permissionKeys: importanceSourcePermissionKeys,
+    project: getRecentTrend,
+    createInputProjection: createTrendInputProjection,
+    readRequirements: trendReadRequirements,
+    sourceDates: sourceLocalDates,
+    timezones: trendTimezones,
+    legacySelection: personalContextRecordSelection,
+    now
+  });
   const backgroundAi = createBackgroundAi({
     repository,
     cleanupExistingTask,
@@ -150,6 +172,29 @@ export function createContentBackground({
       enabled: name => recordCommandConfig?.enabled?.(name) === true,
       notifications: notificationRecordCommands,
       tasks: taskRecordCommands,
+      preparation: typeof repository.queryRecords === "function"
+        ? createTaskPreparationQueries({
+            queryRecords: repository.queryRecords,
+            mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+            onboardingPermissionKeys: store => onboardingV2ContextEntries(store.onboardingV2)
+              .map(entry => evidenceSourceKey({
+                resourceType: "onboardingV2",
+                resourceId: entry.id,
+                rootId: "",
+                targetKey: `answer:${entry.id}`,
+                version: entry.version
+              })),
+            modelInputHash: store => prepareUserModelExtraction(store).value?.inputHash || "",
+            materialContext: createTaskMaterialAssembly({
+              mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+              legalSources: legalImportanceSources,
+              permissionKeys: importanceSourcePermissionKeys,
+              parseSourceKey: parseEvidenceSourceKey,
+              trendContext: trendQueries.trendContext,
+              legacyContext: trendQueries.legacyContext
+            })
+          })
+        : null,
       transitions: repository.accountUnitOfWork?.run
         ? createTaskTransitionCommands({
             unitOfWork: repository.accountUnitOfWork,
