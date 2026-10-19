@@ -1,5 +1,5 @@
 import { THOUGHT_PAGING } from "../../../generated/thought-pagination-config.mjs";
-import { reconcileThoughtWindowMutation, applyThoughtWindowSync, applyThoughtDetailSync } from "../../features/thoughts/index.mjs";
+import { reconcileThoughtWindowMutation, applyThoughtWindowSync, applyThoughtDetailSync } from "../../features/thoughts/model.mjs";
 import { createNotificationRuntime } from "../../../generated/app/runtime/notification-runtime.mjs";
 import { BUSINESS_ID_BYTES, encodeBusinessId, isBusinessId } from "../../../generated/business-identifiers.mjs";
 import { sessionScope, sessionSerial } from "../../session/index.mjs";

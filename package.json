@@ -1,9 +1,9 @@
 {
   "name": "personal-growth-tracker",
-  "version": "0.5.15",
+  "version": "0.5.16",
   "private": true,
   "release": {
-    "iosBuildNumber": 11
+    "iosBuildNumber": 12
   },
   "type": "module",
   "scripts": {

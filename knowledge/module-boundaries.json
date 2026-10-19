@@ -2550,7 +2550,7 @@
         "frontend.time",
         "frontend.ai-task-status",
         "frontend.app.personalized-task-runtime",
-        "frontend.feature.thoughts"
+        "frontend.feature.thoughts-model"
       ],
       "owns": {
         "data": [
@@ -2608,7 +2608,7 @@
       "allowedDependencies": [
         "frontend.state",
         "frontend.app.chat-submission",
-        "frontend.feature.thoughts"
+        "frontend.feature.thoughts-model"
       ],
       "owns": {
         "data": [

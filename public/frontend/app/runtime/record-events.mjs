@@ -1,5 +1,5 @@
 import { THOUGHT_PAGING } from "../../../generated/thought-pagination-config.mjs";
-import { reconcileThoughtWindowMutation } from "../../features/thoughts/index.mjs";
+import { reconcileThoughtWindowMutation } from "../../features/thoughts/model.mjs";
 import { installChatSubmission } from "../../../generated/app/runtime/chat-submission.mjs";
 import { state } from "../../state/index.mjs";
 

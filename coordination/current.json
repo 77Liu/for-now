@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 510,
-  "updated_at": "2026-10-19T15:42:20.193Z",
+  "revision": 515,
+  "updated_at": "2026-10-19T15:50:56.169Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,10 +17,10 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段11本地正确性出口通过：进入版本组合验收"
+    "phase": "版本组合验收：更新元数据并固定候选"
   },
   "scope": {
-    "description": "阶段11记录级同步v2本地正确性出口通过；思绪实体启用，v1独立保留，性能与设备保持partial，进入固定候选组合验收。",
+    "description": "11个串行阶段本地出口完成；进入v0.5.16版本元数据、组合回归、移动模拟、发布保护及有状态全局启动恢复验收。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8",
@@ -55,7 +55,44 @@
     ],
     "plan_ref": "docs/versions/v0.5.16/README.md"
   },
-  "active_tasks": [],
+  "active_tasks": [
+    {
+      "id": "v0516-combination-acceptance",
+      "mode": "validation",
+      "owner": "主控串行",
+      "requirement_id": "v0.5.16-candidate",
+      "baseline": "7a7b8193",
+      "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效",
+      "allowed_write_set": [
+        "package.json",
+        "package-lock.json",
+        "public/release-info.js",
+        "ios/release-version.xcconfig",
+        "reviews/2026-10-19-v0516-combination-acceptance.md",
+        "reviews/2026-10-19-v0516-combination-acceptance-result.json",
+        "coordination/**",
+        "public/service-worker.js",
+        "public/frontend/app/runtime/data-runtime.mjs",
+        "public/frontend/app/runtime/record-events.mjs",
+        "scripts/pwa-regression.mjs",
+        "knowledge/module-boundaries.json",
+        "scripts/module-boundary-regression.mjs"
+      ],
+      "forbidden_write_set": [
+        ".trae/skills/tell-me/**",
+        "版本元数据之外的应用源码",
+        "生产业务数据与凭据",
+        "push/tag/Release/Preview/生产部署",
+        "真实付费provider调用",
+        "94条真实样本重建或重跑"
+      ],
+      "shared_owner": "主控唯一串行写者",
+      "integration_order": "release:set→PWA完整静态闭包与思绪model懒加载边界返修→候选提交→组合回归/旅程/移动/发布保护→脱敏四账户隔离PG启动恢复→回执与候选冻结",
+      "acceptance": "必需门绑定同一候选全部PASS；Chrome与移动模拟不冒充Safari/PWA安装态/真机；P75与生产放量保持PARTIAL；不执行任何外部发布动作。",
+      "review_ref": "reviews/2026-10-19-v0516-combination-acceptance.md",
+      "receipt_ref": "reviews/2026-10-19-v0516-combination-acceptance-result.json"
+    }
+  ],
   "candidate": null,
   "authorization": {
     "source": "Owner 2026-10-19：继续夜间持续开发，未收到Owner停止指令持续推进已评审剩余需求；早晨08:30收尾并汇报需要Owner决策的评审表。沿既定11阶段串行开发，不扩大外部动作授权。",
@@ -89,7 +126,7 @@
   },
   "blockers": [],
   "next_action": {
-    "description": "固定版本候选并执行组合验收；P75≤500ms、Safari/PWA/真机与生产放量保持独立发布门，不自动发布。",
+    "description": "补齐模块边界隔离夹具的TypeScript编译前置，再形成候选提交并执行release旅程。",
     "owner": "主控",
     "requires_owner": false
   },
