@@ -214,8 +214,16 @@ export function createAnnotationView({
   }
   /** 当前快照仍属于原页面和真实来源；DOM按稳定目标读取，表单快照不依赖已重绘的旧Element。 @since unreleased */
   function isSelectionCurrent(selection = ui.pendingSelection) {
-    if (!selection || selection.phase === "invalid" || ui.pendingSelection !== selection || selection.scope !== selectionScope()) return false;
-    const source = model.selectionSource(selection.rootKey, selection.targetKey), host = selectionHost(selection);
+    if (
+      !selection
+      || selection.phase === "invalid"
+      || ui.pendingSelection !== selection
+      || selection.scope !== selectionScope()
+    ) return false;
+    const root = model.rootFor(selection.rootKey);
+    if (!root || Object.hasOwn(root, "blockCount")) return false;
+    const source = model.selectionSource(selection.rootKey, selection.targetKey);
+    const host = selectionHost(selection);
     return Boolean(source && host && source.value === selection.sourceValue
       && textContent(host).slice(selection.start, selection.end) === selection.quote);
   }

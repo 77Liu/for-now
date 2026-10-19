@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 495,
-  "updated_at": "2026-10-19T09:42:42.549Z",
+  "revision": 497,
+  "updated_at": "2026-10-19T09:59:46.755Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,14 +17,14 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "阶段8 F6本地出口通过：提交后接续阶段9"
+    "phase": "阶段9本地功能出口通过：设备partial，提交后接续阶段10"
   },
   "scope": {
-    "description": "阶段8回复/转换缺目标精准补读、失败恢复和新输入保持返修完成；公开端口及真实认证PG桌面通过，最终标准PG各子套件通过。",
+    "description": "阶段9既有F8接续复核完成；修复已打开评论快照被分页摘要替换仍可提交，公开等待边界和真实DOM通过；设备限制保持。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
-      "commit": "bd5f6b",
-      "source": "阶段6原子返修本地提交；F7未变实现及受影响专项复核通过"
+      "commit": "2119f6",
+      "source": "阶段8修复及阶段7接续本地提交"
     },
     "inputs": [
       "docs/technical-proposals/V0516-跨需求共用底座与串行开发-技术方案.md",
@@ -56,30 +56,30 @@
   },
   "active_tasks": [
     {
-      "id": "v0516-stage8-annotation-counts",
+      "id": "v0516-stage9-mobile-annotations",
       "mode": "implementation",
       "owner": "主控串行",
-      "requirement_id": "reczz28JmUJNsOl9",
-      "baseline": "bd5f6b",
+      "requirement_id": "recvxlWptXiRfk",
+      "baseline": "2119f6a",
       "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效",
       "allowed_write_set": [
         "public/frontend/features/annotations/**",
-        "public/frontend/shared/annotation-counts.mts",
-        "public/frontend/features/thoughts/presentation.mjs",
-        "public/frontend/features/thoughts/controller.mjs",
-        "public/frontend/features/thoughts/loader.mjs",
+        "public/frontend/shared/annotation-selection.mts",
+        "public/frontend/features/thoughts/**",
         "public/frontend/app/runtime/collaboration-runtime.mjs",
+        "public/frontend/app/runtime/page-descriptors-insights.mjs",
+        "public/frontend/app/runtime/global-events.mjs",
+        "public/frontend/styles/application.css",
         "src/app/annotation-resources.mjs",
         "src/modules/annotations/**",
         "scripts/*annotation*",
         "scripts/*thought*",
-        "scripts/postgres-runtime-checks.mjs",
+        "ios/App/AppUITests/**",
         "tsconfig.frontend.json",
         "tsconfig.thought-db-regression.json",
         "knowledge/module-boundaries.json",
-        "docs/technical-proposals/F6-批注入口与计数一致-技术方案.md",
-        "reviews/2026-10-19-stage7-reading-state*",
-        "reviews/2026-10-19-stage8*",
+        "docs/technical-proposals/F8-iOS-PWA选字与批注-技术方案.md",
+        "reviews/2026-10-19-stage9*",
         "coordination/**"
       ],
       "forbidden_write_set": [
@@ -90,13 +90,13 @@
         "src/http/sync.mjs",
         ".trae/skills/tell-me/**",
         "生产数据与凭据",
-        "阶段9至11新功能"
+        "阶段10至11新功能"
       ],
       "shared_owner": "主控唯一串行写者",
-      "integration_order": "既有F6实现与新版分页完整性审查→公开端口专项→真实PG/浏览器必要补验→出口裁定",
-      "acceptance": "一个主要入口；线程/回复/标记/漂流分列；未加载不是零；重复ACK与同步不重复计数；删除失败及迟到结果不复活旧对象；阅读状态保持。",
-      "review_ref": "reviews/2026-10-19-stage8-annotation-counts.md",
-      "receipt_ref": "reviews/2026-10-19-stage8-annotation-counts-result.json"
+      "integration_order": "既有F8实现与旧回执核对→公开选区/草稿专项→必要真实DOM/PG补验→出口裁定",
+      "acceptance": "系统选区保持；触摸坍塌后菜单可用；同一UTF16规范；失效来源/页面/账户不得提交；文字图片草稿保持；标记转换计数一致；设备限制按实际证据。",
+      "review_ref": "reviews/2026-10-19-stage9-mobile-annotations.md",
+      "receipt_ref": "reviews/2026-10-19-stage9-mobile-annotations-result.json"
     }
   ],
   "candidate": null,
@@ -132,7 +132,7 @@
   },
   "blockers": [],
   "next_action": {
-    "description": "核对真实写集与固定候选等同后提交阶段8；随后登记阶段9 F8既有选区/标记实现复核。",
+    "description": "提交阶段9原子返修与证据；随后登记阶段10推理可见性边界复核。",
     "owner": "主控",
     "requires_owner": false
   },
@@ -746,19 +746,38 @@
       "object": {
         "kind": "source_manifest",
         "tree": "e3deda",
-        "receipt": "reviews/2026-10-19-stage8-annotation-counts-result.json"
+        "receipt": "reviews/2026-10-19-stage8-annotation-counts-result.json",
+        "commit": "2119f6"
       },
       "conclusion": "阶段8本地出口PASS：回复/转换缺目标精准补读与失败重试、新输入/焦点/选区保持；公开ACK/删除失败/不复活/会话专项通过。认证开启隔离PG真实Chrome保存→回复→转换→删除与正式详情回读一致。固定候选模块/类型/前端/协作专项exit0；标准PG四段子套件全部完成通过标记。",
       "limitations": [
         "最终标准PG后台父进程未保存退出码；日志四段通过且进程退出，不补造exit0",
         "直接Node首轮整套媒体生成失败已保留；标准测试Node入口复验通过",
         "iOS Safari/PWA真机与原生长按、生产负载未验",
-        "本地提交尚待执行；本轮不push/tag/deploy"
+        "本地提交2119f6a；未push/tag/deploy"
       ],
       "refs": [
         "reviews/2026-10-19-stage8-annotation-counts.md",
         "reviews/2026-10-19-stage8-annotation-counts-result.json",
         "artifacts/local/v0516-f6-acceptance-current.json"
+      ]
+    },
+    {
+      "id": "v0516-stage9-mobile-annotations-exit",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "reviews/2026-10-19-stage9-mobile-annotations-result.json"
+      },
+      "conclusion": "本地功能出口PASS；分页摘要替换快照在开始/保存草稿等待/上传等待后均0POST，文字保留按钮恢复；真实Chrome跨段UTF16与菜单坍塌可达、重挂载恢复通过；构建/类型/前端/协作捕获exit0。",
+      "limitations": [
+        "Safari/安装PWA/真机partial；旧native仅模拟器WKWebView，未重跑",
+        "真实DOM探针采用隔离数据媒体端口；PG成功路径复用阶段8",
+        "阶段8最终PG父退出码限制保持；未执行整版发布门"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage9-mobile-annotations.md",
+        "reviews/2026-10-19-stage9-mobile-annotations-result.json",
+        "artifacts/local/v0516-f8-acceptance-current.json"
       ]
     }
   ],

@@ -190,6 +190,8 @@ const toasts = [];
 let frame = 0;
 const cancelledFrames = [];
 let persistentDraftClears = 0;
+let persistDraftHandler = async () => {};
+let submitDraftHandler = async () => ({ uploadedPaths: [], attachmentPaths: [] });
 const controller = createAnnotationsFeatureController({
   data: {
     getSnapshot: () => snapshot,
@@ -205,8 +207,8 @@ const controller = createAnnotationsFeatureController({
   media: {
     resetDraft() { persistentDraftClears += 1; },
     startDraft() {},
-    persistDraft: async () => {},
-    submitDraft: async () => ({ uploadedPaths: [], attachmentPaths: [] }),
+    persistDraft: () => persistDraftHandler(),
+    submitDraft: () => submitDraftHandler(),
     buildPayload: value => value,
     clearDraft: async () => { persistentDraftClears += 1; },
     discardUploads: async () => {},
@@ -610,4 +612,96 @@ console.log("Frontend annotations feature checks passed: repeat mount cleanup, s
   const feedback = toasts.length;
   assert.equal(controller.restoreCommentDraft(context), true);
   assert.equal(toasts.length, feedback, "同一失效草稿重复恢复不反复弹提示");
+}
+
+// 分页摘要接替完整来源后，已打开的评论快照也必须停止提交；短正文不能绕过完整性校验。
+{
+  controller.resetSession();
+  snapshot = {
+    thoughts: [{
+      id: "root",
+      type: "question",
+      content: "原文",
+      version: 1,
+      annotations: [],
+      annotationDrift: []
+    }],
+    aiTasks: []
+  };
+  const host = {
+    nodeType: 1,
+    isConnected: true,
+    dataset: { commentRoot: "thought:root", commentTarget: "question:root" },
+    childNodes: [{ nodeType: 3, nodeValue: "原文" }],
+    matches: () => false,
+    hasAttribute: () => false,
+    getClientRects: () => [{ top: 0 }],
+    getBoundingClientRect: () => ({ top: 0, right: 100 }),
+    querySelectorAll: () => []
+  };
+  const originalQueryAll = document.querySelectorAll;
+  document.querySelectorAll = selector => selector.startsWith(".commentable[") ? [host] : [];
+  const form = document.elements["comment-composer"];
+  const submit = { disabled: false, isConnected: true };
+  form.closest = selector => selector === "#comment-composer" ? form : null;
+  form.querySelector = selector => selector === 'button[type="submit"]' ? submit : null;
+  controller.mount({ root: document });
+  const context = {
+    selection: {
+      rootKey: "thought:root",
+      targetKey: "question:root",
+      start: 0,
+      end: 2,
+      quote: "原文",
+      sourceValue: "原文",
+      sourceVersion: 1
+    },
+    text: "完整详情期间写下的评论"
+  };
+  assert.equal(controller.restoreCommentDraft(context), true);
+  let posts = 0;
+  requestHandler = async () => {
+    posts += 1;
+    return { id: "unexpected", targetKey: "question:root", quote: "原文" };
+  };
+  snapshot.thoughts = [{ ...snapshot.thoughts[0], blockCount: 1 }];
+  document.dispatch("submit", form);
+  await flush();
+  assert.equal(posts, 0, "summary replacement must invalidate a previously composable selection before any POST");
+  assert.equal(document.elements["comment-text"].value, context.text);
+  assert.match(document.elements["comment-status"].textContent, /重新选择/);
+  assert.equal(controller.commentDraftContext().selection.phase, "invalid");
+  assert.equal(submit.disabled, false);
+  for (const boundary of ["persist", "upload"]) {
+    controller.resetSession();
+    snapshot.thoughts = [{
+      id: "root",
+      type: "question",
+      content: "原文",
+      version: 1,
+      annotations: [],
+      annotationDrift: []
+    }];
+    controller.mount({ root: document });
+    assert.equal(controller.restoreCommentDraft(context), true);
+    const gate = deferred();
+    persistDraftHandler = boundary === "persist" ? () => gate.promise : async () => {};
+    submitDraftHandler = boundary === "upload"
+      ? () => gate.promise
+      : async () => ({ uploadedPaths: [], attachmentPaths: [] });
+    document.dispatch("submit", form);
+    await flush();
+    snapshot.thoughts = [{ ...snapshot.thoughts[0], blockCount: 1 }];
+    gate.resolve({ uploadedPaths: [], attachmentPaths: [] });
+    await flush();
+    assert.equal(posts, 0, `${boundary} await must recheck summary replacement before POST`);
+    assert.equal(document.elements["comment-text"].value, context.text);
+    assert.equal(controller.commentDraftContext().selection.phase, "invalid");
+    assert.equal(submit.disabled, false);
+  }
+  persistDraftHandler = async () => {};
+  submitDraftHandler = async () => ({ uploadedPaths: [], attachmentPaths: [] });
+  controller.resetSession();
+  document.querySelectorAll = originalQueryAll;
+  console.log("F8 summary replacement checks passed: zero writes, retained input and explicit reselection.");
 }
