@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 545,
-  "updated_at": "2026-10-20T04:37:41.956Z",
+  "revision": 546,
+  "updated_at": "2026-10-20T09:19:54.243Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -16,11 +16,11 @@
   "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
     "id": "v0.5.16",
-    "status": "INDEPENDENT_REVIEW_PENDING",
-    "phase": "候选6dace45的R1-R12返修与技术门已通过，冻结等待Owner/独立复审"
+    "status": "INDEPENDENT_REREVIEW_PENDING",
+    "phase": "独立复审确认R1/R6/R9/R11为部分修复并复现F1-F5；已按Owner拍板完成F1-F5与类型契约Q1返修，技术门通过，四账户有状态门未在新候选重建，冻结等待独立复审"
   },
   "scope": {
-    "description": "独立审查12项问题已逐项返修并形成失败先行回归；最终候选6dace45/92b96c通过主回归、静态门、完整PG、Chrome影响矩阵及四账户default/combined有状态门，开发侧不替代独立复审。",
+    "description": "独立复审：R2/R3/R4/R5/R7/R8/R10/R12可关闭，R1/R6/R9/R11为部分修复并复现F1-F5；开发侧已按Owner拍板返修（列表只接受摘要契约、回收身份按全量候选唯一性核对、额度准入与结算同账户日串行、恢复按实际失效范围）并补同步事件穷尽检查。新候选106fc41技术门与受影响专项通过，但四账户有状态门未重建，不替代独立复审。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8",
@@ -59,12 +59,12 @@
   },
   "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-6dace45",
+    "id": "v0.5.16-106fc41",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "6dace4",
-    "tree": "92b96c",
+    "sha": "106fc4",
+    "tree": "e36344",
     "version": "0.5.16",
-    "status": "REMEDIATION_VERIFIED_WAIT_INDEPENDENT_REVIEW",
+    "status": "REREVIEW_REMEDIATION_VERIFIED_WAIT_INDEPENDENT_REREVIEW",
     "release_frozen": true,
     "required_gates": [
       "release_metadata_pwa",
@@ -81,14 +81,14 @@
       "full_regression": "PASS",
       "release_journeys": "PASS",
       "release_protection": "PASS",
-      "stateful_postgres_startup": "PASS",
+      "stateful_postgres_startup": "NOT_REBUILT_FOR_THIS_CANDIDATE",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
       "production_rollout": "NOT_RUN"
     }
   },
   "authorization": {
-    "source": "Owner 2026-10-20独立审查明确结论：继续返修，暂不按READY_WAIT_OWNER放行；逐一参考Owner拍板完成12项bug修复与代码优化。原外部动作排除保持。",
+    "source": "Owner 2026-10-20独立复审结论：返修有实质进展但复审不通过，8项可关闭、R1/R6/R9/R11部分修复；按拍板继续返修F1-F5与类型契约Q1。不恢复READY_WAIT_OWNER；原外部动作排除保持。",
     "allowed_actions": [
       "当前及后继已评审需求的严格串行本地实现、自查、审查、受影响验证与本地提交",
       "当前阶段必要schema、迁移、运行时、测试及技术方案回填",
@@ -117,9 +117,21 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [],
+  "blockers": [
+    {
+      "id": "v0516-rereview-stateful-gate-unrebuilt",
+      "priority": "P1",
+      "status": "OPEN",
+      "reason": "四账户default/v0516-combined有状态启动门未在新候选重建：脱敏快照绑定6dace45/92b96c，verify以候选SHA/tree不一致拒绝106fc41；重新采集需只读生产源URL，本轮未访问生产环境。",
+      "refs": [
+        "scripts/release-state-startup-gate.mts",
+        "artifacts/local/v0516-startup-snapshot-6dace45.json",
+        "reviews/2026-10-20-v0516-rereview-remediation-result.json"
+      ]
+    }
+  ],
   "next_action": {
-    "description": "由Owner或独立审查者复核R1-R12返修及证据；复审通过后再决定是否进入READY_WAIT_OWNER。未经新决定不得发布或部署。",
+    "description": "由Owner或独立复审者复核F1-F5与Q1返修；通过前不得进入READY_WAIT_OWNER或发布。四账户有状态门需在授权访问只读生产源后为新候选重建。",
     "owner": "Owner/独立审查者",
     "requires_owner": true
   },
@@ -865,9 +877,9 @@
         "findingsClosed": 12,
         "snapshot": "50839a6e"
       },
-      "conclusion": "R1-R12开发侧返修与正式验证通过；最终候选四账户default/combined有状态门、完整PG16.14、主回归、静态和前端影响矩阵通过，冻结等待独立复审，不自认READY_WAIT_OWNER。",
+      "conclusion": "R1-R12返修与主回归、静态门、完整PG16.14、前端影响矩阵及四账户有状态门在6dace45通过；该回执对R1/R6/R9/R11的PASS自评已被2026-10-20独立复审推翻，历史结论保留但不再作为关闭依据，以v0516-rereview-remediation-verified为准。",
       "limitations": [
-        "独立复审尚未执行",
+        "R1/R6/R9/R11自评被独立复审推翻，见v0516-full-independent-rereview-20261020与v0516-rereview-remediation-verified",
         "浏览器P75 500ms仍PARTIAL",
         "Safari/安装PWA/移动真机仍PARTIAL",
         "生产负载与放量NOT_RUN",
@@ -878,6 +890,56 @@
         "reviews/2026-10-20-v0516-independent-remediation-result.json",
         "artifacts/local/v0516-startup-snapshot-6dace45.json",
         "git:6dace4"
+      ]
+    },
+    {
+      "id": "v0516-full-independent-rereview-20261020",
+      "object": {
+        "kind": "independent_code_review",
+        "candidate": "6dace45a",
+        "tree": "92b96c",
+        "closedFromTwelve": 8,
+        "partial": 4,
+        "reproducedDefects": 5
+      },
+      "conclusion": "独立复审结论：返修不通过。R2/R3/R4/R5/R7/R8/R10/R12在本次审查范围内可关闭；R1/R6/R9/R11仍为部分修复，实际复现F1-F5（列表混入详情投影、旧回收记录被误清理、额度越限、额度重复计数误拦、筛选失效扩大为无关详情重读）。类型契约Q1未通过：删除record-error分支后类型检查仍通过。三分交接仍未完整：摘要与详情、旧记录与完整身份、持久账目与内存额度。",
+      "limitations": [
+        "两项集合门同时成立：主回归、静态检查、完整PG16.14、记录同步、AI/回收站/PWA专项及四账户default/combined有状态门通过，反例也独立复现，因此不能恢复READY_WAIT_OWNER。",
+        "R9相关缺陷在v2/额度开关开启路径成立；默认关闭不等于已修复。",
+        "本轮复审未修改业务代码或控制面，未访问生产环境。",
+        "真机Safari/安装PWA、生产负载与P75≤500ms缺口继续保留，不计入上述代码问题。"
+      ],
+      "refs": [
+        "artifacts/local/2026-10-20-v0516-remediation-independent-rereview.md",
+        "artifacts/local/2026-10-20-v0516-remediation-independent-rereview.json",
+        "artifacts/local/2026-10-20-v0516-remediation-rereview-evidence.zip"
+      ]
+    },
+    {
+      "id": "v0516-rereview-remediation-verified",
+      "object": {
+        "kind": "remediation_candidate",
+        "candidate": "106fc41",
+        "tree": "e36344",
+        "findingsFixed": 6,
+        "supersedes": "v0516-independent-remediation-verified for R1/R6/R9/R11",
+        "snapshot": "50839a6e"
+      },
+      "conclusion": "按Owner拍板完成F1-F5与Q1返修：列表只接受摘要契约、详情型增量先失效再按现有机制恢复且保留同版本真冲突校验；回收条目按全量候选父身份核对唯一性、歧义不扩展；额度准入、预留与结算共享同一账户/日期串行边界且一次调用只占一份；恢复仅按实际失效筛选范围执行；同步事件消费者为穷尽switch。主回归、静态门、记录同步/回收/AI/PWA及前端专项、发布保护门与完整PG16.14通过，冻结等待独立复审，不自认READY_WAIT_OWNER。",
+      "limitations": [
+        "四账户default/v0516-combined有状态门未在新候选重建（快照绑定旧候选SHA/tree）",
+        "浏览器P75 500ms仍PARTIAL",
+        "Safari/安装PWA/移动真机仍PARTIAL",
+        "生产负载与放量NOT_RUN",
+        "真实付费provider与94条真实语料均未运行",
+        "PG稳定套件第2/3次失败按观察抖动如实保留，未改写为通过"
+      ],
+      "refs": [
+        "reviews/2026-10-20-v0516-rereview-remediation.md",
+        "reviews/2026-10-20-v0516-rereview-remediation-result.json",
+        "artifacts/local/v0516-startup-snapshot-6dace45.json",
+        "git:106fc4",
+        "tree:e36344"
       ]
     }
   ],
