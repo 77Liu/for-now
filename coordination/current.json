@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 534,
-  "updated_at": "2026-10-20T03:35:43.421Z",
+  "revision": 537,
+  "updated_at": "2026-10-20T04:12:59.547Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,7 +17,7 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "独立审查P1四项已返修并通过专项，进入同步生命周期P2"
+    "phase": "独立审查R1-R12全部返修并通过主回归/PG/静态门，准备固定新候选"
   },
   "scope": {
     "description": "Owner独立审查固定2d97b585业务树确认12项未关闭问题（4项P1、8项P2）；按R1-R3/R11阻断项→R4-R8/R12同步闭环→R9/R10跨域一致性严格串行返修。",
@@ -32,8 +32,8 @@
       "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md",
       "knowledge/design-contracts.md",
       "knowledge/test-impact-matrix.md",
-      "/Users/bytedance/Documents/Codex/2026-10-18/new-chat/outputs/2026-10-20-v0516-full-independent-review.json",
-      "/Users/bytedance/Documents/Codex/2026-10-18/new-chat/outputs/2026-10-20-v0516-full-review-evidence.zip"
+      "artifacts/local/2026-10-20-v0516-full-independent-review.json",
+      "artifacts/local/2026-10-20-v0516-full-review-evidence.zip"
     ],
     "exclusions": [
       "不删除v1 endpoint，不实现未评审的PWA/Service Worker强制升级或v1退场",
@@ -66,7 +66,7 @@
       "baseline": "820444c",
       "candidate_baseline": "2d97b585",
       "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效；Owner 2026-10-20独立审查拍板",
-      "status": "IN_PROGRESS_SYNC_LIFECYCLE_P2",
+      "status": "READY_FOR_CANDIDATE_COMMIT",
       "allowed_write_set": [
         "public/frontend/state/record-sync.mts",
         "public/frontend/shared/incremental-sync.mts",
@@ -90,7 +90,8 @@
         "docs/technical-proposals/** (仅开发明细/实际契约回填)",
         "reviews/2026-10-20-v0516-independent-remediation.md",
         "reviews/2026-10-20-v0516-independent-remediation-result.json",
-        "coordination/**"
+        "coordination/**",
+        "scripts/project-path-regression.mjs (仅追加式控制事件历史豁免，current仍受检)"
       ],
       "forbidden_write_set": [
         ".trae/skills/tell-me/**",
@@ -166,89 +167,9 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [
-    {
-      "id": "v0516-independent-r4",
-      "priority": "P2",
-      "status": "CONFIRMED_UNRESOLVED",
-      "reason": "同步缓存没有随范围切换释放",
-      "refs": [
-        "public/frontend/state/record-sync.mts:230"
-      ]
-    },
-    {
-      "id": "v0516-independent-r5",
-      "priority": "P2",
-      "status": "CONFIRMED_UNRESOLVED",
-      "reason": "v2路由读取思绪数据后丢弃，再请求同一数据",
-      "refs": [
-        "public/frontend/app/runtime/data-runtime.mjs:245"
-      ]
-    },
-    {
-      "id": "v0516-independent-r6",
-      "priority": "P2",
-      "status": "CONFIRMED_UNRESOLVED",
-      "reason": "正文更新后搜索成员未重新判断",
-      "refs": [
-        "src/app/sync-projection.mts:213",
-        "public/frontend/state/record-sync.mts:302"
-      ]
-    },
-    {
-      "id": "v0516-independent-r7",
-      "priority": "P2",
-      "status": "CONFIRMED_UNRESOLVED",
-      "reason": "v2 报错仍显示已同步",
-      "refs": [
-        "public/frontend/app/runtime/data-sync-runtime.mjs:67",
-        "public/frontend/shared/incremental-sync.mts:512"
-      ]
-    },
-    {
-      "id": "v0516-independent-r8",
-      "priority": "P2",
-      "status": "CONFIRMED_UNRESOLVED",
-      "reason": "范围恢复失败绕过退避",
-      "refs": [
-        "public/frontend/shared/incremental-sync.mts:447",
-        "public/frontend/shared/incremental-sync.mts:512"
-      ]
-    },
-    {
-      "id": "v0516-independent-r9",
-      "priority": "P2",
-      "status": "CONFIRMED_UNRESOLVED",
-      "reason": "并发日额度检查可能超发",
-      "refs": [
-        "src/modules/ai/usage.mjs:369",
-        "src/shared/persistence/postgres-runtime.mjs:282"
-      ]
-    },
-    {
-      "id": "v0516-independent-r10",
-      "priority": "P2",
-      "status": "CONFIRMED_UNRESOLVED",
-      "reason": "漂移区图片批注任务恢复丢目标",
-      "refs": [
-        "src/app/record-commands/task-transitions.mts:54",
-        "src/shared/persistence/store-mapping.mjs:132",
-        "src/app/record-commands/task-preparation.mts:125"
-      ]
-    },
-    {
-      "id": "v0516-independent-r12",
-      "priority": "P2",
-      "status": "CONFIRMED_UNRESOLVED",
-      "reason": "配置的同步日志保留上限没有执行入口",
-      "refs": [
-        "src/config/index.mjs:106",
-        "src/shared/persistence/record-sync-repository.mts:210"
-      ]
-    }
-  ],
+  "blockers": [],
   "next_action": {
-    "description": "修复R6搜索成员失效、R7 v2健康事件、R8恢复退避、R4缓存释放和R5重复正文读取，并将同步事件契约纳入TypeScript检查。",
+    "description": "提交R1-R12返修实现形成精确候选；在候选工作树执行真实Chrome前端旅程、回执审查及四账户有状态启动门。",
     "owner": "主控",
     "requires_owner": false
   },
@@ -981,8 +902,8 @@
         "真机 Safari/安装 PWA、生产负载与 P75≤500ms 的缺口继续保留，不计入 12 项已确认代码问题。"
       ],
       "refs": [
-        "/Users/bytedance/Documents/Codex/2026-10-18/new-chat/outputs/2026-10-20-v0516-full-independent-review.json",
-        "/Users/bytedance/Documents/Codex/2026-10-18/new-chat/outputs/2026-10-20-v0516-full-review-evidence.zip"
+        "artifacts/local/2026-10-20-v0516-full-independent-review.json",
+        "artifacts/local/2026-10-20-v0516-full-review-evidence.zip"
       ]
     }
   ],

@@ -553,6 +553,62 @@ try {
   (await pendingCostQuota.reserveAttempt()).release();
   pendingCost.commit();
 
+  let persistedRaceCalls = 0, holdRaceRead = false, releaseRaceRead, enterRaceRead;
+  const raceReadEntered = new Promise(resolve => { enterRaceRead = resolve; });
+  const callRaceQuota = createAiUsageService({
+    repository: {
+      readDaySummary: async () => {
+        const snapshot = { calls: persistedRaceCalls, knownCostCny: 0, unknownCostCalls: 0 };
+        if (holdRaceRead) {
+          enterRaceRead();
+          await new Promise(resolve => { releaseRaceRead = resolve; });
+        }
+        return snapshot;
+      }
+    },
+    getAccountKey: () => "quota-race",
+    dailyCallLimit: 1,
+    dailyCostLimitCny: 100,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const firstRaceReservation = await callRaceQuota.reserveAttempt();
+  holdRaceRead = true;
+  const secondRaceReservation = callRaceQuota.reserveAttempt();
+  await raceReadEntered;
+  persistedRaceCalls = 1;
+  firstRaceReservation.commit();
+  releaseRaceRead();
+  await assert.rejects(secondRaceReservation, { code: "AI_DAILY_CALL_LIMIT" });
+
+  let persistedRaceCost = 0, holdCostRead = false, releaseCostRead, enterCostRead;
+  const costReadEntered = new Promise(resolve => { enterCostRead = resolve; });
+  const costRaceQuota = createAiUsageService({
+    repository: {
+      readDaySummary: async () => {
+        const snapshot = { calls: 0, knownCostCny: persistedRaceCost, unknownCostCalls: 0 };
+        if (holdCostRead) {
+          enterCostRead();
+          await new Promise(resolve => { releaseCostRead = resolve; });
+        }
+        return snapshot;
+      }
+    },
+    getAccountKey: () => "cost-race",
+    dailyCallLimit: 100,
+    dailyCostLimitCny: 1,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const firstCostReservation = await costRaceQuota.reserveAttempt({ estimatedCostCny: 0.6 });
+  holdCostRead = true;
+  const secondCostReservation = costRaceQuota.reserveAttempt({ estimatedCostCny: 0.5 });
+  await costReadEntered;
+  persistedRaceCost = 0.6;
+  firstCostReservation.commit();
+  releaseCostRead();
+  await assert.rejects(secondCostReservation, { code: "AI_DAILY_COST_LIMIT" });
+
   let auditFails = false, usageFails = false;
   const auditRecords = [], usageRecords = [], events = [];
   const audit = createAiAudit({

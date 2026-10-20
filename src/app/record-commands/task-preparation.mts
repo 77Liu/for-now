@@ -10,6 +10,10 @@ import type {
 } from "../../shared/persistence/record-command-types.mjs";
 import { recordObjectKey } from "../../shared/persistence/record-command-types.mjs";
 import { RECORD_QUERY_LIMITS, recordKeyBatches } from "../../shared/persistence/record-query-limits.mjs";
+import {
+  TASK_TARGET_COLLECTIONS,
+  taskTargetDescriptor
+} from "../../shared/task-targets/index.mjs";
 import { supportsRecordTask } from "./task-transitions.mjs";
 
 export type QueryContext = { client: QueryClient; accountId: string };
@@ -32,15 +36,6 @@ type ContextRequest = {
   clientRequestId?: string;
   materials?: boolean;
   contextGeneratedAt?: string;
-};
-const targetCollections: Record<string, string> = {
-  thought: "thoughts",
-  capture: "captures",
-  journal: "journals",
-  chat: "chats",
-  analysis: "analyses",
-  book: "books",
-  quote: "quotes"
 };
 export const TASK_PREPARATION_COLUMNS = `
   object_key AS "objectKey", collection, kind, id, parent_key AS "parentKey",
@@ -114,24 +109,12 @@ async function readTarget(
   reader: ReturnType<typeof createReader>,
   task: RecordEntity
 ) {
-  const collection = targetCollections[String(task.resourceType)]
-    || (["thoughtAnswer", "followUpAnswer"].includes(String(task.kind)) ? "thoughts" : "");
-  if (!collection) return;
-  const parent = recordObjectKey(collection, String(task.targetId || ""));
-  const keys = [parent];
-  if (task.kind === "followUpAnswer") {
-    keys.push(JSON.stringify([collection, task.targetId, "followUps", task.subtargetId]));
-  }
-  if (task.kind === "annotationShenji"
-    || (task.kind === "contentImageUnderstanding"
-      && (task.payload as { targetType?: string } | undefined)?.targetType === "comment")) {
-    keys.push(JSON.stringify([collection, task.targetId, "annotations", task.subtargetId]));
-    if (task.kind === "contentImageUnderstanding") {
-      keys.push(JSON.stringify([collection, task.targetId, "annotationDrift", task.subtargetId]));
-    }
-  }
+  const descriptor = taskTargetDescriptor(task);
+  if (!descriptor) return;
+  const { collection, targetKey: parent } = descriptor;
+  const keys = [parent, ...descriptor.subtargetKeys];
   const rows = await reader.read(keys);
-  const annotation = rows.find(row => row.kind === "annotation");
+  const annotation = rows.find(row => descriptor.subtargetKeys.includes(row.objectKey));
   if (task.kind === "annotationShenji") {
     const root = rows.find(row => row.objectKey === parent);
     const permissions = [
@@ -223,7 +206,7 @@ export function createTaskPreparationQueries(dependencies: Dependencies) {
         })
       : {};
     const snapshot: RecordStore = {
-      ...Object.fromEntries(Object.values(targetCollections).map(collection => [collection, []])),
+      ...Object.fromEntries(Object.values(TASK_TARGET_COLLECTIONS).map(collection => [collection, []])),
       aiTasks: [],
       evidenceSources: [],
       perceptionEvents: [],

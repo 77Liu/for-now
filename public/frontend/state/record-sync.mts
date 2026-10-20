@@ -39,7 +39,7 @@ export type RecordChange = {
   scopeKeys: string[];
   summary: Record<string, unknown> | null;
   tombstone: boolean;
-  refetch: "none" | "detail" | "page";
+  refetch: "none" | "detail" | "page" | "filter";
 };
 export type RecordBatch = {
   fromCursor: number;
@@ -327,7 +327,14 @@ export function createRecordState() {
           } else if (!member && change.operation === "create") {
             scope.stale = true;
           }
-          if (change.refetch !== "none") scope.stale = true;
+          if (change.refetch === "page" && scope.kind === "thoughtPage") {
+            scope.stale = true;
+          } else if (change.refetch === "detail" && scope.kind === "thoughtDetail") {
+            scope.stale = true;
+          } else if (change.refetch === "filter" && scope.kind === "thoughtPage"
+            && Boolean(String(scope.metadata?.query || "").trim())) {
+            scope.stale = true;
+          }
         }
         if (entry.tombstone) entities.delete(key);
         if (!changed) continue;

@@ -204,13 +204,15 @@ processRef.exit = code => {
 let recovered = 0;
 let samplerStarted = 0;
 let samplerStopped = 0;
+let recordSyncMaintenanceRuns = 0;
 const lifecycle = createServerLifecycle({
   appConfig: {
     port: 0,
     version: "lifecycle-version",
     localTestMode: false,
     periodicAnalysisEnabled: false,
-    speechCacheSweepEnabled: false
+    speechCacheSweepEnabled: false,
+    syncV2: { retentionDays: 7, retentionRowsPerAccount: 100 }
   },
   application: {
     handle(req, res) {
@@ -225,6 +227,8 @@ const lifecycle = createServerLifecycle({
   localTestRuntime: {},
   readAuth: async () => ({ users: [] }),
   runPeriodicAnalyses: async () => {},
+  runRecordSyncMaintenance: async () => { recordSyncMaintenanceRuns += 1; },
+  recordSyncMaintenanceStartupDelayMs: 0,
   runSpeechCacheSweep: async () => {},
   observability: {
     logEvent: async () => {},
@@ -251,6 +255,7 @@ assert.deepEqual(
   { recovered, samplerStarted, samplerStopped },
   { recovered: 1, samplerStarted: 1, samplerStopped: 1 }
 );
+assert.equal(recordSyncMaintenanceRuns, 1);
 
 // 恢复期间诊断端口可响应；未知启动失败必须回收已监听socket和数据库资源。
 {

@@ -7,6 +7,21 @@
 type Snapshot = Record<string, unknown>;
 type Operation = { owner: string; operationId?: string; id?: string; status: string; domains?: string[]; createdAt?: string };
 type Status = Record<string, unknown>;
+export type SyncStatusEvent = {
+  type: "operation" | "pull" | "resnapshot" | "error" | "disabled"
+    | "record-pull" | "record-rebase" | "record-error";
+  owner: string;
+  workspace: string;
+  scope: string;
+  cursor?: number | null;
+  code?: string;
+  durationMs?: number;
+  changes?: number;
+  operationId?: string;
+  status?: string;
+  domains?: string[];
+  ageMs?: number;
+};
 type Target = {
   visibilityState?: string;
   addEventListener?(name: string, listener: () => void): void;
@@ -33,7 +48,7 @@ type Options = {
   setTimer?: (callback: () => void, delay: number) => unknown;
   clearTimer?: (timer: unknown) => void;
   now?: () => number;
-  onStatus?: (event: Status) => void;
+  onStatus?: (event: SyncStatusEvent) => void;
   getScope?: () => string;
   getWorkspace?: () => string;
   getSignal?: () => AbortSignal | undefined;
@@ -355,7 +370,7 @@ type RecordSyncLoopOptions = {
   getWorkspace?: () => string;
   getRouteGeneration?: () => string | number;
   getSignal?: () => AbortSignal | undefined;
-  onStatus?: (event: Status) => void;
+  onStatus?: (event: SyncStatusEvent) => void;
   setTimer?: (callback: () => void, delay: number) => unknown;
   clearTimer?: (timer: unknown) => void;
   now?: () => number;
@@ -475,12 +490,27 @@ export function createRecordSyncLoop(options: RecordSyncLoopOptions) {
     const controller = new AbortController();
     const current = { context: consumer, controller, promise: Promise.resolve(false) };
     recovery = current;
-    current.promise = runRebase(consumer, controller).finally(() => {
-      if (recovery === current) {
-        recovery = null;
-        if (consumer.isCurrent()) schedule(failures ? retryWait() : 0);
-      }
-    });
+    current.promise = runRebase(consumer, controller)
+      .catch(error => {
+        if (consumer.isCurrent()) {
+          failures += 1;
+          onStatus({
+            type: "record-error",
+            owner,
+            workspace,
+            scope,
+            cursor,
+            code: (error as Failure)?.code || "SYNC_REBASE_FAILED"
+          });
+        }
+        throw error;
+      })
+      .finally(() => {
+        if (recovery === current) {
+          recovery = null;
+          if (consumer.isCurrent()) schedule(failures ? retryWait() : 0);
+        }
+      });
     return current.promise;
   };
   const finishPull = (serial: number, startedAt: number) => {
@@ -516,6 +546,7 @@ export function createRecordSyncLoop(options: RecordSyncLoopOptions) {
         const serverRequiresRebase = changes.some(change => (
           change.refetch === "page"
           || change.refetch === "detail"
+          || change.refetch === "filter"
           || change.operation === "create"
           || change.operation === "delete"
         ));

@@ -336,7 +336,7 @@ const usageCostCny = (entry, cnyPerUsd) => (
 );
 
 export function createAiUsageService({ repository, getAccountKey, dailyCallLimit, dailyCostLimitCny, cnyPerUsd, now = () => new Date().toISOString() }) {
-  const reservations = new Map();
+  const quotaStates = new Map();
   const read = options => repository.read(options);
   const update = repository.update
     ? mutator => repository.update(mutator)
@@ -370,32 +370,55 @@ export function createAiUsageService({ repository, getAccountKey, dailyCallLimit
       const accountKey = getAccountKey();
       const day = now().slice(0, 10);
       const persisted = await persistedDay(day);
-      const reservationKey = `${accountKey}\u0000${day}`, active = reservations.get(reservationKey) || new Map();
-      if (persisted.calls + active.size >= dailyCallLimit) {
+      const reservationKey = `${accountKey}\u0000${day}`;
+      const quota = quotaStates.get(reservationKey) || {
+        active: new Map(),
+        committedCalls: 0,
+        committedCostCny: 0,
+        observedCalls: 0,
+        observedCostCny: 0
+      };
+      const nextObservedCalls = Math.max(quota.observedCalls, Number(persisted.calls) || 0);
+      const acknowledgedCalls = Math.max(0, nextObservedCalls - quota.observedCalls);
+      quota.committedCalls = Math.max(0, quota.committedCalls - acknowledgedCalls);
+      quota.observedCalls = nextObservedCalls;
+      const nextObservedCost = Math.max(quota.observedCostCny, Number(persisted.knownCostCny) || 0);
+      const acknowledgedCost = Math.max(0, nextObservedCost - quota.observedCostCny);
+      quota.committedCostCny = Math.max(0, quota.committedCostCny - acknowledgedCost);
+      quota.observedCostCny = nextObservedCost;
+      quotaStates.set(reservationKey, quota);
+      if (quota.observedCalls + quota.committedCalls + quota.active.size >= dailyCallLimit) {
         throw Object.assign(new Error("今日 AI 调用次数已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_CALL_LIMIT" });
       }
-      const reservedCostCny = [...active.values()].reduce((sum, item) => sum + item.costCny, 0);
+      const reservedCostCny = [...quota.active.values()].reduce((sum, item) => sum + item.costCny, 0);
       const requestedCostCny = Math.max(0, Number(estimatedCostCny) || 0);
-      if (Number.isFinite(dailyCostLimitCny) && persisted.knownCostCny + reservedCostCny + requestedCostCny >= dailyCostLimitCny) {
+      if (Number.isFinite(dailyCostLimitCny)
+        && quota.observedCostCny + quota.committedCostCny + reservedCostCny + requestedCostCny >= dailyCostLimitCny) {
         throw Object.assign(new Error("今日 AI 费用额度已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_COST_LIMIT" });
       }
-      const id = crypto.randomUUID(), state = { costCny: requestedCostCny };
-      if (!reservations.has(reservationKey)) reservations.set(reservationKey, active);
-      active.set(id, state);
+      const id = crypto.randomUUID(), reservationState = { costCny: requestedCostCny };
+      quota.active.set(id, reservationState);
       let settled = false;
-      const settle = () => {
+      const settle = committed => {
         if (settled) return;
         settled = true;
-        const current = reservations.get(reservationKey);
-        current?.delete(id);
-        if (!current?.size) reservations.delete(reservationKey);
+        const current = quotaStates.get(reservationKey);
+        const activeReservation = current?.active.get(id);
+        current?.active.delete(id);
+        if (committed && current && activeReservation) {
+          current.committedCalls += 1;
+          current.committedCostCny += activeReservation.costCny;
+        }
+        if (current && !current.active.size && !current.committedCalls && !current.committedCostCny) {
+          quotaStates.delete(reservationKey);
+        }
       };
-      const reservation = () => settle();
-      reservation.release = settle;
-      reservation.commit = settle;
+      const reservation = () => settle(false);
+      reservation.release = () => settle(false);
+      reservation.commit = () => settle(true);
       reservation.retain = entry => {
         if (settled) return;
-        state.costCny = entry?.costKnown
+        reservationState.costCny = entry?.costKnown
           ? Math.max(0, Number(entry.costCny) || 0)
           : Math.max(0, Number(entry?.costsUsd?.total) || 0) * cnyPerUsd;
       };

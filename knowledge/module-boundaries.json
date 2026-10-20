@@ -444,7 +444,8 @@
       "allowedDependencies": [
         "domain.ai",
         "shared.validation",
-        "shared.core-model-gate"
+        "shared.core-model-gate",
+        "shared.task-targets"
       ],
       "owns": {
         "data": [
@@ -806,6 +807,7 @@
       "publicEntry": "src/app/index.mjs",
       "allowedDependencies": [
         "shared.opening",
+        "shared.task-targets",
         "config",
         "infrastructure.prompt-catalog",
         "application.owner-surfaces",
@@ -2889,7 +2891,8 @@
       "root": "src/shared/persistence",
       "publicEntry": "src/shared/persistence/index.mjs",
       "allowedDependencies": [
-        "shared.business-identifiers"
+        "shared.business-identifiers",
+        "shared.task-targets"
       ],
       "owns": {
         "data": [
@@ -3066,6 +3069,24 @@
         "scripts/answer-citations-regression.mjs",
         "scripts/task-context-selection-regression.mjs",
         "scripts/importance-scoring-regression.mts"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "shared.task-targets",
+      "type": "shared",
+      "root": "src/shared/task-targets",
+      "publicEntry": "src/shared/task-targets/index.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "AI task target collection, complete identity and ordinary/drift subtarget candidate semantics"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/thought-task-transition-postgres-checks.mts",
+        "scripts/content-attachments-regression.mjs"
       ],
       "status": "active"
     },

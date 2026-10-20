@@ -10,6 +10,10 @@ import type {
 } from "../src/shared/persistence/record-command-types.mjs";
 import type { SqlClient } from "../src/modules/thoughts/query-contracts.mjs";
 import { createTaskTransitionCommands } from "../src/app/record-commands/task-transitions.mjs";
+import {
+  locateTaskSubtarget,
+  taskTargetDescriptor
+} from "../src/shared/task-targets/index.mjs";
 
 type Context = {
   database: SqlClient;
@@ -138,6 +142,27 @@ export async function runThoughtTaskTransitionPostgresChecks(context: Context) {
     (root.annotations as RecordEntity[]).push({
       id: "transition-annotation", kind: "comment", text: "任务状态批注", version: 1, createdAt: timestamp
     });
+    (root.annotationDrift as RecordEntity[]).push({
+      id: "transition-drift", kind: "comment", text: "漂移区图片批注",
+      version: 1, createdAt: timestamp
+    });
+    store.aiTasks.push({
+      id: "transition-drift-task",
+      kind: "contentImageUnderstanding",
+      status: "queued",
+      resourceType: "thought",
+      targetId: "producer-root",
+      subtargetId: "transition-drift",
+      internal: true,
+      inputHash: "drift-input",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      payload: {
+        targetType: "comment",
+        targetId: "transition-drift",
+        owner: { collection: "thoughts", id: "producer-root" }
+      }
+    });
   });
   const sourceRows = async () => (await context.database.query(`SELECT object_key, version, payload
     FROM for_now.store_objects WHERE account_id=$1
@@ -147,6 +172,19 @@ export async function runThoughtTaskTransitionPostgresChecks(context: Context) {
   for (const kind of ["thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding"]) {
     await kindMatrix(context, kind, measurements);
   }
+  const commands = createTaskTransitionCommands({
+    unitOfWork: context.repo.accountUnitOfWork,
+    mapping: context.mapping
+  });
+  assert.equal(await commands.recover({
+    taskId: "transition-drift-task",
+    mutate: store => {
+      const task = store.aiTasks[0];
+      const descriptor = taskTargetDescriptor(task)!;
+      const target = store.thoughts.find(item => item.id === descriptor.targetId);
+      return Boolean(locateTaskSubtarget(target, descriptor));
+    }
+  }), true);
   assert.deepEqual(await sourceRows(), original);
   assert.ok(measurements.every(item => item.reads <= 3 && item.writes <= 2), JSON.stringify(measurements));
   console.log("Thought task transitions PostgreSQL passed: four kinds, claim/wait/recover, exact task+notification writes, commit-tail rollback, revision conflicts, source mutation rejection and terminal no-op.");

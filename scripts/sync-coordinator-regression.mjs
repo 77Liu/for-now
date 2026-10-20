@@ -17,6 +17,7 @@ import {
   SYNC_RETRY_MAX_ATTEMPTS,
   syncOperationFingerprint
 } from "../public/frontend/sync/index.mjs";
+import { createDataSyncRuntime } from "../public/generated/app/runtime/data-sync-runtime.mjs";
 
 const deferred = () => {
   let resolve;
@@ -1206,6 +1207,14 @@ const recordHandler = createSyncHttp({
   assertAccess: async () => {},
   bodyJson: async req => req.body,
   recordSync,
+  recordRebaseExtras: async rebased => ({
+    speech: {
+      configured: true,
+      assets: rebased.scopes.flatMap(scope => scope.entities)
+        .filter(entity => entity.key.entityType === "thoughtChain")
+        .map(entity => ({ sourceId: entity.key.entityId }))
+    }
+  }),
   syncV2
 });
 const recordJson = createJsonHttp({
@@ -1257,6 +1266,7 @@ assert.equal(rebaseResponse.status, 200);
 const recordRebase = JSON.parse(rebaseResponse.body).data;
 assert.equal(recordRebase.highWaterCursor, 1);
 assert.equal(recordRebase.scopes[0].entities[0].projection.content, "record sync current");
+assert.deepEqual(recordRebase.speech.assets, [{ sourceId: "root-a" }]);
 
 recordRows[0].entityType = "unregistered";
 const unknownResponse = recordResponse();
@@ -1500,8 +1510,136 @@ releaseRecordRebases();
 await Promise.all([staleRouteRebase, currentRouteRebase]);
 assert.equal(routeRebaseCount, 3);
 assert.equal(appliedRecordScopes.at(-1), "thoughtDetail:B");
-assert.equal(appliedRecordScopes.includes("thoughtDetail:A"), true);
+assert.equal(appliedRecordScopes.filter(scope => scope === "thoughtDetail:A").length, 1);
 routeRecordLoop.stop();
+
+const recoveryTimers = [];
+const recoveryDelays = [];
+let recoveryGets = 0;
+let recoveryPosts = 0;
+const failingRecoveryLoop = createRecordSyncLoop({
+  request: async url => {
+    if (url === "/api/v2/sync/rebase") {
+      recoveryPosts += 1;
+      throw Object.assign(new Error("rebase unavailable"), {
+        code: "SYNC_V2_UNAVAILABLE",
+        status: 503
+      });
+    }
+    recoveryGets += 1;
+    throw Object.assign(new Error("cursor expired"), { code: "SYNC_CURSOR_EXPIRED" });
+  },
+  applyBatch: () => ({ committed: false, staleScopeKeys: [] }),
+  rebaseScopes() {},
+  getScopes: () => ({
+    activeScopeKey: "thoughtPage:active",
+    scopes: [{
+      scopeKey: "thoughtPage:active",
+      kind: "thoughtPage"
+    }]
+  }),
+  getScope: () => "session-1",
+  getWorkspace: () => "",
+  storage: { getItem: () => null, setItem() {} },
+  windowTarget: null,
+  documentTarget: null,
+  pollMs: 1000,
+  setTimer: (callback, delay) => {
+    recoveryTimers.push(callback);
+    recoveryDelays.push(delay);
+    return recoveryTimers.length;
+  },
+  clearTimer() {}
+});
+await assert.rejects(
+  failingRecoveryLoop.start("account-a", { recordSync: true }),
+  { code: "SYNC_V2_UNAVAILABLE" }
+);
+for (let index = 0; index < 3; index += 1) {
+  const timer = recoveryTimers.shift();
+  assert.ok(timer);
+  timer();
+  await flush();
+  await flush();
+}
+assert.equal(recoveryGets, 3);
+assert.equal(recoveryPosts, 4);
+assert.deepEqual(recoveryDelays.slice(0, 4), [1000, 2000, 4000, 8000]);
+failingRecoveryLoop.stop();
+
+const healthRuntime = {
+  featureFlags: {},
+  syncHealth: { lastPullMs: 0 },
+  runtimeFeatureRegistry: { notifyState() {} },
+  routeDataRequestSerial: 1
+};
+const idleSyncController = () => ({
+  start: async () => true,
+  stop() {},
+  pull: async () => false,
+  drain: async () => [],
+  rebase: async () => true,
+  cursor: () => 0
+});
+const health = createDataSyncRuntime({
+  runtime: healthRuntime,
+  requestCoordinator: {
+    metrics: async () => ({
+      pending: 0,
+      conflicts: 0,
+      failed: 0,
+      durable: true,
+      oldestPendingAt: "",
+      enqueueToAckP95Ms: 0
+    })
+  },
+  getActionsCoordinator: () => ({
+    applyOperationStatus() {},
+    applyIncrementalSnapshot() {},
+    load: async () => true
+  }),
+  requestV1: async () => ({}),
+  syncScope: () => "session-1",
+  syncWorkspace: () => "",
+  captureDataScope: () => ({
+    owner: "account-a",
+    workspace: "",
+    isCurrent: () => true
+  }),
+  restorePendingProjections: async () => {},
+  refreshState: async () => true,
+  createIncrementalSync: idleSyncController,
+  createRecordSyncLoop: idleSyncController,
+  applyRecordBatch: () => ({ committed: false, staleScopeKeys: [] }),
+  rebaseRecordScopes: () => ({ committed: true })
+});
+await health.updateSyncHealth({
+  type: "record-error",
+  owner: "account-a",
+  workspace: "",
+  scope: "session-1",
+  code: "SYNC_ENTITY_VERSION_CONFLICT"
+});
+assert.equal(healthRuntime.syncHealth.status, "error");
+assert.equal(healthRuntime.syncHealth.lastError, "SYNC_ENTITY_VERSION_CONFLICT");
+await health.updateSyncHealth({
+  type: "pull",
+  owner: "account-a",
+  workspace: "",
+  scope: "session-1",
+  durationMs: 3
+});
+assert.equal(healthRuntime.syncHealth.status, "error");
+assert.equal(healthRuntime.syncHealth.lastError, "SYNC_ENTITY_VERSION_CONFLICT");
+await health.updateSyncHealth({
+  type: "record-pull",
+  owner: "account-a",
+  workspace: "",
+  scope: "session-1",
+  durationMs: 4
+});
+assert.equal(healthRuntime.syncHealth.status, "synced");
+assert.equal(healthRuntime.syncHealth.lastError, "");
 
 let speechSyncFixture = null;
 let speechProjectionCalls = 0;

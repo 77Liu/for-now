@@ -11,7 +11,7 @@ import { createTaskRecordRepository } from "../../shared/persistence/task-record
 import type { StoreMapping } from "../../shared/persistence/record-command-types.mjs";
 import { addThoughtClosureChanges } from "../../modules/thoughts/local-changes.mjs";
 import { createThoughtRecordRepository } from "../../shared/persistence/thought-record-repository.mjs";
-import { recordObjectKey } from "../../shared/persistence/record-command-types.mjs";
+import { taskTargetDescriptor } from "../../shared/task-targets/index.mjs";
 
 const supportedKinds = new Set([
   "thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding"
@@ -39,29 +39,16 @@ const conflict = () => Object.assign(new Error("任务上下文已变化，请�
 });
 
 async function recoveryTargets(ports: RecordTransaction, task: RecordEntity, mapping: StoreMapping) {
-  const collections: Record<string, string> = {
-    thought: "thoughts",
-    capture: "captures",
-    journal: "journals",
-    chat: "chats",
-    analysis: "analyses",
-    book: "books",
-    quote: "quotes"
-  };
-  const collection = collections[String(task.resourceType)]
-    || (["thoughtAnswer", "followUpAnswer"].includes(String(task.kind)) ? "thoughts" : "");
-  if (!collection) return {};
-  const targetKey = recordObjectKey(collection, String(task.targetId || ""));
-  const field = task.kind === "followUpAnswer" ? "followUps" : "annotations";
-  const requiresChild = ["followUpAnswer", "annotationShenji"].includes(String(task.kind))
-    || (task.kind === "contentImageUnderstanding"
-      && (task.payload as { targetType?: string } | undefined)?.targetType === "comment");
-  const keys = [targetKey];
-  if (requiresChild) {
-    keys.push(JSON.stringify([collection, task.targetId, field, task.subtargetId]));
-  }
-  const rows = await ports.objects.findMany(keys);
-  const store = createThoughtRecordRepository(mapping).rebuildRecordCollections(rows, [collection]);
+  const descriptor = taskTargetDescriptor(task);
+  if (!descriptor) return {};
+  const rows = await ports.objects.findMany([
+    descriptor.targetKey,
+    ...descriptor.subtargetKeys
+  ]);
+  const store = createThoughtRecordRepository(mapping).rebuildRecordCollections(
+    rows,
+    [descriptor.collection]
+  );
   freezeContext(store);
   return store;
 }

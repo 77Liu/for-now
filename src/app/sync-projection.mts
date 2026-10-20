@@ -47,7 +47,7 @@ export type PublicRecordChange = {
   scopeKeys: string[];
   summary: Record<string, unknown> | null;
   tombstone: boolean;
-  refetch: "none" | "detail" | "page";
+  refetch: "none" | "detail" | "page" | "filter";
 };
 export type ThoughtSyncReader = {
   detail(rootId: string): Promise<Record<string, unknown> | null>;
@@ -225,6 +225,9 @@ function refetchFor(
       "createdAt", "occurredAt", "occurredOn", "tags", "location"
     ].includes(field))) return "page";
   }
+  if (row.changedFields.some(field => [
+    "content", "text", "question", "answer"
+  ].includes(field))) return "filter";
   if (target.entityType === "thoughtBlock" && row.operation !== "update") return "detail";
   return "none";
 }
@@ -337,7 +340,9 @@ export async function projectRecordChanges({
       change.scopeKeys = [...new Set([...previous.scopeKeys, ...change.scopeKeys])];
       change.refetch = previous.refetch === "page" || change.refetch === "page"
         ? "page"
-        : previous.refetch === "detail" || change.refetch === "detail" ? "detail" : "none";
+        : previous.refetch === "detail" || change.refetch === "detail"
+          ? "detail"
+          : previous.refetch === "filter" || change.refetch === "filter" ? "filter" : "none";
     }
     projected.set(key, change);
   }

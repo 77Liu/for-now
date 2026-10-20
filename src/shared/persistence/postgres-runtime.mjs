@@ -13,6 +13,9 @@ import {
   recordAiUsageAttempt
 } from "../../../.build/typescript/backend/shared/persistence/ai-usage-repository.mjs";
 import {
+  pruneRecordChanges as pruneRecordSyncChanges
+} from "../../../.build/typescript/backend/shared/persistence/record-sync-repository.mjs";
+import {
   changeAuthPassword,
   countAuthUsers,
   deleteAuthSession,
@@ -522,6 +525,12 @@ export async function createPostgresRuntime({
         if (!recordProjection) throw new Error("Record projection is not installed");
         return recordProjection.rebuild({ client, accountId }, afterRootId);
       }),
+      pruneRecordChanges: ({ before, retainRows }) => accountTransaction(
+        (client, accountId) => pruneRecordSyncChanges(
+          { client, accountId },
+          { before, retainRows }
+        )
+      ),
       validate: ({ allowCreate = false } = {}) => readAccount(async (client, id) => {
         const exists = (await client.query("SELECT 1 FROM for_now.accounts WHERE account_id = $1", [id])).rowCount;
         if (!exists && allowCreate) return null;

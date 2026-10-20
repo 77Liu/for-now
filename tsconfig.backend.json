@@ -25,6 +25,7 @@
     "src/shared/persistence/postgres-auth.mts",
     "src/shared/persistence/account-unit-of-work.mts",
     "src/shared/persistence/record-sync-repository.mts",
+    "src/shared/task-targets/index.mts",
     "src/shared/persistence/migrations/registry.mts",
     "src/shared/testing/authenticated-runtime.mts",
     "src/modules/record-compressions/windows.mts",

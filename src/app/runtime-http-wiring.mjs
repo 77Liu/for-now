@@ -228,6 +228,35 @@ export function createRuntimeHttpWiring({
     } while (after);
     return users;
   };
+  const runRecordSyncMaintenance = async () => {
+    const days = appConfig.syncV2.retentionDays;
+    const retainRows = appConfig.syncV2.retentionRowsPerAccount;
+    if (!Number.isSafeInteger(days) || !Number.isSafeInteger(retainRows)
+      || typeof storeRepository.pruneRecordChanges !== "function") {
+      return { disabled: true, accounts: 0, pruned: 0 };
+    }
+    const cutoff = new Date(new Date(now()).getTime() - days * 86_400_000).toISOString();
+    let accounts = 0, pruned = 0;
+    for (const user of await readUsers()) {
+      if (accountRuntime?.enabled && accountRuntime.state(user.id)?.status !== "ready") continue;
+      const operation = () => storeRepository.pruneRecordChanges({
+        before: cutoff,
+        retainRows
+      });
+      const count = await requestStorage.run({
+        user,
+        traceId: createId(),
+        dataDir: appConfig.authRequired ? userDataDir(user) : paths.dataDir,
+        secrets: [],
+        route: "background/record-sync-maintenance"
+      }, () => accountRuntime?.enabled
+        ? accountRuntime.withOperation(operation)
+        : operation());
+      accounts += 1;
+      pruned += Math.max(0, Number(count) || 0);
+    }
+    return { accounts, pruned, cutoff, retainRows };
+  };
   const platformHttp = createRuntimePlatformHttp({
     appConfig,
     httpLimits,
@@ -540,24 +569,24 @@ export function createRuntimeHttpWiring({
     ...appConfig.features,
     recordSyncV2: appConfig.syncV2.accountEnabled(user?.id || "")
   });
+  const readThoughtSpeech = async ids => {
+    const speech = publicStateFromStore({ speechCache: [] }, undefined, ["speechCache"]).speech;
+    const hash = value => crypto.createHash("sha256").update(String(value)).digest("hex");
+    const sourceReceipts = await contentRuntime.thoughtQueries.speechSources(ids);
+    speech.assets = await readThoughtSpeechAssets(storeRepository, sourceReceipts, {
+      ownerHash: hash(safeText(requestStorage.getStore()?.user?.id, 100) || "local"),
+      currentTime: now(), hash
+    });
+    return speech;
+  };
   const readThoughtRoute = async route => {
     const queries = contentRuntime.thoughtQueries;
     const query = route.query || {};
     const unread = await storeRepository.queryRecords(readNotificationUnread);
-    const speechFor = async ids => {
-      const speech = publicStateFromStore({ speechCache: [] }, undefined, ["speechCache"]).speech;
-      const hash = value => crypto.createHash("sha256").update(String(value)).digest("hex");
-      const sourceReceipts = await queries.speechSources(ids);
-      speech.assets = await readThoughtSpeechAssets(storeRepository, sourceReceipts, {
-        ownerHash: hash(safeText(requestStorage.getStore()?.user?.id, 100) || "local"),
-        currentTime: now(), hash
-      });
-      return speech;
-    };
     if (route.resourceId) {
       const detail = await queries.detail(route.resourceId);
       const { blocks = [], ...root } = detail || {};
-      return { notificationUnread: unread, speech: await speechFor(detail ? [root.id] : []),
+      return { notificationUnread: unread, speech: await readThoughtSpeech(detail ? [root.id] : []),
         thoughts: detail ? [root, ...blocks] : [],
         thoughtPage: { kind: "detail", found: Boolean(detail), nextId: "", query: query.q || "", page: 1 } };
     }
@@ -565,7 +594,7 @@ export function createRuntimeHttpWiring({
       afterId: query.thoughtAfterId || "", direction: query.direction || "next",
       query: query.q || "", tag: query.tag || "", sort: query.sort,
     });
-    return { notificationUnread: unread, speech: await speechFor(page.items.map(item => item.id)),
+    return { notificationUnread: unread, speech: await readThoughtSpeech(page.items.map(item => item.id)),
       thoughts: page.items, thoughtPage: {
       kind: "list", nextId: page.nextId, prevId: page.prevId, tags: page.tags,
       requestCursor: query.cursor || "", direction: query.direction || "next",
@@ -591,8 +620,13 @@ export function createRuntimeHttpWiring({
       });
     },
     readRouteState: async route => {
+      const user = requestStorage.getStore()?.user;
+      const recordOwned = featuresFor(user).recordSyncV2
+        && contentRuntime.thoughtQueries?.enabled;
       const projection = route.view === "thoughts" && contentRuntime.thoughtQueries?.enabled
-        ? await readThoughtRoute(route)
+        ? recordOwned
+          ? { notificationUnread: await storeRepository.queryRecords(readNotificationUnread) }
+          : await readThoughtRoute(route)
         : routeStateProjection(publicStateFromStore(await readStore()), {
             ...route, currentDate: today(),
             cursorScope: safeText(requestStorage.getStore()?.user?.id, 100) || "local"
@@ -607,6 +641,14 @@ export function createRuntimeHttpWiring({
     getAccountId: () => accountRuntime.currentAccountId(),
     bodyJson,
     recordSync: contentRuntime.thoughtQueries?.recordSync || null,
+    recordRebaseExtras: async rebased => {
+      const rootIds = [...new Set(rebased.scopes.flatMap(scope => (
+        scope.entities
+          .filter(entity => entity.key?.entityType === "thoughtChain")
+          .map(entity => entity.key.entityId)
+      )))];
+      return { speech: await readThoughtSpeech(rootIds) };
+    },
     syncV2: appConfig.syncV2,
     assertAccess: async req => {
       const id = requestStorage.getStore()?.user?.id;
@@ -718,6 +760,7 @@ export function createRuntimeHttpWiring({
     attachmentHttp: platformHttp.attachmentHttp,
     runPeriodicAnalyses,
     runRecordCompressionScheduler,
+    runRecordSyncMaintenance,
     runSpeechCacheSweep
   };
 }

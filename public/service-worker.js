@@ -64,6 +64,7 @@ const SHELL_ASSETS = [
   "generated/features/ui/reasoning-disclosure.mjs",
   "generated/app/runtime/notification-runtime.mjs",
   "generated/app/runtime/chat-submission.mjs",
+  "generated/app/runtime/data-sync-runtime.mjs",
   "frontend/content/index.mjs",
   "frontend/components/tag-multiselect/index.mjs",
   "frontend/features/actions/controller.mjs",

@@ -218,11 +218,16 @@ export async function pruneRecordChanges(
       WHERE account_id=$1
       ORDER BY cursor DESC,ordinal DESC
       OFFSET $3 LIMIT 1
+    ), expired AS MATERIALIZED (
+      SELECT cursor FROM for_now.record_changes
+      WHERE account_id=$1
+      GROUP BY cursor
+      HAVING max(created_at)<$2::timestamptz
     )
     DELETE FROM for_now.record_changes changes
     WHERE changes.account_id=$1
       AND (
-        changes.created_at<$2::timestamptz
+        changes.cursor IN (SELECT cursor FROM expired)
         OR changes.cursor<COALESCE((SELECT cursor FROM retained),0)
       )
   `, [accountId, before, maximum]);

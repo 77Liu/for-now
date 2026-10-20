@@ -240,6 +240,89 @@ projectionState.rebaseScopes({
 assert.equal(projectionState.selectLegacyDomain("thoughts")[0].content, "summary");
 assert.equal(projectionState.inspect().entities.length, 0);
 
+const boundedState = createRecordState();
+for (let index = 1; index <= 50; index += 1) {
+  const key = {
+    entityType: "thoughtChain" as const,
+    entityId: `bounded-${index}`,
+    parentType: null,
+    parentId: null
+  };
+  boundedState.rebaseScopes({
+    highWaterCursor: index,
+    activeScopeKey: `thoughtDetail:${index}`,
+    scopes: [{
+      scopeKey: `thoughtDetail:${index}`,
+      descriptorVersion: 1,
+      kind: "thoughtDetail",
+      entities: [{
+        key,
+        version: 1,
+        deliveryCursor: index,
+        projection: { id: key.entityId, type: "question", content: "bounded", version: 1 },
+        tombstone: false
+      }],
+      orderedEntityKeys: [recordEntityKey(key)]
+    }]
+  }, { accountId: "bounded-account", workspace: "", generation: 1 });
+}
+assert.equal(boundedState.inspect().scopes.length, 1);
+assert.equal(boundedState.inspect().entities.length, 1);
+
+const searchContext = { accountId: "search-account", workspace: "", generation: 1 };
+const searchState = createRecordState();
+const searchKey = {
+  entityType: "thoughtChain" as const,
+  entityId: "search-root",
+  parentType: null,
+  parentId: null
+};
+searchState.rebaseScopes({
+  highWaterCursor: 1,
+  activeScopeKey: "thoughtPage:search",
+  scopes: [{
+    scopeKey: "thoughtPage:search",
+    descriptorVersion: 1,
+    kind: "thoughtPage",
+    entities: [{
+      key: searchKey,
+      version: 1,
+      deliveryCursor: 1,
+      projection: { id: "search-root", type: "question", content: "apple", version: 1 },
+      tombstone: false
+    }],
+    orderedEntityKeys: [recordEntityKey(searchKey)],
+    metadata: { query: "apple" }
+  }]
+}, searchContext);
+const searchChanges = await projectRecordChanges({
+  rows: [{
+    ...stored(2, 0, "thoughtChain", "search-root"),
+    version: 2,
+    changedFields: ["content", "version"],
+    scopeKeys: ["thought:list", "thought:search-root"]
+  }],
+  reader: {
+    detail: async () => ({
+      id: "search-root",
+      type: "question",
+      content: "banana",
+      version: 2,
+      blocks: []
+    })
+  },
+  registry
+});
+assert.equal(searchChanges[0].refetch, "filter");
+const searchApplied = searchState.applyRecordBatch({
+  fromCursor: 1,
+  nextCursor: 2,
+  highWaterCursor: 2,
+  hasMore: false,
+  changes: searchChanges
+}, searchContext);
+assert.deepEqual(searchApplied.staleScopeKeys, ["thoughtPage:search"]);
+
 const context = { accountId: "account-a", workspace: "", generation: 1 };
 const store = createRecordState();
 const rootKey = recordEntityKey({

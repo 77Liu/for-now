@@ -2166,11 +2166,46 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.ok(thoughtList.body.data.every(item => !Object.hasOwn(item, "blocks") && !Object.hasOwn(item, "reasoningContent")));
     const thoughtRoute = await request(app.base, "/api/v1/route-state?view=thoughts&q=" + encodeURIComponent("数据库问题"), { cookie });
     assert.equal(thoughtRoute.status, 200, JSON.stringify(thoughtRoute.body));
-    assert.deepEqual(thoughtRoute.body.data.thoughts.map(item => item.id), thoughtList.body.data.map(item => item.id));
+    assert.equal(Object.hasOwn(thoughtRoute.body.data, "thoughts"), false);
+    assert.equal(Object.hasOwn(thoughtRoute.body.data, "thoughtPage"), false);
+    const thoughtRouteRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: "thoughtPage:route",
+        scopes: [{
+          scopeKey: "thoughtPage:route",
+          kind: "thoughtPage",
+          query: "数据库问题",
+          direction: "next"
+        }]
+      }
+    });
+    assert.equal(thoughtRouteRebase.status, 200, JSON.stringify(thoughtRouteRebase.body));
+    assert.deepEqual(
+      thoughtRouteRebase.body.data.scopes[0].entities.map(entity => entity.key.entityId),
+      thoughtList.body.data.map(item => item.id)
+    );
+    assert.ok(thoughtRouteRebase.body.data.speech);
     const detailRoute = await request(app.base, "/api/v1/route-state?view=thoughts&resourceId=" + backgroundTask.targetId, { cookie });
     assert.equal(detailRoute.status, 200, JSON.stringify(detailRoute.body));
-    assert.ok(detailRoute.body.data.thoughts.some(item => item.id === generatedAnswer.id));
-    assert.equal(detailRoute.body.data.thoughtPage.found, true);
+    assert.equal(Object.hasOwn(detailRoute.body.data, "thoughts"), false);
+    const detailRouteRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+        scopes: [{
+          scopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+          kind: "thoughtDetail",
+          id: backgroundTask.targetId
+        }]
+      }
+    });
+    assert.equal(detailRouteRebase.status, 200, JSON.stringify(detailRouteRebase.body));
+    assert.ok(detailRouteRebase.body.data.scopes[0].entities.some(
+      entity => entity.key.entityId === generatedAnswer.id
+    ));
     const recordProducerTypes = (await database.query(`
       SELECT DISTINCT entity_type FROM for_now.record_changes
       WHERE account_id=$1 AND cursor>$2
@@ -2218,10 +2253,34 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     });
     assert.equal(otherRecordRebase.status, 200, JSON.stringify(otherRecordRebase.body));
     assert.deepEqual(otherRecordRebase.body.data.scopes[0].entities, []);
-    await database.query(`
-      DELETE FROM for_now.record_changes
-      WHERE account_id=$1 AND cursor<=$2
-    `, [id, recordBatch.body.data.nextCursor]);
+    const changeGroupsBeforePrune = (await database.query(`
+      SELECT cursor::text AS cursor,count(*)::int AS count
+      FROM for_now.record_changes WHERE account_id=$1
+      GROUP BY cursor ORDER BY cursor
+    `, [id])).rows;
+    const businessRowsBeforePrune = Number((await database.query(`
+      SELECT count(*)::int AS count FROM for_now.store_objects WHERE account_id=$1
+    `, [id])).rows[0].count);
+    const prunedChanges = await account(id, () => repo.pruneRecordChanges({
+      before: "1970-01-01T00:00:00.000Z",
+      retainRows: 1
+    }));
+    assert.ok(prunedChanges > 0);
+    const changeGroupsAfterPrune = (await database.query(`
+      SELECT cursor::text AS cursor,count(*)::int AS count
+      FROM for_now.record_changes WHERE account_id=$1
+      GROUP BY cursor ORDER BY cursor
+    `, [id])).rows;
+    for (const retained of changeGroupsAfterPrune) {
+      assert.equal(
+        retained.count,
+        changeGroupsBeforePrune.find(item => item.cursor === retained.cursor).count,
+        "retention must not split one committed cursor"
+      );
+    }
+    assert.equal(Number((await database.query(`
+      SELECT count(*)::int AS count FROM for_now.store_objects WHERE account_id=$1
+    `, [id])).rows[0].count), businessRowsBeforePrune);
     const expiredRecordCursor = await request(
       app.base,
       `/api/v2/sync?cursor=${recordCursor}&waitMs=0`,

@@ -106,6 +106,7 @@ export function createSyncHttp({
   assertAccess = async () => {},
   bodyJson = null,
   recordSync = null,
+  recordRebaseExtras = null,
   syncV2 = null
 }) {
   if (!repository?.readSyncSnapshot || typeof publicState !== "function") {
@@ -259,13 +260,17 @@ export function createSyncHttp({
   });
   const recordRebase = input => recordSync(async reader => {
     const highWaterCursor = await readRecordSyncHead(reader.context);
-    return rebaseRecordSyncScopes({
+    const rebased = await rebaseRecordSyncScopes({
       reader,
       scopes: input.scopes,
       activeScopeKey: input.activeScopeKey,
       highWaterCursor,
       maximumScopes: syncV2.rebaseMaxScopes
     });
+    const extras = recordRebaseExtras
+      ? await recordRebaseExtras(rebased)
+      : {};
+    return { ...extras, ...rebased };
   });
   const assertRecordEnabled = () => {
     if (!syncV2?.enabled || typeof recordSync !== "function"

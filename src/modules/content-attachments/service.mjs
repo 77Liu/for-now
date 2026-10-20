@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { WAITING_FOR_USER_MODEL_STATUS } from "../../shared/core-model-gate.mjs";
 import { recordVersion, safeText } from "../../shared/validation/index.mjs";
+import { ANNOTATION_TARGET_FIELDS } from "../../shared/task-targets/index.mjs";
 import {
   CONTENT_ATTACHMENT_MAX_IMAGES,
   contentOriginalPayload,
@@ -48,7 +49,7 @@ function findComment(store, id, owner = null) {
     if (owner && owner.collection !== collection) continue;
     for (const host of Array.isArray(store?.[collection]) ? store[collection] : []) {
       if (owner && owner.id !== host.id) continue;
-      for (const field of ["annotations", "annotationDrift"]) {
+      for (const field of ANNOTATION_TARGET_FIELDS) {
         const resource = (Array.isArray(host?.[field]) ? host[field] : []).find(item => item?.id === id);
         if (!resource) continue;
         if (found) throw Object.assign(new Error("请指定批注所属的内容记录"), {

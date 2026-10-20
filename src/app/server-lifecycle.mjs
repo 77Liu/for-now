@@ -5,6 +5,9 @@ import {
   SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS
 } from "./speech-cache-sweep.mjs";
 
+const RECORD_SYNC_MAINTENANCE_STARTUP_DELAY_MS = 10_000;
+const RECORD_SYNC_MAINTENANCE_INTERVAL_MS = 3_600_000;
+
 export function createServerLifecycle({
   appConfig,
   application,
@@ -17,6 +20,9 @@ export function createServerLifecycle({
   verifyAuth = null,
   runPeriodicAnalyses,
   runRecordCompressionScheduler,
+  runRecordSyncMaintenance = async () => ({ disabled: true }),
+  recordSyncMaintenanceStartupDelayMs = RECORD_SYNC_MAINTENANCE_STARTUP_DELAY_MS,
+  recordSyncMaintenanceIntervalMs = RECORD_SYNC_MAINTENANCE_INTERVAL_MS,
   runSpeechCacheSweep,
   observability,
   postgresRuntime,
@@ -80,6 +86,18 @@ export function createServerLifecycle({
       schedule(
         () => void runRecordCompressionScheduler().catch(periodicFailure),
         30_000,
+        true
+      );
+    }
+    if (Number.isSafeInteger(appConfig.syncV2?.retentionDays)
+      && Number.isSafeInteger(appConfig.syncV2?.retentionRowsPerAccount)) {
+      schedule(
+        () => void runRecordSyncMaintenance().catch(periodicFailure),
+        recordSyncMaintenanceStartupDelayMs
+      );
+      schedule(
+        () => void runRecordSyncMaintenance().catch(periodicFailure),
+        recordSyncMaintenanceIntervalMs,
         true
       );
     }

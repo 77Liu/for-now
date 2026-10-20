@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { locateTaskSubtarget, taskTargetDescriptor } from "../task-targets/index.mjs";
 
 // Domain entities share an identity/ownership table. Nested content is extracted;
 // unrecognized fields and archived trash payloads remain lossless JSON values.
@@ -114,13 +115,9 @@ export function aiTaskTargetReference(store, task) {
     };
   }
 
-  const collection = own(RESOURCE_COLLECTIONS, task?.resourceType)
-    ? RESOURCE_COLLECTIONS[task.resourceType]
-    : (["thoughtAnswer", "followUpAnswer"].includes(taskKind) ? "thoughts" : "");
-  if (!collection) return null;
-
-  const id = String(task.targetId ?? sourceTask?.targetId ?? "");
-  const targetKey = keyOf([collection, id]);
+  const descriptor = taskTargetDescriptor(task, sourceTask);
+  if (!descriptor) return null;
+  const { collection, targetId: id, targetKey } = descriptor;
   const optionalHistoricalCompression = taskKind === "recordCompression"
     && taskPayload?.operation === "historicalSupplement";
   const targetOptional = OPTIONAL_AI_TASK_TARGET_KINDS.has(taskKind) || optionalHistoricalCompression;
@@ -129,14 +126,11 @@ export function aiTaskTargetReference(store, task) {
     collection === "attachmentCleanup" ? item?.path === id : item?.id === id
   ));
   const targetExists = Boolean(targetItem);
-  const subtargetField = taskKind === "followUpAnswer" ? "followUps" : "annotations";
-  const requiresExistingSubtarget = ["followUpAnswer", "annotationShenji"].includes(taskKind)
-    || (taskKind === "contentImageUnderstanding" && taskPayload?.targetType === "comment");
-  const subtargetId = String(task.subtargetId ?? sourceTask?.subtargetId ?? "");
-  const subtargetExists = !requiresExistingSubtarget || (
-    Array.isArray(targetItem?.[subtargetField])
-    && targetItem[subtargetField].some(item => item?.id === subtargetId)
-  );
+  const locatedSubtarget = locateTaskSubtarget(targetItem, descriptor);
+  const subtargetField = locatedSubtarget?.field || descriptor.subtargetFields[0] || "";
+  const requiresExistingSubtarget = descriptor.requiresSubtarget;
+  const subtargetId = descriptor.subtargetId;
+  const subtargetExists = !requiresExistingSubtarget || Boolean(locatedSubtarget);
 
   return {
     collection,

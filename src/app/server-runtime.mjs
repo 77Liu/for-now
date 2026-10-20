@@ -113,6 +113,7 @@ export function createServerRuntime({
         },
         runPeriodicAnalyses: wiring.runPeriodicAnalyses,
         runRecordCompressionScheduler: wiring.runRecordCompressionScheduler,
+        runRecordSyncMaintenance: wiring.runRecordSyncMaintenance,
         runSpeechCacheSweep: wiring.runSpeechCacheSweep,
         observability: foundation.observability,
         postgresRuntime: foundation.persistence.postgresRuntime,
