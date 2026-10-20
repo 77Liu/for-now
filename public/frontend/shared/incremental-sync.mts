@@ -543,14 +543,8 @@ export function createRecordSyncLoop(options: RecordSyncLoopOptions) {
         const next = Number(batch.nextCursor);
         if (!Number.isSafeInteger(next) || next < cursor) throw new Error("记录同步游标无效");
         const changes = Array.isArray(batch.changes) ? batch.changes as Array<Record<string, unknown>> : [];
-        const serverRequiresRebase = changes.some(change => (
-          change.refetch === "page"
-          || change.refetch === "detail"
-          || change.refetch === "filter"
-          || change.operation === "create"
-          || change.operation === "delete"
-        ));
-        if (applied.staleScopeKeys.length || serverRequiresRebase) await rebase(consumer);
+        // 恢复范围由状态层按实际失效筛选范围决定；只要当前范围没失效，就不额外做整体读。
+        if (applied.staleScopeKeys.length) await rebase(consumer);
         else saveCursor(next);
         failures = 0;
         onStatus({

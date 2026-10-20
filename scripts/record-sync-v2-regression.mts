@@ -355,7 +355,8 @@ store.rebaseScopes({
 }, context);
 assert.equal(store.selectLegacyDomain("thoughts")[0].content, "old");
 
-store.applyRecordBatch({
+// 列表只接受摘要契约：详情型增量不得写入列表缓存，只把范围标记为失效。
+const listIncrement = store.applyRecordBatch({
   fromCursor: 4,
   nextCursor: 5,
   highWaterCursor: 5,
@@ -373,12 +374,63 @@ store.applyRecordBatch({
     operation: "update",
     changedFields: ["content"],
     scopeKeys: ["thought:list", "thought:root-a"],
-    summary: { id: "root-a", type: "question", content: "new", version: 2 },
+    summary: { id: "root-a", type: "question", content: "detail-shape", version: 2 },
     tombstone: false,
     refetch: "none"
   }]
 }, context);
-assert.equal(store.selectLegacyDomain("thoughts")[0].content, "new");
+assert.deepEqual(listIncrement.staleScopeKeys, ["thoughtPage:active"]);
+assert.equal(store.selectLegacyDomain("thoughts")[0].content, "old");
+
+// 同水位列表恢复：失效范围不继承旧缓存，因此不会因投影形态差异报伪冲突。
+store.rebaseScopes({
+  highWaterCursor: 5,
+  activeScopeKey: scopeKey,
+  scopes: [{
+    scopeKey,
+    descriptorVersion: 1,
+    kind: "thoughtPage",
+    entities: [{
+      key: {
+        entityType: "thoughtChain",
+        entityId: "root-a",
+        parentType: null,
+        parentId: null
+      },
+      version: 2,
+      deliveryCursor: 5,
+      projection: { id: "root-a", type: "question", content: "summary-shape", version: 2 },
+      tombstone: false
+    }],
+    orderedEntityKeys: [rootKey]
+  }]
+}, context);
+assert.equal(store.selectLegacyDomain("thoughts")[0].content, "summary-shape");
+
+// 同版本真实冲突校验必须保留：再次同游标恢复且内容不一致时必须报冲突。
+assert.throws(() => store.rebaseScopes({
+  highWaterCursor: 5,
+  activeScopeKey: scopeKey,
+  scopes: [{
+    scopeKey,
+    descriptorVersion: 1,
+    kind: "thoughtPage",
+    entities: [{
+      key: {
+        entityType: "thoughtChain",
+        entityId: "root-a",
+        parentType: null,
+        parentId: null
+      },
+      version: 2,
+      deliveryCursor: 5,
+      projection: { id: "root-a", type: "question", content: "conflict", version: 2 },
+      tombstone: false
+    }],
+    orderedEntityKeys: [rootKey]
+  }]
+}, context), { code: "SYNC_ENTITY_VERSION_CONFLICT" });
+assert.equal(store.selectLegacyDomain("thoughts")[0].content, "summary-shape");
 
 const beforeUnknown = store.inspect();
 assert.throws(() => store.applyRecordBatch({
@@ -406,58 +458,10 @@ assert.throws(() => store.applyRecordBatch({
 }, context), { code: "SYNC_ENTITY_TYPE_UNKNOWN" });
 assert.deepEqual(store.inspect(), beforeUnknown);
 
-store.applyRecordBatch({
+assert.throws(() => store.applyRecordBatch({
   fromCursor: 5,
   nextCursor: 6,
   highWaterCursor: 6,
-  hasMore: false,
-  changes: [{
-    cursor: 6,
-    ordinal: 0,
-    key: {
-      entityType: "thoughtChain",
-      entityId: "root-a",
-      parentType: null,
-      parentId: null
-    },
-    version: 2,
-    operation: "update",
-    changedFields: ["content"],
-    scopeKeys: [],
-    summary: { id: "root-a", type: "question", content: "nested-refresh", version: 2 },
-    tombstone: false,
-    refetch: "none"
-  }]
-}, context);
-assert.equal(store.selectLegacyDomain("thoughts")[0].content, "nested-refresh");
-assert.throws(() => store.rebaseScopes({
-  highWaterCursor: 6,
-  activeScopeKey: scopeKey,
-  scopes: [{
-    scopeKey,
-    descriptorVersion: 1,
-    kind: "thoughtPage",
-    entities: [{
-      key: {
-        entityType: "thoughtChain",
-        entityId: "root-a",
-        parentType: null,
-        parentId: null
-      },
-      version: 2,
-      deliveryCursor: 6,
-      projection: { id: "root-a", type: "question", content: "conflict", version: 2 },
-      tombstone: false
-    }],
-    orderedEntityKeys: [rootKey]
-  }]
-}, context), { code: "SYNC_ENTITY_VERSION_CONFLICT" });
-assert.equal(store.selectLegacyDomain("thoughts")[0].content, "nested-refresh");
-
-assert.throws(() => store.applyRecordBatch({
-  fromCursor: 6,
-  nextCursor: 7,
-  highWaterCursor: 7,
   hasMore: false,
   changes: []
 }, { accountId: "account-b", workspace: "", generation: 1 }), {

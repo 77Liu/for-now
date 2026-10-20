@@ -609,6 +609,53 @@ try {
   releaseCostRead();
   await assert.rejects(secondCostReservation, { code: "AI_DAILY_COST_LIMIT" });
 
+  let interleaveCalls = 0;
+  const interleaveQuota = createAiUsageService({
+    repository: {
+      readDaySummary: async () => {
+        const snapshot = { calls: interleaveCalls, knownCostCny: 0, unknownCostCalls: 0 };
+        await new Promise(resolve => setImmediate(resolve));
+        if (interleaveCalls === 0) interleaveCalls = 1;
+        return snapshot;
+      }
+    },
+    getAccountKey: () => "order-interleave",
+    dailyCallLimit: 2,
+    dailyCostLimitCny: 100,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const interleaved = await Promise.allSettled([
+    interleaveQuota.reserveAttempt(),
+    interleaveQuota.reserveAttempt(),
+    interleaveQuota.reserveAttempt()
+  ]);
+  assert.equal(interleaved.filter(item => item.status === "fulfilled").length, 1);
+  assert.equal(interleaved.find(item => item.status === "rejected").reason.code, "AI_DAILY_CALL_LIMIT");
+  assert.equal(interleaveCalls, 1);
+  interleaved.filter(item => item.status === "fulfilled").forEach(item => item.value.release());
+
+  const handoffEntries = [];
+  const handoffQuota = createAiUsageService({
+    repository: { read: async () => ({ entries: handoffEntries }) },
+    getAccountKey: () => "order-handoff",
+    dailyCallLimit: 2,
+    dailyCostLimitCny: 100,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const handoffFirst = await handoffQuota.reserveAttempt();
+  handoffFirst.retain({ costKnown: true, costCny: 0 });
+  handoffEntries.push({ createdAt: now(), costKnown: true, costCny: 0 });
+  const handoffSecond = await handoffQuota.reserveAttempt();
+  assert.equal(typeof handoffSecond, "function");
+  await assert.rejects(handoffQuota.reserveAttempt(), { code: "AI_DAILY_CALL_LIMIT" });
+  handoffSecond.release();
+  handoffFirst.commit();
+  const handoffThird = await handoffQuota.reserveAttempt();
+  assert.equal(typeof handoffThird, "function");
+  handoffThird.release();
+
   let auditFails = false, usageFails = false;
   const auditRecords = [], usageRecords = [], events = [];
   const audit = createAiAudit({

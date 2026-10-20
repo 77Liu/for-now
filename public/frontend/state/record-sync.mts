@@ -234,7 +234,8 @@ export function createRecordState() {
       const memberships = new Map<string, ScopeState>();
       for (const scope of scopes) {
         const previous = current.scopes.get(scope.scopeKey);
-        const scopeEntities = previous?.kind === scope.kind
+        // 已失效范围的缓存与最新投影不同源，不能复用；否则同游标比较会撞出伪冲突。
+        const scopeEntities = previous && previous.kind === scope.kind && !previous.stale
           ? new Map(previous.entities)
           : new Map<string, RecordEntityEntry>();
         for (const entry of scope.entities) applyEntry(scopeEntities, entry);
@@ -320,12 +321,17 @@ export function createRecordState() {
         let changed = entities.has(key) ? applyEntry(entities, entry) : false;
         for (const scope of scopes.values()) {
           const member = scope.orderedEntityKeys.includes(key);
-          if (member) changed = applyEntry(scope.entities, entry) || changed;
-          if (entry.tombstone && member) {
-            scope.orderedEntityKeys = scope.orderedEntityKeys.filter(value => value !== key);
-            scope.entities.delete(key);
-          } else if (!member && change.operation === "create") {
-            scope.stale = true;
+          if (scope.kind === "thoughtPage") {
+            // 列表范围只接受摘要契约；增量载荷恒为详情形态，合并会污染列表缓存并触发伪冲突，改为失效后按有界 rebase 恢复。
+            if (member || change.operation === "create") scope.stale = true;
+          } else {
+            if (member) changed = applyEntry(scope.entities, entry) || changed;
+            if (entry.tombstone && member) {
+              scope.orderedEntityKeys = scope.orderedEntityKeys.filter(value => value !== key);
+              scope.entities.delete(key);
+            } else if (!member && change.operation === "create") {
+              scope.stale = true;
+            }
           }
           if (change.refetch === "page" && scope.kind === "thoughtPage") {
             scope.stale = true;

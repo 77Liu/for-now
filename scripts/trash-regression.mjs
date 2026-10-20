@@ -152,6 +152,60 @@ trash.purge(collisionPlan);
 assert.equal(collisionEntries[0].permanentlyPurged, true);
 assert.equal(collisionEntries[1].permanentlyPurged, undefined);
 
+// 旧记录缺少所属集合时，必须对全部候选身份核对唯一归属；同 ID 的未选思绪不能被忽略。
+const ambiguousLegacyEntries = [
+  {
+    id: "ambiguous-book",
+    type: "book",
+    resourceId: "ambiguous-id",
+    payload: { id: "ambiguous-id" },
+    location: { kind: "collection", collection: "books" }
+  },
+  {
+    id: "ambiguous-thought",
+    type: "thoughtChain",
+    resourceId: "ambiguous-id",
+    payload: { id: "ambiguous-id" },
+    location: { kind: "thoughtChain" }
+  },
+  {
+    id: "ambiguous-legacy-remark",
+    type: "thoughtRemark",
+    resourceId: "ambiguous-remark",
+    payload: { id: "ambiguous-remark" },
+    location: { kind: "nested", parentId: "ambiguous-id", field: "remarks" }
+  }
+];
+const ambiguousPlan = trash.expanded(ambiguousLegacyEntries, ["ambiguous-book"]);
+assert.deepEqual(ambiguousPlan.map(item => item.id), ["ambiguous-book"]);
+trash.purge(ambiguousPlan);
+assert.equal(ambiguousLegacyEntries[0].permanentlyPurged, true);
+assert.equal(ambiguousLegacyEntries[1].permanentlyPurged, undefined);
+assert.equal(ambiguousLegacyEntries[2].permanentlyPurged, undefined);
+
+// 单一候选身份时，旧记录仍按既有机制正常扩展。
+const uniqueLegacyEntries = [
+  {
+    id: "unique-book",
+    type: "book",
+    resourceId: "unique-id",
+    payload: { id: "unique-id" },
+    location: { kind: "collection", collection: "books" }
+  },
+  {
+    id: "unique-legacy-remark",
+    type: "thoughtRemark",
+    resourceId: "unique-remark",
+    payload: { id: "unique-remark" },
+    location: { kind: "nested", parentId: "unique-id", field: "remarks" }
+  }
+];
+assert.deepEqual(
+  trash.expanded(uniqueLegacyEntries, ["unique-book"]).map(item => item.id),
+  ["unique-book", "unique-legacy-remark"]
+);
+
+
 reset();
 const note = await repository.update(store => mutations.moveNestedItemToTrash(store, {
   parentCollection: "books", parentId: "book", field: "notes", type: "bookNote", id: "note", annotationTargetKeys: ["note:note"]

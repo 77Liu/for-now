@@ -1402,7 +1402,7 @@ const recordLoop = createRecordSyncLoop({
   },
   applyBatch: async batch => ({
     committed: true,
-    staleScopeKeys: batch.changes.length ? [] : []
+    staleScopeKeys: batch.changes.length ? ["thoughtPage:active"] : []
   }),
   rebaseScopes: async () => ({ committed: true }),
   hydrateScopes: async cursor => {
@@ -1445,6 +1445,61 @@ recordLoopMode = "unknown";
 await assert.rejects(recordLoop.pull(), { code: "SYNC_ENTITY_TYPE_UNKNOWN" });
 assert.equal(recordLoop.cursor(), 5, "failed record batch cannot advance cursor");
 recordLoop.stop();
+
+// F5：状态层确认无关范围未失效时，任一 filter 标记都不得扩大成额外整体读。
+const filterLoopRequests = [];
+const unrelatedLoop = createRecordSyncLoop({
+  request: async url => {
+    filterLoopRequests.push(url);
+    if (url === "/api/v2/sync/rebase") {
+      return {
+        data: {
+          highWaterCursor: 1,
+          activeScopeKey: "thoughtDetail:A",
+          scopes: [{
+            scopeKey: "thoughtDetail:A",
+            descriptorVersion: 1,
+            kind: "thoughtDetail",
+            entities: [],
+            orderedEntityKeys: []
+          }]
+        }
+      };
+    }
+    return {
+      data: {
+        fromCursor: 1,
+        nextCursor: 2,
+        highWaterCursor: 2,
+        hasMore: false,
+        changes: [{
+          key: { entityType: "thoughtChain", entityId: "B" },
+          operation: "update",
+          refetch: "filter"
+        }]
+      }
+    };
+  },
+  applyBatch: async () => ({ committed: true, staleScopeKeys: [] }),
+  rebaseScopes: async () => ({ committed: true }),
+  hydrateScopes: async () => false,
+  getScopes: () => ({
+    activeScopeKey: "thoughtDetail:A",
+    scopes: [{ scopeKey: "thoughtDetail:A", kind: "thoughtDetail" }]
+  }),
+  getScope: () => "1",
+  getWorkspace: () => "",
+  getSignal: () => new AbortController().signal,
+  storage: { getItem: () => null, setItem: () => {} },
+  windowTarget: null,
+  documentTarget: null,
+  setTimer: () => 0,
+  clearTimer() {}
+});
+assert.equal(await unrelatedLoop.start("account-a", { recordSync: true }), true);
+assert.equal(filterLoopRequests.filter(url => url === "/api/v2/sync/rebase").length, 1);
+assert.equal(unrelatedLoop.cursor(), 2);
+unrelatedLoop.stop();
 
 let activeRecordScope = "thoughtDetail:A";
 let holdRecordRebase = false;

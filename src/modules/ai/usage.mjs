@@ -361,6 +361,24 @@ export function createAiUsageService({ repository, getAccountKey, dailyCallLimit
       unknownCostCalls: 0
     };
   };
+  const quotaState = key => {
+    let state = quotaStates.get(key);
+    if (!state) {
+      state = {
+        active: new Map(),
+        recordedCalls: 0,
+        recordedCostCny: 0,
+        tail: Promise.resolve()
+      };
+      quotaStates.set(key, state);
+    }
+    return state;
+  };
+  const serialize = (state, task) => {
+    const run = state.tail.then(task, task);
+    state.tail = run.then(() => {}, () => {});
+    return run;
+  };
   return {
     read,
     update,
@@ -369,60 +387,55 @@ export function createAiUsageService({ repository, getAccountKey, dailyCallLimit
     async reserveAttempt({ estimatedCostCny = 0 } = {}) {
       const accountKey = getAccountKey();
       const day = now().slice(0, 10);
-      const persisted = await persistedDay(day);
       const reservationKey = `${accountKey}\u0000${day}`;
-      const quota = quotaStates.get(reservationKey) || {
-        active: new Map(),
-        committedCalls: 0,
-        committedCostCny: 0,
-        observedCalls: 0,
-        observedCostCny: 0
-      };
-      const nextObservedCalls = Math.max(quota.observedCalls, Number(persisted.calls) || 0);
-      const acknowledgedCalls = Math.max(0, nextObservedCalls - quota.observedCalls);
-      quota.committedCalls = Math.max(0, quota.committedCalls - acknowledgedCalls);
-      quota.observedCalls = nextObservedCalls;
-      const nextObservedCost = Math.max(quota.observedCostCny, Number(persisted.knownCostCny) || 0);
-      const acknowledgedCost = Math.max(0, nextObservedCost - quota.observedCostCny);
-      quota.committedCostCny = Math.max(0, quota.committedCostCny - acknowledgedCost);
-      quota.observedCostCny = nextObservedCost;
-      quotaStates.set(reservationKey, quota);
-      if (quota.observedCalls + quota.committedCalls + quota.active.size >= dailyCallLimit) {
-        throw Object.assign(new Error("今日 AI 调用次数已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_CALL_LIMIT" });
-      }
-      const reservedCostCny = [...quota.active.values()].reduce((sum, item) => sum + item.costCny, 0);
-      const requestedCostCny = Math.max(0, Number(estimatedCostCny) || 0);
-      if (Number.isFinite(dailyCostLimitCny)
-        && quota.observedCostCny + quota.committedCostCny + reservedCostCny + requestedCostCny >= dailyCostLimitCny) {
-        throw Object.assign(new Error("今日 AI 费用额度已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_COST_LIMIT" });
-      }
-      const id = crypto.randomUUID(), reservationState = { costCny: requestedCostCny };
-      quota.active.set(id, reservationState);
-      let settled = false;
-      const settle = committed => {
-        if (settled) return;
-        settled = true;
-        const current = quotaStates.get(reservationKey);
-        const activeReservation = current?.active.get(id);
-        current?.active.delete(id);
-        if (committed && current && activeReservation) {
-          current.committedCalls += 1;
-          current.committedCostCny += activeReservation.costCny;
+      for (const [key, value] of quotaStates) {
+        if (key !== reservationKey && key.startsWith(`${accountKey}\u0000`) && !value.active.size) {
+          quotaStates.delete(key);
         }
-        if (current && !current.active.size && !current.committedCalls && !current.committedCostCny) {
-          quotaStates.delete(reservationKey);
+      }
+      const state = quotaState(reservationKey);
+      // 准入读取、预留与结算交接共用同一账户/日期串行边界，旧读数不再能基于过期快照同时放行。
+      return serialize(state, async () => {
+        const persisted = await persistedDay(day);
+        const knownCalls = Math.max(Number(persisted.calls) || 0, state.recordedCalls);
+        const knownCostCny = Math.max(Number(persisted.knownCostCny) || 0, state.recordedCostCny);
+        const reservedCostCny = [...state.active.values()].reduce((sum, item) => sum + item.costCny, 0);
+        if (knownCalls + state.active.size >= dailyCallLimit) {
+          throw Object.assign(new Error("今日 AI 调用次数已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_CALL_LIMIT" });
         }
-      };
-      const reservation = () => settle(false);
-      reservation.release = () => settle(false);
-      reservation.commit = () => settle(true);
-      reservation.retain = entry => {
-        if (settled) return;
-        reservationState.costCny = entry?.costKnown
-          ? Math.max(0, Number(entry.costCny) || 0)
-          : Math.max(0, Number(entry?.costsUsd?.total) || 0) * cnyPerUsd;
-      };
-      return reservation;
+        const requestedCostCny = Math.max(0, Number(estimatedCostCny) || 0);
+        if (Number.isFinite(dailyCostLimitCny)
+          && knownCostCny + reservedCostCny + requestedCostCny >= dailyCostLimitCny) {
+          throw Object.assign(new Error("今日 AI 费用额度已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_COST_LIMIT" });
+        }
+        const id = crypto.randomUUID(), reservationState = { costCny: requestedCostCny };
+        state.active.set(id, reservationState);
+        let settled = false;
+        const settle = committed => {
+          if (settled) return;
+          settled = true;
+          if (state.active.delete(id) && committed) {
+            state.recordedCalls += 1;
+            state.recordedCostCny += reservationState.costCny;
+          }
+        };
+        const reservation = () => settle(false);
+        reservation.release = () => settle(false);
+        reservation.commit = () => settle(true);
+        reservation.retain = entry => {
+          if (settled) return;
+          reservationState.costCny = entry?.costKnown
+            ? Math.max(0, Number(entry.costCny) || 0)
+            : Math.max(0, Number(entry?.costsUsd?.total) || 0) * cnyPerUsd;
+          // 写账已发起，该调用必然进入持久账目；立即从在途转为已记录，避免与持久读数重复占用额度。
+          if (state.active.delete(id)) {
+            state.recordedCalls += 1;
+            state.recordedCostCny += reservationState.costCny;
+          }
+          settled = true;
+        };
+        return reservation;
+      });
     }
   };
 }

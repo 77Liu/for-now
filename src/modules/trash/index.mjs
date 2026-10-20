@@ -28,7 +28,7 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
     }
     return "";
   };
-  const parentIdentity = (entry, knownParents) => {
+  const parentIdentity = (entry, candidateParents) => {
     const location = entry?.location || {};
     const collection = location.parentCollection
       || (location.kind === "collection" ? location.collection : "");
@@ -36,7 +36,8 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
       return JSON.stringify([collection, location.parentId]);
     }
     if (!location.parentId) return "";
-    const legacyMatches = [...knownParents].filter(value => {
+    // 旧记录缺少所属集合；必须对全部候选身份做唯一性核对，仅凭已选父项推断会把无关条目并入同 ID 的其它类型。
+    const legacyMatches = [...candidateParents].filter(value => {
       try { return JSON.parse(value)[1] === location.parentId; }
       catch { return false; }
     });
@@ -61,21 +62,24 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
   function expanded(entries, requestedIds) {
     for (const id of requestedIds) get(entries, id);
     entries = visible(entries);
-    const selected = new Set(requestedIds), parentIds = new Set();
+    const selected = new Set(requestedIds), parentIds = new Set(), candidateParents = new Set();
     for (const entry of entries) {
-      if (!selected.has(entry.id)) continue;
       const identity = resourceIdentity(entry);
-      if (identity) parentIds.add(identity);
+      if (identity) candidateParents.add(identity);
+      if (selected.has(entry.id) && identity) parentIds.add(identity);
     }
     let changed = true;
     while (changed) {
       changed = false;
       for (const entry of entries) {
-        const parent = parentIdentity(entry, parentIds);
+        const parent = parentIdentity(entry, candidateParents);
         if (!selected.has(entry.id) && parent && parentIds.has(parent)) {
           selected.add(entry.id);
           const identity = resourceIdentity(entry);
-          if (identity) parentIds.add(identity);
+          if (identity) {
+            parentIds.add(identity);
+            candidateParents.add(identity);
+          }
           changed = true;
         }
       }
