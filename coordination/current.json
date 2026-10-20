@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 548,
-  "updated_at": "2026-10-20T16:59:12.910Z",
+  "revision": 549,
+  "updated_at": "2026-10-20T17:57:11.227Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -16,11 +16,11 @@
   "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
     "id": "v0.5.16",
-    "status": "INDEPENDENT_REVIEW_FAILED",
-    "phase": "106fc416独立审查发现12项未修复；四账户有状态门未重建。保持返修阻断。"
+    "status": "INDEPENDENT_REREVIEW_PENDING",
+    "phase": "12项扩大独立审查缺陷已在54f3b05完成代码与回归返修；待独立复审、有状态门重建与M1/M2/M3部署复验。"
   },
   "scope": {
-    "description": "既定v0.5.16范围不变；106fc416技术门通过，但独立反例与有状态门缺口仍阻断。当前问题见blockers，历史修复范围见绑定候选回执。",
+    "description": "既定v0.5.16范围不变；54f3b05已处理扩大独立审查12项并补齐专项回归，技术门本地通过；独立复审、四账户有状态门与M1/M2/M3部署复验仍阻断。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8241341ff95b1a7040d4d045924d0711564",
@@ -59,12 +59,12 @@
   },
   "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-106fc41",
+    "id": "v0.5.16-54f3b05",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "106fc4168eb4ab06411644b03a2c4fd5027b3e74",
-    "tree": "e363448ecd0a6acbc5f0665235dd418ad9e8b6e6",
+    "sha": "54f3b05b69309f7d7edee0c592983421d170e742",
+    "tree": "df94412c290faf9d12ff6e8958bb7e63289d1a28",
     "version": "0.5.16",
-    "status": "INDEPENDENT_REVIEW_FAILED",
+    "status": "REMEDIATION_PENDING_INDEPENDENT_REREVIEW",
     "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
@@ -124,125 +124,162 @@
       "id": "v0516-rereview-stateful-gate-unrebuilt",
       "priority": "P1",
       "status": "OPEN",
-      "reason": "四账户default/v0516-combined有状态启动门未在新候选重建：脱敏快照绑定6dace45/92b96c，verify以候选SHA/tree不一致拒绝106fc41；重新采集需只读生产源URL，本轮未访问生产环境。",
+      "reason": "四账户default/v0516-combined有状态启动门未在54f3b05重建：脱敏快照绑定6dace45/92b96c，verify以候选SHA/tree不一致拒绝新候选；重新采集需只读生产源URL，本轮未访问生产环境。",
       "refs": [
         "scripts/release-state-startup-gate.mts",
         "artifacts/local/v0516-startup-snapshot-6dace45.json",
-        "reviews/2026-10-20-v0516-rereview-remediation-result.json"
+        "reviews/2026-10-21-expanded-independent-remediation-result.json"
       ]
     },
     {
       "id": "v0516-independent-G1",
       "priority": "P1",
-      "status": "OPEN",
-      "reason": "重复批次丢失尚未完成的恢复责任；已发现但尚未修复。",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "重复批次不再回退游标，恢复失败保留调度并由定时器重试；本地专项通过，待独立复审复核。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#G1"
+        "reviews/2026-10-21-expanded-independent-review-import.json#G1",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "public/frontend/shared/incremental-sync.mts",
+        "scripts/sync-coordinator-regression.mjs"
       ]
     },
     {
       "id": "v0516-independent-G2",
       "priority": "P2",
-      "status": "OPEN",
-      "reason": "非零历史用量加待入账新调用仍越限；已发现但尚未修复。",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "持久用量与本地已记录增量相加并取上界，非零基数不再掩盖待入账新调用；本地专项通过，待独立复审复核。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#G2"
+        "reviews/2026-10-21-expanded-independent-review-import.json#G2",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/modules/ai/usage.mjs",
+        "scripts/ai-domain-regression.mjs"
       ]
     },
     {
       "id": "v0516-independent-G3",
       "priority": "P1",
-      "status": "OPEN",
-      "reason": "旧thoughtRemark被错误归于同ID书籍并逻辑清理；已发现但尚未修复。",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "旧嵌套记录仅在自身类型的父集合白名单内解析归属，同ID跨集合父项不再参与清理；本地专项通过，待独立复审复核。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#G3"
+        "reviews/2026-10-21-expanded-independent-review-import.json#G3",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/modules/trash/index.mjs",
+        "scripts/trash-regression.mjs"
       ]
     },
     {
       "id": "v0516-independent-N1",
       "priority": "P1",
-      "status": "OPEN",
-      "reason": "保存游标但无页面数据时刷新空列表；已发现但尚未修复。",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "列表与详情只有携带真实装载标记（requestCursor/found）的投影才可跳过恢复，保存游标不再产生空列表；前端专项通过，待独立复审复核。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#N1"
+        "reviews/2026-10-21-expanded-independent-review-import.json#N1",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "public/frontend/app/runtime/data-sync-runtime.mts",
+        "scripts/frontend-app-ports-regression.mjs"
       ]
     },
     {
       "id": "v0516-independent-N2",
       "priority": "P2",
-      "status": "OPEN",
-      "reason": "公开API舍弃子块后列表预览仍保留；已发现但尚未修复。",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "子块删除或舍弃使列表摘要失效，不再保留旧预览；同步专项新增反例通过，待独立复审复核。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#N2"
+        "reviews/2026-10-21-expanded-independent-review-import.json#N2",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "public/frontend/state/record-sync.mts",
+        "scripts/record-sync-v2-regression.mts"
       ]
     },
     {
       "id": "v0516-independent-N3",
       "priority": "P2",
-      "status": "OPEN",
-      "reason": "无关新增仍使当前详情失效重读；已发现但尚未修复。",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "无关根的子块新增不再失效当前详情，同根新增仍重读；同步专项正反例通过，待独立复审复核。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#N3"
+        "reviews/2026-10-21-expanded-independent-review-import.json#N3",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "public/frontend/state/record-sync.mts",
+        "scripts/record-sync-v2-regression.mts"
       ]
     },
     {
       "id": "v0516-independent-N4",
       "priority": "P2",
-      "status": "OPEN",
-      "reason": "漂移区批注删除未同步取消任务通知；已发现但尚未修复。",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "漂移区批注随子项移入回收站时一并取消任务，与标记取消一致；回收站专项通过，待独立复审复核。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#N4"
+        "reviews/2026-10-21-expanded-independent-review-import.json#N4",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/app/trash.mjs",
+        "scripts/trash-regression.mjs"
       ]
     },
     {
       "id": "v0516-independent-S1",
       "priority": "P1",
-      "status": "OPEN",
-      "reason": "趋势裁剪优先移除最新日期；已发现但尚未修复。",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "趋势正文与引用按新到旧分配预算，裁剪先丢旧日期并保留最新一天；趋势上下文专项新增超预算反例通过，待独立复审复核。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#S1"
+        "reviews/2026-10-21-expanded-independent-review-import.json#S1",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/app/record-compression-context.mjs",
+        "scripts/record-compression-trend-context-regression.mjs"
       ]
     },
     {
       "id": "v0516-independent-S2",
       "priority": "P2",
-      "status": "OPEN",
-      "reason": "历史补充可能持续等待而无执行机会；已发现但尚未修复。",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "已跨日等待的历史补充优先占用本轮槽位，同日日报与失败修复仍优先，补充可前进且不饿死当期摘要；预算等待专项通过，待独立复审复核。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#S2"
+        "reviews/2026-10-21-expanded-independent-review-import.json#S2",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/app/record-compressions.mjs",
+        "scripts/record-compression-budget-wait-regression.mjs"
       ]
     },
     {
       "id": "v0516-independent-M1",
       "priority": "P2",
-      "status": "OPEN",
-      "reason": "采集单元因不存在禁入路径持续NAMESPACE失败；已发现但尚未修复。",
+      "status": "FIXED_PENDING_DEPLOYMENT",
+      "reason": "采集单元的不存在路径改为可选禁入，226/NAMESPACE启动失败已消除；代码已改，未部署，生产采集单元仍为failed。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#M1"
+        "reviews/2026-10-21-expanded-independent-review-import.json#M1",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "deploy/for-now-monitor-journal-context.service",
+        "scripts/monitor-regression.mjs"
       ]
     },
     {
       "id": "v0516-independent-M2",
       "priority": "P2",
-      "status": "OPEN",
-      "reason": "中台真实错误字段与采集器及测试不一致；已发现但尚未修复。",
+      "status": "FIXED_PENDING_DEPLOYMENT",
+      "reason": "采集器与告警格式器读取中台顶层message错误类名，TimeoutError可进入告警正文；代码已改，未部署，线上仍按旧字段。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#M2"
+        "reviews/2026-10-21-expanded-independent-review-import.json#M2",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "scripts/monitor-journal-context.mts",
+        "scripts/monitor-health.mjs",
+        "scripts/monitor-regression.mjs"
       ]
     },
     {
       "id": "v0516-independent-M3",
       "priority": "P2",
-      "status": "OPEN",
-      "reason": "生产数据就绪依赖完整全账户聚合并发生超时；已发现但尚未修复。",
+      "status": "FIXED_PENDING_DEPLOYMENT",
+      "reason": "外层readyz等待放宽至可配置默认15s（下限5s），慢聚合不再误报不可用；中台自身readyz全量聚合未改，代码未部署。",
       "refs": [
-        "reviews/2026-10-21-expanded-independent-review-import.json#M3"
+        "reviews/2026-10-21-expanded-independent-review-import.json#M3",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "scripts/monitor-health.mjs",
+        "scripts/monitor-regression.mjs"
       ]
     }
   ],
   "next_action": {
-    "description": "按已生效规则处理 blockers 中的12项独立发现并复审；为修复后候选核对必需门并提供绑定候选的执行回执，补齐有状态门。通过前不得 READY_WAIT_OWNER 或发布。本次规则及工具接入已完成，不因本次提交派发业务开发。",
-    "owner": "协调者/独立审查者",
+    "description": "由独立审查者复审54f3b05的12项修复与新增回归；冻结前重建四账户default/v0516-combined有状态启动门；部署后复验M1/M2/M3。全部关闭前不得READY_WAIT_OWNER或发布。",
+    "owner": "独立审查者/协调者",
     "requires_owner": true
   },
   "runtime": {
@@ -1026,6 +1063,26 @@
       "refs": [
         "reviews/2026-10-21-expanded-independent-review-import.json",
         "artifacts/local/2026-10-20-expanded-independent-review-106fc416-evidence.zip"
+      ]
+    },
+    {
+      "id": "v0516-expanded-independent-remediation-54f3b05",
+      "object": {
+        "kind": "remediation_receipt",
+        "version": "0.5.16",
+        "candidate": "54f3b05b69309f7d7edee0c592983421d170e742",
+        "tree": "df94412c290faf9d12ff6e8958bb7e63289d1a28"
+      },
+      "conclusion": "扩大独立审查12项均已在代码与专项回归中修复，本轮本地必需验证通过；M1/M2/M3仅完成仓库修复未部署，待独立复审。",
+      "limitations": [
+        "本轮为返修自评，未执行独立复审，不能替代独立结论。",
+        "四账户default/v0516-combined有状态启动门未在新候选重建，现有快照绑定6dace45/92b96c。",
+        "M1/M2/M3未部署，生产采集单元仍failed，中台readyz聚合未改。",
+        "未push/tag/Release/Preview/部署，未写生产业务数据，未调用真实付费provider。"
+      ],
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-remediation.md",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json"
       ]
     }
   ],
