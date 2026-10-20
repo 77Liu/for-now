@@ -127,9 +127,7 @@ export function aiTaskTargetReference(store, task) {
   ));
   const targetExists = Boolean(targetItem);
   const locatedSubtarget = locateTaskSubtarget(targetItem, descriptor);
-  // Persist the established relation key; drift is an accepted lookup candidate,
-  // not an implicit relation migration for every existing task row.
-  const subtargetField = descriptor.subtargetFields[0] || "";
+  const subtargetField = locatedSubtarget?.field || descriptor.subtargetFields[0] || "";
   const requiresExistingSubtarget = descriptor.requiresSubtarget;
   const subtargetId = descriptor.subtargetId;
   const subtargetExists = !requiresExistingSubtarget || Boolean(locatedSubtarget);

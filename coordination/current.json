@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 541,
-  "updated_at": "2026-10-20T04:23:20.544Z",
+  "revision": 543,
+  "updated_at": "2026-10-20T04:29:09.634Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,7 +17,7 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "候选4c842c0快照发现任务资源类型表收窄，已恢复完整持久映射"
+    "phase": "候选ca5c9df精确PG发现新漂移任务关系需实际命中字段，已修正"
   },
   "scope": {
     "description": "Owner独立审查固定2d97b585业务树确认12项未关闭问题（4项P1、8项P2）；按R1-R3/R11阻断项→R4-R8/R12同步闭环→R9/R10跨域一致性严格串行返修。",
@@ -66,7 +66,7 @@
       "baseline": "820444c",
       "candidate_baseline": "2d97b585",
       "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效；Owner 2026-10-20独立审查拍板",
-      "status": "REMEDIATING_TARGET_COLLECTION_COMPATIBILITY",
+      "status": "REMEDIATING_DRIFT_RELATION_TARGET",
       "allowed_write_set": [
         "public/frontend/state/record-sync.mts",
         "public/frontend/shared/incremental-sync.mts",
@@ -106,14 +106,14 @@
       "acceptance": "12项独立反例均形成失败先行回归并通过；保留真实冲突/删除/隔离/事务边界；完整npm/check/PG/record-sync/frontend及候选有状态门通过后才可重新固定候选。",
       "review_ref": "reviews/2026-10-20-v0516-independent-remediation.md",
       "receipt_ref": "reviews/2026-10-20-v0516-independent-remediation-result.json",
-      "implementation_commit": "4c842c"
+      "implementation_commit": "ca5c9d"
     }
   ],
   "candidate": {
-    "id": "v0.5.16-4c842c0",
+    "id": "v0.5.16-ca5c9df",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "4c842c",
-    "tree": "492947",
+    "sha": "ca5c9d",
+    "tree": "208cca",
     "version": "0.5.16",
     "status": "REMEDIATION_REQUIRED",
     "release_frozen": false,
@@ -129,10 +129,10 @@
     "quality_gate": {
       "release_metadata_pwa": "PASS",
       "static_module_contracts": "PASS",
-      "full_regression": "PASS",
+      "full_regression": "FAIL",
       "release_journeys": "PASS",
       "release_protection": "PENDING",
-      "stateful_postgres_startup": "FAIL",
+      "stateful_postgres_startup": "PASS",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
       "production_rollout": "NOT_RUN"
@@ -170,18 +170,18 @@
   },
   "blockers": [
     {
-      "id": "v0516-task-target-collection-compatibility",
+      "id": "v0516-drift-relation-target",
       "priority": "P1",
       "status": "REMEDIATED_PENDING_NEW_CANDIDATE",
-      "reason": "共享任务目标helper最初只含七类恢复目标，导致recordCompression等历史任务关系在remap时消失；已拆分完整持久映射与有限恢复集合。",
+      "reason": "新漂移任务保存的必需subtarget relation必须指向实际annotationDrift；资源映射完整后恢复实际命中字段，旧脱敏关系仍round-trip。",
       "refs": [
-        "src/shared/task-targets/index.mts",
-        "src/app/record-commands/task-preparation.mts"
+        "src/shared/persistence/store-mapping.mjs",
+        "scripts/thought-task-transition-postgres-checks.mts"
       ]
     }
   ],
   "next_action": {
-    "description": "提交完整资源类型映射兼容修复形成替代候选；用脱敏旧快照及新生产快照双重验证关系round-trip，再跑default/combined。",
+    "description": "提交漂移任务实际关系键修复形成替代候选；执行精确候选完整PG、旧/新快照关系等价和有状态门。",
     "owner": "主控",
     "requires_owner": false
   },
