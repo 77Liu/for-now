@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import subprocess
 
 
 EXPECTED = [
@@ -173,6 +174,30 @@ def unnumbered_sections(lines, fenced_lines):
 def check_review_front(lines, headings, sections, layout):
     """Check current review navigation, while allowing explicit historical layout."""
     errors = []
+    if layout == "trimmed":
+        selected = [(i, level, title) for i, level, title in sections if title in REVIEW_FRONT_ORDER]
+        titles = [title for _, _, title in selected]
+        if len(set(titles)) != len(titles) or any(level != 2 for _, level, _ in selected):
+            errors.append("保留的导读标题不得重复，且须为二级标题")
+        if titles != sorted(titles, key=REVIEW_FRONT_ORDER.index):
+            errors.append("保留的导读章节相对顺序错误")
+        for start, level, title in sections:
+            end = next((i for i, depth, _ in sections if i > start and depth <= level), len(lines))
+            body = re.sub(r"<!--.*?-->", "", "\n".join(lines[start + 1:end]), flags=re.S).strip()
+            if not body and not re.match(r"\d+(?:\.\d+)*[.．、]?\s+", title):
+                errors.append(f"保留的章节“{title}”不能为空")
+        if not any(level == 1 for _, level, _ in sections):
+            errors.append("裁剪稿需保留文档标题")
+        prose = re.sub(r"<!--.*?-->", "", "\n".join(line for line in lines if not line.startswith("#")), flags=re.S)
+        if not prose.strip():
+            errors.append("裁剪稿不能只有标题或注释")
+        for i, line in enumerate(lines):
+            cells = table_cells(line)
+            if cells and cells[0] == "决策事项":
+                rows = table_rows(lines[i:], DECISION_COLUMNS)
+                if cells != DECISION_COLUMNS or not rows or any(len(row) != 5 or not all(row) for row in rows):
+                    errors.append("保留的决策表须有五列、分隔行及非空内容")
+        return errors
     required = REVIEW_FRONT_ORDER if layout == "current" else ["需求追踪", "名词解释"]
     locations = {}
     for title in required:
@@ -235,10 +260,28 @@ def check_glossary(lines, sections, layout="current"):
         term, _, context = row
         quote = re.search(r"“(.+)”", context)
         context = quote[1] if quote else context
-        if layout == "current" and prose_text(context) == prose_text(term):
+        if layout != "legacy" and prose_text(context) == prose_text(term):
             errors.append(f"名词“{term}”的语境不能只重复词名，须引用实际原句")
         elif prose_text(context) not in outside:
             errors.append(f"名词“{term}”的语境未在本文其他章节找到原句")
+    return errors
+
+
+def check_pseudocode(body, lang, start):
+    errors = []
+    if lang in ("ts", "typescript"):
+        try:
+            result = subprocess.run(["node", "--experimental-strip-types", str(Path(__file__).with_name("check_pseudocode.mts"))],
+                                    input=body, text=True, capture_output=True, timeout=20, check=True)
+            for diagnostic in json.loads(result.stdout):
+                errors.append(f"第 {start + 1} 行开始的类 TS 代码块语法错误：{diagnostic['message']}")
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            errors.append(f"类 TS 解析器未成功运行，未完成自动验证：{type(exc).__name__}")
+    elif lang == "python":
+        try:
+            ast.parse(body)
+        except SyntaxError as exc:
+            errors.append(f"第 {start + 1 + (exc.lineno or 1)} 行伪代码不符合 Python 语法：{exc.msg}")
     return errors
 
 
@@ -255,10 +298,11 @@ def check_readability(lines, headings, blocks, by_number, layout):
         start = headings[index].line
         end = section_end(headings, index, len(lines))
         rows = table_rows(lines[start + 1:end], TRANSACTION_COLUMNS)
-        if not rows or any(len(row) != 6 or not all(row) for row in rows):
+        if (layout != "trimmed" or any(table_cells(line)[:1] == ["处理动作"] for line in lines[start + 1:end])) and (not rows or any(len(row) != 6 or not all(row) for row in rows)):
             errors.append(f"{number} 需要六列非空事务陈述表：{' / '.join(TRANSACTION_COLUMNS)}")
 
     for a, b, lang, body in blocks:
+        errors.extend(check_pseudocode(body, lang, a))
         stripped = body.strip()
         value = None
         try:
@@ -283,13 +327,8 @@ def check_readability(lines, headings, blocks, by_number, layout):
             if not start < a < b < end:
                 continue
             if number == "3.6.2" and lang not in ("mermaid", "json"):
-                if lang != "python":
-                    errors.append(f"第 {a + 1} 行核心伪代码必须使用小写 python 围栏")
-                else:
-                    try:
-                        ast.parse(body)
-                    except SyntaxError as exc:
-                        errors.append(f"第 {a + 1 + (exc.lineno or 1)} 行伪代码不符合 Python 语法：{exc.msg}")
+                if lang not in ("python", "ts", "typescript"):
+                    errors.append(f"第 {a + 1} 行核心伪代码须使用 python、ts 或 typescript 围栏")
             if number == "3.4" and lang != "mermaid":
                 for offset, line in enumerate(body.splitlines(), a + 2):
                     code = re.sub(r"""(["'])(?:\\.|(?!\1).)*?\1""", '""', line)
@@ -303,9 +342,9 @@ def check_readability(lines, headings, blocks, by_number, layout):
     if pseudo_index is not None:
         start = headings[pseudo_index].line
         end = section_end(headings, pseudo_index, len(lines))
-        if not any(start < a < b < end and lang == "python" and body.strip()
+        if not any(start < a < b < end and lang in ("python", "ts", "typescript") and body.strip()
                    for a, b, lang, body in blocks):
-            errors.append("3.6.2 需要非空 Python 伪代码")
+            errors.append("3.6.2 需要非空 Python 或类 TS 伪代码")
 
     for i, line in enumerate(lines):
         if i in fenced_lines:
@@ -349,7 +388,8 @@ def check_document(path, stage, layout="current"):
     for number, title in EXPECTED:
         index = by_number.get(number)
         if index is None:
-            errors.append(f"缺少章节：{number} {title}")
+            if layout != "trimmed":
+                errors.append(f"缺少章节：{number} {title}")
             continue
         heading = headings[index]
         if normalized_title(heading.title) != normalized_title(title):
@@ -389,7 +429,7 @@ def check_document(path, stage, layout="current"):
             continue
         start = headings[index].line
         end = section_end(headings, index, len(lines))
-        if not any(
+        if layout != "trimmed" and not any(
             start < a < b < end and lang == "mermaid" and body.strip()
             for a, b, lang, body in blocks
         ):
@@ -402,8 +442,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", choices=("review", "post-development"), default="review")
     parser.add_argument(
-        "--layout", choices=("current", "legacy"), default="current",
-        help="current 检查新评审导读；legacy 仅用于生效前既有稿，不要求回溯改排",
+        "--layout", choices=("current", "legacy", "trimmed"), default="current",
+        help="current 完整新稿；legacy 历史稿；trimmed 按规则裁剪，仍检查保留内容与伪代码语法",
     )
     parser.add_argument("--expect-count", type=int, help="本批独立需求数量")
     parser.add_argument("documents", nargs="+", type=Path)
@@ -425,7 +465,7 @@ def main():
                 print(f"  - {error}")
         else:
             print(f"PASS {path}")
-    print("仅检查结构和格式；术语覆盖、事务边界、证据与技术可行性需另行核对。")
+    print("仅检查结构和格式；裁剪是否遗漏目标/归属/失败/兼容/证据/未解决项/授权，以及事务边界、TS类型和技术可行性需人工核对。")
     return 1 if failed else 0
 
 

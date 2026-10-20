@@ -10,6 +10,8 @@ import os from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { CONTROL_EVENT_FORMAT, stateChanges, replayChanges, materializeEvent, shortRecordHashes } from "./control-plane-replay.mjs";
+import { gatePlan, runGate, releaseClaim, verifyReleaseGates } from "./control-plane-gates.mjs";
+import { execFileSync } from "node:child_process";
 import { projectRoot } from "./project-root.mjs";
 
 type ObjectValue = Record<string, unknown>;
@@ -43,16 +45,35 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 const fullDigest = (value: unknown) => createHash("sha256").update(canonical(value)).digest("hex");
-// 新记录只保存并核对六位；完整算法只用于读取旧协议，不持久化新的完整摘要。
-const digest = (value: unknown) => fullDigest(shortRecordHashes(value)).slice(0, 6);
+// 新事件及运行时比较均使用完整SHA-256；六位只在明确的历史格式/引用中核对。
+const digest = fullDigest;
+const legacyDigest = (value: unknown) => fullDigest(shortRecordHashes(value)).slice(0, 6);
 const sameHash = (a: unknown, b: unknown) => typeof a === "string" && typeof b === "string"
-  && /^[a-f0-9]{6,64}$/u.test(a) && /^[a-f0-9]{6,64}$/u.test(b) && a.slice(0, 6) === b.slice(0, 6);
+  && /^(?:[a-f0-9]{6}|[a-f0-9]{40}|[a-f0-9]{64})$/u.test(a) && a === b;
 const matchesRecorded = (value: unknown, hash: unknown) => typeof hash === "string"
-  && (hash.length === 64 ? fullDigest(value).slice(0, 6) === hash.slice(0, 6)
-    : hash.length === 6 && (digest(value) === hash || fullDigest(value).slice(0, 6) === hash));
+  && (hash.length === 64 ? fullDigest(value) === hash
+    : hash.length === 6 && (legacyDigest(value) === hash || fullDigest(value).slice(0, 6) === hash));
 const matchesEventDigest = (value: unknown, hash: unknown, format: unknown) =>
-  format === CONTROL_EVENT_FORMAT ? typeof hash === "string" && /^[a-f0-9]{6}$/u.test(hash) && digest(value) === hash
-    : typeof hash === "string" && /^[a-f0-9]{64}$/u.test(hash) && fullDigest(value).slice(0, 6) === hash.slice(0, 6);
+  format === 3 ? typeof hash === "string" && /^[a-f0-9]{6}$/u.test(hash) && legacyDigest(value) === hash
+    : typeof hash === "string" && /^[a-f0-9]{64}$/u.test(hash) && fullDigest(value) === hash;
+/** 旧短值可原样继承；新增或改变的机器哈希不能继续写短值。 */
+function assertNewHashes(before: unknown, after: unknown, key = "", hashes = false): void {
+  if (/^(?:signature|sign|token|secret|password|integrity|protocol_fields)$/iu.test(key)) return;
+  if (typeof after === "string" && after !== before && (hashes || /(?:hash|sha(?:256)?|fingerprint|commit|tree|candidate)$/iu.test(key))
+    && /^[a-f0-9]{6,64}$/u.test(after)) {
+    const length = hashes || /(?:hash|sha256|fingerprint)$/iu.test(key) ? 64 : 40;
+    if (after.length !== length) throw new Error(`新增或修改的${key}必须保存完整哈希`);
+  } else if (Array.isArray(after)) {
+    const old = Array.isArray(before) ? before : [];
+    after.forEach((item, index) => {
+      const idKey = item && typeof item === "object" ? ["id", "key", "iteration_id", "requirement_id"].find(k => typeof item[k] === "string") : undefined;
+      assertNewHashes(idKey ? old.find(v => v?.[idKey] === item[idKey]) : old[index], item, key, hashes);
+    });
+  } else if (after && typeof after === "object") {
+    const old = before && typeof before === "object" ? before as ObjectValue : {};
+    for (const [name, value] of Object.entries(after)) assertNewHashes(old[name], value, name, hashes || /hashes$/iu.test(name));
+  }
+}
 const actionState = (value: ObjectValue) => Object.fromEntries(Object.entries(value)
   .filter(([key]) => !["revision", "updated_at", "display_summary"].includes(key)));
 function versionName(value: unknown): string {
@@ -154,11 +175,17 @@ async function readEvents(file: string): Promise<ObjectValue[]> {
 }
 function verifyChain(events: ObjectValue[], anchor: ObjectValue | null = null): void {
   let base = anchor ? object(anchor.state_after, "交接锚点状态") : null;
+  let fullFormatStarted = anchor?.event_format === CONTROL_EVENT_FORMAT;
   for (const [index, event] of events.entries()) {
+    if (fullFormatStarted && event.event_format !== CONTROL_EVENT_FORMAT) throw new Error("完整哈希格式之后禁止降级事件格式");
+    if (event.event_format === CONTROL_EVENT_FORMAT) {
+      fullFormatStarted = true;
+      if (!/^[a-f0-9]{64}$/u.test(String(event.request_hash))) throw new Error("新事件请求摘要必须完整");
+    }
     let after: ObjectValue;
-    const checkpoint = [2, CONTROL_EVENT_FORMAT].includes(Number(event.event_format)) && event.type === "control_checkpoint";
+    const checkpoint = [2, 3, CONTROL_EVENT_FORMAT].includes(Number(event.event_format)) && event.type === "control_checkpoint";
     if (event.event_format === undefined) after = object(event.state_after, "事件状态");
-    else if ([2, CONTROL_EVENT_FORMAT].includes(Number(event.event_format))) {
+    else if ([2, 3, CONTROL_EVENT_FORMAT].includes(Number(event.event_format))) {
       const allowed = new Set(["event_format", "id", "iteration_id", "type", "phase", "reason", "evidence", "details",
         "recorded_at", "occurred_at", "actor", "request_hash", "state_before_revision", "state_before_hash",
         "action_before_hash", "action_after_hash", "state_after_hash", "changes", "checkpoint_state", "trigger_event_id",
@@ -179,7 +206,7 @@ function verifyChain(events: ObjectValue[], anchor: ObjectValue | null = null): 
         if (!matchesEventDigest(base, event.state_before_hash, event.event_format) || Number(base.revision) !== Number(event.state_before_revision)) {
           throw new Error("差量事件前状态摘要不一致");
         }
-        after = replayChanges(event.event_format === CONTROL_EVENT_FORMAT ? shortRecordHashes(base) : base, event.changes, Number(event.event_format));
+        after = replayChanges(event.event_format === 3 ? shortRecordHashes(base) : base, event.changes, Number(event.event_format));
       }
       materializeEvent(event, after);
     } else throw new Error("未知事件格式");
@@ -221,7 +248,7 @@ async function eventFileAnchor(root: string, version: string, events: ObjectValu
     const marker = object(events[0].chain_anchor, "首事件恢复锚点");
     return iterationAnchor(root, { id: version, started_by: { iteration_id: marker.iteration_id, event_id: marker.event_id } }, seen);
   }
-  const firstState = object([2, CONTROL_EVENT_FORMAT].includes(Number(events[0].event_format)) ? events[0].checkpoint_state : events[0].state_after, "版本首事件状态");
+  const firstState = object([2, 3, CONTROL_EVENT_FORMAT].includes(Number(events[0].event_format)) ? events[0].checkpoint_state : events[0].state_after, "版本首事件状态");
   if (firstState.iteration === null) return null;
   const iteration = object(firstState.iteration, "版本首事件迭代");
   if (iteration.id !== version) return null;
@@ -294,12 +321,12 @@ async function verifyHeldIterations(root: string, state: ObjectValue): Promise<v
     const heldState = object(event.state_after, "未收口版本完整状态");
     const isDirectSnapshot = event.iteration_id === version && heldState.iteration !== null
       && object(heldState.iteration, "未收口版本迭代").id === version
-      && sameHash(event.state_after_hash, reference.state_after_hash)
+      && matchesRecorded(heldState, reference.state_after_hash)
       && following !== undefined && ["iteration_handoff", "held_iteration_restored"].includes(String(following.type))
       && matchesEventDigest(heldState, following.state_before_hash, following.event_format);
     let isTransitionAnchorSnapshot = event.iteration_id === eventOwner
       && heldState.iteration !== null && object(heldState.iteration, "锚点保存状态").id === version
-      && sameHash(event.state_after_hash, reference.state_after_hash);
+      && matchesRecorded(heldState, reference.state_after_hash);
     if (isTransitionAnchorSnapshot) {
       const targetEvents = await readEvents(path.join(directory(root, version), "events.jsonl"));
       await verifyVersionEvents(root, version, targetEvents);
@@ -313,7 +340,9 @@ async function verifyHeldIterations(root: string, state: ObjectValue): Promise<v
     if (object(heldState.iteration, "未收口版本迭代").id !== version
       || object(heldState.iteration, "未收口版本迭代").status !== reference.status
       || (heldState.candidate === null ? reference.candidate_sha !== null
-        : !sameHash(object(heldState.candidate, "未收口版本候选").sha, reference.candidate_sha))
+        : !(String(reference.candidate_sha).length === 6
+          ? String(object(heldState.candidate, "未收口版本候选").sha).slice(0, 6) === reference.candidate_sha
+          : sameHash(object(heldState.candidate, "未收口版本候选").sha, reference.candidate_sha)))
       || !matchesRecorded(heldState.authorization, reference.authorization_sha256)) {
       throw new Error("未收口版本候选或授权与事件引用不一致");
     }
@@ -372,7 +401,7 @@ function closureSnapshot(request: ObjectValue, current: ObjectValue, events: Obj
     if (item.status === "confirmed" && (!item.event_ids.length || !item.evidence.length)) throw new Error("已确认收口项缺事件或证据");
     if (item.event_ids.some(id => !ids.has(id))) throw new Error("收口引用了不存在的事件");
   }
-  const archived = shortRecordHashes(structuredClone(current));
+  const archived = structuredClone(current);
   delete archived.display_summary;
   archived.revision = Number(current.revision) + 1;
   archived.updated_at = now;
@@ -392,7 +421,7 @@ async function ensureCheckpoint(file: string, current: ObjectValue, baseline: Ob
     evidence: ["control-plane:replay-baseline"], trigger_event_id: eventId, request_hash: requestHash,
     state_before_revision: current.revision, state_before_hash: digest(current),
     action_before_hash: digest(actionState(current)), action_after_hash: digest(actionState(current)),
-    state_after_hash: digest(current), checkpoint_state: shortRecordHashes(current),
+    state_after_hash: digest(current), checkpoint_state: structuredClone(current),
     ...(chainAnchor ? { chain_anchor: chainAnchor } : {})
   };
   await appendEvent(file, checkpoint);
@@ -438,14 +467,15 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     } else if (currentIteration && currentIteration.id !== requestedVersion) {
       throw new Error("先收口当前版本，不能覆盖活动迭代");
     }
-    const desired = shortRecordHashes({ ...object(request.state, "新当前状态") });
+    const desired = structuredClone(object(request.state, "新当前状态"));
     delete desired.display_summary;
     desired.canonical_path = CURRENT;
     validateState(desired, root);
+    assertNewHashes(current, desired);
     if (!close && object(desired.iteration, "目标迭代").id !== requestedVersion) throw new Error("更新版本不一致");
     const currentHeld = relocating
-      ? shortRecordHashes(migratedHeldIterations(current.held_iterations))
-      : shortRecordHashes(current.held_iterations ?? []);
+      ? migratedHeldIterations(current.held_iterations)
+      : (current.held_iterations ?? []);
     if (mode !== "handoff" && canonical(desired.held_iterations ?? []) !== canonical(currentHeld)) {
       throw new Error("当前更新不能丢弃或改写未收口版本引用");
     }
@@ -495,6 +525,11 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     if (!matchesLatest && !matchesActiveAnchor && (latest || activeAnchor)) {
       throw new Error("当前状态与最新事件或恢复锚点不一致，先按原事件恢复");
     }
+    if (mode === "handoff" || (close && object(request.closure, "收口核对").status === "completed")) {
+      await verifyReleaseGates(root, current, current);
+    } else if (!close && releaseClaim(desired)) {
+      await verifyReleaseGates(root, current, desired);
+    }
     if (mode === "handoff") {
       const sourceIteration = object(current.iteration, "交接来源迭代");
       const candidate = object(current.candidate, "待发布候选");
@@ -521,7 +556,7 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
       if (object(inputEvent!.details, "版本交接详情").target_iteration_id !== requestedVersion) throw new Error("交接事件未指向请求目标版本");
       if (inputEvent!.id && !String(inputEvent!.id).startsWith(`${sourceVersion}-`)) throw new Error("交接事件ID须属于来源版本");
       if (desired.held_iterations !== undefined
-        && canonical(desired.held_iterations) !== canonical(shortRecordHashes(current.held_iterations ?? []))) {
+        && canonical(desired.held_iterations) !== canonical((current.held_iterations ?? []))) {
         throw new Error("目标状态不能丢弃或改写既有未收口版本引用");
       }
       if (object(desired.iteration, "目标迭代").started_by !== undefined) throw new Error("目标交接来源只能由入口生成");
@@ -543,7 +578,7 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
         iteration_id: sourceVersion,
         events: `coordination/versions/${sourceVersion}/events.jsonl`,
         event_id: latest!.id,
-        state_after_hash: String(latest!.state_after_hash).slice(0, 6),
+        state_after_hash: digest(current),
         status: object(current.iteration, "交接来源迭代").status,
         candidate_sha: object(current.candidate, "待发布候选").sha,
         authorization_sha256: digest(object(current.authorization, "交接来源授权"))
@@ -577,13 +612,13 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
       iteration_id: object(currentIteration!.started_by, "版本转移来源").iteration_id,
       event_id: object(currentIteration!.started_by, "版本转移来源").event_id
     } : undefined;
-    const changes = stateChanges(shortRecordHashes(current), next);
-    if (digest(replayChanges(shortRecordHashes(current), changes)) !== digest(next)) throw new Error("差量不能精确恢复新状态");
+    const changes = stateChanges(current, next);
+    if (digest(replayChanges(current, changes)) !== digest(next)) throw new Error("差量不能精确恢复新状态");
     const checkpointWritten = await ensureCheckpoint(file, current,
       matchesLatest ? object(latest!.state_after, "最新回放状态") : activeAnchor ? object(activeAnchor.state_after, "回放锚点") : null,
       version, id, requestHash, now, chainAnchor);
     const event = {
-      ...shortRecordHashes(eventInput(inputEvent)), event_format: CONTROL_EVENT_FORMAT, iteration_id: version, recorded_at: now, occurred_at: inputEvent.occurred_at ?? now,
+      ...eventInput(inputEvent), event_format: CONTROL_EVENT_FORMAT, iteration_id: version, recorded_at: now, occurred_at: inputEvent.occurred_at ?? now,
       actor, request_hash: requestHash, state_before_hash: digest(current), state_before_revision: current.revision,
       action_before_hash: digest(actionState(current)), action_after_hash: digest(actionState(next)),
       state_after_hash: digest(next), changes,
@@ -665,7 +700,7 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
     const heldEvent = heldEvents.find(event => event.id === reference.event_id)!;
     const heldState = object(heldEvent.state_after, "未收口版本完整状态");
     if (!sameHash(details.held_state_after_hash, reference.state_after_hash)
-      || !sameHash(heldEvent.state_after_hash, reference.state_after_hash)) throw new Error("恢复事件引用的未收口状态摘要不一致");
+      || !matchesRecorded(heldState, reference.state_after_hash)) throw new Error("恢复事件引用的未收口状态摘要不一致");
     const heldAuth = heldState.authorization;
     const currentAuth = current.authorization;
     if (heldAuth !== null && object(heldAuth, "未收口版本授权").execution_enabled === true
@@ -711,16 +746,27 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
         iteration_id: sourceVersion,
         events: `coordination/versions/${snapshotEvent.iteration_id}/events.jsonl`,
         event_id: snapshotEvent.id,
-        state_after_hash: String(snapshotEvent.state_after_hash).slice(0, 6),
+        state_after_hash: digest(object(snapshotEvent.state_after, "来源状态")),
         status: currentIteration.status,
         candidate_sha: current.candidate === null ? null : object(current.candidate, "当前候选").sha,
         authorization_sha256: digest(current.authorization)
       };
       next.held_iterations = [...priorHeld, outgoing];
     }
-    next = shortRecordHashes(next);
     delete next.display_summary;
     validateState(next, root);
+    if (releaseClaim(next)) {
+      try { await verifyReleaseGates(root, { ...current, scope: next.scope }, next); }
+      catch (error) {
+        // 旧状态仍可恢复，但不能把旧READY或失效回执自动变成当前放行。
+        next.iteration = { ...object(next.iteration, "恢复迭代"), status: "RESTORED_REVALIDATION_REQUIRED" };
+        next.candidate = { ...object(next.candidate, "恢复候选"), status: "REVALIDATION_REQUIRED", release_frozen: false };
+        next.blockers = [...(next.blockers as unknown[]).filter(item => object(item, "阻断记录").id !== `${targetVersion}-restored-gate-revalidation`), { id: `${targetVersion}-restored-gate-revalidation`, priority: "P1", status: "OPEN",
+          reason: `历史状态已恢复，当前门禁未通过：${error instanceof Error ? error.message : "未知核验错误"}`,
+          refs: [eventPath(sourceVersion), "knowledge/test-impact-matrix.md"] }];
+        next.next_action = { owner: "协调者", description: "补齐当前规则与候选门禁证据，独立核对后方可重新声明READY；不自动恢复发布权限。", requires_owner: true };
+      }
+    }
     const targetDir = directory(root, targetVersion);
     try {
       await fs.access(path.join(targetDir, "terminal.json"));
@@ -735,11 +781,11 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
     const latestState = events.at(-1)?.state_after;
     const baseline = latestState && digest(actionState(object(latestState, "恢复来源状态"))) === digest(actionState(current))
       ? object(latestState, "恢复来源状态") : outgoingSnapshot ? object(outgoingSnapshot.state_after, "恢复来源锚点") : null;
-    const changes = stateChanges(shortRecordHashes(current), next);
-    if (digest(replayChanges(shortRecordHashes(current), changes)) !== digest(next)) throw new Error("差量不能精确恢复新状态");
+    const changes = stateChanges(current, next);
+    if (digest(replayChanges(current, changes)) !== digest(next)) throw new Error("差量不能精确恢复新状态");
     const checkpointWritten = await ensureCheckpoint(file, current, baseline, sourceVersion, eventId, requestHash, now, chainAnchor);
     const transition = {
-      ...shortRecordHashes(eventInput(inputEvent)), event_format: CONTROL_EVENT_FORMAT, iteration_id: sourceVersion, recorded_at: now, occurred_at: inputEvent.occurred_at ?? now,
+      ...eventInput(inputEvent), event_format: CONTROL_EVENT_FORMAT, iteration_id: sourceVersion, recorded_at: now, occurred_at: inputEvent.occurred_at ?? now,
       actor, request_hash: requestHash, state_before_hash: digest(current), state_before_revision: current.revision,
       action_before_hash: digest(actionState(current)), action_after_hash: digest(actionState(next)),
       state_after_hash: digest(next), changes,
@@ -904,11 +950,47 @@ async function selfTest(): Promise<void> {
       event: { id: "fixture-format-3", type: "validation_result", phase: "result", reason: "六位与稳定ID格式启用", evidence: ["fixture"] } };
     await update(v2Root, v3Request);
     assert.deepEqual((await fs.readFile(v2File)).subarray(0, v2Bytes.length), v2Bytes);
-    assert.equal((await readJson(path.join(v2Root, CURRENT)).then(value => (value.candidate as ObjectValue).sha)), "aaaaaa");
+    assert.equal((await readJson(path.join(v2Root, CURRENT)).then(value => (value.candidate as ObjectValue).sha)), "a".repeat(40));
     assert.equal((await audit(v2Root)).status, "PASS");
     await atomicJson(path.join(v2Root, CURRENT), v2After);
     assert.equal((await update(v2Root, v3Request)).status, "recovered");
     assert.equal((await update(v2Root, v3Request)).status, "deduplicated");
+
+    const seenHashes = new Map<string, number>();
+    let collision: [number, number] | null = null;
+    for (let n = 0; n < 50000 && !collision; n++) {
+      const prefix = digest({ n }).slice(0, 6), old = seenHashes.get(prefix);
+      if (old !== undefined) collision = [old, n]; else seenHashes.set(prefix, n);
+    }
+    assert.ok(collision, "确定性夹具须找到六位碰撞");
+    const [first, second] = collision;
+    assert.notEqual(digest({ n: first }), digest({ n: second }));
+    assert.equal(matchesRecorded({ n: first }, digest({ n: second })), false);
+    assert.equal(matchesEventDigest({ n: first }, digest({ n: second }), 2), false);
+    assert.equal(matchesEventDigest({ n: first }, digest({ n: second }), 4), false);
+    assert.equal(sameHash(digest({ n: first }), digest({ n: second })), false);
+    const format3Root = path.join(root, "format-3");
+    await fs.mkdir(directory(format3Root, "fixture"), { recursive: true });
+    const shortState = shortRecordHashes(v2Before);
+    const old3 = { ...v2Checkpoint, event_format: 3, checkpoint_state: shortState,
+      state_before_hash: legacyDigest(shortState), state_after_hash: legacyDigest(shortState),
+      action_before_hash: legacyDigest(actionState(shortState)), action_after_hash: legacyDigest(actionState(shortState)) };
+    const file3 = path.join(directory(format3Root, "fixture"), "events.jsonl");
+    await appendEvent(file3, old3); await atomicJson(path.join(format3Root, CURRENT), shortState);
+    const bytes3 = await fs.readFile(file3);
+    await update(format3Root, { ...request, state: { ...shortState, scope: { current: true }, evidence: collectionAfter.evidence } });
+    assert.deepEqual((await fs.readFile(file3)).subarray(0, bytes3.length), bytes3);
+    assert.equal((await audit(format3Root)).status, "PASS");
+    const fullEvents = await readEvents(file3);
+    assert.equal(String(fullEvents.at(-1)!.state_after_hash).length, 64);
+    const saved3 = await fs.readFile(file3);
+    const last3 = fullEvents.at(-1)!;
+    last3.state_after_hash = String(last3.state_after_hash).slice(0, 6) + "0".repeat(58);
+    await fs.writeFile(file3, fullEvents.map(e => JSON.stringify(e)).join("\n") + "\n");
+    await assert.rejects(audit(format3Root), /摘要/u);
+    await fs.writeFile(file3, saved3);
+    const downgradeChain = await readEvents(file3);
+    assert.throws(() => verifyChain([...downgradeChain, { ...old3, id: "fixture-downgrade" }]), /禁止降级/u);
 
     const legacyRoot = path.join(root, "legacy");
     await fs.mkdir(directory(legacyRoot, "fixture"), { recursive: true });
@@ -974,10 +1056,20 @@ async function selfTest(): Promise<void> {
     assert.equal((await update(directCloseRoot, directClose, "close")).status, "deduplicated");
     assert.equal((await audit(directCloseRoot)).status, "IDLE");
 
-    const prepareHandoff = async (fixtureRoot: string, options: { status?: string; activeTasks?: unknown[]; gate?: string; requiredGates?: string[] } = {}) => {
+    const prepareHandoff = async (fixtureRoot: string, options: { status?: string; activeTasks?: unknown[]; gate?: string; requiredGates?: string[]; blockers?: unknown[] } = {}) => {
       await fs.mkdir(path.join(fixtureRoot, VERSION_ROOT), { recursive: true });
       const sourceVersion = "v0.5.13";
       const targetVersion = "v0.5.14";
+      // 隔离Git夹具，既不提交项目，也不把测试自报PASS当运行回执。
+      const fixtureGit = (...args: string[]) => execFileSync("git", args, { cwd: fixtureRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, GIT_AUTHOR_NAME: "Fixture", GIT_AUTHOR_EMAIL: "fixture@example.invalid", GIT_COMMITTER_NAME: "Fixture", GIT_COMMITTER_EMAIL: "fixture@example.invalid" } }).trim();
+      fixtureGit("init", "--quiet");
+      await fs.mkdir(path.join(fixtureRoot, "knowledge"), { recursive: true });
+      const fixturePolicy = { schema: 1, release: ["snapshot", "runtime_start"].map(id => ({ id, command: [process.execPath, "-e", "console.log('fixture completed')"] })), impact: [{ id: "changed_store", paths: ["store/"], command: [process.execPath, "-e", "console.error('fixture failure'); process.exit(3)"] }] };
+      await fs.writeFile(path.join(fixtureRoot, "knowledge/test-impact-matrix.md"), "<!-- control-plane-gate-policy -->\n```json\n" + JSON.stringify(fixturePolicy) + "\n```\n");
+      await fs.writeFile(path.join(fixtureRoot, ".gitignore"), "coordination/\nartifacts/\n");
+      fixtureGit("add", "."); fixtureGit("commit", "--quiet", "-m", "isolated gate fixture");
+      const candidateSha = fixtureGit("rev-parse", "HEAD"), candidateTree = fixtureGit("rev-parse", "HEAD^{tree}");
       const requiredGates = options.requiredGates ?? ["snapshot", "runtime_start"];
       const gates = Object.fromEntries(requiredGates.map(key => [key, "PASS"]));
       gates.isolated_online = "PARTIAL";
@@ -985,7 +1077,7 @@ async function selfTest(): Promise<void> {
       const baseState: ObjectValue = {
         schema_version: 3, revision: 1, canonical_path: CURRENT,
         coordinator: { thread_id: "coordinator" }, iteration: { id: sourceVersion, status: "ACTIVE" },
-        scope: { description: "旧版本范围" }, active_tasks: [], candidate: null, blockers: [], evidence: [],
+        scope: { description: "旧版本范围", baseline: { commit: candidateSha } }, rule_baseline: { commit: candidateSha }, active_tasks: [], candidate: null, blockers: options.blockers ?? [], evidence: [],
         authorization: { version: sourceVersion, execution_enabled: false }, held_iterations: [],
         records: { events: `coordination/versions/${sourceVersion}/events.jsonl`, terminal: `coordination/versions/${sourceVersion}/terminal.json` }
       };
@@ -995,11 +1087,17 @@ async function selfTest(): Promise<void> {
         iteration: { id: sourceVersion, status: options.status ?? "READY_WAIT_OWNER" },
         active_tasks: options.activeTasks ?? [],
         candidate: {
-          sha: "a".repeat(40), tree: "b".repeat(40), status: "READY_FOR_RELEASE_WAIT_OWNER", release_frozen: true,
+          sha: candidateSha, tree: candidateTree, base_sha: candidateSha, gate_policy_commit: candidateSha,
+          gate_receipts: {} as ObjectValue, gate_environment_sha256: "", status: "READY_FOR_RELEASE_WAIT_OWNER", release_frozen: true,
           release_reference: { name: "release/v0.5.13", status: "LOCAL_FROZEN" },
           required_gates: requiredGates, test_matrix_ref: "knowledge/test-impact-matrix.md#候选级最小门", quality_gate: gates
         }
       };
+      for (const gate of ["snapshot", "runtime_start"]) {
+        const result = await runGate(fixtureRoot, readyState, { gate, output: `artifacts/local/${gate}.json` });
+        readyState.candidate.gate_receipts[gate] = { path: result.path, sha256: result.sha256 };
+        readyState.candidate.gate_environment_sha256 = result.environmentSha256;
+      }
       await update(fixtureRoot, {
         actor: "coordinator", expected_revision: 1, iteration_id: sourceVersion, state: readyState,
         event: { id: `${sourceVersion}-ready`, type: "candidate_frozen", phase: "decision", reason: "隔离夹具候选已验证冻结", evidence: ["fixture"] }
@@ -1009,7 +1107,7 @@ async function selfTest(): Promise<void> {
         ...sourceState,
         iteration: { id: targetVersion, status: "PLANNING", phase: "需求事实核对" },
         scope: null, active_tasks: [], candidate: null, blockers: [], evidence: [],
-        authorization: null, rule_baseline: { revision: "2.1" }, runtime: { observed_release: "v0.5.13" },
+        authorization: null, rule_baseline: sourceState.rule_baseline, runtime: { observed_release: "v0.5.13" },
         next_action: { owner: "coordinator", action: "刷新需求", status: "PLANNED" },
         records: { events: `coordination/versions/${targetVersion}/events.jsonl`, terminal: `coordination/versions/${targetVersion}/terminal.json` }
       };
@@ -1023,6 +1121,39 @@ async function selfTest(): Promise<void> {
       };
       return { sourceVersion, targetVersion, sourceState, handoffRequest };
     };
+    const impactRoot = path.join(root, "impact-policy");
+    const impact = await prepareHandoff(impactRoot);
+    const commitFixture = (...args: string[]) => execFileSync("git", args, { cwd: impactRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, GIT_AUTHOR_NAME: "Fixture", GIT_AUTHOR_EMAIL: "fixture@example.invalid", GIT_COMMITTER_NAME: "Fixture", GIT_COMMITTER_EMAIL: "fixture@example.invalid" } }).trim();
+    await fs.mkdir(path.join(impactRoot, "store")); await fs.writeFile(path.join(impactRoot, "store/changed.mts"), "export const changed = true;\n");
+    commitFixture("add", "store"); commitFixture("commit", "--quiet", "-m", "isolated changed path");
+    const changedCandidate = { ...object(impact.sourceState.candidate, "候选"), sha: commitFixture("rev-parse", "HEAD"), tree: commitFixture("rev-parse", "HEAD^{tree}") };
+    assert.deepEqual(gatePlan(impactRoot, impact.sourceState, changedCandidate).gates.map((g: { id: string }) => g.id), ["snapshot", "runtime_start", "changed_store"]);
+    assert.throws(() => gatePlan(impactRoot, impact.sourceState, { ...changedCandidate, base_sha: changedCandidate.sha }), /差分基线/u);
+    await assert.rejects(verifyReleaseGates(impactRoot, impact.sourceState, { ...impact.sourceState, candidate: changedCandidate }), /漏列/u);
+    const failedGate = await runGate(impactRoot, { ...impact.sourceState, candidate: changedCandidate }, { gate: "changed_store", output: "artifacts/local/failure.json" });
+    assert.equal(failedGate.status, "FAIL");
+    assert.equal((await readJson(path.join(impactRoot, "artifacts/local/failure.json"))).exitCode, 3);
+    assert.throws(() => assertNewHashes({}, { candidate: { sha: "abcdef" } }), /完整哈希/u);
+    assert.doesNotThrow(() => assertNewHashes({ candidate: { sha: "abcdef" } }, { candidate: { sha: "abcdef" } }));
+
+    const staleRoot = path.join(root, "stale-held-gates");
+    const stale = await prepareHandoff(staleRoot, { blockers: [{ id: "v0.5.13-restored-gate-revalidation", status: "CLOSED" }] });
+    await update(staleRoot, stale.handoffRequest, "handoff");
+    const staleCurrent = await readJson(path.join(staleRoot, CURRENT));
+    const staleRef = object((staleCurrent.held_iterations as unknown[])[0], "历史引用");
+    await fs.unlink(path.join(staleRoot, "artifacts/local/snapshot.json.log"));
+    await restoreHeld(staleRoot, { actor: "coordinator", expected_revision: staleCurrent.revision,
+      from_iteration_id: stale.targetVersion, iteration_id: stale.sourceVersion,
+      event: { id: `${stale.targetVersion}-restore-with-stale-gates`, type: "held_iteration_restored", phase: "decision",
+        reason: "恢复历史现场，不能自动放行", evidence: ["fixture Owner signal"],
+        details: { target_iteration_id: stale.sourceVersion, held_event_id: staleRef.event_id, held_state_after_hash: staleRef.state_after_hash } } });
+    const staleRestored = await readJson(path.join(staleRoot, CURRENT));
+    assert.equal(object(staleRestored.candidate, "恢复候选").release_frozen, false);
+    assert.equal((staleRestored.blockers as unknown[]).length, 1, "恢复失败重新打开原阻断，不创建重复稳定ID");
+    assert.equal(object(staleRestored.iteration, "恢复迭代").status, "RESTORED_REVALIDATION_REQUIRED");
+    assert.equal((await audit(staleRoot)).status, "PASS");
+
     const checkpointRoot = path.join(root, "checkpoint-window");
     await fs.mkdir(directory(checkpointRoot, "fixture"), { recursive: true });
     const checkpointState = { ...state, canonical_path: CURRENT };
@@ -1075,6 +1206,20 @@ async function selfTest(): Promise<void> {
 
     const handoffRoot = path.join(root, "handoff");
     const handoff = await prepareHandoff(handoffRoot);
+    const readyCandidate = object(handoff.sourceState.candidate, "候选");
+    const invalidReady = (candidate: ObjectValue) => ({ actor: "coordinator", expected_revision: handoff.sourceState.revision,
+      iteration_id: handoff.sourceVersion, state: { ...handoff.sourceState, candidate },
+      event: { id: `${handoff.sourceVersion}-invalid-ready`, type: "candidate_frozen", phase: "decision", reason: "反例", evidence: ["fixture"] } });
+    await assert.rejects(update(handoffRoot, invalidReady({ ...readyCandidate, required_gates: ["snapshot"] })), /漏列/u);
+    await assert.rejects(update(handoffRoot, invalidReady({ ...readyCandidate, gate_environment_sha256: "f".repeat(64) })), /环境不匹配/u);
+    await assert.rejects(update(handoffRoot, invalidReady({ ...readyCandidate, gate_receipts: {} })), /缺执行回执/u);
+    const log = path.join(handoffRoot, "artifacts/local/snapshot.json.log");
+    const logBefore = await fs.readFile(log); await fs.appendFile(log, "tampered");
+    await assert.rejects(update(handoffRoot, handoff.handoffRequest, "handoff"), /日志缺失或摘要不匹配/u);
+    await fs.writeFile(log, logBefore);
+    // 修改工作区规则不能用来豁免；选择仍读取已登记Git规则。
+    await fs.writeFile(path.join(handoffRoot, "knowledge/test-impact-matrix.md"), "candidate-authored empty policy");
+    assert.equal(gatePlan(handoffRoot, handoff.sourceState, readyCandidate).gates.length, 2);
     assert.equal((await update(handoffRoot, handoff.handoffRequest, "handoff")).status, "updated");
     const sourceEventsFile = path.join(directory(handoffRoot, handoff.sourceVersion), "events.jsonl");
     const sourceEvents = await testEvents(sourceEventsFile);
@@ -1090,7 +1235,7 @@ async function selfTest(): Promise<void> {
       event_id: sourceEvents[0].id,
       state_after_hash: sourceEvents[0].state_after_hash,
       status: "READY_WAIT_OWNER",
-      candidate_sha: "a".repeat(6),
+      candidate_sha: object(handoff.sourceState.candidate, "夹具候选").sha,
       authorization_sha256: digest(handoff.sourceState.authorization)
     }]);
     assert.equal(object(targetState.iteration, "夹具目标迭代").started_by && object(object(targetState.iteration, "夹具目标迭代").started_by, "夹具交接来源").event_id, handoffEvent.id);
@@ -1153,7 +1298,7 @@ async function selfTest(): Promise<void> {
     assert.equal((await restoreHeld(handoffRoot, restore13Request)).status, "deduplicated");
     let restored13 = await readJson(path.join(handoffRoot, CURRENT));
     assert.equal(object(restored13.iteration, "恢复的前版").id, handoff.sourceVersion);
-    assert.deepEqual(restored13.candidate, shortRecordHashes(handoff.sourceState.candidate));
+    assert.deepEqual(restored13.candidate, handoff.sourceState.candidate);
     assert.deepEqual(restored13.authorization, handoff.sourceState.authorization);
     assert.deepEqual(restored13.rule_baseline, beforeRestore.rule_baseline);
     assert.deepEqual(restored13.runtime, beforeRestore.runtime);
@@ -1199,16 +1344,22 @@ async function selfTest(): Promise<void> {
     const handoffRejections: Array<[string, { status?: string; activeTasks?: unknown[]; gate?: string; requiredGates?: string[] }, RegExp]> = [
       ["active", { activeTasks: [{ id: "still-running" }] }, /在途实施任务/u],
       ["unverified", { gate: "runtime_start", requiredGates: ["snapshot", "runtime_start"] }, /必需验证门/u],
+      ["omitted", { requiredGates: ["snapshot"] }, /漏列/u],
       ["not-ready", { status: "ACTIVE" }, /冻结版本/u]
     ];
     for (const [name, options, expected] of handoffRejections) {
       const rejectedRoot = path.join(root, `handoff-${name}`);
+      if (options.gate || options.requiredGates) {
+        await assert.rejects(prepareHandoff(rejectedRoot, options), expected);
+        assert.equal((await readJson(path.join(rejectedRoot, CURRENT))).revision, 1);
+        continue;
+      }
       const rejected = await prepareHandoff(rejectedRoot, options);
       await assert.rejects(update(rejectedRoot, rejected.handoffRequest, "handoff"), expected);
       assert.equal(object((await readJson(path.join(rejectedRoot, CURRENT))).iteration, "拒绝夹具迭代").id, rejected.sourceVersion);
       assert.equal((await testEvents(path.join(directory(rejectedRoot, rejected.sourceVersion), "events.jsonl"))).length, 1);
     }
-    console.log("更新入口夹具通过：旧全量/格式2/格式3混合回放、六位记录、稳定ID增删修改与排序、缺失与篡改拒绝、中断恢复、幂等及跨版本授权不复活。");
+    console.log("更新入口夹具通过：旧全量/格式2/格式3/格式4混合回放、完整哈希、稳定ID增删修改与排序、缺失与篡改拒绝、中断恢复、幂等及跨版本授权不复活。");
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 }
 
@@ -1217,6 +1368,16 @@ if (command === "self-test") await selfTest();
 else {
   const root = projectRoot(import.meta.url);
   if (command === "audit") console.log(JSON.stringify(await audit(root)));
+  else if (["gate-plan", "run-gate"].includes(command)) {
+    const state = await readJson(path.join(root, CURRENT));
+    if (command === "gate-plan") console.log(JSON.stringify(gatePlan(root, state, object(state.candidate, "候选")), null, 2));
+    else {
+      if (flag !== "--input" || !file) throw new Error("run-gate --input JSON文件");
+      const result = await runGate(root, state, await readJson(path.resolve(root, file)));
+      console.log(JSON.stringify(result));
+      if (result.status !== "PASS") process.exitCode = 1;
+    }
+  }
   else if (command === "restore-held" && flag === "--input" && file) {
     console.log(JSON.stringify(await restoreHeld(root, await readJson(path.resolve(root, file)))));
   }

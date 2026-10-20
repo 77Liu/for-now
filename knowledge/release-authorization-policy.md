@@ -85,4 +85,4 @@ effectiveFrom / expiryMode / expiresAt / revokedAt
 
 Owner 选择 16A：PARTIAL 可进入预览和候选；生产前必须有无 P0/P1 用户损害的依据，并在控制面记录未验收项、责任人与补验条件。未验证不能当作没有损害；需求排期标签不代替实际损害判断。权限、数据隔离、不可恢复数据故障仍按对应风险等级阻断受影响动作。
 
-项目记录的对象标识遵循[六位哈希及对象类型约定](coordination-control-plane.md#项目记录的哈希与集合差量)，Git 与工具协议必需标识不截断。
+项目记录的对象标识遵循[完整哈希与展示简称约定](coordination-control-plane.md#项目记录的哈希与集合差量)，Git 与工具协议必需标识不截断。

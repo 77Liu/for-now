@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 546,
-  "updated_at": "2026-10-20T09:19:54.243Z",
+  "revision": 547,
+  "updated_at": "2026-10-20T16:20:45.947Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -16,11 +16,11 @@
   "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
     "id": "v0.5.16",
-    "status": "INDEPENDENT_REREVIEW_PENDING",
-    "phase": "独立复审确认R1/R6/R9/R11为部分修复并复现F1-F5；已按Owner拍板完成F1-F5与类型契约Q1返修，技术门通过，四账户有状态门未在新候选重建，冻结等待独立复审"
+    "status": "INDEPENDENT_REVIEW_FAILED",
+    "phase": "106fc416独立审查发现12项未修复；四账户有状态门未重建。保持返修阻断。"
   },
   "scope": {
-    "description": "独立复审：R2/R3/R4/R5/R7/R8/R10/R12可关闭，R1/R6/R9/R11为部分修复并复现F1-F5；开发侧已按Owner拍板返修（列表只接受摘要契约、回收身份按全量候选唯一性核对、额度准入与结算同账户日串行、恢复按实际失效范围）并补同步事件穷尽检查。新候选106fc41技术门与受影响专项通过，但四账户有状态门未重建，不替代独立复审。",
+    "description": "既定v0.5.16范围不变；106fc416技术门通过，但独立反例与有状态门缺口仍阻断。当前问题见blockers，历史修复范围见绑定候选回执。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8",
@@ -64,8 +64,8 @@
     "sha": "106fc4",
     "tree": "e36344",
     "version": "0.5.16",
-    "status": "REREVIEW_REMEDIATION_VERIFIED_WAIT_INDEPENDENT_REREVIEW",
-    "release_frozen": true,
+    "status": "INDEPENDENT_REVIEW_FAILED",
+    "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
       "static_module_contracts",
@@ -128,11 +128,119 @@
         "artifacts/local/v0516-startup-snapshot-6dace45.json",
         "reviews/2026-10-20-v0516-rereview-remediation-result.json"
       ]
+    },
+    {
+      "id": "v0516-independent-G1",
+      "priority": "P1",
+      "status": "OPEN",
+      "reason": "重复批次丢失尚未完成的恢复责任；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#G1"
+      ]
+    },
+    {
+      "id": "v0516-independent-G2",
+      "priority": "P2",
+      "status": "OPEN",
+      "reason": "非零历史用量加待入账新调用仍越限；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#G2"
+      ]
+    },
+    {
+      "id": "v0516-independent-G3",
+      "priority": "P1",
+      "status": "OPEN",
+      "reason": "旧thoughtRemark被错误归于同ID书籍并逻辑清理；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#G3"
+      ]
+    },
+    {
+      "id": "v0516-independent-N1",
+      "priority": "P1",
+      "status": "OPEN",
+      "reason": "保存游标但无页面数据时刷新空列表；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#N1"
+      ]
+    },
+    {
+      "id": "v0516-independent-N2",
+      "priority": "P2",
+      "status": "OPEN",
+      "reason": "公开API舍弃子块后列表预览仍保留；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#N2"
+      ]
+    },
+    {
+      "id": "v0516-independent-N3",
+      "priority": "P2",
+      "status": "OPEN",
+      "reason": "无关新增仍使当前详情失效重读；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#N3"
+      ]
+    },
+    {
+      "id": "v0516-independent-N4",
+      "priority": "P2",
+      "status": "OPEN",
+      "reason": "漂移区批注删除未同步取消任务通知；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#N4"
+      ]
+    },
+    {
+      "id": "v0516-independent-S1",
+      "priority": "P1",
+      "status": "OPEN",
+      "reason": "趋势裁剪优先移除最新日期；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#S1"
+      ]
+    },
+    {
+      "id": "v0516-independent-S2",
+      "priority": "P2",
+      "status": "OPEN",
+      "reason": "历史补充可能持续等待而无执行机会；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#S2"
+      ]
+    },
+    {
+      "id": "v0516-independent-M1",
+      "priority": "P2",
+      "status": "OPEN",
+      "reason": "采集单元因不存在禁入路径持续NAMESPACE失败；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#M1"
+      ]
+    },
+    {
+      "id": "v0516-independent-M2",
+      "priority": "P2",
+      "status": "OPEN",
+      "reason": "中台真实错误字段与采集器及测试不一致；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#M2"
+      ]
+    },
+    {
+      "id": "v0516-independent-M3",
+      "priority": "P2",
+      "status": "OPEN",
+      "reason": "生产数据就绪依赖完整全账户聚合并发生超时；已发现但尚未修复。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#M3"
+      ]
     }
   ],
   "next_action": {
-    "description": "由Owner或独立复审者复核F1-F5与Q1返修；通过前不得进入READY_WAIT_OWNER或发布。四账户有状态门需在授权访问只读生产源后为新候选重建。",
-    "owner": "Owner/独立审查者",
+    "description": "处理blockers中的12项独立发现并复审；为修复后候选核对并重建适用有状态门。通过前不得READY_WAIT_OWNER或发布。本次仅规则预调整与状态整理，不派发开发。",
+    "owner": "协调者/独立审查者",
     "requires_owner": true
   },
   "runtime": {
@@ -149,7 +257,8 @@
     "limitations": [
       "长期98%需持续真实观测，不能由本次限定窗口外推",
       "完整设备验收未完成",
-      "本次不重复付费真实模型调用，复用41d866证据"
+      "本次不重复付费真实模型调用，复用41d866证据",
+      "以上健康/PID为v0.5.15部署观察回执中的历史结果，本轮未刷新生产观测。"
     ]
   },
   "evidence": [
@@ -160,7 +269,7 @@
         "version": "v0.5.15",
         "commit": "a99c14"
       },
-      "conclusion": "11/11样本、10分14秒，readyz与活动目录一致，PID 1033732稳定、重启0、应用错误0、监控错误0；4/4服务健康、队列0、观察窗口AI调用数未变化，浏览器控制台错误0。",
+      "conclusion": "限定历史观察窗口11/11样本通过；健康、PID及错误统计仅代表该窗口，不是当前实时观测。",
       "limitations": [
         "现有生产浏览器会话已过期，未重复认证后页面读取",
         "未新增付费provider调用或生产业务写入",
@@ -180,7 +289,7 @@
         "application_commit": "a99c14",
         "main_commit": "f12fd1"
       },
-      "conclusion": "Gitee正式Release创建成功；PR !5审查与测试通过并合并，main tree与生产候选完全相同；GitHub release分支及tag同步完成。",
+      "conclusion": "v0.5.15正式发布及远程引用证据；生产/tag与平台合并提交不同，详见object和限制。",
       "limitations": [
         "生产运行提交与tag保持a99c14；main为平台合并提交f12fd1",
         "现有生产浏览器会话已过期，认证后页面读取未重复执行"
@@ -199,7 +308,7 @@
         "path": "docs/technical-proposals/评审索引.md",
         "review_base": "55c4df"
       },
-      "conclusion": "Owner已批准九项设计，依赖契约与串行接入顺序由版本级设计承载；当前实施任务与基线只见scope/active_tasks。",
+      "conclusion": "九项设计已获Owner批准；当前范围与活动任务以scope/active_tasks为准。",
       "limitations": [
         "F3仅A，B/C不纳入；设备与性能结论按各切片回执保留边界。"
       ],
@@ -213,13 +322,11 @@
       "id": "v0516-F1-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-reliability",
-        "base_commit": "58ba88",
         "receipt": "artifacts/local/v0516-f1-acceptance-current.json",
         "commit": "677ea9",
         "integration_commit": "c470c2"
       },
-      "conclusion": "主控独立核对实际12文件差分及JSON/PG读写、HTTP、会话退出消费者；凭据复验、计算许可、错误429/503与全会话撤销正确，批准本地功能切片接入。回执12文件摘要均与当前源码匹配，14项执行记录exit0。 实现677ea9正常合入develop c470c2，合并后真实集成对象auth-concurrency专项通过。 主控对固定集成提交c470c2完成真实Chrome账户表单：错旧密码仍可纠正，成功改密进入完整登录门、清Cookie、拒绝旧会话，新密码可重登，浏览器运行异常0。 主控200次正常+200次六错登干扰的本地真实scrypt对照：P95增量78.3ms，当前Mac/串行内存适配器场景通过，不外推生产PG。",
+      "conclusion": "F1本地认证、真实Chrome改密及限定scrypt负载验证通过，适用对象见object；生产性能未验。",
       "limitations": [
         "本地功能、桌面Chrome及限定本地负载通过；iOS、生产同规格PG负载/共享NAT校准和生产观测未验。",
         "F2/F5组合有状态启动已通过；生产看板/写锁指标及生产负载仍未验，不声称整版可发布。"
@@ -238,8 +345,6 @@
       "id": "v0516-F2-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-account-recovery",
-        "base_commit": "c470c2",
         "receipt": "artifacts/local/v0516-f2-acceptance-current.json",
         "commit": "80d7df",
         "integration_commit": "cdcba5",
@@ -250,7 +355,7 @@
           "integration_commit": "1ad74f"
         }
       },
-      "conclusion": "F2隔离/恢复及已有调用收尾保持；JSON认证缺失返修1b307a经独立审查与实际子进程退出验证后正常合入develop 1ad74f，tree一致，develop持久化专项通过。当前已无该认证缺失阻碍；原失败证据保持原结论。",
+      "conclusion": "F2本地恢复及JSON认证缺失返修通过，原失败保留；不扩大PG结论。",
       "limitations": [
         "默认ACCOUNT_RECOVERY_ENABLED=0，验收显式开启；没有生产开启或发布授权。",
         "设备/生产负载/观测尚未完成；F1生产负载与指标限制仍保留。",
@@ -267,13 +372,11 @@
       "id": "v0516-F5-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-ai-queue-control",
-        "base_commit": "cdcba5",
         "receipt": "artifacts/local/v0516-f5-acceptance-current.json",
         "commit": "77a039",
         "integration_commit": "d3a30d"
       },
-      "conclusion": "主控独立核对实际完整链路，26文件摘要和16执行记录一致；实现77a039正常合入develop d3a30d，tree一致，develop预算runtime专项通过。",
+      "conclusion": "F5本地队列/预算集成验证通过；生产启用和媒体取消能力不由此证明。",
       "limitations": [
         "AI_QUEUE_ENABLED默认0，验收显式开启，生产未启用；其他媒体仅无参兼容。",
         "生产容量与设备分位未验。"
@@ -288,8 +391,6 @@
       "id": "v0516-F3A-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-postgres-narrow-reads",
-        "base_commit": "1ad74f",
         "receipt": "artifacts/local/v0516-f3a-acceptance-current.json",
         "commit": "f8cdfd",
         "integration_commit": "4ec189",
@@ -299,7 +400,7 @@
           "receipt": "artifacts/local/v0516-f3a-provision-current.json"
         }
       },
-      "conclusion": "F3-A及注册初始化返修经主控独立全链审查后正常合入develop；两次整合均tree一致、局部投影门通过。新账户首次同步/重启及严格元数据边界通过，原失败历史保持。",
+      "conclusion": "F3-A与新账户初始化/重启投影验证通过；仅窄读收益，不证明整账户写或SLO。",
       "limitations": [
         "默认legacy/空白名单；生产未启用。未知域及旧格式仍可全读；JSON仍全文件。",
         "查询返回量有改善，不代表物理扫描/WAL/全站P75；代表性性能仍partial。"
@@ -314,13 +415,11 @@
       "id": "v0516-F9-server-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "base_commit": "40d52b",
         "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
         "commit": "ee44fe",
         "integration_commit": "208149"
       },
-      "conclusion": "18文件独立全链审查后正常合入develop，tree一致且集成同步专项通过；真实JSON/PG、会话撤销/断连/排空及本地目标激活必要门通过，仅服务端切片。",
+      "conclusion": "F9服务端同步及会话生命周期本地验证通过；局部样本不证明端到端目标。",
       "limitations": [
         "默认SYNC_ACCOUNT_WAKE_ENABLED=0；生产未启用。",
         "局部8样本仓储+handler及单样本HTTP对照不代表全站500ms；客户端功能已接入，设备与完整性能仍partial。"
@@ -334,13 +433,11 @@
       "id": "v0516-F4-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-thought-pagination",
-        "base_commit": "208149",
         "receipt": "artifacts/local/v0516-f4-acceptance-current.json",
         "commit": "1f70ee",
         "integration_commit": "391f97"
       },
-      "conclusion": "28文件完整契约独审后正常合入develop，tree一致及集成思绪专项通过；1001静态双向/有界DOM和主控独立详情/离线/ACK实际闭环。",
+      "conclusion": "F4分页、有界DOM、详情/离线/ACK本地验证通过；适用对象见object。",
       "limitations": [
         "THOUGHT_PAGING_ENABLED默认0，生产未启用。",
         "iOS/真机、全站性能及3.7完整观测未验。"
@@ -354,13 +451,11 @@
       "id": "v0516-F7-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-thought-reading-state",
-        "base_commit": "391f97",
         "receipt": "artifacts/local/v0516-f7-acceptance-current.json",
         "commit": "21bac8",
         "integration_commit": "bcdcd7"
       },
-      "conclusion": "8文件完整契约独审及主控真实Chrome补证后正常合入develop，tree一致、集成思绪专项通过；F4深页1px及旧链接工程门已有效关闭。",
+      "conclusion": "F7桌面阅读恢复、深页及旧链接验证通过；旧帧竞态原失败未归因。",
       "limitations": [
         "旧帧用例早期一次断言差异未归因，原FAIL/UNKNOWN保留；当前固定指纹独立同路径通过，但组合启动门不证明该旧帧竞态根因。",
         "iOS、全站分位与生产观察未验；不是整版发布GO。"
@@ -374,13 +469,11 @@
       "id": "v0516-F6-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-annotation-counts",
-        "base_commit": "bcdcd7",
         "receipt": "artifacts/local/v0516-f6-acceptance-current.json",
         "commit": "59a1a1",
         "integration_commit": "e79d06"
       },
-      "conclusion": "15文件完整独审与主控实际Chrome通过后，F6实现59a1a1正常合入develop e79d06，tree一致且集成批注专项通过。",
+      "conclusion": "F6本地批注计数及Chrome验证通过；裁切analysis仍unknown。",
       "limitations": [
         "原生iOS、计数切片真实鉴权多账户及全站P75未验；非整版发布GO。",
         "裁切analysis保持unknown，未新增后端完整读取协议。"
@@ -394,13 +487,11 @@
       "id": "v0516-F8-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-mobile-annotations",
-        "base_commit": "e79d06",
         "receipt": "artifacts/local/v0516-f8-acceptance-current.json",
         "commit": "12479d",
         "integration_commit": "817ede"
       },
-      "conclusion": "19文件完整独审、主控真实两账户切换与Chrome锚点、原生WK跨段41UTF16证据通过后，F8实现12479d正常合入develop 817ede，tree一致且集成批注专项通过。",
+      "conclusion": "F8两账户Chrome与WK模拟器跨段锚点通过；公式Range不支持。",
       "limitations": [
         "Safari、安装PWA、真机及全站分位未验。",
         "公式内部及跨公式视觉Range明确不支持，不伪造quote。"
@@ -414,13 +505,11 @@
       "id": "v0516-F9-client-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "base_commit": "d069e9",
         "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
         "commit": "d1979f",
         "integration_commit": "c215f7"
       },
-      "conclusion": "已审F9实现d1979f正常合入develop c215f7，tree42809b一致且develop思绪专项通过；性能及整版快照门仍partial/pending。",
+      "conclusion": "F9客户端本地集成专项通过；完整分位与设备验证未完成。",
       "limitations": [
         "每族每设备完整P75及真实移动设备未验；小样本不证明500ms目标，日记对端屏外渲染不等于可见。"
       ],
@@ -437,7 +526,7 @@
         "tree": "6156a0",
         "snapshot": "bc12ff"
       },
-      "conclusion": "新候选完整4账户生产状态快照，默认及六开关组合实际启动、readyz、同库重启、116任务状态及核心保存读回/通知读取通过；禁止副作用尝试均0。",
+      "conclusion": "旧候选四账户default/combined有状态门通过；仅支持object所绑定候选，不能满足106fc416发布门。",
       "limitations": [
         "仅本机PostgreSQL16.14，真实provider/通知/媒体副作用封闭；不证明真实provider鉴权。",
         "真实保存/同步SLO仍FAIL，Safari/PWA/真机仍partial；不是整版发布GO。"
@@ -456,7 +545,7 @@
         "tree": "6156a0",
         "fixture_snapshot": "be35d1"
       },
-      "conclusion": "24次真实保存全部成功，连续追问无准备失败；按钮有效反馈P75约12–26ms，跨端渲染P75约447–1537ms，多组仍FAIL。",
+      "conclusion": "历史生产形态24次保存成功；跨端渲染P75约447–1537ms，多组FAIL未关闭。",
       "limitations": [
         "每组3样本校准，尚非正式完整分位验收；旧失败原始回执保留。",
         "部分日记/思绪对端DOM屏外；Chrome移动仿真不等于iOS/真机。",
@@ -476,7 +565,7 @@
         "integration_commit": "c46225",
         "receipt": "artifacts/local/v0516-f3a-acceptance-current.json"
       },
-      "conclusion": "主控独立核真实perception生产链、同RR字段闭包、正式normalizers、公共输出/隐私；三文件指纹匹配，PG既有全入口及公共投影/工程检查通过，正常合入。",
+      "conclusion": "F3-A内部域只读闭包、PG及公共投影验证通过；写入体积与旧SLO失败未解决。",
       "limitations": [
         "仅只读A；整账户写与HTTP全域体积不变，旧真实生产形态SLOFAIL待新候选复验。"
       ],
@@ -489,12 +578,11 @@
       "id": "v0516-F9-toast-projection-review",
       "object": {
         "kind": "source_manifest",
-        "base_commit": "c46225",
         "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
         "commit": "329d66",
         "integration_commit": "c48e39"
       },
-      "conclusion": "四文件独审GO后实现329d66正常合入develop c48e39，集成公共投影专项通过；toast遮挡关闭，整体性能FAIL保留。",
+      "conclusion": "旧候选toast遮挡局部修复通过；整体性能失败仍保留。",
       "limitations": [
         "仅局部实现GO；完整新候选启动门及整体P75尚未通过。"
       ],
@@ -508,12 +596,11 @@
       "id": "v0516-F9-trend-prefilter-review",
       "object": {
         "kind": "source_manifest",
-        "base_commit": "c48e39",
         "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
         "commit": "5d6d59",
         "integration_commit": "5cec49"
       },
-      "conclusion": "三文件独审与必要原专项/20组等价通过，5d6d59正常合入develop5cec49，集成趋势专项通过；四真实账户输入构建54→14。",
+      "conclusion": "旧候选趋势预筛等价专项通过；局部收益不代表当前摘要进入回答上下文。",
       "limitations": [
         "局部实现GO；HTTP/SLO及最终候选完整快照门待实际复验。"
       ],
@@ -526,16 +613,12 @@
       "id": "v0516-rules-review-remediation",
       "object": {
         "kind": "git_commit",
-        "commit": "f7bd64",
-        "branch": "develop"
+        "commit": "f7bd64"
       },
-      "conclusion": "Owner批准，规则与配套实现已提交并快进接入develop；适用规则commit f7bd64。业务审计SP/UP入库尚未实现。",
+      "conclusion": "旧规则接入回执；当时SP/UP与展示未实施的状态由阶段1/10后续回执承接，不是当前暂停指令。",
       "limitations": [
         "部署回归使用网络/特权命令替身；未安装服务器guard、未实际部署，不证明生产环境或真实npm依赖安装/服务启动。",
-        "SP/UP入库规范已更新，但src/app/user-model.mjs、src/app/perception.mjs及src/shared/ai-context/importance-runtime.mts仍有auditPrompt:false；src/app/ai-runtime.mjs审计append仍写私有NDJSON。业务持久化改造未在本轮实施，不能声称数据库留存闭环。",
-        "用户主动回答与系统调用的思考可见性是本轮规则裁定，应用展示及服务端过滤未在本轮改写或重新验收。",
-        "命令/文件检查不等于执行所有命令；链接检查未请求外网。原四个业务差分及历史事件前缀保留。",
-        "业务开发继续Owner暂停；规则接入结果已落盘，按规则随下一相关提交保存，不单独创建过程提交。"
+        "命令/文件检查不等于执行所有命令；链接检查未请求外网。原四个业务差分及历史事件前缀保留。"
       ],
       "refs": [
         "PROJECT_RULES.md",
@@ -565,14 +648,12 @@
       "id": "v0516-stage1-ai-atomic-audit-verification",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "a7ea41",
         "requirement_id": "reczz28ORRaxSCBn",
         "commit": "1bf34d",
         "tree": "ca53f4",
         "remediation_commit": "533053"
       },
-      "conclusion": "533053补齐数据库审计原行完整费用、按账户/callId差额补账及到期清理保护；真实生产者进程失败退出后由新OS进程补齐已知、零和未知费用，重复恢复幂等，完整PG门通过。文件模式原验收继续有效。",
+      "conclusion": "阶段1/5数据库审计补账在新OS进程恢复及重复恢复验证通过；当前额度准入G2另列未修复。",
       "limitations": [
         "AI_AUDIT_DB_ENABLED 默认仍为0；未部署、未写生产、未执行真实付费 provider 调用。",
         "本结论是阶段研发出口 GO，不是版本发布 GO；v0.5.x NDJSON 兼容保留至 v0.6.0 正式上线。",
@@ -593,13 +674,11 @@
       "id": "v0516-stage2-auth-precise-verification",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "1bf34d",
         "requirement_id": "reczz28ORRaxPAap",
         "commit": "675408",
         "tree": "689b8e"
       },
-      "conclusion": "阶段2原提交675408c完成精准身份端口；后续审查发现撤销会话改密竞态及并发改密锁序死锁。当前阶段5候选已修复并经document竞态、真实PG双连接及完整出口门重新核定通过；原提交快照不单独代表这些失败路径。",
+      "conclusion": "阶段2身份端口及阶段5改密竞态/死锁返修本地验证通过；原提交不独立覆盖后续失败路径。",
       "limitations": [
         "AUTH_QUERY_MODE 默认仍为 document；未部署、未生产放量或写入生产。",
         "生产同规格 PostgreSQL 延迟、共享 NAT、移动端与正式观察未执行，性能结论仅限本机隔离 PostgreSQL 16.14。",
@@ -624,13 +703,11 @@
       "id": "v0516-stage3-account-recovery-verification",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "675408",
         "requirement_id": "reczz28NLb1qzsCc",
         "commit": "422cdd",
         "tree": "51f7e3"
       },
-      "conclusion": "阶段 3 经组合审查与完整出口门通过后形成提交 422cdd0（tree 51f7e34）；既有 F2 状态机在 AccountIdentityPort 多页恢复与 PostgreSQL row 模式下保持成立，两项新增回归已接入当前分支，允许进入阶段 4 只读准备。",
+      "conclusion": "阶段3恢复状态机及PG row组合验证通过；损坏数据恢复仅由JSON专项覆盖。",
       "limitations": [
         "ACCOUNT_RECOVERY_ENABLED 默认仍为 0；未部署、未生产开启或写入生产。",
         "PostgreSQL 组合验证使用正常账户；账户局部坏数据保留与重试由 JSON 全应用及状态机专项覆盖，未在生产形态数据库注入损坏。",
@@ -655,13 +732,11 @@
       "id": "v0516-stage4-ai-queue-verification",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "422cdd",
         "requirement_id": "reczz28NLb1qxhIC",
         "commit": "b1a62a",
         "tree": "68247d"
       },
-      "conclusion": "阶段4经组合审查与完整出口门通过后形成提交b1a62ae（tree 68247d）；既有F5生产实现无需修改，两条新增组合回归和媒体审计硬门修订已接入当前分支，允许进入阶段5只读准备。",
+      "conclusion": "阶段4复用队列实现，新增组合回归与媒体审计门通过；仅证明回执限定范围。",
       "limitations": [
         "AI_QUEUE_ENABLED默认仍为0；未部署、未生产开启或写入生产。",
         "未执行真实付费provider调用；媒体仅验证旧无参gate兼容和审计硬门，不宣称全部媒体支持取消。",
@@ -687,17 +762,15 @@
       "id": "v0516-stage5-review-remediation-verification",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "baseline": "f25154",
         "commit": "533053",
         "tree": "f9c50c",
         "requirement_id": "reczz28ORRaxPiK3"
       },
-      "conclusion": "533053完成R1/R2删块批注删除恢复、任务通知同事务变化与最终取消传播，永久清理保留DB记录并拒绝HTTP删除恢复；R4领域typed command/repositories及coverage类型覆盖通过。本轮阶段1/5返修验收通过，阶段6实现继续暂停。",
+      "conclusion": "阶段5首批删除/恢复及typed命令验证回执；同类遗漏G3/N4仍未修复，旧阶段放行不代表当前完整验收。",
       "limitations": [
         "仅首批命令；producer coverage仍有legacy/partial，F9 v2保持关闭",
-        "阶段6只读；未发布、部署、生产写入、付费provider调用或真机验收",
-        "完整门基于本轮源码指纹；既有F9和首页未提交差分未纳入该提交或UI验收"
+        "完整门基于本轮源码指纹；既有F9和首页未提交差分未纳入该提交或UI验收",
+        "该阶段回执未发布、部署、生产写入、付费provider调用或真机验收。"
       ],
       "refs": [
         "reviews/2026-10-18-f25154-remediation-result.json",
@@ -708,10 +781,9 @@
       "id": "v0516-stage7-local-reading-checkpoint",
       "object": {
         "kind": "source_tree",
-        "tree": "8a68c9",
-        "base": "64f2b4"
+        "tree": "8a68c9"
       },
-      "conclusion": "阶段6bd5f6b返修通过后复核F7未变阅读实现；e801f8完整PG/模块/前端类型及公开专项PASS。既有桌面PG浏览器证据按未变实现复用，阶段7本地出口通过，接续阶段8。",
+      "conclusion": "阶段7阅读实现未变，复用桌面证据并通过集成门；本轮当时未重做鼠标操作。",
       "limitations": [
         "iOS Safari/PWA真机与生产性能未验",
         "整页消费用公开状态发布验证，自动同步接入另属阶段11",
@@ -729,7 +801,7 @@
         "tree": "e801f8",
         "commit": "bd5f6b"
       },
-      "conclusion": "R1/R2/R3本地出口PASS；干净模块门和完整stablePG188.59秒通过，30公开生产者/4任务/HTTP/取消重启/独立恢复/回滚保持。最终关系、完整成本、旧回执、评分索引、日期及源码职责排版审查通过。",
+      "conclusion": "阶段6本地记录级链路出口通过；真实语料与其他任务族范围仍受限制。",
       "limitations": [
         "合成隔离PostgreSQL16.14；94真实样本复用未重跑",
         "合法输入池/许可元数据仍随自身增长；兼容评分生产者及其他任务族成本不声称全部记录级",
@@ -748,7 +820,7 @@
         "receipt": "reviews/2026-10-19-stage8-annotation-counts-result.json",
         "commit": "2119f6"
       },
-      "conclusion": "阶段8本地出口PASS：回复/转换缺目标精准补读与失败重试、新输入/焦点/选区保持；公开ACK/删除失败/不复活/会话专项通过。认证开启隔离PG真实Chrome保存→回复→转换→删除与正式详情回读一致。固定候选模块/类型/前端/协作专项exit0；标准PG四段子套件全部完成通过标记。",
+      "conclusion": "阶段8批注回复/转换/删除及真实Chrome+PG回读通过；标准PG父进程退出码缺失仍保留。",
       "limitations": [
         "最终标准PG后台父进程未保存退出码；日志四段通过且进程退出，不补造exit0",
         "直接Node首轮整套媒体生成失败已保留；标准测试Node入口复验通过",
@@ -767,7 +839,7 @@
         "kind": "source_manifest",
         "receipt": "reviews/2026-10-19-stage9-mobile-annotations-result.json"
       },
-      "conclusion": "本地功能出口PASS；分页摘要替换快照在开始/保存草稿等待/上传等待后均0POST，文字保留按钮恢复；真实Chrome跨段UTF16与菜单坍塌可达、重挂载恢复通过；构建/类型/前端/协作捕获exit0。",
+      "conclusion": "阶段9草稿、选区及Chrome移动批注本地验证通过；PG成功路径复用阶段8，设备证据未补齐。",
       "limitations": [
         "Safari/安装PWA/真机partial；旧native仅模拟器WKWebView，未重跑",
         "真实DOM探针采用隔离数据媒体端口；PG成功路径复用阶段8",
@@ -783,11 +855,9 @@
       "id": "v0516-stage10-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "base_commit": "546d2b",
         "receipt": "reviews/2026-10-19-stage10-reasoning-visibility-result.json"
       },
-      "conclusion": "场景契约、内部/未知隐藏、领域持久回看、私有同行审计、周期双门、默认折叠UI、会话迟到隔离及上下文/默认导出排除通过；完整本地回归、隔离PostgreSQL 16.14和真实Chrome通过。",
+      "conclusion": "阶段10推理可见性、持久化和隔离本地验证通过；历史未知记录继续隐藏。",
       "limitations": [
         "AI_REASONING_UI_ENABLED默认关闭；未执行生产放量。",
         "历史缺少reasoningVisibility的记录保持隐藏，不做批量升级。",
@@ -803,11 +873,9 @@
       "id": "v0516-stage11-local-review",
       "object": {
         "kind": "source_manifest",
-        "branch": "feat/v0.5.16-sync-latency",
-        "base_commit": "0b44a8",
         "receipt": "reviews/2026-10-19-stage11-record-sync-v2-result.json"
       },
-      "conclusion": "v1/v2独立、思绪complete registry、记录批次/有界rebase、frontend.state唯一合并、未知类型拒绝、裁剪后当前状态及真实Chrome草稿生命周期通过；完整回归与隔离PG16通过。",
+      "conclusion": "阶段11 v2本地回归与PG通过；G1/N1–N3独立反例仍成立，不以集合门关闭。",
       "limitations": [
         "真实Chrome单样本响应到可观察paint上界约1.1s，P75≤500ms保持partial。",
         "Safari、安装PWA、移动真机和生产放量未验。",
@@ -828,7 +896,7 @@
         "tree": "6527ca",
         "snapshot": "2d0f7999"
       },
-      "conclusion": "六项必需门全部PASS；四账户脱敏生产快照在PG16.14下default与完整v0516-combined均完成启动、readyz、同库重启、登录读写及任务通知读取，外部副作用0；候选冻结等待Owner。",
+      "conclusion": "旧候选组合门通过记录；READY已撤销，不是当前冻结或发布依据。",
       "limitations": [
         "浏览器P75 500ms仍PARTIAL",
         "Safari/安装PWA/移动真机仍PARTIAL",
@@ -855,7 +923,7 @@
           "static": 2
         }
       },
-      "conclusion": "Owner独立审查确认12项未关闭问题；既有主回归/PG/静态门通过与反例同时成立，撤销READY_WAIT_OWNER并进入返修。",
+      "conclusion": "首轮独立审查12项及撤销READY的来源；当前未解决项以blockers和最新独立证据为准。",
       "limitations": [
         "v2 相关缺陷在开关开启的账户成立；默认关闭不等于功能已修复，不据此声称线上已发生。",
         "十项反例均使用真实导出函数与合成数据/可控异步端口；未冒称真实浏览器或真实 PostgreSQL 的逐项复现。完整 PG 套件另行执行通过。",
@@ -874,10 +942,9 @@
         "kind": "remediation_candidate",
         "candidate": "6dace45",
         "tree": "92b96c",
-        "findingsClosed": 12,
         "snapshot": "50839a6e"
       },
-      "conclusion": "R1-R12返修与主回归、静态门、完整PG16.14、前端影响矩阵及四账户有状态门在6dace45通过；该回执对R1/R6/R9/R11的PASS自评已被2026-10-20独立复审推翻，历史结论保留但不再作为关闭依据，以v0516-rereview-remediation-verified为准。",
+      "conclusion": "旧返修自评中R1/R6/R9/R11的PASS已被独立复审推翻，不作关闭依据。",
       "limitations": [
         "R1/R6/R9/R11自评被独立复审推翻，见v0516-full-independent-rereview-20261020与v0516-rereview-remediation-verified",
         "浏览器P75 500ms仍PARTIAL",
@@ -902,7 +969,7 @@
         "partial": 4,
         "reproducedDefects": 5
       },
-      "conclusion": "独立复审结论：返修不通过。R2/R3/R4/R5/R7/R8/R10/R12在本次审查范围内可关闭；R1/R6/R9/R11仍为部分修复，实际复现F1-F5（列表混入详情投影、旧回收记录被误清理、额度越限、额度重复计数误拦、筛选失效扩大为无关详情重读）。类型契约Q1未通过：删除record-error分支后类型检查仍通过。三分交接仍未完整：摘要与详情、旧记录与完整身份、持久账目与内存额度。",
+      "conclusion": "6dace45独立复审仅关闭8项，4项部分修复并发现F1–F5/Q1；106fc416最新复现见新增独立证据。",
       "limitations": [
         "两项集合门同时成立：主回归、静态检查、完整PG16.14、记录同步、AI/回收站/PWA专项及四账户default/combined有状态门通过，反例也独立复现，因此不能恢复READY_WAIT_OWNER。",
         "R9相关缺陷在v2/额度开关开启路径成立；默认关闭不等于已修复。",
@@ -921,11 +988,9 @@
         "kind": "remediation_candidate",
         "candidate": "106fc41",
         "tree": "e36344",
-        "findingsFixed": 6,
-        "supersedes": "v0516-independent-remediation-verified for R1/R6/R9/R11",
         "snapshot": "50839a6e"
       },
-      "conclusion": "按Owner拍板完成F1-F5与Q1返修：列表只接受摘要契约、详情型增量先失效再按现有机制恢复且保留同版本真冲突校验；回收条目按全量候选父身份核对唯一性、歧义不扩展；额度准入、预留与结算共享同一账户/日期串行边界且一次调用只占一份；恢复仅按实际失效筛选范围执行；同步事件消费者为穷尽switch。主回归、静态门、记录同步/回收/AI/PWA及前端专项、发布保护门与完整PG16.14通过，冻结等待独立复审，不自认READY_WAIT_OWNER。",
+      "conclusion": "106fc416开发返修自评及技术门证据；最新独立审查仍有12项未修复，不能按自报修复数关闭。",
       "limitations": [
         "四账户default/v0516-combined有状态门未在新候选重建（快照绑定旧候选SHA/tree）",
         "浏览器P75 500ms仍PARTIAL",
@@ -941,11 +1006,42 @@
         "git:106fc4",
         "tree:e36344"
       ]
+    },
+    {
+      "id": "v0516-expanded-independent-review-106fc416",
+      "object": {
+        "kind": "independent_code_review",
+        "candidate": "106fc4168eb4ab06411644b03a2c4fd5027b3e74",
+        "tree": "e36344",
+        "observed_at": "2026-10-20T15:00:45.055571+00:00"
+      },
+      "conclusion": "独立复现12项已发现但尚未修复（4 P1、8 P2），详见blockers；已有技术门通过不能替代关闭反例。",
+      "limitations": [
+        "复用原候选独立证据；本轮只核对来源文件未变，未重新运行业务测试或生产探测。",
+        "v2缺陷仅相应开启路径；不冒称线上已发生。生产观察限原取证时间。",
+        "完整浏览器、逐项PG故障矩阵、真实模型回答均未全量复验；最小摘要原型未部署。"
+      ],
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json",
+        "artifacts/local/2026-10-20-expanded-independent-review-106fc416-evidence.zip"
+      ]
     }
   ],
   "records": {
     "events": "coordination/versions/v0.5.16/events.jsonl",
-    "terminal": "coordination/versions/v0.5.16/terminal.json"
+    "terminal": "coordination/versions/v0.5.16/terminal.json",
+    "evidence_scope": "evidence中的object绑定各自候选及当时验证边界，不将旧阶段GO、暂停或生产观测继承为当前指令；当前限制未获关闭证据前保留。当前未解决问题见blockers，历史原文见本次变更事件前值。",
+    "unavailable_evidence": {
+      "count": 8,
+      "note": "原临时引用仍保留；未找到可证明等价的原始替代件，不据此补写通过。",
+      "evidence_ids": [
+        "v0516-F3A-internal-domain-repair",
+        "v0516-F9-production-shape-performance",
+        "v0516-F9-toast-projection-review",
+        "v0516-F9-trend-prefilter-review",
+        "v0516-stateful-global-gate"
+      ]
+    }
   },
   "held_iterations": [
     {

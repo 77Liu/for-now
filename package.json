@@ -165,6 +165,8 @@
     "build:control-plane": "tsc -p tsconfig.control-plane.json",
     "coordination:update": "npm run build:control-plane --silent && node .build/typescript/control-plane/control-plane-update.mjs",
     "test:control-plane": "npm run coordination:update -- self-test",
+    "test:proposal-checker": "tsc --noEmit --strict --skipLibCheck --types node --module NodeNext --target ES2022 .trae/skills/create-technical-proposal/scripts/check_pseudocode.mts .trae/skills/create-technical-proposal/scripts/check_proposal_regression.mts && node .trae/skills/create-technical-proposal/scripts/check_proposal_regression.mts",
+    "gate:stateful-startup": "npm run build:release-state-startup-gate && node .build/typescript/release-state-startup-gate/release-state-startup-gate.mjs verify \"$FOR_NOW_GATE_SNAPSHOT\" --profile=default && node .build/typescript/release-state-startup-gate/release-state-startup-gate.mjs verify \"$FOR_NOW_GATE_SNAPSHOT\" --profile=v0516-combined",
     "test:project-paths": "node scripts/project-path-regression.mjs",
     "test:importance": "npm run build:backend --silent && tsc -p tsconfig.importance-regression.json && node .build/typescript/importance-regression/scripts/importance-scoring-regression.mjs",
     "test:business-identifiers": "npm run build:runtime --silent && tsc -p tsconfig.business-identifiers-regression.json && node .build/typescript/business-identifiers-regression/scripts/business-identifiers-regression.mjs",

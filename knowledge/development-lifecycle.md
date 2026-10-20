@@ -120,4 +120,4 @@ verify → freeze → authorize → publish → deploy → observe → close
 
 改变状态模型、放权策略或分支职责时，先完成一次启动前整理：核对 Git 起点、工作树、未提交差分、远程保护、控制面初始化、测试矩阵、发布/回滚演练和授权策略；完成后再允许新一轮普通开发。历史报告不因新模型改写。
 
-项目记录的提交/tree 摘要按[控制面协议](coordination-control-plane.md)保存对象身份与六位简称；内部 Git 对象标识不截断。
+项目记录的提交/tree 摘要按[控制面协议](coordination-control-plane.md)保存完整对象身份，简称仅用于展示。
