@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 547,
-  "updated_at": "2026-10-20T16:20:45.947Z",
+  "revision": 548,
+  "updated_at": "2026-10-20T16:59:12.910Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,9 +9,9 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "9c4916",
-    "effective_date": "2026-10-18",
-    "source": "Owner 本轮要求提交规则更新并返修；评审呈现、删除恢复、数据库补账与排版规则已提交。"
+    "commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb",
+    "effective_date": "2026-10-21",
+    "source": "Owner 在本独立审查任务明确要求“更新，此刻起生效，做提交前必要改动，提交”。规则和工具已提交；按本次授权登记正式生效基线。"
   },
   "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
@@ -23,7 +23,7 @@
     "description": "既定v0.5.16范围不变；106fc416技术门通过，但独立反例与有状态门缺口仍阻断。当前问题见blockers，历史修复范围见绑定候选回执。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
-      "commit": "0b44a8",
+      "commit": "0b44a8241341ff95b1a7040d4d045924d0711564",
       "source": "阶段10 AI推理可见性边界本地出口提交"
     },
     "inputs": [
@@ -61,8 +61,8 @@
   "candidate": {
     "id": "v0.5.16-106fc41",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "106fc4",
-    "tree": "e36344",
+    "sha": "106fc4168eb4ab06411644b03a2c4fd5027b3e74",
+    "tree": "e363448ecd0a6acbc5f0665235dd418ad9e8b6e6",
     "version": "0.5.16",
     "status": "INDEPENDENT_REVIEW_FAILED",
     "release_frozen": false,
@@ -85,7 +85,9 @@
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
       "production_rollout": "NOT_RUN"
-    }
+    },
+    "base_sha": "0b44a8241341ff95b1a7040d4d045924d0711564",
+    "gate_policy_commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb"
   },
   "authorization": {
     "source": "Owner 2026-10-20独立复审结论：返修有实质进展但复审不通过，8项可关闭、R1/R6/R9/R11部分修复；按拍板继续返修F1-F5与类型契约Q1。不恢复READY_WAIT_OWNER；原外部动作排除保持。",
@@ -239,7 +241,7 @@
     }
   ],
   "next_action": {
-    "description": "处理blockers中的12项独立发现并复审；为修复后候选核对并重建适用有状态门。通过前不得READY_WAIT_OWNER或发布。本次仅规则预调整与状态整理，不派发开发。",
+    "description": "按已生效规则处理 blockers 中的12项独立发现并复审；为修复后候选核对必需门并提供绑定候选的执行回执，补齐有状态门。通过前不得 READY_WAIT_OWNER 或发布。本次规则及工具接入已完成，不因本次提交派发业务开发。",
     "owner": "协调者/独立审查者",
     "requires_owner": true
   },
