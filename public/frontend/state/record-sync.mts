@@ -54,7 +54,10 @@ export type RecordRebase = {
   scopes: RecordScope[];
 };
 
-type ScopeState = Omit<RecordScope, "entities"> & { stale: boolean };
+type ScopeState = Omit<RecordScope, "entities"> & {
+  entities: Map<string, RecordEntityEntry>;
+  stale: boolean;
+};
 type InternalState = {
   context: RecordSyncContext | null;
   cursor: number;
@@ -214,7 +217,7 @@ export function createRecordState() {
     const scope = current.scopes.get(current.activeScopeKey);
     if (!scope) return [];
     return scope.orderedEntityKeys.flatMap(key => {
-      const entry = current.entities.get(key);
+      const entry = scope.entities.get(key);
       return entry && !entry.tombstone && entry.projection ? [clone(entry.projection)] : [];
     });
   };
@@ -228,17 +231,25 @@ export function createRecordState() {
         current = emptyState();
       }
       const scopes = payload.scopes.map(validateScope);
-      const entities = new Map(current.entities);
-      const memberships = new Map(current.scopes);
+      const memberships = new Map<string, ScopeState>();
       for (const scope of scopes) {
-        for (const entry of scope.entities) applyEntry(entities, entry);
-        if (scope.orderedEntityKeys.some(key => !entities.has(key))) {
+        const previous = current.scopes.get(scope.scopeKey);
+        const scopeEntities = previous?.kind === scope.kind
+          ? new Map(previous.entities)
+          : new Map<string, RecordEntityEntry>();
+        for (const entry of scope.entities) applyEntry(scopeEntities, entry);
+        const retainedKeys = new Set(scope.orderedEntityKeys);
+        for (const key of scopeEntities.keys()) {
+          if (!retainedKeys.has(key)) scopeEntities.delete(key);
+        }
+        if (scope.orderedEntityKeys.some(key => !scopeEntities.has(key))) {
           throw problem("同步范围引用了缺失实体", "SYNC_SCOPE_INVALID");
         }
         memberships.set(scope.scopeKey, {
           scopeKey: scope.scopeKey,
           descriptorVersion: scope.descriptorVersion,
           kind: scope.kind,
+          entities: scopeEntities,
           orderedEntityKeys: [...scope.orderedEntityKeys],
           metadata: clone(scope.metadata || {}),
           stale: false
@@ -247,6 +258,11 @@ export function createRecordState() {
       const activeScopeKey = String(payload.activeScopeKey || "");
       if (activeScopeKey && !memberships.has(activeScopeKey)) {
         throw problem("同步活动范围不存在", "SYNC_SCOPE_INVALID");
+      }
+      const entities = new Map<string, RecordEntityEntry>();
+      for (const scope of memberships.values()) {
+        if (scope.kind !== "thoughtDetail") continue;
+        for (const entry of scope.entities.values()) applyEntry(entities, entry);
       }
       current = {
         context: normalizedContext,
@@ -293,21 +309,28 @@ export function createRecordState() {
       const entities = new Map(current.entities);
       const scopes = new Map([...current.scopes].map(([key, scope]) => [
         key,
-        { ...scope, orderedEntityKeys: [...scope.orderedEntityKeys] }
+        {
+          ...scope,
+          entities: new Map(scope.entities),
+          orderedEntityKeys: [...scope.orderedEntityKeys]
+        }
       ]));
       for (const { change, entry } of entries) {
         const key = recordEntityKey(entry.key);
-        const changed = applyEntry(entities, entry);
-        if (!changed) continue;
+        let changed = entities.has(key) ? applyEntry(entities, entry) : false;
         for (const scope of scopes.values()) {
           const member = scope.orderedEntityKeys.includes(key);
+          if (member) changed = applyEntry(scope.entities, entry) || changed;
           if (entry.tombstone && member) {
             scope.orderedEntityKeys = scope.orderedEntityKeys.filter(value => value !== key);
+            scope.entities.delete(key);
           } else if (!member && change.operation === "create") {
             scope.stale = true;
           }
           if (change.refetch !== "none") scope.stale = true;
         }
+        if (entry.tombstone) entities.delete(key);
+        if (!changed) continue;
       }
       current = {
         ...current,
@@ -324,7 +347,9 @@ export function createRecordState() {
     selectLegacyDomain: replaceLegacy,
     selectActiveScope() {
       const scope = current.scopes.get(current.activeScopeKey);
-      return scope ? clone(scope) : null;
+      if (!scope) return null;
+      const { entities: _entities, ...publicScope } = scope;
+      return clone(publicScope);
     },
     inspect() {
       return clone({

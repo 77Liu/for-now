@@ -248,6 +248,7 @@ async function loadRouteState(route,requestSerial=++runtime.routeDataRequestSeri
     const incoming=recordOwned?(({thoughts:_recordThoughts,thoughtPage:_recordPage,...rest})=>rest)(snapshot):snapshot;
     clearRouteLoadFailure(route);mergeStateSnapshot(incoming);runtime.loadedRouteKey=key;runtime.fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);runtime.routeDataReady=true;
     if(recordOwned)await runtime.syncController?.rebaseRecords?.();
+    if(requestSerial!==runtime.routeDataRequestSerial||owner!==runtime.currentUser?.id||session!==sessionSerial||key!==routeDataKey(runtime.pageRouter?.currentRoute()))return false;
     renderVisibleRoute();runtime.runtimeFeatureRegistry?.notifyState(state,new Set(Object.keys(incoming||{})));reconcileActiveThoughtRoute();
     return true
   }catch(error){

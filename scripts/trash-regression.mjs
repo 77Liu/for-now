@@ -125,6 +125,33 @@ const purge = async id => {
   return commands.purge([id], plan.planHash);
 };
 
+const collisionEntries = [
+  {
+    id: "trash-collision-book",
+    type: "book",
+    resourceId: "shared-id",
+    payload: { id: "shared-id" },
+    location: { kind: "collection", collection: "books" }
+  },
+  {
+    id: "trash-unrelated-thought-remark",
+    type: "thoughtRemark",
+    resourceId: "remark",
+    payload: { id: "remark" },
+    location: {
+      kind: "nested",
+      parentCollection: "thoughts",
+      parentId: "shared-id",
+      field: "remarks"
+    }
+  }
+];
+const collisionPlan = trash.expanded(collisionEntries, ["trash-collision-book"]);
+assert.deepEqual(collisionPlan.map(item => item.id), ["trash-collision-book"]);
+trash.purge(collisionPlan);
+assert.equal(collisionEntries[0].permanentlyPurged, true);
+assert.equal(collisionEntries[1].permanentlyPurged, undefined);
+
 reset();
 const note = await repository.update(store => mutations.moveNestedItemToTrash(store, {
   parentCollection: "books", parentId: "book", field: "notes", type: "bookNote", id: "note", annotationTargetKeys: ["note:note"]

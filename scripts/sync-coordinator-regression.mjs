@@ -1436,6 +1436,73 @@ await assert.rejects(recordLoop.pull(), { code: "SYNC_ENTITY_TYPE_UNKNOWN" });
 assert.equal(recordLoop.cursor(), 5, "failed record batch cannot advance cursor");
 recordLoop.stop();
 
+let activeRecordScope = "thoughtDetail:A";
+let holdRecordRebase = false;
+let releaseRecordRebases;
+const recordRebaseGate = new Promise(resolve => { releaseRecordRebases = resolve; });
+let routeRebaseCount = 0;
+const appliedRecordScopes = [];
+const routeRecordLoop = createRecordSyncLoop({
+  request: async (url, options) => {
+    if (url === "/api/v2/sync/rebase") {
+      routeRebaseCount += 1;
+      const requested = JSON.parse(options.body);
+      if (holdRecordRebase) {
+        await recordRebaseGate;
+      }
+      return {
+        highWaterCursor: 7,
+        activeScopeKey: requested.activeScopeKey,
+        scopes: [{
+          scopeKey: requested.activeScopeKey,
+          descriptorVersion: 1,
+          kind: "thoughtDetail",
+          entities: [],
+          orderedEntityKeys: []
+        }]
+      };
+    }
+    return {
+      fromCursor: 7,
+      nextCursor: 7,
+      highWaterCursor: 7,
+      hasMore: false,
+      changes: []
+    };
+  },
+  applyBatch: () => ({ committed: false, staleScopeKeys: [] }),
+  rebaseScopes: payload => {
+    appliedRecordScopes.push(payload.activeScopeKey);
+  },
+  getScopes: () => ({
+    activeScopeKey: activeRecordScope,
+    scopes: [{
+      scopeKey: activeRecordScope,
+      kind: "thoughtDetail",
+      id: activeRecordScope.slice("thoughtDetail:".length)
+    }]
+  }),
+  getScope: () => "session-1",
+  getWorkspace: () => "",
+  storage: { getItem: () => null, setItem() {} },
+  windowTarget: null,
+  documentTarget: null,
+  setTimer: () => 1,
+  clearTimer() {}
+});
+assert.equal(await routeRecordLoop.start("account-a", { recordSync: true }), true);
+holdRecordRebase = true;
+const staleRouteRebase = routeRecordLoop.rebase();
+await Promise.resolve();
+activeRecordScope = "thoughtDetail:B";
+const currentRouteRebase = routeRecordLoop.rebase();
+releaseRecordRebases();
+await Promise.all([staleRouteRebase, currentRouteRebase]);
+assert.equal(routeRebaseCount, 3);
+assert.equal(appliedRecordScopes.at(-1), "thoughtDetail:B");
+assert.equal(appliedRecordScopes.includes("thoughtDetail:A"), true);
+routeRecordLoop.stop();
+
 let speechSyncFixture = null;
 let speechProjectionCalls = 0;
 let speechSnapshotReads = 0;

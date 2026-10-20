@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 532,
-  "updated_at": "2026-10-19T17:48:51.236Z",
+  "revision": 534,
+  "updated_at": "2026-10-20T03:35:43.421Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -16,11 +16,11 @@
   "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
     "id": "v0.5.16",
-    "status": "READY_WAIT_OWNER",
-    "phase": "候选2d97b58六项必需门全部通过，已冻结等待Owner发布决定"
+    "status": "BUILDING",
+    "phase": "独立审查P1四项已返修并通过专项，进入同步生命周期P2"
   },
   "scope": {
-    "description": "v0.5.16十一阶段开发与最终组合验收完成；2d97b58/6527ca在完整回归、release旅程、发布保护及四账户default+完整组合有状态门通过，保持设备/P75/生产边界。",
+    "description": "Owner独立审查固定2d97b585业务树确认12项未关闭问题（4项P1、8项P2）；按R1-R3/R11阻断项→R4-R8/R12同步闭环→R9/R10跨域一致性严格串行返修。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8",
@@ -31,7 +31,9 @@
       "docs/technical-proposals/reczz28ORRaxQJDJ-应新规重做F9记录级同步-技术方案.md",
       "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md",
       "knowledge/design-contracts.md",
-      "knowledge/test-impact-matrix.md"
+      "knowledge/test-impact-matrix.md",
+      "/Users/bytedance/Documents/Codex/2026-10-18/new-chat/outputs/2026-10-20-v0516-full-independent-review.json",
+      "/Users/bytedance/Documents/Codex/2026-10-18/new-chat/outputs/2026-10-20-v0516-full-review-evidence.zip"
     ],
     "exclusions": [
       "不删除v1 endpoint，不实现未评审的PWA/Service Worker强制升级或v1退场",
@@ -55,15 +57,64 @@
     ],
     "plan_ref": "docs/versions/v0.5.16/README.md"
   },
-  "active_tasks": [],
+  "active_tasks": [
+    {
+      "id": "v0516-independent-review-remediation",
+      "mode": "implementation",
+      "owner": "主控串行",
+      "requirement_id": "v0.5.16-independent-review-R1-R12",
+      "baseline": "820444c",
+      "candidate_baseline": "2d97b585",
+      "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效；Owner 2026-10-20独立审查拍板",
+      "status": "IN_PROGRESS_SYNC_LIFECYCLE_P2",
+      "allowed_write_set": [
+        "public/frontend/state/record-sync.mts",
+        "public/frontend/shared/incremental-sync.mts",
+        "public/frontend/app/runtime/data-runtime.mjs",
+        "public/frontend/app/runtime/data-sync-runtime.mjs",
+        "src/app/sync-projection.mts",
+        "src/app/runtime-http-wiring.mjs",
+        "src/modules/trash/index.mjs",
+        "src/modules/ai/usage.mjs",
+        "src/app/record-commands/task-preparation.mts",
+        "src/app/record-commands/task-transitions.mts",
+        "src/shared/persistence/store-mapping.mjs",
+        "src/shared/persistence/record-sync-repository.mts",
+        "src/modules/content-attachments/service.mjs",
+        "src/shared/** (仅任务目标共享契约与同步维护入口)",
+        "src/app/** (仅同步保留维护装配与必要公开端口)",
+        "scripts/** (仅R1-R12直接失败回归与受影响现有专项)",
+        "tsconfig*.json",
+        "package.json",
+        "knowledge/module-boundaries.json",
+        "docs/technical-proposals/** (仅开发明细/实际契约回填)",
+        "reviews/2026-10-20-v0516-independent-remediation.md",
+        "reviews/2026-10-20-v0516-independent-remediation-result.json",
+        "coordination/**"
+      ],
+      "forbidden_write_set": [
+        ".trae/skills/tell-me/**",
+        "生产业务数据与凭据",
+        "push/tag/Release/Preview/生产部署",
+        "真实付费provider调用",
+        "94条真实样本重建或重跑",
+        "放宽生产者硬门或以全账户重读替代有界恢复"
+      ],
+      "shared_owner": "主控唯一串行写者",
+      "integration_order": "R1→R2→R3→R11→R6/R7/R8/R4/R5→R9/R10/R12→类型闭包→组合回归与有状态门",
+      "acceptance": "12项独立反例均形成失败先行回归并通过；保留真实冲突/删除/隔离/事务边界；完整npm/check/PG/record-sync/frontend及候选有状态门通过后才可重新固定候选。",
+      "review_ref": "reviews/2026-10-20-v0516-independent-remediation.md",
+      "receipt_ref": "reviews/2026-10-20-v0516-independent-remediation-result.json"
+    }
+  ],
   "candidate": {
     "id": "v0.5.16-2d97b58",
     "branch": "feat/v0.5.16-sync-latency",
     "sha": "2d97b5",
     "tree": "6527ca",
     "version": "0.5.16",
-    "status": "READY_FOR_RELEASE_WAIT_OWNER",
-    "release_frozen": true,
+    "status": "REMEDIATION_REQUIRED",
+    "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
       "static_module_contracts",
@@ -74,19 +125,19 @@
     ],
     "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
     "quality_gate": {
-      "release_metadata_pwa": "PASS",
-      "static_module_contracts": "PASS",
-      "full_regression": "PASS",
-      "release_journeys": "PASS",
-      "release_protection": "PASS",
-      "stateful_postgres_startup": "PASS",
+      "release_metadata_pwa": "PENDING",
+      "static_module_contracts": "PENDING",
+      "full_regression": "PENDING",
+      "release_journeys": "PENDING",
+      "release_protection": "PENDING",
+      "stateful_postgres_startup": "PENDING",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
       "production_rollout": "NOT_RUN"
     }
   },
   "authorization": {
-    "source": "Owner 2026-10-19：继续夜间持续开发，未收到Owner停止指令持续推进已评审剩余需求；早晨08:30收尾并汇报需要Owner决策的评审表。沿既定11阶段串行开发，不扩大外部动作授权。",
+    "source": "Owner 2026-10-20独立审查明确结论：继续返修，暂不按READY_WAIT_OWNER放行；逐一参考Owner拍板完成12项bug修复与代码优化。原外部动作排除保持。",
     "allowed_actions": [
       "当前及后继已评审需求的严格串行本地实现、自查、审查、受影响验证与本地提交",
       "当前阶段必要schema、迁移、运行时、测试及技术方案回填",
@@ -115,11 +166,91 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [],
+  "blockers": [
+    {
+      "id": "v0516-independent-r4",
+      "priority": "P2",
+      "status": "CONFIRMED_UNRESOLVED",
+      "reason": "同步缓存没有随范围切换释放",
+      "refs": [
+        "public/frontend/state/record-sync.mts:230"
+      ]
+    },
+    {
+      "id": "v0516-independent-r5",
+      "priority": "P2",
+      "status": "CONFIRMED_UNRESOLVED",
+      "reason": "v2路由读取思绪数据后丢弃，再请求同一数据",
+      "refs": [
+        "public/frontend/app/runtime/data-runtime.mjs:245"
+      ]
+    },
+    {
+      "id": "v0516-independent-r6",
+      "priority": "P2",
+      "status": "CONFIRMED_UNRESOLVED",
+      "reason": "正文更新后搜索成员未重新判断",
+      "refs": [
+        "src/app/sync-projection.mts:213",
+        "public/frontend/state/record-sync.mts:302"
+      ]
+    },
+    {
+      "id": "v0516-independent-r7",
+      "priority": "P2",
+      "status": "CONFIRMED_UNRESOLVED",
+      "reason": "v2 报错仍显示已同步",
+      "refs": [
+        "public/frontend/app/runtime/data-sync-runtime.mjs:67",
+        "public/frontend/shared/incremental-sync.mts:512"
+      ]
+    },
+    {
+      "id": "v0516-independent-r8",
+      "priority": "P2",
+      "status": "CONFIRMED_UNRESOLVED",
+      "reason": "范围恢复失败绕过退避",
+      "refs": [
+        "public/frontend/shared/incremental-sync.mts:447",
+        "public/frontend/shared/incremental-sync.mts:512"
+      ]
+    },
+    {
+      "id": "v0516-independent-r9",
+      "priority": "P2",
+      "status": "CONFIRMED_UNRESOLVED",
+      "reason": "并发日额度检查可能超发",
+      "refs": [
+        "src/modules/ai/usage.mjs:369",
+        "src/shared/persistence/postgres-runtime.mjs:282"
+      ]
+    },
+    {
+      "id": "v0516-independent-r10",
+      "priority": "P2",
+      "status": "CONFIRMED_UNRESOLVED",
+      "reason": "漂移区图片批注任务恢复丢目标",
+      "refs": [
+        "src/app/record-commands/task-transitions.mts:54",
+        "src/shared/persistence/store-mapping.mjs:132",
+        "src/app/record-commands/task-preparation.mts:125"
+      ]
+    },
+    {
+      "id": "v0516-independent-r12",
+      "priority": "P2",
+      "status": "CONFIRMED_UNRESOLVED",
+      "reason": "配置的同步日志保留上限没有执行入口",
+      "refs": [
+        "src/config/index.mjs:106",
+        "src/shared/persistence/record-sync-repository.mts:210"
+      ]
+    }
+  ],
   "next_action": {
-    "description": "等待Owner独立发布决定；未经新授权不得push、tag、Release、Preview或生产部署。",
-    "owner": "Owner",
-    "requires_owner": true
+    "description": "修复R6搜索成员失效、R7 v2健康事件、R8恢复退避、R4缓存释放和R5重复正文读取，并将同步事件契约纳入TypeScript检查。",
+    "owner": "主控",
+    "requires_owner": false
   },
   "runtime": {
     "version": "v0.5.15",
@@ -826,6 +957,32 @@
         "reviews/2026-10-19-v0516-combination-acceptance-result.json",
         "artifacts/local/v0516-startup-snapshot-2d97b58.json",
         "git:2d97b5"
+      ]
+    },
+    {
+      "id": "v0516-full-independent-review-20261020",
+      "object": {
+        "kind": "independent_code_review",
+        "candidate": "2d97b585",
+        "tree": "6527ca",
+        "findings": {
+          "P1": 4,
+          "P2": 8,
+          "executed": 10,
+          "static": 2
+        }
+      },
+      "conclusion": "Owner独立审查确认12项未关闭问题；既有主回归/PG/静态门通过与反例同时成立，撤销READY_WAIT_OWNER并进入返修。",
+      "limitations": [
+        "v2 相关缺陷在开关开启的账户成立；默认关闭不等于功能已修复，不据此声称线上已发生。",
+        "十项反例均使用真实导出函数与合成数据/可控异步端口；未冒称真实浏览器或真实 PostgreSQL 的逐项复现。完整 PG 套件另行执行通过。",
+        "R11 依赖跨集合同 ID 的旧/导入数据；逻辑永久清理后用户无法恢复，但数据库记录保留。",
+        "未访问生产业务数据、未执行生产写入、外部发布或真实付费模型调用。",
+        "真机 Safari/安装 PWA、生产负载与 P75≤500ms 的缺口继续保留，不计入 12 项已确认代码问题。"
+      ],
+      "refs": [
+        "/Users/bytedance/Documents/Codex/2026-10-18/new-chat/outputs/2026-10-20-v0516-full-independent-review.json",
+        "/Users/bytedance/Documents/Codex/2026-10-18/new-chat/outputs/2026-10-20-v0516-full-review-evidence.zip"
       ]
     }
   ],

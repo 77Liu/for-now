@@ -101,6 +101,7 @@ export function createDataSyncRuntime({
     request: (url, options) => requestV1(url, options),
     getScope: syncScope,
     getWorkspace: syncWorkspace,
+    getRouteGeneration: () => runtime.routeDataRequestSerial,
     getSignal: () => sessionScope.capture().signal,
     applySnapshot: applyIncrementalSnapshot,
     resnapshot: async consumer => {

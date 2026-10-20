@@ -159,6 +159,15 @@ const foldedBlockLifecycle = await projectRecordChanges({
 });
 assert.equal(foldedBlockLifecycle.length, 1);
 assert.equal(foldedBlockLifecycle[0].operation, "delete");
+await assert.rejects(projectRecordChanges({
+  rows: [{
+    ...stored(4, 0, "thoughtChain", "already-deleted"),
+    operation: "create",
+    scopeKeys: ["thought:list", "thought:already-deleted"]
+  }],
+  reader: { detail: async () => null },
+  registry
+}), { code: "SYNC_REBASE_REQUIRED" });
 
 await assert.rejects(projectRecordChanges({
   rows: [stored(5, 0, "unregistered", "bad")],
@@ -208,6 +217,28 @@ assert.equal(rebased.scopes[1].entities.length, 2);
 assert.equal(rebased.scopes[1].orderedEntityKeys[1].includes("block-a"), true);
 assert.equal(rebased.scopes[0].entities[0].deliveryCursor, 7);
 assert.match(rebasedAfterId, /"root-before"/);
+
+const projectionState = createRecordState();
+projectionState.rebaseScopes({
+  highWaterCursor: rebased.highWaterCursor,
+  activeScopeKey: rebased.scopes[0].scopeKey,
+  scopes: [rebased.scopes[0]]
+}, { accountId: "projection-account", workspace: "", generation: 1 });
+assert.equal(projectionState.selectLegacyDomain("thoughts")[0].content, "summary");
+projectionState.rebaseScopes({
+  highWaterCursor: rebased.highWaterCursor,
+  activeScopeKey: rebased.scopes[1].scopeKey,
+  scopes: rebased.scopes
+}, { accountId: "projection-account", workspace: "", generation: 1 });
+assert.equal(projectionState.selectLegacyDomain("thoughts")[0].content, "question");
+assert.equal(projectionState.inspect().entities.length, 2);
+projectionState.rebaseScopes({
+  highWaterCursor: rebased.highWaterCursor,
+  activeScopeKey: rebased.scopes[0].scopeKey,
+  scopes: [rebased.scopes[0]]
+}, { accountId: "projection-account", workspace: "", generation: 1 });
+assert.equal(projectionState.selectLegacyDomain("thoughts")[0].content, "summary");
+assert.equal(projectionState.inspect().entities.length, 0);
 
 const context = { accountId: "account-a", workspace: "", generation: 1 };
 const store = createRecordState();

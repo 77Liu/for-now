@@ -15,6 +15,33 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
     item.type === type && item.resourceId === resourceId
   ))) || null;
   const get = (entries, id) => accessible(entries.find(item => item.id === id));
+  const resourceIdentity = entry => {
+    const location = entry?.location || {};
+    if (location.kind === "collection" && location.collection) {
+      return JSON.stringify([location.collection, entry.resourceId]);
+    }
+    if (location.kind === "thoughtChain") {
+      return JSON.stringify(["thoughts", entry.resourceId]);
+    }
+    if (location.kind === "nested" && location.parentCollection && location.field) {
+      return JSON.stringify([`${location.parentCollection}.${location.field}`, entry.resourceId]);
+    }
+    return "";
+  };
+  const parentIdentity = (entry, knownParents) => {
+    const location = entry?.location || {};
+    const collection = location.parentCollection
+      || (location.kind === "collection" ? location.collection : "");
+    if (collection && location.parentId) {
+      return JSON.stringify([collection, location.parentId]);
+    }
+    if (!location.parentId) return "";
+    const legacyMatches = [...knownParents].filter(value => {
+      try { return JSON.parse(value)[1] === location.parentId; }
+      catch { return false; }
+    });
+    return legacyMatches.length === 1 ? legacyMatches[0] : "";
+  };
 
   function add(entries, type, payload, location) {
     const deletedAt = now();
@@ -35,14 +62,20 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
     for (const id of requestedIds) get(entries, id);
     entries = visible(entries);
     const selected = new Set(requestedIds), parentIds = new Set();
-    for (const entry of entries) if (selected.has(entry.id)) parentIds.add(entry.resourceId);
+    for (const entry of entries) {
+      if (!selected.has(entry.id)) continue;
+      const identity = resourceIdentity(entry);
+      if (identity) parentIds.add(identity);
+    }
     let changed = true;
     while (changed) {
       changed = false;
       for (const entry of entries) {
-        if (!selected.has(entry.id) && entry.location?.parentId && parentIds.has(entry.location.parentId)) {
+        const parent = parentIdentity(entry, parentIds);
+        if (!selected.has(entry.id) && parent && parentIds.has(parent)) {
           selected.add(entry.id);
-          parentIds.add(entry.resourceId);
+          const identity = resourceIdentity(entry);
+          if (identity) parentIds.add(identity);
           changed = true;
         }
       }

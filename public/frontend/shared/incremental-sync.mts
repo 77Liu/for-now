@@ -325,7 +325,12 @@ type RecordScopeRequest = {
   activeScopeKey: string;
   scopes: Record<string, unknown>[];
 };
-type RecordConsumption = SyncConsumption & { generation: number };
+type RecordConsumption = SyncConsumption & {
+  generation: number;
+  routeGeneration: string;
+  requestKey: string;
+  request: RecordScopeRequest;
+};
 type RecordSyncLoopOptions = {
   request(url: string, options: {
     method?: string;
@@ -348,6 +353,7 @@ type RecordSyncLoopOptions = {
   pollMs?: number;
   getScope?: () => string;
   getWorkspace?: () => string;
+  getRouteGeneration?: () => string | number;
   getSignal?: () => AbortSignal | undefined;
   onStatus?: (event: Status) => void;
   setTimer?: (callback: () => void, delay: number) => unknown;
@@ -367,6 +373,7 @@ export function createRecordSyncLoop(options: RecordSyncLoopOptions) {
     ?? (timer => globalThis.clearTimeout(timer as ReturnType<typeof setTimeout>));
   const getScope = options.getScope ?? (() => "");
   const getWorkspace = options.getWorkspace ?? (() => "");
+  const getRouteGeneration = options.getRouteGeneration ?? (() => "");
   const getSignal = options.getSignal ?? (() => undefined);
   const onStatus = options.onStatus ?? (() => {});
   const now = options.now ?? (() => Date.now());
@@ -380,13 +387,28 @@ export function createRecordSyncLoop(options: RecordSyncLoopOptions) {
   } | null = null;
   let stopped = true, enabled = false;
   let unsubscribeSignal = () => {};
+  const requestIdentity = (request: RecordScopeRequest, routeGeneration: string) => (
+    JSON.stringify([routeGeneration, request])
+  );
   const context = (): RecordConsumption => {
-    const expected = { owner, workspace, scope, generation: lifecycle };
+    const request = structuredClone(options.getScopes());
+    const routeGeneration = String(getRouteGeneration());
+    const requestKey = requestIdentity(request, routeGeneration);
+    const expected = {
+      owner,
+      workspace,
+      scope,
+      generation: lifecycle,
+      routeGeneration,
+      requestKey,
+      request
+    };
     return {
       ...expected,
       isCurrent: () => !stopped && owner === expected.owner
         && workspace === getWorkspace() && scope === getScope()
         && lifecycle === expected.generation
+        && requestIdentity(options.getScopes(), String(getRouteGeneration())) === expected.requestKey
     };
   };
   const cursorKey = () => `cike-record-sync-v2:${owner}:${encodeURIComponent(workspace)}`;
@@ -425,11 +447,10 @@ export function createRecordSyncLoop(options: RecordSyncLoopOptions) {
   };
   const runRebase = async (consumer: RecordConsumption, controller: AbortController) => {
     if (!consumer.isCurrent()) return false;
-    const requestScopes = options.getScopes();
     const signal = AbortSignal.any([controller.signal, getSignal() || new AbortController().signal]);
     const response = await request("/api/v2/sync/rebase", {
       method: "POST",
-      body: JSON.stringify(requestScopes),
+      body: JSON.stringify(consumer.request),
       signal
     });
     if (!consumer.isCurrent()) return false;
@@ -447,6 +468,8 @@ export function createRecordSyncLoop(options: RecordSyncLoopOptions) {
   const rebase = (consumer = context()): Promise<boolean> => {
     if (!consumer.isCurrent()) return Promise.resolve(false);
     if (recovery?.context.isCurrent()) return recovery.promise;
+    recovery?.controller.abort();
+    recovery = null;
     clearPoll();
     cancel();
     const controller = new AbortController();

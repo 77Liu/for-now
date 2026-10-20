@@ -123,6 +123,11 @@ const syncProblem = (message: string, code: string) => Object.assign(new Error(m
   code,
   statusCode: 503
 });
+const syncRebaseProblem = (message: string) => Object.assign(new Error(message), {
+  code: "SYNC_REBASE_REQUIRED",
+  statusCode: 409,
+  details: { rebaseRequired: true }
+});
 
 export function createRecordSyncEntityRegistry({ thoughtsComplete }: {
   thoughtsComplete: boolean;
@@ -306,9 +311,8 @@ export async function projectRecordChanges({
         )
       ));
       if (covered) continue;
-      throw syncProblem(
-        `思绪同步公开投影缺失：${row.entityType}/${row.entityId}/${row.operation}`,
-        "SYNC_ENTITY_PROJECTION_FAILED"
+      throw syncRebaseProblem(
+        `思绪同步历史对象已不存在，需要恢复当前范围：${row.entityType}/${row.entityId}/${row.operation}`
       );
     }
     const tombstone = directDelete;
