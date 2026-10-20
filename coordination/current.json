@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 537,
-  "updated_at": "2026-10-20T04:12:59.547Z",
+  "revision": 539,
+  "updated_at": "2026-10-20T04:19:07.974Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,7 +17,7 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "独立审查R1-R12全部返修并通过主回归/PG/静态门，准备固定新候选"
+    "phase": "候选ddc5edb有状态快照发现历史关系兼容缺口，已最小返修"
   },
   "scope": {
     "description": "Owner独立审查固定2d97b585业务树确认12项未关闭问题（4项P1、8项P2）；按R1-R3/R11阻断项→R4-R8/R12同步闭环→R9/R10跨域一致性严格串行返修。",
@@ -66,7 +66,7 @@
       "baseline": "820444c",
       "candidate_baseline": "2d97b585",
       "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效；Owner 2026-10-20独立审查拍板",
-      "status": "READY_FOR_CANDIDATE_COMMIT",
+      "status": "REMEDIATING_RELATION_COMPATIBILITY",
       "allowed_write_set": [
         "public/frontend/state/record-sync.mts",
         "public/frontend/shared/incremental-sync.mts",
@@ -105,14 +105,15 @@
       "integration_order": "R1→R2→R3→R11→R6/R7/R8/R4/R5→R9/R10/R12→类型闭包→组合回归与有状态门",
       "acceptance": "12项独立反例均形成失败先行回归并通过；保留真实冲突/删除/隔离/事务边界；完整npm/check/PG/record-sync/frontend及候选有状态门通过后才可重新固定候选。",
       "review_ref": "reviews/2026-10-20-v0516-independent-remediation.md",
-      "receipt_ref": "reviews/2026-10-20-v0516-independent-remediation-result.json"
+      "receipt_ref": "reviews/2026-10-20-v0516-independent-remediation-result.json",
+      "implementation_commit": "ddc5ed"
     }
   ],
   "candidate": {
-    "id": "v0.5.16-2d97b58",
+    "id": "v0.5.16-ddc5edb",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "2d97b5",
-    "tree": "6527ca",
+    "sha": "ddc5ed",
+    "tree": "6712a7",
     "version": "0.5.16",
     "status": "REMEDIATION_REQUIRED",
     "release_frozen": false,
@@ -127,11 +128,11 @@
     "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
     "quality_gate": {
       "release_metadata_pwa": "PENDING",
-      "static_module_contracts": "PENDING",
-      "full_regression": "PENDING",
-      "release_journeys": "PENDING",
+      "static_module_contracts": "PASS",
+      "full_regression": "PASS",
+      "release_journeys": "PASS",
       "release_protection": "PENDING",
-      "stateful_postgres_startup": "PENDING",
+      "stateful_postgres_startup": "FAIL",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
       "production_rollout": "NOT_RUN"
@@ -167,9 +168,20 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [],
+  "blockers": [
+    {
+      "id": "v0516-remediation-relation-key-compatibility",
+      "priority": "P1",
+      "status": "REMEDIATED_PENDING_NEW_CANDIDATE",
+      "reason": "R10漂移候选校验曾同时改变历史subtarget relation key，生产只读快照关系等价门拒绝；已分离运行时候选位置与持久兼容键。",
+      "refs": [
+        "src/shared/persistence/store-mapping.mjs",
+        "scripts/release-state-startup-gate.mts:1494-1510"
+      ]
+    }
+  ],
   "next_action": {
-    "description": "提交R1-R12返修实现形成精确候选；在候选工作树执行真实Chrome前端旅程、回执审查及四账户有状态启动门。",
+    "description": "提交历史关系兼容返修形成替代候选；重采四账户快照并复验default/combined，随后补精确候选PG与前端影响矩阵。",
     "owner": "主控",
     "requires_owner": false
   },
