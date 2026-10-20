@@ -321,8 +321,15 @@ export function createDataSyncRuntime({
     const scope = request.scopes[0];
     if (!scope) return false;
     const detail = scope.kind === "thoughtDetail";
-    if (detail && state.thoughtPage?.kind !== "detail") return false;
-    if (!detail && state.thoughtPage?.kind !== "list") return false;
+    const page: any = state.thoughtPage;
+    if (detail) {
+      // 只有服务端真正装载过的详情（带 found）才能作为恢复依据；默认投影没有该字段。
+      if (page?.kind !== "detail" || typeof page.found !== "boolean") return false;
+    } else {
+      if (page?.kind !== "list") return false;
+      // 已装载的列表页一定携带请求游标；默认空状态与被清空的投影不具备该字段，必须重新恢复。
+      if (!Object.hasOwn(page, "requestCursor")) return false;
+    }
     const rootId = detail ? String(scope.id ?? "") : "";
     const values = (state.thoughts || []).filter((item: any) => !item?._sync && (detail
       ? item.id === rootId || item.relatedTo === rootId

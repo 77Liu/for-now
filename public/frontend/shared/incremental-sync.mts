@@ -544,8 +544,9 @@ export function createRecordSyncLoop(options: RecordSyncLoopOptions) {
         if (!Number.isSafeInteger(next) || next < cursor) throw new Error("记录同步游标无效");
         const changes = Array.isArray(batch.changes) ? batch.changes as Array<Record<string, unknown>> : [];
         // 恢复范围由状态层按实际失效筛选范围决定；只要当前范围没失效，就不额外做整体读。
+        // 重复批次可能带回不大于当前值的游标，保存时只前进不回退，避免重复拉取同一段变化。
         if (applied.staleScopeKeys.length) await rebase(consumer);
-        else saveCursor(next);
+        else if (next > cursor) saveCursor(next);
         failures = 0;
         onStatus({
           type: "record-pull",

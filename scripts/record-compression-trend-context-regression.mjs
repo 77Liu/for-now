@@ -331,4 +331,50 @@ for (const invalid of [
     /accountId|asOf|时区|timestamp/);
 }
 
+// S1：多日正文同时超预算时必须先裁最旧日期，最新一天始终保留。
+const newestFirstStore = createEmptyStore();
+for (const localDate of localDates) {
+  newestFirstStore.thoughts.push({
+    id: `order-question-${localDate}`, type: "question",
+    content: `当天原文 ${localDate}。`, authorType: "user", origin: "manual",
+    occurredAt: `${localDate}T08:00:00.000Z`, occurredOn: localDate, version: 1
+  });
+}
+for (const localDate of localDates) {
+  const input = buildRecordCompressionInput(newestFirstStore, {
+    accountId: "account-a", localDate, timezone: DEFAULT_RECORD_TIMEZONE,
+    asOf, promptVersion: RECORD_COMPRESSION_PROMPT_VERSION, sourcePermission: () => true, hash
+  });
+  const userSource = input.userSources.find(source => source.recordId === `order-question-${localDate}`);
+  const rows = count => Array.from({ length: count }, (_, index) => ({
+    text: `${localDate}｜${`观察正文${index}。`.repeat(30)}`,
+    nature: "user_fact",
+    sourceIds: [userSource.sourceId]
+  }));
+  const summary = parseRecordCompressionOutput({
+    schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+    daily: { observations: rows(2), metricKeys: [], missing: [] },
+    thoughtsIdeas: {
+      focus: rows(1).map(row => ({ ...row, nature: "user_subjective" })),
+      changes: [],
+      openQuestions: []
+    },
+    other: { themes: rows(1), collectedQuotes: [] }
+  }, { input, id: `order-summary-${localDate}`, generatedAt: asOf });
+  Object.assign(summary, {
+    localDate, timezone: DEFAULT_RECORD_TIMEZONE, promptVersion: RECORD_COMPRESSION_PROMPT_VERSION,
+    periodStart: input.window.start, periodEnd: input.window.endExclusive, sourceRefs: input.sourceManifest
+  });
+  newestFirstStore.recordCompressions.push(summary);
+}
+const orderedTrend = currentRecordCompressionTrend(newestFirstStore, trendOptions);
+assert.equal(orderedTrend.payload.contextTruncated, true, "multi-day text must exceed the trend budget");
+assert.equal(orderedTrend.payload.days[0].localDate, localDates.at(-1));
+assert.ok(orderedTrend.payload.userFacts.some(row => row.localDate === localDates.at(-1)
+  && row.text.startsWith(`${localDates.at(-1)}｜`)), "the newest day must survive trend trimming");
+assert.equal(orderedTrend.payload.userFacts.some(row => row.localDate === localDates[0]), false,
+  "the oldest day must be trimmed first");
+const trimmedDates = orderedTrend.payload.days.map(day => day.localDate);
+assert.deepEqual(trimmedDates, [...trimmedDates].sort().reverse(), "retained days must stay newest-first");
+
 console.log("Record-compression trend context source separation and AI-reference regression passed.");

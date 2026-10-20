@@ -38,9 +38,11 @@ async function serviceActive(name) {
   }
 }
 
+// 中台 readyz 内部等待主应用聚合（中台侧上限 5s）；外层监控必须更宽，避免把一次慢聚合误报成服务不可用。
+const readyTimeoutMs = () => Math.max(5000, numberEnv("MONITOR_READY_TIMEOUT_MS", 15000));
 async function ready(url) {
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(readyTimeoutMs()) });
     return response.ok;
   } catch {
     return false;
@@ -224,7 +226,7 @@ function logSummary(entry, kind) {
     if (Number.isFinite(duration) && duration >= 0) result.durationMs = Math.round(duration);
     const errorCode = safeKey(entry.error?.code || entry.errorCode, 80);
     if (errorCode) result.errorCode = errorCode;
-    const errorName = safeKey(entry.error?.name, 40);
+    const errorName = safeKey(typeof entry.error === "string" ? entry.error : entry.error?.name, 40);
     if (errorName) result.error = errorName;
   } else {
     const method = safeKey(entry.method, 12);

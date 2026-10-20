@@ -818,6 +818,37 @@ export function createRecordCompressionService({
       const validatedWaiting = await backgroundAi.promoteInternalBudgetWaiting(0);
       invalidatedBudgetWaitCount += validatedWaiting.invalidatedCount || 0;
 
+      // 等待者优先不能让当日失败修复拿不到槽位：本轮若需修复失败日报，先给它保留一个位置。
+      const primaryCandidate = primaryCandidates[0];
+      const primaryNeedsRepair = Boolean(primaryCandidate && list((await repository.read()).aiTasks).some(task => (
+        task?.kind === RECORD_COMPRESSION_TASK_KIND
+        && task.status === "failed"
+        && (task.payload?.operation || DAILY_OPERATION) === DAILY_OPERATION
+        && task.payload?.localDate === primaryCandidate.localDate
+        && (!primaryCandidate.windowKey || task.payload?.windowKey === primaryCandidate.windowKey)
+      )));
+      const supplementSlotLimit = Math.max(0, queueLimit - (primaryNeedsRepair ? 1 : 0));
+      let supplementPromotedThisScan = false;
+      // 轮转机会：已跨日等待的历史补充先占本轮槽位，避免被当期日报长期挤到队尾；
+      // 同一自然日内仍先保证当期日报，不能因补充长期占位而延迟当日摘要。
+      const waitingHistorical = list((await repository.read()).aiTasks).some(task => (
+        task?.kind === RECORD_COMPRESSION_TASK_KIND
+        && task.status === WAITING_FOR_BUDGET_STATUS
+        && task.payload?.operation === HISTORICAL_SUPPLEMENT_OPERATION
+        && dateKeyInTimezone(task.createdAt, DEFAULT_RECORD_TIMEZONE) < today
+      ));
+      if (waitingHistorical) {
+        const promotions = await backgroundAi.promoteInternalBudgetWaiting(
+          Math.min(Math.max(0, supplementSlotLimit - queuedTaskIds.length), await remainingBudgetQueueCapacity()),
+          { operation: HISTORICAL_SUPPLEMENT_OPERATION }
+        );
+        queuedTaskIds.push(...list(promotions.taskIds));
+        promotedBudgetWaitCount += promotions.queuedCount || 0;
+        invalidatedBudgetWaitCount += promotions.invalidatedCount || 0;
+        historicalSupplementQueuedCount += promotions.queuedCount || 0;
+        supplementPromotedThisScan = true;
+      }
+
       for (const candidate of primaryCandidates) {
         const candidatePromotions = await backgroundAi.promoteInternalBudgetWaiting(
           Math.min(
@@ -876,17 +907,19 @@ export function createRecordCompressionService({
         await observeBudgetWait(result);
       }
 
-      const supplementPromotions = await backgroundAi.promoteInternalBudgetWaiting(
-        Math.min(
-          Math.max(0, queueLimit - queuedTaskIds.length),
-          await remainingBudgetQueueCapacity()
-        ),
-        { operation: HISTORICAL_SUPPLEMENT_OPERATION }
-      );
-      queuedTaskIds.push(...list(supplementPromotions.taskIds));
-      promotedBudgetWaitCount += supplementPromotions.queuedCount || 0;
-      invalidatedBudgetWaitCount += supplementPromotions.invalidatedCount || 0;
-      historicalSupplementQueuedCount += supplementPromotions.queuedCount || 0;
+      if (!supplementPromotedThisScan) {
+        const supplementPromotions = await backgroundAi.promoteInternalBudgetWaiting(
+          Math.min(
+            Math.max(0, queueLimit - queuedTaskIds.length),
+            await remainingBudgetQueueCapacity()
+          ),
+          { operation: HISTORICAL_SUPPLEMENT_OPERATION }
+        );
+        queuedTaskIds.push(...list(supplementPromotions.taskIds));
+        promotedBudgetWaitCount += supplementPromotions.queuedCount || 0;
+        invalidatedBudgetWaitCount += supplementPromotions.invalidatedCount || 0;
+        historicalSupplementQueuedCount += supplementPromotions.queuedCount || 0;
+      }
 
       if (queuedTaskIds.length < queueLimit
         || await waitingBudgetCount() < RECORD_COMPRESSION_MAX_BUDGET_WAITING_TASKS_PER_ACCOUNT) {

@@ -1622,6 +1622,66 @@ assert.equal(recoveryPosts, 4);
 assert.deepEqual(recoveryDelays.slice(0, 4), [1000, 2000, 4000, 8000]);
 failingRecoveryLoop.stop();
 
+// G1：失效批次恢复首次失败后，重试定时器必须再次恢复；恢复成功后的重复批次不得让游标回退。
+const staleRecoveryTimers = [];
+const staleRecoveryStorage = new Map();
+let staleRecoveryPosts = 0, staleBatchStale = true;
+const staleRecoveryLoop = createRecordSyncLoop({
+  request: async url => {
+    if (url === "/api/v2/sync/rebase") {
+      staleRecoveryPosts += 1;
+      if (staleRecoveryPosts === 2) {
+        throw Object.assign(new Error("temporary rebase failure"), { code: "SYNC_V2_UNAVAILABLE" });
+      }
+      return {
+        data: { highWaterCursor: staleRecoveryPosts === 1 ? 5 : 6, activeScopeKey: "thoughtPage:active", scopes: [] }
+      };
+    }
+    const requested = Number(new URL(url, "http://local").searchParams.get("cursor"));
+    return {
+      data: { fromCursor: requested, nextCursor: requested, highWaterCursor: 6, hasMore: false, changes: [] }
+    };
+  },
+  applyBatch: async () => ({ committed: false, staleScopeKeys: staleBatchStale ? ["thoughtPage:active"] : [] }),
+  rebaseScopes: async () => ({ committed: true }),
+  getScopes: () => ({
+    activeScopeKey: "thoughtPage:active",
+    scopes: [{ scopeKey: "thoughtPage:active", kind: "thoughtPage" }]
+  }),
+  getScope: () => "session-1",
+  getWorkspace: () => "",
+  storage: {
+    getItem: key => staleRecoveryStorage.get(key) ?? null,
+    setItem: (key, value) => staleRecoveryStorage.set(key, value)
+  },
+  windowTarget: null,
+  documentTarget: null,
+  pollMs: 1000,
+  setTimer: (callback, delay) => {
+    staleRecoveryTimers.push(callback);
+    return staleRecoveryTimers.length;
+  },
+  clearTimer() {}
+});
+await assert.rejects(
+  staleRecoveryLoop.start("account-a", { recordSync: true }),
+  { code: "SYNC_V2_UNAVAILABLE" }
+);
+assert.equal(staleRecoveryPosts, 2, "start must recovery first, then fail on the stale batch");
+const staleRetry = staleRecoveryTimers.shift();
+assert.ok(staleRetry);
+staleRetry();
+await flush();
+await flush();
+await flush();
+assert.equal(staleRecoveryPosts, 3, "the retry timer must re-run the failed recovery");
+assert.equal(staleRecoveryLoop.cursor(), 6);
+staleBatchStale = false;
+await staleRecoveryLoop.pull();
+assert.equal(staleRecoveryLoop.cursor(), 6, "a duplicate batch must never move the cursor backwards");
+assert.equal(staleRecoveryStorage.get("cike-record-sync-v2:account-a:"), "6");
+staleRecoveryLoop.stop();
+
 const healthRuntime = {
   featureFlags: {},
   syncHealth: { lastPullMs: 0 },

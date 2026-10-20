@@ -168,6 +168,29 @@ function applyEntry(candidate: Map<string, RecordEntityEntry>, incoming: RecordE
   return true;
 }
 
+// 列表摘要由根与全部子块派生；子块仅在影响摘要字段或增删时使列表失效。
+const listSummaryFields = new Set(["content", "text", "tags", "disposition", "occurredAt", "createdAt"]);
+function rootIdOf(key: RecordEntityIdentity): string {
+  if (key.entityType === "thoughtChain") return key.entityId;
+  return key.parentType === "thoughtChain" ? key.parentId || "" : "";
+}
+function listRootKey(rootId: string): string {
+  return recordEntityKey({
+    entityType: "thoughtChain",
+    entityId: rootId,
+    parentType: null,
+    parentId: null
+  });
+}
+function scopeRootId(scope: ScopeState): string {
+  for (const entry of scope.entities.values()) {
+    if (entry.key.entityType === "thoughtChain") return entry.key.entityId;
+  }
+  // 空详情（found:false）仍以范围键中的根身份为准，避免把同根后续新增判成无关。
+  const prefix = "thoughtDetail:";
+  return scope.scopeKey.startsWith(prefix) ? scope.scopeKey.slice(prefix.length) : "";
+}
+
 function validateScope(value: RecordScope): RecordScope {
   const scopeKey = text(value?.scopeKey, "范围键");
   const kind = value?.kind;
@@ -302,7 +325,14 @@ export function createRecordState() {
         };
       });
       if (nextCursor <= current.cursor) {
-        return { committed: false, cursor: current.cursor, staleScopeKeys: [] };
+        // 重复批次不推进游标，但已失效范围仍未恢复；继续上报它们，调用方才能再次恢复而不是直接保存游标。
+        return {
+          committed: false,
+          cursor: current.cursor,
+          staleScopeKeys: [...current.scopes.values()]
+            .filter(scope => scope.stale)
+            .map(scope => scope.scopeKey)
+        };
       }
       if (fromCursor !== current.cursor) {
         throw problem("同步批次游标不连续", "SYNC_CURSOR_DISCONTINUITY");
@@ -318,24 +348,38 @@ export function createRecordState() {
       ]));
       for (const { change, entry } of entries) {
         const key = recordEntityKey(entry.key);
+        const rootId = rootIdOf(change.key);
         let changed = entities.has(key) ? applyEntry(entities, entry) : false;
         for (const scope of scopes.values()) {
           const member = scope.orderedEntityKeys.includes(key);
+          let belongs = false;
           if (scope.kind === "thoughtPage") {
             // 列表范围只接受摘要契约；增量载荷恒为详情形态，合并会污染列表缓存并触发伪冲突，改为失效后按有界 rebase 恢复。
-            if (member || change.operation === "create") scope.stale = true;
+            if (change.key.entityType === "thoughtChain") {
+              if (member || change.operation === "create") scope.stale = true;
+            } else if (rootId && scope.orderedEntityKeys.includes(listRootKey(rootId))
+              && (change.operation !== "update"
+                || change.changedFields.some(field => listSummaryFields.has(field)))) {
+              // 子块增删改变数量与预览；改正文/标签/判定等摘要字段时列表同样需要重新取摘要。
+              scope.stale = true;
+            }
           } else {
-            if (member) changed = applyEntry(scope.entities, entry) || changed;
-            if (entry.tombstone && member) {
-              scope.orderedEntityKeys = scope.orderedEntityKeys.filter(value => value !== key);
-              scope.entities.delete(key);
-            } else if (!member && change.operation === "create") {
+            const detailRootId = scopeRootId(scope);
+            belongs = Boolean(rootId && detailRootId === rootId);
+            if (member) {
+              changed = applyEntry(scope.entities, entry) || changed;
+              if (entry.tombstone) {
+                scope.orderedEntityKeys = scope.orderedEntityKeys.filter(value => value !== key);
+                scope.entities.delete(key);
+              }
+            } else if (belongs && change.operation !== "update") {
+              // 当前详情自己的子块新增/删除必须重读；其它根的同类变化保持无关。
               scope.stale = true;
             }
           }
           if (change.refetch === "page" && scope.kind === "thoughtPage") {
             scope.stale = true;
-          } else if (change.refetch === "detail" && scope.kind === "thoughtDetail") {
+          } else if (change.refetch === "detail" && scope.kind === "thoughtDetail" && belongs) {
             scope.stale = true;
           } else if (change.refetch === "filter" && scope.kind === "thoughtPage"
             && Boolean(String(scope.metadata?.query || "").trim())) {

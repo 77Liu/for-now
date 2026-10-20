@@ -15,7 +15,8 @@ import {
 import { rebaseRecordSyncScopes } from "../src/app/sync-rebase.mjs";
 import {
   createRecordState,
-  recordEntityKey
+  recordEntityKey,
+  type RecordRebase
 } from "../public/frontend/state/record-sync.mjs";
 
 const stored = (
@@ -382,6 +383,17 @@ const listIncrement = store.applyRecordBatch({
 assert.deepEqual(listIncrement.staleScopeKeys, ["thoughtPage:active"]);
 assert.equal(store.selectLegacyDomain("thoughts")[0].content, "old");
 
+// G1：重复批次不推进游标，但必须继续上报仍失效的范围；否则恢复失败后调用方会误保存游标。
+const duplicateBatch = store.applyRecordBatch({
+  fromCursor: 5,
+  nextCursor: 5,
+  highWaterCursor: 5,
+  hasMore: false,
+  changes: []
+}, context);
+assert.equal(duplicateBatch.committed, false);
+assert.deepEqual(duplicateBatch.staleScopeKeys, ["thoughtPage:active"]);
+
 // 同水位列表恢复：失效范围不继承旧缓存，因此不会因投影形态差异报伪冲突。
 store.rebaseScopes({
   highWaterCursor: 5,
@@ -467,5 +479,134 @@ assert.throws(() => store.applyRecordBatch({
 }, { accountId: "account-b", workspace: "", generation: 1 }), {
   code: "SYNC_STATE_CONTEXT_MISMATCH"
 });
+
+// N2/N3：子块增删影响列表摘要；无关根的子块新增不得让当前详情重读。
+const scopedState = createRecordState();
+const pageScopeKey = "thoughtPage:active";
+const detailScopeKey = "thoughtDetail:root-a";
+const rootBKey = recordEntityKey({
+  entityType: "thoughtChain",
+  entityId: "root-b",
+  parentType: null,
+  parentId: null
+});
+const blockAKey = recordEntityKey({
+  entityType: "thoughtBlock",
+  entityId: "block-a1",
+  parentType: "thoughtChain",
+  parentId: "root-a"
+});
+const seedScopes = (): RecordRebase => ({
+  highWaterCursor: 10,
+  activeScopeKey: detailScopeKey,
+  scopes: [{
+    scopeKey: pageScopeKey,
+    descriptorVersion: 1,
+    kind: "thoughtPage",
+    entities: [
+      {
+        key: { entityType: "thoughtChain", entityId: "root-a", parentType: null, parentId: null },
+        version: 2,
+        deliveryCursor: 10,
+        projection: { id: "root-a", content: "A", blockCount: 1 },
+        tombstone: false
+      },
+      {
+        key: { entityType: "thoughtChain", entityId: "root-b", parentType: null, parentId: null },
+        version: 1,
+        deliveryCursor: 10,
+        projection: { id: "root-b", content: "B", blockCount: 0 },
+        tombstone: false
+      }
+    ],
+    orderedEntityKeys: [rootKey, rootBKey]
+  }, {
+    scopeKey: detailScopeKey,
+    descriptorVersion: 1,
+    kind: "thoughtDetail",
+    entities: [
+      {
+        key: { entityType: "thoughtChain", entityId: "root-a", parentType: null, parentId: null },
+        version: 2,
+        deliveryCursor: 10,
+        projection: { id: "root-a", content: "A" },
+        tombstone: false
+      },
+      {
+        key: { entityType: "thoughtBlock", entityId: "block-a1", parentType: "thoughtChain", parentId: "root-a" },
+        version: 1,
+        deliveryCursor: 10,
+        projection: { id: "block-a1", content: "idea" },
+        tombstone: false
+      }
+    ],
+    orderedEntityKeys: [rootKey, blockAKey],
+    metadata: { found: true }
+  }]
+});
+scopedState.rebaseScopes(seedScopes(), context);
+// N2：丢弃子块会改变根摘要，列表必须失效，而不是继续保留旧预览。
+const removedBlock = scopedState.applyRecordBatch({
+  fromCursor: 10,
+  nextCursor: 11,
+  highWaterCursor: 11,
+  hasMore: false,
+  changes: [{
+    cursor: 11,
+    ordinal: 0,
+    key: { entityType: "thoughtBlock", entityId: "block-a1", parentType: "thoughtChain", parentId: "root-a" },
+    version: 2,
+    operation: "delete",
+    changedFields: [],
+    scopeKeys: ["thought:list", "thought:root-a"],
+    summary: null,
+    tombstone: true,
+    refetch: "none"
+  }]
+}, context);
+assert.deepEqual(removedBlock.staleScopeKeys, [pageScopeKey]);
+assert.deepEqual(scopedState.selectActiveScope()?.orderedEntityKeys, [rootKey]);
+
+scopedState.rebaseScopes(seedScopes(), context);
+// N3：无关根的子块新增与当前详情无关，不得触发重读。
+const unrelatedBlock = scopedState.applyRecordBatch({
+  fromCursor: 10,
+  nextCursor: 11,
+  highWaterCursor: 11,
+  hasMore: false,
+  changes: [{
+    cursor: 11,
+    ordinal: 0,
+    key: { entityType: "thoughtBlock", entityId: "block-c1", parentType: "thoughtChain", parentId: "root-c" },
+    version: 1,
+    operation: "create",
+    changedFields: [],
+    scopeKeys: ["thought:list", "thought:root-c"],
+    summary: { id: "block-c1", content: "other" },
+    tombstone: false,
+    refetch: "none"
+  }]
+}, context);
+assert.deepEqual(unrelatedBlock.staleScopeKeys, []);
+// 同根子块新增需要重读当前详情，同时刷新列表摘要。
+const sameRootBlock = scopedState.applyRecordBatch({
+  fromCursor: 11,
+  nextCursor: 12,
+  highWaterCursor: 12,
+  hasMore: false,
+  changes: [{
+    cursor: 12,
+    ordinal: 0,
+    key: { entityType: "thoughtBlock", entityId: "block-a2", parentType: "thoughtChain", parentId: "root-a" },
+    version: 1,
+    operation: "create",
+    changedFields: [],
+    scopeKeys: ["thought:list", "thought:root-a"],
+    summary: { id: "block-a2", content: "more" },
+    tombstone: false,
+    refetch: "none"
+  }]
+}, context);
+assert.deepEqual(sameRootBlock.staleScopeKeys, [pageScopeKey, detailScopeKey]);
 
 console.log("Record sync v2 regression passed.");

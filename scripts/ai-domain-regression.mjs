@@ -656,6 +656,38 @@ try {
   assert.equal(typeof handoffThird, "function");
   handoffThird.release();
 
+  // G2：持久基数与本地已记录增量必须相加，已有用量不得吞掉待入账的新调用。
+  const g2Calls = { calls: 5, knownCostCny: 0, unknownCostCalls: 0 };
+  const g2CallQuota = createAiUsageService({
+    repository: { readDaySummary: async () => ({ ...g2Calls }) },
+    getAccountKey: () => "quota-baseline-calls",
+    dailyCallLimit: 6,
+    dailyCostLimitCny: 100,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const g2Retained = await g2CallQuota.reserveAttempt();
+  g2Retained.retain({ costKnown: true, costCny: 0 });
+  await assert.rejects(g2CallQuota.reserveAttempt(), { code: "AI_DAILY_CALL_LIMIT" });
+  g2Calls.calls = 6;
+  await assert.rejects(g2CallQuota.reserveAttempt(), { code: "AI_DAILY_CALL_LIMIT" });
+
+  const g2Cost = { calls: 0, knownCostCny: 5, unknownCostCalls: 0 };
+  const g2CostQuota = createAiUsageService({
+    repository: { readDaySummary: async () => ({ ...g2Cost }) },
+    getAccountKey: () => "quota-baseline-cost",
+    dailyCallLimit: 100,
+    dailyCostLimitCny: 6.4,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const g2RetainedCost = await g2CostQuota.reserveAttempt();
+  g2RetainedCost.retain({ costKnown: true, costCny: 1 });
+  await assert.rejects(g2CostQuota.reserveAttempt({ estimatedCostCny: 0.5 }), { code: "AI_DAILY_COST_LIMIT" });
+  // 持久账目追上本地写账后仍只计一次：6 + 0.3 < 6.4 应放行，而不是按双份基数拒绝。
+  g2Cost.knownCostCny = 6;
+  (await g2CostQuota.reserveAttempt({ estimatedCostCny: 0.3 })).release();
+
   let auditFails = false, usageFails = false;
   const auditRecords = [], usageRecords = [], events = [];
   const audit = createAiAudit({

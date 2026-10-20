@@ -183,7 +183,7 @@ assert.equal(ambiguousLegacyEntries[0].permanentlyPurged, true);
 assert.equal(ambiguousLegacyEntries[1].permanentlyPurged, undefined);
 assert.equal(ambiguousLegacyEntries[2].permanentlyPurged, undefined);
 
-// 单一候选身份时，旧记录仍按既有机制正常扩展。
+// 单一候选身份时，旧记录仍按既有机制正常扩展；但类型与父集合不匹配的条目不得被串选。
 const uniqueLegacyEntries = [
   {
     id: "unique-book",
@@ -191,6 +191,13 @@ const uniqueLegacyEntries = [
     resourceId: "unique-id",
     payload: { id: "unique-id" },
     location: { kind: "collection", collection: "books" }
+  },
+  {
+    id: "unique-legacy-note",
+    type: "bookNote",
+    resourceId: "unique-note",
+    payload: { id: "unique-note" },
+    location: { kind: "nested", parentId: "unique-id", field: "notes" }
   },
   {
     id: "unique-legacy-remark",
@@ -202,7 +209,7 @@ const uniqueLegacyEntries = [
 ];
 assert.deepEqual(
   trash.expanded(uniqueLegacyEntries, ["unique-book"]).map(item => item.id),
-  ["unique-book", "unique-legacy-remark"]
+  ["unique-book", "unique-legacy-note"]
 );
 
 
@@ -226,6 +233,24 @@ assert.equal(restoredBook.annotations[0].replies[0].text, "原回复");
 assert.equal(restoredBook.annotationDrift[0].originalContext.focus, "正文");
 assert.equal(restoredBook.version, 6);
 assert.equal((await commands.restore(note.id)).missing, true);
+
+// N4：漂移区批注随子项移入回收站时，相关任务同样必须取消。
+reset();
+await repository.update(store => {
+  store.aiTasks.push(
+    { id: "running-note-mark", kind: "annotationShenji", resourceType: "book", targetId: "book", subtargetId: "mark", status: "running" },
+    { id: "running-note-drift", kind: "annotationShenji", resourceType: "book", targetId: "book", subtargetId: "drift", status: "running" }
+  );
+});
+const driftNote = await repository.update(store => mutations.moveNestedItemToTrash(store, {
+  parentCollection: "books", parentId: "book", field: "notes", type: "bookNote", id: "note", annotationTargetKeys: ["note:note"]
+}));
+assert.deepEqual(driftNote.dependents.annotations.map(item => item.id), ["mark"]);
+assert.deepEqual(driftNote.dependents.annotationDrift.map(item => item.id), ["drift"]);
+const afterDriftDelete = await repository.read();
+assert.equal(afterDriftDelete.aiTasks.find(item => item.id === "running-note-mark").status, "cancelling");
+assert.equal(afterDriftDelete.aiTasks.find(item => item.id === "running-note-drift").status, "cancelling");
+assert.deepEqual(cancelledRunningTasks, ["running-note-mark", "running-note-drift"]);
 
 const block = await repository.update(store => mutations.moveThoughtBlockToTrash(store, "answer"));
 assert.equal((await repository.read()).thoughts[0].annotations.length, 0);

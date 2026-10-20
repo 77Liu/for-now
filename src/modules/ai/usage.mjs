@@ -368,6 +368,9 @@ export function createAiUsageService({ repository, getAccountKey, dailyCallLimit
         active: new Map(),
         recordedCalls: 0,
         recordedCostCny: 0,
+        // 本进程首次读到的持久基数与本地已记录增量必须相加，不能取两者最大值，否则已有用量会吞掉待入账的新调用。
+        baselineCalls: null,
+        baselineCostCny: null,
         tail: Promise.resolve()
       };
       quotaStates.set(key, state);
@@ -397,8 +400,17 @@ export function createAiUsageService({ repository, getAccountKey, dailyCallLimit
       // 准入读取、预留与结算交接共用同一账户/日期串行边界，旧读数不再能基于过期快照同时放行。
       return serialize(state, async () => {
         const persisted = await persistedDay(day);
-        const knownCalls = Math.max(Number(persisted.calls) || 0, state.recordedCalls);
-        const knownCostCny = Math.max(Number(persisted.knownCostCny) || 0, state.recordedCostCny);
+        if (state.baselineCalls == null) state.baselineCalls = Number(persisted.calls) || 0;
+        if (state.baselineCostCny == null) state.baselineCostCny = Number(persisted.knownCostCny) || 0;
+        // 持久账目可能已含本地写账，也可能因复制/落盘延迟暂时落后；取并集上界，既不漏计也不重复计数。
+        const knownCalls = Math.max(
+          Number(persisted.calls) || 0,
+          state.baselineCalls + state.recordedCalls
+        );
+        const knownCostCny = Math.max(
+          Number(persisted.knownCostCny) || 0,
+          state.baselineCostCny + state.recordedCostCny
+        );
         const reservedCostCny = [...state.active.values()].reduce((sum, item) => sum + item.costCny, 0);
         if (knownCalls + state.active.size >= dailyCallLimit) {
           throw Object.assign(new Error("今日 AI 调用次数已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_CALL_LIMIT" });

@@ -28,6 +28,18 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
     }
     return "";
   };
+  // 旧记录可能只带 parentId；按条目类型限定可归属的顶层集合，避免同 ID 的书籍/日记等被串选。
+  const nestedParentCollections = new Map([
+    ["thoughtBlock", ["thoughts"]],
+    ["thoughtRemark", ["thoughts"]],
+    ["thoughtFollowUp", ["thoughts"]],
+    ["annotation", ["thoughts", "captures", "journals", "chats", "analyses", "books", "quotes"]],
+    ["annotationDrift", ["thoughts", "captures", "journals", "chats", "analyses", "books", "quotes"]],
+    ["bookNote", ["books"]],
+    ["journalReflection", ["journals"]],
+    ["captureAudio", ["captures"]],
+    ["habitCheckin", ["habits"]]
+  ]);
   const parentIdentity = (entry, candidateParents) => {
     const location = entry?.location || {};
     const collection = location.parentCollection
@@ -37,9 +49,13 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
     }
     if (!location.parentId) return "";
     // 旧记录缺少所属集合；必须对全部候选身份做唯一性核对，仅凭已选父项推断会把无关条目并入同 ID 的其它类型。
+    const allowedCollections = nestedParentCollections.get(entry?.type);
     const legacyMatches = [...candidateParents].filter(value => {
-      try { return JSON.parse(value)[1] === location.parentId; }
-      catch { return false; }
+      try {
+        const [candidateCollection, candidateId] = JSON.parse(value);
+        if (candidateId !== location.parentId) return false;
+        return !allowedCollections || allowedCollections.includes(String(candidateCollection).split(".")[0]);
+      } catch { return false; }
     });
     return legacyMatches.length === 1 ? legacyMatches[0] : "";
   };

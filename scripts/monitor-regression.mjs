@@ -27,7 +27,8 @@ await Promise.all([
 let isReady = false;
 const messages = [];
 const mock = http.createServer(async (req, res) => {
-  if (req.url === "/readyz") {
+  if (req.url === "/readyz" || req.url === "/slow-readyz") {
+    if (req.url === "/slow-readyz") await new Promise(resolve => setTimeout(resolve, 300));
     res.writeHead(isReady ? 200 : 503);
     return res.end(JSON.stringify({ ok: isReady }));
   }
@@ -80,6 +81,7 @@ try {
     BACKUP_SUCCESS_STAMP: backupStamp,
     MONITOR_READY_URL: `${base}/readyz`,
     MONITOR_PLATFORM_READY_URL: `${base}/readyz`,
+    MONITOR_READY_TIMEOUT_MS: "6000",
     MONITOR_STATE_FILE: stateFile,
     MONITOR_HOST_METRICS_FILE: path.join(root, "host-metrics.json"),
     MONITOR_PLATFORM_JOURNAL_CONTEXT_FILE: path.join(root, "platform-journal-context.json"),
@@ -97,20 +99,20 @@ try {
   });
   const contextNow = Date.now();
   const day = new Date(contextNow).toISOString().slice(0, 10);
+  // 中台真实日志契约：错误类名在顶层 message，没有嵌套 error 对象。
   const journalSummary = summarizePlatformJournal(JSON.stringify({
     __REALTIME_TIMESTAMP: String((contextNow - 500) * 1000),
     PRIORITY: "3",
     MESSAGE: JSON.stringify({
-      event: "request.failed", module: "readiness", level: "error", statusCode: 500,
-      error: { code: "PLATFORM_NOT_READY", name: "Error", message: "PRIVATE_JOURNAL_MESSAGE" },
-      userId: "PRIVATE_JOURNAL_USER"
+      level: "error", event: "request.failed", requestId: "PRIVATE_REQUEST_ID", statusCode: 500,
+      message: "TimeoutError"
     })
   }), { now: contextNow });
   assert.equal(journalSummary.length, 1);
   assert.equal(journalSummary[0].event, "request.failed");
   assert.equal(journalSummary[0].status, 500);
-  assert.equal(journalSummary[0].errorCode, "PLATFORM_NOT_READY");
-  assert.doesNotMatch(JSON.stringify(journalSummary), /PRIVATE_JOURNAL/);
+  assert.equal(journalSummary[0].error, "TimeoutError");
+  assert.doesNotMatch(JSON.stringify(journalSummary), /PRIVATE_/);
   await fs.writeFile(process.env.MONITOR_PLATFORM_JOURNAL_CONTEXT_FILE, JSON.stringify({
     schemaVersion: 1,
     available: true,
@@ -176,7 +178,7 @@ try {
   assert.match(messages[0].content.text, /系统日志（近10分钟，最多10条；含应用日志及中台 journal 摘要）/);
   assert.match(messages[0].content.text, /storage\.connection_failed/);
   assert.match(messages[0].content.text, /platform-journal/);
-  assert.match(messages[0].content.text, /PLATFORM_NOT_READY/);
+  assert.match(messages[0].content.text, /TimeoutError/);
   assert.match(messages[0].content.text, /操作日志（近10分钟，最多10条）/);
   const systemSection = messages[0].content.text.split("系统日志（近10分钟，最多10条；含应用日志及中台 journal 摘要）：\n")[1].split("\n操作日志")[0];
   const operationSection = messages[0].content.text.split("操作日志（近10分钟，最多10条）：\n")[1].split("\n主机指标")[0];
@@ -204,6 +206,13 @@ try {
   await fs.writeFile(path.join(dataDir, "ai-usage.json"), JSON.stringify({ entries: [] }));
   const healthy = await collectHealth({ dataDir, backupDir, backupStamp, readyUrl: `${base}/readyz` });
   assert.deepEqual(healthy.issues, []);
+  // 外层等待必须覆盖中台内部聚合窗口：慢 300ms 的 readyz 在配置的 6s 内仍应视为就绪。
+  const delayedReady = await collectHealth({
+    dataDir, backupDir, backupStamp,
+    readyUrl: `${base}/slow-readyz`,
+    platformReadyUrl: `${base}/slow-readyz`
+  });
+  assert.deepEqual(delayedReady.issues, []);
   await runMonitor();
   assert.equal(messages.length, 2);
   assert.match(messages[1].content.text, /已恢复/);

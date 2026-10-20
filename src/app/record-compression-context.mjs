@@ -746,7 +746,8 @@ function contextTrendFrom(store, {
     promptVersion: RECORD_COMPRESSION_PROMPT_VERSION,
     asOf
   });
-  const dayRows = trend.days.filter(day => day.summary).map(day => ({
+  // 正文按新到旧排列：预算不足时先裁旧日期，最新一天始终保留。
+  const dayRows = trend.days.filter(day => day.summary).reverse().map(day => ({
     localDate: day.localDate,
     ...(day.slots ? { slots: day.slots, missingSlots: day.missingSlots } : {}),
     completeness: day.completeness,
@@ -780,7 +781,7 @@ function contextTrendFrom(store, {
   const sources = [];
   const displaySources = [];
   const citationSources = [];
-  for (const localDate of localDates) {
+  for (const localDate of [...localDates].reverse()) {
     const input = currentInputs.get(localDate);
     const byId = new Map(list(input?.userSources).map(source => [source.sourceId, source]));
     const sourceManifest = new Map(list(input?.sourceManifest).map(source => [source.sourceId, source]));
@@ -949,7 +950,8 @@ function separateTrendContext(store, trendResult, {
 
   const quoteSources = [];
   const quoteCitationSources = [];
-  for (const localDate of sevenLocalDatesForTimezone(timezone, asOf)) {
+  // 外部引文同样按新到旧分配有限引用名额。
+  for (const localDate of [...sevenLocalDatesForTimezone(timezone, asOf)].reverse()) {
     const selected = readyInputsForDate(store, {
       accountId,
       localDate,

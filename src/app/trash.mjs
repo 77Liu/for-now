@@ -171,8 +171,9 @@ export function createTrashMutations({
     const entry = trash.add(store.trash, type, payload, { kind: "nested", parentCollection, parentId, field, index });
     entry.dependents = annotations.detachTargets(parent, annotationTargetKeys);
     const runningTaskIds = cancelSubtargetTasks(store, parentCollection, parentId, [
-      ...(field === "followUps" || field === "annotations" ? [id] : []),
-      ...(entry.dependents.annotations || []).map(item => item.id)
+      ...(field === "followUps" || field === "annotations" || field === "annotationDrift" ? [id] : []),
+      ...(entry.dependents.annotations || []).map(item => item.id),
+      ...(entry.dependents.annotationDrift || []).map(item => item.id)
     ]);
     advance(parent);
     return afterCommit(entry, runningTaskIds);
@@ -198,7 +199,10 @@ export function createTrashMutations({
     const dependents = root ? annotations.detachTargets(root, [`${item.type}:${item.id}`]) : { annotations: [], annotationDrift: [] };
     const runningTaskIds = [
       ...cancelTargetTasks(store, "thoughts", id),
-      ...cancelSubtargetTasks(store, "thoughts", item.relatedTo, (dependents.annotations || []).map(value => value.id))
+      ...cancelSubtargetTasks(store, "thoughts", item.relatedTo, [
+        ...(dependents.annotations || []).map(value => value.id),
+        ...(dependents.annotationDrift || []).map(value => value.id)
+      ])
     ];
     const entry = moveCollectionItemToTrash(store, "thoughts", "thoughtBlock", id);
     entry.location.parentId = item.relatedTo;
