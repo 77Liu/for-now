@@ -22,14 +22,43 @@ export const ANNOTATION_TARGET_FIELDS = Object.freeze([
 ] as const);
 
 export const TASK_TARGET_COLLECTIONS: Readonly<Record<string, string>> = Object.freeze({
+  checkin: "checkins",
+  dailyRecord: "dailyRecords",
   thought: "thoughts",
   capture: "captures",
   journal: "journals",
   chat: "chats",
   analysis: "analyses",
   book: "books",
-  quote: "quotes"
+  keepsake: "keepsakes",
+  quote: "quotes",
+  experiment: "experiments",
+  recordCompression: "recordCompressions",
+  customMetric: "customMetrics",
+  trash: "trash",
+  attachmentCleanup: "attachmentCleanup",
+  aiTask: "aiTasks",
+  notification: "notifications",
+  action: "actions",
+  habit: "habits",
+  habitCheckin: "habitCheckins",
+  feedback: "feedback",
+  validationLedger: "validationLedger",
+  userClaim: "userClaims",
+  modelUnknown: "modelUnknowns",
+  evidenceSource: "evidenceSources",
+  evidencePermission: "evidencePermissions",
+  perceptionEvent: "perceptionEvents"
 });
+export const TASK_RECOVERY_COLLECTIONS = Object.freeze([
+  "thoughts",
+  "captures",
+  "journals",
+  "chats",
+  "analyses",
+  "books",
+  "quotes"
+]);
 const keyOf = (parts: unknown[]) => JSON.stringify(parts);
 
 export function taskTargetDescriptor(

@@ -11,7 +11,7 @@ import type {
 import { recordObjectKey } from "../../shared/persistence/record-command-types.mjs";
 import { RECORD_QUERY_LIMITS, recordKeyBatches } from "../../shared/persistence/record-query-limits.mjs";
 import {
-  TASK_TARGET_COLLECTIONS,
+  TASK_RECOVERY_COLLECTIONS,
   taskTargetDescriptor
 } from "../../shared/task-targets/index.mjs";
 import { supportsRecordTask } from "./task-transitions.mjs";
@@ -206,7 +206,7 @@ export function createTaskPreparationQueries(dependencies: Dependencies) {
         })
       : {};
     const snapshot: RecordStore = {
-      ...Object.fromEntries(Object.values(TASK_TARGET_COLLECTIONS).map(collection => [collection, []])),
+      ...Object.fromEntries(TASK_RECOVERY_COLLECTIONS.map(collection => [collection, []])),
       aiTasks: [],
       evidenceSources: [],
       perceptionEvents: [],

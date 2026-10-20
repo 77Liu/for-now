@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 539,
-  "updated_at": "2026-10-20T04:19:07.974Z",
+  "revision": 541,
+  "updated_at": "2026-10-20T04:23:20.544Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,7 +17,7 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "BUILDING",
-    "phase": "候选ddc5edb有状态快照发现历史关系兼容缺口，已最小返修"
+    "phase": "候选4c842c0快照发现任务资源类型表收窄，已恢复完整持久映射"
   },
   "scope": {
     "description": "Owner独立审查固定2d97b585业务树确认12项未关闭问题（4项P1、8项P2）；按R1-R3/R11阻断项→R4-R8/R12同步闭环→R9/R10跨域一致性严格串行返修。",
@@ -66,7 +66,7 @@
       "baseline": "820444c",
       "candidate_baseline": "2d97b585",
       "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效；Owner 2026-10-20独立审查拍板",
-      "status": "REMEDIATING_RELATION_COMPATIBILITY",
+      "status": "REMEDIATING_TARGET_COLLECTION_COMPATIBILITY",
       "allowed_write_set": [
         "public/frontend/state/record-sync.mts",
         "public/frontend/shared/incremental-sync.mts",
@@ -106,14 +106,14 @@
       "acceptance": "12项独立反例均形成失败先行回归并通过；保留真实冲突/删除/隔离/事务边界；完整npm/check/PG/record-sync/frontend及候选有状态门通过后才可重新固定候选。",
       "review_ref": "reviews/2026-10-20-v0516-independent-remediation.md",
       "receipt_ref": "reviews/2026-10-20-v0516-independent-remediation-result.json",
-      "implementation_commit": "ddc5ed"
+      "implementation_commit": "4c842c"
     }
   ],
   "candidate": {
-    "id": "v0.5.16-ddc5edb",
+    "id": "v0.5.16-4c842c0",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "ddc5ed",
-    "tree": "6712a7",
+    "sha": "4c842c",
+    "tree": "492947",
     "version": "0.5.16",
     "status": "REMEDIATION_REQUIRED",
     "release_frozen": false,
@@ -127,7 +127,7 @@
     ],
     "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
     "quality_gate": {
-      "release_metadata_pwa": "PENDING",
+      "release_metadata_pwa": "PASS",
       "static_module_contracts": "PASS",
       "full_regression": "PASS",
       "release_journeys": "PASS",
@@ -170,18 +170,18 @@
   },
   "blockers": [
     {
-      "id": "v0516-remediation-relation-key-compatibility",
+      "id": "v0516-task-target-collection-compatibility",
       "priority": "P1",
       "status": "REMEDIATED_PENDING_NEW_CANDIDATE",
-      "reason": "R10漂移候选校验曾同时改变历史subtarget relation key，生产只读快照关系等价门拒绝；已分离运行时候选位置与持久兼容键。",
+      "reason": "共享任务目标helper最初只含七类恢复目标，导致recordCompression等历史任务关系在remap时消失；已拆分完整持久映射与有限恢复集合。",
       "refs": [
-        "src/shared/persistence/store-mapping.mjs",
-        "scripts/release-state-startup-gate.mts:1494-1510"
+        "src/shared/task-targets/index.mts",
+        "src/app/record-commands/task-preparation.mts"
       ]
     }
   ],
   "next_action": {
-    "description": "提交历史关系兼容返修形成替代候选；重采四账户快照并复验default/combined，随后补精确候选PG与前端影响矩阵。",
+    "description": "提交完整资源类型映射兼容修复形成替代候选；用脱敏旧快照及新生产快照双重验证关系round-trip，再跑default/combined。",
     "owner": "主控",
     "requires_owner": false
   },
