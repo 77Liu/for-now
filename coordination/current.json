@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 543,
-  "updated_at": "2026-10-20T04:29:09.634Z",
+  "revision": 545,
+  "updated_at": "2026-10-20T04:37:41.956Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -16,11 +16,11 @@
   "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
     "id": "v0.5.16",
-    "status": "BUILDING",
-    "phase": "候选ca5c9df精确PG发现新漂移任务关系需实际命中字段，已修正"
+    "status": "INDEPENDENT_REVIEW_PENDING",
+    "phase": "候选6dace45的R1-R12返修与技术门已通过，冻结等待Owner/独立复审"
   },
   "scope": {
-    "description": "Owner独立审查固定2d97b585业务树确认12项未关闭问题（4项P1、8项P2）；按R1-R3/R11阻断项→R4-R8/R12同步闭环→R9/R10跨域一致性严格串行返修。",
+    "description": "独立审查12项问题已逐项返修并形成失败先行回归；最终候选6dace45/92b96c通过主回归、静态门、完整PG、Chrome影响矩阵及四账户default/combined有状态门，开发侧不替代独立复审。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8",
@@ -57,66 +57,15 @@
     ],
     "plan_ref": "docs/versions/v0.5.16/README.md"
   },
-  "active_tasks": [
-    {
-      "id": "v0516-independent-review-remediation",
-      "mode": "implementation",
-      "owner": "主控串行",
-      "requirement_id": "v0.5.16-independent-review-R1-R12",
-      "baseline": "820444c",
-      "candidate_baseline": "2d97b585",
-      "rule_source": "9c4916 PROJECT_RULES.md；2026-10-18生效；Owner 2026-10-20独立审查拍板",
-      "status": "REMEDIATING_DRIFT_RELATION_TARGET",
-      "allowed_write_set": [
-        "public/frontend/state/record-sync.mts",
-        "public/frontend/shared/incremental-sync.mts",
-        "public/frontend/app/runtime/data-runtime.mjs",
-        "public/frontend/app/runtime/data-sync-runtime.mjs",
-        "src/app/sync-projection.mts",
-        "src/app/runtime-http-wiring.mjs",
-        "src/modules/trash/index.mjs",
-        "src/modules/ai/usage.mjs",
-        "src/app/record-commands/task-preparation.mts",
-        "src/app/record-commands/task-transitions.mts",
-        "src/shared/persistence/store-mapping.mjs",
-        "src/shared/persistence/record-sync-repository.mts",
-        "src/modules/content-attachments/service.mjs",
-        "src/shared/** (仅任务目标共享契约与同步维护入口)",
-        "src/app/** (仅同步保留维护装配与必要公开端口)",
-        "scripts/** (仅R1-R12直接失败回归与受影响现有专项)",
-        "tsconfig*.json",
-        "package.json",
-        "knowledge/module-boundaries.json",
-        "docs/technical-proposals/** (仅开发明细/实际契约回填)",
-        "reviews/2026-10-20-v0516-independent-remediation.md",
-        "reviews/2026-10-20-v0516-independent-remediation-result.json",
-        "coordination/**",
-        "scripts/project-path-regression.mjs (仅追加式控制事件历史豁免，current仍受检)"
-      ],
-      "forbidden_write_set": [
-        ".trae/skills/tell-me/**",
-        "生产业务数据与凭据",
-        "push/tag/Release/Preview/生产部署",
-        "真实付费provider调用",
-        "94条真实样本重建或重跑",
-        "放宽生产者硬门或以全账户重读替代有界恢复"
-      ],
-      "shared_owner": "主控唯一串行写者",
-      "integration_order": "R1→R2→R3→R11→R6/R7/R8/R4/R5→R9/R10/R12→类型闭包→组合回归与有状态门",
-      "acceptance": "12项独立反例均形成失败先行回归并通过；保留真实冲突/删除/隔离/事务边界；完整npm/check/PG/record-sync/frontend及候选有状态门通过后才可重新固定候选。",
-      "review_ref": "reviews/2026-10-20-v0516-independent-remediation.md",
-      "receipt_ref": "reviews/2026-10-20-v0516-independent-remediation-result.json",
-      "implementation_commit": "ca5c9d"
-    }
-  ],
+  "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-ca5c9df",
+    "id": "v0.5.16-6dace45",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "ca5c9d",
-    "tree": "208cca",
+    "sha": "6dace4",
+    "tree": "92b96c",
     "version": "0.5.16",
-    "status": "REMEDIATION_REQUIRED",
-    "release_frozen": false,
+    "status": "REMEDIATION_VERIFIED_WAIT_INDEPENDENT_REVIEW",
+    "release_frozen": true,
     "required_gates": [
       "release_metadata_pwa",
       "static_module_contracts",
@@ -129,9 +78,9 @@
     "quality_gate": {
       "release_metadata_pwa": "PASS",
       "static_module_contracts": "PASS",
-      "full_regression": "FAIL",
+      "full_regression": "PASS",
       "release_journeys": "PASS",
-      "release_protection": "PENDING",
+      "release_protection": "PASS",
       "stateful_postgres_startup": "PASS",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
@@ -168,22 +117,11 @@
       "effective_date": "2026-10-13"
     }
   },
-  "blockers": [
-    {
-      "id": "v0516-drift-relation-target",
-      "priority": "P1",
-      "status": "REMEDIATED_PENDING_NEW_CANDIDATE",
-      "reason": "新漂移任务保存的必需subtarget relation必须指向实际annotationDrift；资源映射完整后恢复实际命中字段，旧脱敏关系仍round-trip。",
-      "refs": [
-        "src/shared/persistence/store-mapping.mjs",
-        "scripts/thought-task-transition-postgres-checks.mts"
-      ]
-    }
-  ],
+  "blockers": [],
   "next_action": {
-    "description": "提交漂移任务实际关系键修复形成替代候选；执行精确候选完整PG、旧/新快照关系等价和有状态门。",
-    "owner": "主控",
-    "requires_owner": false
+    "description": "由Owner或独立审查者复核R1-R12返修及证据；复审通过后再决定是否进入READY_WAIT_OWNER。未经新决定不得发布或部署。",
+    "owner": "Owner/独立审查者",
+    "requires_owner": true
   },
   "runtime": {
     "version": "v0.5.15",
@@ -916,6 +854,30 @@
       "refs": [
         "artifacts/local/2026-10-20-v0516-full-independent-review.json",
         "artifacts/local/2026-10-20-v0516-full-review-evidence.zip"
+      ]
+    },
+    {
+      "id": "v0516-independent-remediation-verified",
+      "object": {
+        "kind": "remediation_candidate",
+        "candidate": "6dace45",
+        "tree": "92b96c",
+        "findingsClosed": 12,
+        "snapshot": "50839a6e"
+      },
+      "conclusion": "R1-R12开发侧返修与正式验证通过；最终候选四账户default/combined有状态门、完整PG16.14、主回归、静态和前端影响矩阵通过，冻结等待独立复审，不自认READY_WAIT_OWNER。",
+      "limitations": [
+        "独立复审尚未执行",
+        "浏览器P75 500ms仍PARTIAL",
+        "Safari/安装PWA/移动真机仍PARTIAL",
+        "生产负载与放量NOT_RUN",
+        "真实付费provider与94条真实语料均未运行"
+      ],
+      "refs": [
+        "reviews/2026-10-20-v0516-independent-remediation.md",
+        "reviews/2026-10-20-v0516-independent-remediation-result.json",
+        "artifacts/local/v0516-startup-snapshot-6dace45.json",
+        "git:6dace4"
       ]
     }
   ],

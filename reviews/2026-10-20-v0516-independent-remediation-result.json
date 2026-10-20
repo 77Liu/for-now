@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-20",
+  "status": "REMEDIATION_VERIFIED_AWAITING_INDEPENDENT_REVIEW",
+  "ruleCommit": "9c4916",
+  "reviewedCandidate": {
+    "sha": "2d97b585258cc7d241f6566d5d994418253889dc",
+    "tree": "6527cad5a12df5b271cd00e31c4e5196bddf6c83"
+  },
+  "fixedCandidate": {
+    "version": "0.5.16",
+    "sha": "6dace45ac660c64f905f2b80c9c15a112755c8e0",
+    "tree": "92b96c8970a8fd7b0c791abc04c6fc52c81d9d68",
+    "branch": "feat/v0.5.16-sync-latency"
+  },
+  "findings": [
+    {
+      "id": "R1",
+      "priority": "P1",
+      "status": "PASS",
+      "closure": "List summaries are scope-owned; detail entities use a separate complete projection contract."
+    },
+    {
+      "id": "R2",
+      "priority": "P1",
+      "status": "PASS",
+      "closure": "A missing current projection for a historical change returns SYNC_REBASE_REQUIRED."
+    },
+    {
+      "id": "R3",
+      "priority": "P1",
+      "status": "PASS",
+      "closure": "Rebase is bound to the scope descriptor and route generation; stale route responses are rejected."
+    },
+    {
+      "id": "R4",
+      "priority": "P2",
+      "status": "PASS",
+      "closure": "Rebase retains only requested scopes and referenced detail entities."
+    },
+    {
+      "id": "R5",
+      "priority": "P2",
+      "status": "PASS",
+      "closure": "v2 route-state omits thought bodies; rebase returns bodies and speech projection once."
+    },
+    {
+      "id": "R6",
+      "priority": "P2",
+      "status": "PASS",
+      "closure": "Content changes invalidate filtered thought pages through the filter refetch contract."
+    },
+    {
+      "id": "R7",
+      "priority": "P2",
+      "status": "PASS",
+      "closure": "Typed v1/v2 health events retain independent unresolved errors."
+    },
+    {
+      "id": "R8",
+      "priority": "P2",
+      "status": "PASS",
+      "closure": "Rebase failures use the existing exponential retry counter and reset only after success."
+    },
+    {
+      "id": "R9",
+      "priority": "P2",
+      "status": "PASS",
+      "closure": "Account-day quota admission includes persisted, active and committed-unobserved usage."
+    },
+    {
+      "id": "R10",
+      "priority": "P2",
+      "status": "PASS",
+      "closure": "One task target contract covers normal and drift annotations while preserving all historical resource mappings."
+    },
+    {
+      "id": "R11",
+      "priority": "P1",
+      "status": "PASS",
+      "closure": "Trash expansion uses collection plus ID; ambiguous legacy parent identities do not expand."
+    },
+    {
+      "id": "R12",
+      "priority": "P2",
+      "status": "PASS",
+      "closure": "Configured retention runs through account maintenance and prunes complete cursor groups only."
+    }
+  ],
+  "validation": {
+    "mainRegression": "PASS",
+    "staticCheck": {
+      "status": "PASS",
+      "documents": 212,
+      "modules": 134,
+      "ownedRoutes": 243
+    },
+    "recordSync": "PASS",
+    "postgresStable": {
+      "status": "PASS",
+      "candidate": "6dace45",
+      "postgres": "16.14",
+      "wakeSamples": 8,
+      "wakeP75Ms": 178.94
+    },
+    "frontendJourney": {
+      "status": "PASS",
+      "directCandidate": "ddc5edb",
+      "durationMs": 95580,
+      "subtests": 39,
+      "reuseReason": "Later commits only change backend task persistence mapping and preparation collection compatibility."
+    },
+    "pwa": {
+      "status": "PASS",
+      "cachedModules": 93
+    },
+    "dependencyAudit": "UNCHANGED_FROM_ACCEPTED_PACKAGE_LOCK"
+  },
+  "snapshot": {
+    "path": "artifacts/local/v0516-startup-snapshot-6dace45.json",
+    "schemaVersion": 2,
+    "capturedAt": "2026-10-20T04:34:45.020Z",
+    "manifestSha256": "50839a6e1ed221ac41cef8108ed21d2eddd2c64f50823f3455e420695f3c3478",
+    "fileSha256": "f8e57ba2949158150ded0ee9e9ea61742ba92c3cfad521cfd7cec1506da50876",
+    "accounts": 4,
+    "taskStates": 136,
+    "sourceRole": "for_now_backup",
+    "sourceTransaction": "REPEATABLE READ READ ONLY"
+  },
+  "statefulProfiles": {
+    "default": {
+      "status": "PASS",
+      "postgres": "16.14",
+      "taskStates": 136,
+      "externalEffects": 0
+    },
+    "v0516-combined": {
+      "status": "PASS",
+      "postgres": "16.14",
+      "taskStates": 136,
+      "recordCommands": 7,
+      "syncV2": true,
+      "externalEffects": 0
+    }
+  },
+  "retainedFailures": [
+    "ddc5edb snapshot rejected relation remap inequality",
+    "ca5c9df PostgreSQL rejected an unresolved drift subtarget relation",
+    "Detached ddc5edb frontend first run lacked generated artifacts; formal build and rerun passed"
+  ],
+  "limitations": {
+    "independentReReview": "REQUIRED_BEFORE_READY_WAIT_OWNER",
+    "browserP75Under500ms": "PARTIAL",
+    "safariInstalledPwaRealDevice": "PARTIAL",
+    "productionLoad": "NOT_RUN",
+    "productionRollout": "NOT_RUN",
+    "paidProviderCalls": 0,
+    "realCorpus94Rerun": "NOT_RUN"
+  },
+  "externalActions": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "preview": false,
+    "productionDeploy": false,
+    "productionBusinessWrite": false
+  }
+}
