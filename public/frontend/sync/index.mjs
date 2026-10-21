@@ -492,6 +492,15 @@ function createWorkspaceRequestCoordinator({
       }
     }
     record = await store.get(record.owner, record.queueId || record.id) || record;
+    // A resume snapshot can become stale while its fingerprint is normalized.
+    // A committed row has intentionally discarded request headers/body.
+    if (record.status === "committed") {
+      return { data: null, meta: { operation: { ...record.ack, recovered: true } } };
+    }
+    if (["failed", "conflict"].includes(record.status)) {
+      throw Object.assign(new Error(record.lastError?.message || "请求已终止"),
+        record.lastError || {}, { syncStatus: record.status });
+    }
     const startedAt = now();
     let current = await update(record, {
       status: "sending",
@@ -552,12 +561,12 @@ function createWorkspaceRequestCoordinator({
       throw terminalError;
     }
   };
-  const schedule = (record, expectedGeneration = generation(record.owner)) => {
+  const schedule = (record, expectedGeneration = generation(record.owner), ready = Promise.resolve()) => {
     const deliveryKey = `${record.owner}:${record.id}`;
     if (deliveries.has(deliveryKey)) return deliveries.get(deliveryKey);
     const key = `${record.owner}:${record.resourceKey}`;
     const previous = tails.get(key) || Promise.resolve();
-    const execution = previous.catch(() => {}).then(() => deliver(record, expectedGeneration));
+    const execution = previous.catch(() => {}).then(() => ready).then(() => deliver(record, expectedGeneration));
     deliveries.set(deliveryKey, execution);
     tails.set(key, execution);
     void execution.finally(() => {
@@ -631,15 +640,19 @@ function createWorkspaceRequestCoordinator({
         }
         if (!saved) throw new Error("离线请求入队冲突，请重试");
       } else await store.put(record);
+      // Reserve delivery before publishing the queued state: resume must share
+      // this promise while asynchronous projection/draft persistence finishes.
+      let releaseQueued;
+      const queued = new Promise(resolve => { releaseQueued = resolve; });
+      const delivery = schedule(record, expectedGeneration, queued);
       notify(record);
       try {
-        await onQueued(clone(record));
-      } catch {}
-      if (generation(owner) !== expectedGeneration) {
-        if (expectedScope === getScope()) await store.clear(owner);
-        throw Object.assign(new Error("账户同步队列已清理"), { name: "AbortError" });
+        try { await onQueued(clone(record)); } catch {}
+        if (generation(owner) !== expectedGeneration && expectedScope === getScope()) await store.clear(owner);
+      } finally {
+        releaseQueued();
       }
-      return schedule(record, expectedGeneration);
+      return delivery;
     },
     async resume(owner, { force = false } = {}) {
       if (!owner) return [];

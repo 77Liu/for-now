@@ -31,6 +31,78 @@ const deferred = () => {
 };
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
+// A queued projection may await IndexedDB while the background loop resumes.
+// The initial request and resume must share one delivery and one committed reply.
+{
+  const queued = deferred(), projectionSaved = deferred();
+  let sends = 0;
+  const overlap = createRequestCoordinator({
+    store: createMemorySyncStore(),
+    send: async (_url, options) => {
+      sends += 1;
+      return { data: { id: "daily-new-000001" }, meta: { operation: {
+        status: "committed", businessIdMapping: {
+          accountId: "account-a", operationId: options.headers["x-client-operation-id"],
+          provisionalId: options.headers["x-client-provisional-id"], canonicalId: "daily-new-000001"
+        }
+      } } };
+    }
+  });
+  const initial = overlap.request({ owner: "account-a", url: "/api/v1/daily-records",
+    options: { method: "POST", body: '{"type":"weight"}' }, allocateBusinessId: true,
+    onQueued: async () => { queued.resolve(); await projectionSaved.promise; }
+  });
+  await queued.promise;
+  const resumed = overlap.resume("account-a");
+  await flush();
+  assert.equal(sends, 0, "resume must wait for the pending local projection");
+  projectionSaved.resolve();
+  const [response, recovery] = await Promise.all([initial, resumed]);
+  assert.equal(sends, 1, "initial submission and background recovery must share delivery");
+  assert.equal(response.data.id, "daily-new-000001");
+  assert.equal(recovery[0].status, "fulfilled");
+  assert.equal(recovery[0].value.meta.operation.status, "committed");
+  assert.equal((await overlap.list("account-a"))[0].status, "committed");
+}
+
+// A captured pending snapshot must not resend a request that reached a terminal
+// state while resume was awaiting storage. Exercise both successful and failed replies.
+for (const terminal of ["committed", "failed"]) {
+  const memory = createMemorySyncStore(), snapshotRead = deferred(), releaseSnapshot = deferred();
+  const queued = deferred(), projectionSaved = deferred();
+  let pauseSnapshot = true, sends = 0;
+  const overlap = createRequestCoordinator({
+    store: { ...memory, async list(owner, statuses = []) {
+      const rows = await memory.list(owner, statuses);
+      if (pauseSnapshot && statuses.includes("sending")) {
+        pauseSnapshot = false; snapshotRead.resolve(); await releaseSnapshot.promise;
+      }
+      return rows;
+    } },
+    send: async () => {
+      sends += 1;
+      if (terminal === "failed") throw Object.assign(new Error("invalid health input"), { status: 400 });
+      return { data: { id: "existing-record" }, meta: { operation: { status: "committed" } } };
+    }
+  });
+  const initial = overlap.request({ owner: "account-a", url: "/api/v1/daily-records/existing-record",
+    options: { method: "PATCH", body: "{}" },
+    onQueued: async () => { queued.resolve(); await projectionSaved.promise; }
+  });
+  const initialResult = initial.then(value => ({ value }), error => ({ error }));
+  await queued.promise;
+  const resumed = overlap.resume("account-a");
+  await snapshotRead.promise;
+  projectionSaved.resolve();
+  const outcome = await initialResult;
+  assert.equal(Boolean(outcome.error), terminal === "failed");
+  releaseSnapshot.resolve();
+  const recovery = await resumed;
+  assert.equal(sends, 1, `stale resume must not resend a ${terminal} request`);
+  assert.equal(recovery[0].status, terminal === "failed" ? "rejected" : "fulfilled");
+  assert.equal((await overlap.list("account-a"))[0].status, terminal);
+}
+
 const volatileStore = createIndexedDbSyncStore({ indexedDBImpl: null });
 assert.equal(volatileStore.durable, false);
 await volatileStore.put({ id: "volatile", owner: "account-a", status: "pending" });

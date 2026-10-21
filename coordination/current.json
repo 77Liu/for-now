@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 552,
-  "updated_at": "2026-10-21T17:08:59.975Z",
+  "revision": 554,
+  "updated_at": "2026-10-21T17:53:25.715Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -63,12 +63,12 @@
   },
   "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-5f85f4f",
-    "branch": "feat/v0.5.16-sync-latency",
-    "sha": "5f85f4fed3227a5e7efe2ce371155324f8b3a433",
-    "tree": "a6f7536417f0ad71c056486797c176abc156feba",
+    "id": "v0.5.16-final-cdd1cc80",
+    "branch": "develop",
+    "sha": "cdd1cc800523492f470d1c5c1495c0ee01b9d4e4",
+    "tree": "20c69c9fc3fd96e3b7fcdc49a48f3e1635a2856a",
     "version": "0.5.16",
-    "status": "REMEDIATION_DONE_PENDING_INDEPENDENT_REREVIEW",
+    "status": "RETURNED_FOR_QUEUE_RACE_FIX",
     "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
@@ -85,7 +85,7 @@
       "release_metadata_pwa": "PASS",
       "static_module_contracts": "PASS",
       "full_regression": "PASS",
-      "release_journeys": "PASS_LOCAL_UI_REGRESSION",
+      "release_journeys": "FAIL_UI_QUEUE_RACE",
       "release_protection": "PASS",
       "stateful_postgres_startup": "NOT_REBUILT_FOR_THIS_CANDIDATE",
       "control_plane_compatibility": "PASS_LOCAL_NO_RUN_GATE_RECEIPT",
@@ -95,7 +95,13 @@
       "production_rollout": "NOT_RUN"
     },
     "base_sha": "0b44a8241341ff95b1a7040d4d045924d0711564",
-    "gate_policy_commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb"
+    "gate_policy_commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb",
+    "gate_inputs": {
+      "snapshot": "artifacts/local/v0516-final-production-snapshot.json"
+    },
+    "gate_environment": {
+      "purpose": "v0.5.16 final release; local isolated PostgreSQL; production switches unchanged"
+    }
   },
   "authorization": {
     "source": "Owner 2026-10-22：允许你做最后的收尾，然后commit、push、release、tag、切生产环境。承接此前MVP已知P2延期决定。",
@@ -338,13 +344,21 @@
         "coordination/current.json",
         "scripts/control-plane-gates.mts"
       ]
+    },
+    {
+      "id": "v0516-release-queue-race",
+      "priority": "P1",
+      "status": "FIXED_PENDING_GATES",
+      "reason": "发布旅程暴露首次提交与后台恢复重叠：已成功或明确失败的请求可能被旧快照重发；共享发送任务和发送前终态检查已修改，旧代码受控反例失败，新专项通过，待新候选完整发布门。",
+      "refs": [
+        "public/frontend/sync/index.mjs",
+        "scripts/sync-coordinator-regression.mjs",
+        "artifacts/local/queue-race-old-code-probe.log",
+        "artifacts/local/v0516-queue-race-fix-test-v3.log"
+      ]
     }
   ],
-  "next_action": {
-    "owner": "Owner授权的本次执行者",
-    "description": "固定候选、只读生产快照、8项必需门、受保护部署、观察及正式发布回流",
-    "requires_owner": false
-  },
+  "next_action": "提交最小同步时序修复、重新固定候选并重建8项发布门；通过后继续已授权发布。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
