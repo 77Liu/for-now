@@ -609,4 +609,79 @@ const sameRootBlock = scopedState.applyRecordBatch({
 }, context);
 assert.deepEqual(sameRootBlock.staleScopeKeys, [pageScopeKey, detailScopeKey]);
 
+// A2：标签筛选的成员资格由标签决定；页外对象改标签进入筛选时必须重取，未筛选的列表不得被无关改动拖入恢复。
+const filterScopeKey = "thoughtPage:filter-new";
+const filterState = createRecordState();
+const seedFilter = (metadata: Record<string, unknown> = { tag: "new" }): RecordRebase => ({
+  highWaterCursor: 20,
+  activeScopeKey: filterScopeKey,
+  scopes: [{
+    scopeKey: filterScopeKey,
+    descriptorVersion: 1,
+    kind: "thoughtPage",
+    entities: [{
+      key: { entityType: "thoughtChain", entityId: "root-a", parentType: null, parentId: null },
+      version: 2,
+      deliveryCursor: 20,
+      projection: { id: "root-a", content: "A", tags: ["new"] },
+      tombstone: false
+    }],
+    orderedEntityKeys: [rootKey],
+    metadata
+  }]
+});
+filterState.rebaseScopes(seedFilter(), context);
+const offPageTagChange = (cursor: number, rootId: string) => ({
+  cursor,
+  ordinal: 0,
+  key: { entityType: "thoughtBlock", entityId: `block-${rootId}`, parentType: "thoughtChain", parentId: rootId },
+  version: 2,
+  operation: "update" as const,
+  changedFields: ["tags"],
+  scopeKeys: ["thought:list", `thought:${rootId}`],
+  summary: { id: `block-${rootId}`, content: "tagged", tags: ["new"] },
+  tombstone: false,
+  refetch: "none" as const
+});
+// 页外思维的子块改标签后符合筛选，服务端已有匹配；客户端必须失效并重取有界筛选页。
+const enteredFilter = filterState.applyRecordBatch({
+  fromCursor: 20,
+  nextCursor: 21,
+  highWaterCursor: 21,
+  hasMore: false,
+  changes: [offPageTagChange(21, "root-c")]
+}, context);
+assert.deepEqual(enteredFilter.staleScopeKeys, [filterScopeKey]);
+// 已匹配的思维退出筛选同样必须重取，避免陈旧条目继续留在列表里。
+filterState.rebaseScopes(seedFilter(), context);
+const leftFilter = filterState.applyRecordBatch({
+  fromCursor: 20,
+  nextCursor: 21,
+  highWaterCursor: 21,
+  hasMore: false,
+  changes: [{
+    cursor: 21,
+    ordinal: 0,
+    key: { entityType: "thoughtChain", entityId: "root-a", parentType: null, parentId: null },
+    version: 3,
+    operation: "update",
+    changedFields: ["tags"],
+    scopeKeys: ["thought:list", "thought:root-a"],
+    summary: { id: "root-a", content: "A", tags: [] },
+    tombstone: false,
+    refetch: "none"
+  }]
+}, context);
+assert.deepEqual(leftFilter.staleScopeKeys, [filterScopeKey]);
+// 未设置筛选条件的列表页不受页外标签变化影响，保持原有的无关改动抑制。
+filterState.rebaseScopes(seedFilter({}), context);
+const unfilteredTagChange = filterState.applyRecordBatch({
+  fromCursor: 20,
+  nextCursor: 21,
+  highWaterCursor: 21,
+  hasMore: false,
+  changes: [offPageTagChange(21, "root-c")]
+}, context);
+assert.deepEqual(unfilteredTagChange.staleScopeKeys, []);
+
 console.log("Record sync v2 regression passed.");

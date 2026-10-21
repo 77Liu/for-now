@@ -293,7 +293,10 @@ export function createDataSyncRuntime({
     const route = runtime.pageRouter?.currentRoute() || { view: "today", query: {} };
     if (route.view === "thoughts" && route.kind === "detail" && route.resourceId) {
       const scopeKey = `thoughtDetail:${route.resourceId}`;
-      return { activeScopeKey: scopeKey, scopes: [{ scopeKey, kind: "thoughtDetail", id: route.resourceId }] };
+      return {
+        activeScopeKey: scopeKey,
+        scopes: [{ scopeKey, kind: "thoughtDetail", id: route.resourceId, query: route.query?.q || "" }]
+      };
     }
     const scopeKey = route.view === "thoughts" ? "thoughtPage:active" : "thoughtPage:home";
     return {
@@ -315,6 +318,21 @@ export function createDataSyncRuntime({
     workspace: consumer.workspace,
     generation: consumer.generation
   });
+  function recordPageMatchesScope(page: any, scope: RecordScopeDescriptor): boolean {
+    if (scope.kind === "thoughtDetail") {
+      if (page?.kind !== "detail" || page.found !== true) return false;
+      const rootId = String(scope.id ?? "");
+      const rootLoaded = (state.thoughts || []).some((item: any) => String(item?.id || "") === rootId);
+      return rootLoaded && String(page.query || "") === String(scope.query || "");
+    }
+    // 已装载的列表页一定携带请求游标；默认空状态与被清空的投影不具备该字段，必须重新恢复。
+    if (page?.kind !== "list" || !Object.hasOwn(page, "requestCursor")) return false;
+    return String(page.query || "") === String(scope.query || "")
+      && String(page.tag || "") === String(scope.tag || "")
+      && (page.sort === "created" ? "created" : "occurred") === (scope.sort || "occurred")
+      && String(page.requestCursor || "") === String(scope.cursor || "")
+      && (page.direction || "next") === (scope.direction || "next");
+  }
   function hydrateRecordScopes(cursor: number, consumer: RecordConsumer) {
     if (!consumer.isCurrent()) return false;
     const request = activeRecordScopes();
@@ -322,14 +340,9 @@ export function createDataSyncRuntime({
     if (!scope) return false;
     const detail = scope.kind === "thoughtDetail";
     const page: any = state.thoughtPage;
-    if (detail) {
-      // 只有服务端真正装载过的详情（带 found）才能作为恢复依据；默认投影没有该字段。
-      if (page?.kind !== "detail" || typeof page.found !== "boolean") return false;
-    } else {
-      if (page?.kind !== "list") return false;
-      // 已装载的列表页一定携带请求游标；默认空状态与被清空的投影不具备该字段，必须重新恢复。
-      if (!Object.hasOwn(page, "requestCursor")) return false;
-    }
+    // 加载过某页不等于加载过当前页：查询、标签、排序、游标、方向及详情根身份都必须与当前请求一致；
+    // 否则旧投影会被新页面复用，导致列表为空或详情串根。
+    if (!recordPageMatchesScope(page, scope)) return false;
     const rootId = detail ? String(scope.id ?? "") : "";
     const values = (state.thoughts || []).filter((item: any) => !item?._sync && (detail
       ? item.id === rootId || item.relatedTo === rootId

@@ -48,16 +48,13 @@ export function createTrashService({ createId, now, hash, retentionDays }) {
       return JSON.stringify([collection, location.parentId]);
     }
     if (!location.parentId) return "";
-    // 旧记录缺少所属集合；必须对全部候选身份做唯一性核对，仅凭已选父项推断会把无关条目并入同 ID 的其它类型。
+    // 旧记录缺少所属集合时，只有类型唯一对应一个顶层集合才可推断。
+    // 批注类可属于思绪、书籍等多个集合，仅凭回收站里同 ID 的父项会把批注并入其它类型；
+    // 这类记录保留数据但必须等完整身份或可靠业务证据，不自动扩展。
     const allowedCollections = nestedParentCollections.get(entry?.type);
-    const legacyMatches = [...candidateParents].filter(value => {
-      try {
-        const [candidateCollection, candidateId] = JSON.parse(value);
-        if (candidateId !== location.parentId) return false;
-        return !allowedCollections || allowedCollections.includes(String(candidateCollection).split(".")[0]);
-      } catch { return false; }
-    });
-    return legacyMatches.length === 1 ? legacyMatches[0] : "";
+    if (!allowedCollections || allowedCollections.length !== 1) return "";
+    const identity = JSON.stringify([allowedCollections[0], location.parentId]);
+    return candidateParents.has(identity) ? identity : "";
   };
 
   function add(entries, type, payload, location) {

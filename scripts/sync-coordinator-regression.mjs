@@ -18,6 +18,7 @@ import {
   syncOperationFingerprint
 } from "../public/frontend/sync/index.mjs";
 import { createDataSyncRuntime } from "../public/generated/app/runtime/data-sync-runtime.mjs";
+import { replaceState, resetState } from "../public/frontend/state/index.mjs";
 
 const deferred = () => {
   let resolve;
@@ -1682,12 +1683,6 @@ assert.equal(staleRecoveryLoop.cursor(), 6, "a duplicate batch must never move t
 assert.equal(staleRecoveryStorage.get("cike-record-sync-v2:account-a:"), "6");
 staleRecoveryLoop.stop();
 
-const healthRuntime = {
-  featureFlags: {},
-  syncHealth: { lastPullMs: 0 },
-  runtimeFeatureRegistry: { notifyState() {} },
-  routeDataRequestSerial: 1
-};
 const idleSyncController = () => ({
   start: async () => true,
   stop() {},
@@ -1696,6 +1691,78 @@ const idleSyncController = () => ({
   rebase: async () => true,
   cursor: () => 0
 });
+// A3：恢复投影必须核对页面身份；旧查询的投影不能被新查询页直接复用。
+const capturedRecordOptions = {};
+let currentRoute = { view: "thoughts", query: { q: "new", cursor: "next-cursor" } };
+const identityRuntime = createDataSyncRuntime({
+  runtime: {
+    featureFlags: { recordSyncV2: true },
+    pageRouter: { currentRoute: () => currentRoute },
+    routeDataRequestSerial: 1
+  },
+  requestCoordinator: {
+    metrics: async () => ({}),
+    resume: async () => true,
+    subscribe: () => () => {}
+  },
+  getActionsCoordinator: () => ({
+    applyOperationStatus() {},
+    applyIncrementalSnapshot() {},
+    load: async () => true
+  }),
+  requestV1: async () => ({}),
+  syncScope: () => "session-1",
+  syncWorkspace: () => "",
+  captureDataScope: () => ({ owner: "account-a", workspace: "", isCurrent: () => true }),
+  restorePendingProjections: async () => {},
+  refreshState: async () => true,
+  createIncrementalSync: idleSyncController,
+  createRecordSyncLoop: options => {
+    capturedRecordOptions.record = options;
+    return idleSyncController();
+  },
+  applyRecordBatch: () => ({ committed: false, staleScopeKeys: [] }),
+  rebaseRecordScopes: () => ({ committed: true })
+});
+const recordConsumer = { owner: "account-a", workspace: "", generation: 1, isCurrent: () => true };
+resetState();
+replaceState({
+  thoughts: [{ id: "root-a", type: "question", content: "A", version: 2 }],
+  thoughtPage: {
+    kind: "list", query: "old", tag: "", sort: "occurred",
+    requestCursor: "cursor-1", direction: "next", nextCursor: "cursor-2", page: 1, tags: []
+  }
+});
+// 旧 query=old 的投影与当前 q=new 不是同一页，必须拒绝复用并触发恢复。
+assert.equal(capturedRecordOptions.record.hydrateScopes(10, recordConsumer), false);
+replaceState({
+  thoughts: [{ id: "root-a", type: "question", content: "A", version: 2 }],
+  thoughtPage: {
+    kind: "list", query: "new", tag: "", sort: "occurred",
+    requestCursor: "next-cursor", direction: "next", nextCursor: "", page: 1, tags: []
+  }
+});
+assert.equal(capturedRecordOptions.record.hydrateScopes(10, recordConsumer), true);
+// 详情同样核对根身份与查询：旧详情的 query 不匹配时不得被新路由接收。
+currentRoute = { view: "thoughts", kind: "detail", resourceId: "root-a", query: { q: "new" } };
+replaceState({
+  thoughts: [{ id: "root-a", type: "question", content: "A", version: 2 }],
+  thoughtPage: { kind: "detail", found: true, query: "old", page: 1, tags: [] }
+});
+assert.equal(capturedRecordOptions.record.hydrateScopes(10, recordConsumer), false);
+replaceState({
+  thoughts: [{ id: "root-a", type: "question", content: "A", version: 2 }],
+  thoughtPage: { kind: "detail", found: true, query: "new", page: 1, tags: [] }
+});
+assert.equal(capturedRecordOptions.record.hydrateScopes(10, recordConsumer), true);
+resetState();
+
+const healthRuntime = {
+  featureFlags: {},
+  syncHealth: { lastPullMs: 0 },
+  runtimeFeatureRegistry: { notifyState() {} },
+  routeDataRequestSerial: 1
+};
 const health = createDataSyncRuntime({
   runtime: healthRuntime,
   requestCoordinator: {

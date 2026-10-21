@@ -459,4 +459,46 @@ assert.notEqual(promotedSupplement.status, "queued",
   "the promoted supplement must reach a terminal state");
 assert.equal(providerCalls.length, callsBeforePromotion + 1, "promotion executes exactly one bounded call");
 
+// A4：队列上限 4、预算仅剩 1 次时，跨日历史补充不得抢走失败日报的修复额度；
+// 预留必须同时覆盖队列位置与实际预算，否则修复任务会重新落回预算等待。
+currentStore = createEmptyStore();
+idempotencyLedger.clear();
+addSource(currentStore, "repair-reservation-prior", "2026-10-09");
+const priorRuntime = createRuntime({ clockAsOf: "2026-10-09T10:05:00.000Z" });
+const priorScan = await priorRuntime.runRecordCompressionScan({
+  asOf: "2026-10-09T10:05:00.000Z", slot: "evening", maxQueued: 0
+});
+assert.equal(priorScan.waitingBudgetCount, 2);
+const crossDaySupplement = currentStore.aiTasks.find(task => task.status === WAITING_FOR_BUDGET_STATUS
+  && task.payload.operation === "historicalSupplement");
+assert.ok(crossDaySupplement, "day one must leave a cross-day historical supplement waiting");
+addSource(currentStore, "repair-reservation-current", "2026-10-10");
+const reservationRuntime = createRuntime({ failProvider: true, measuredCost: 0.75 });
+const reserveWaitScan = await reservationRuntime.runRecordCompressionScan({
+  asOf, slot: "evening", maxQueued: 0
+});
+assert.equal(reserveWaitScan.waitingBudgetCount, 3);
+const todayDaily = currentStore.aiTasks.find(task => task.status === WAITING_FOR_BUDGET_STATUS
+  && task.payload.operation === "daily" && task.payload.localDate === "2026-10-10");
+assert.ok(todayDaily);
+await reservationRuntime.backgroundAi.promoteInternalBudgetWaiting(1, {
+  operation: "daily", localDate: "2026-10-10"
+});
+await reservationRuntime.backgroundAi.run(todayDaily.id);
+assert.equal(todayDaily.status, "failed");
+
+const callsBeforeReservation = providerCalls.length;
+const reservationScan = await reservationRuntime.runRecordCompressionScan({
+  asOf, slot: "evening", maxQueued: 4
+});
+const queuedForReservation = reservationScan.taskIds.map(id => currentStore.aiTasks.find(task => task.id === id));
+const repairTask = queuedForReservation.find(task => task?.payload.operation === "daily");
+assert.ok(repairTask, "the failed daily report must receive the only remaining budget slot");
+assert.equal(repairTask.status, "queued");
+assert.equal(crossDaySupplement.status, WAITING_FOR_BUDGET_STATUS,
+  "the supplement must keep waiting when its promotion would consume the repair reservation");
+assert.equal(reservationScan.queuedCount, 1);
+assert.equal(providerCalls.length, callsBeforeReservation, "reservation scheduling must not call the provider");
+assertDiagnosticsMatchStore(reservationScan);
+
 console.log("Record-compression durable budget-wait, recovery, bounds and diagnostics regression passed.");

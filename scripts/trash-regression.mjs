@@ -212,6 +212,38 @@ assert.deepEqual(
   ["unique-book", "unique-legacy-note"]
 );
 
+// A1：批注可属于思绪、书籍等多个集合。回收站里只有同 ID 书籍时，旧记录缺少所属集合
+// 也不能凭唯一候选推断，否则原属在线思绪的批注会被一起永久清理。
+const ambiguousAnnotationEntries = [
+  {
+    id: "annotation-book",
+    type: "book",
+    resourceId: "annotation-parent",
+    payload: { id: "annotation-parent" },
+    location: { kind: "collection", collection: "books" }
+  },
+  {
+    id: "legacy-annotation",
+    type: "annotation",
+    resourceId: "annotation-mark",
+    payload: { id: "annotation-mark" },
+    location: { kind: "nested", parentId: "annotation-parent", field: "annotations" }
+  },
+  {
+    id: "legacy-annotation-drift",
+    type: "annotationDrift",
+    resourceId: "annotation-drift",
+    payload: { id: "annotation-drift" },
+    location: { kind: "nested", parentId: "annotation-parent", field: "annotationDrift" }
+  }
+];
+const ambiguousAnnotationPlan = trash.expanded(ambiguousAnnotationEntries, ["annotation-book"]);
+assert.deepEqual(ambiguousAnnotationPlan.map(item => item.id), ["annotation-book"]);
+trash.purge(ambiguousAnnotationPlan);
+assert.equal(ambiguousAnnotationEntries[0].permanentlyPurged, true);
+assert.equal(ambiguousAnnotationEntries[1].permanentlyPurged, undefined);
+assert.equal(ambiguousAnnotationEntries[2].permanentlyPurged, undefined);
+
 
 reset();
 const note = await repository.update(store => mutations.moveNestedItemToTrash(store, {

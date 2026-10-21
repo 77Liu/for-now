@@ -827,7 +827,6 @@ export function createRecordCompressionService({
         && task.payload?.localDate === primaryCandidate.localDate
         && (!primaryCandidate.windowKey || task.payload?.windowKey === primaryCandidate.windowKey)
       )));
-      const supplementSlotLimit = Math.max(0, queueLimit - (primaryNeedsRepair ? 1 : 0));
       let supplementPromotedThisScan = false;
       // 轮转机会：已跨日等待的历史补充先占本轮槽位，避免被当期日报长期挤到队尾；
       // 同一自然日内仍先保证当期日报，不能因补充长期占位而延迟当日摘要。
@@ -838,8 +837,12 @@ export function createRecordCompressionService({
         && dateKeyInTimezone(task.createdAt, DEFAULT_RECORD_TIMEZONE) < today
       ));
       if (waitingHistorical) {
+        // 失败日报的预留必须同时覆盖队列位置和实际预算：只留位置会让补充用掉唯一一次调用，
+        // 修复任务被迫回到 waitingBudget。预算不足时优先保留修复机会。
+        const supplementSlotLimit = Math.max(0, queueLimit - queuedTaskIds.length - (primaryNeedsRepair ? 1 : 0));
+        const supplementBudgetLimit = Math.max(0, (await remainingBudgetQueueCapacity()) - (primaryNeedsRepair ? 1 : 0));
         const promotions = await backgroundAi.promoteInternalBudgetWaiting(
-          Math.min(Math.max(0, supplementSlotLimit - queuedTaskIds.length), await remainingBudgetQueueCapacity()),
+          Math.min(supplementSlotLimit, supplementBudgetLimit),
           { operation: HISTORICAL_SUPPLEMENT_OPERATION }
         );
         queuedTaskIds.push(...list(promotions.taskIds));

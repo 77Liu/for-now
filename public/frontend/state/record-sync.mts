@@ -170,6 +170,15 @@ function applyEntry(candidate: Map<string, RecordEntityEntry>, incoming: RecordE
 
 // 列表摘要由根与全部子块派生；子块仅在影响摘要字段或增删时使列表失效。
 const listSummaryFields = new Set(["content", "text", "tags", "disposition", "occurredAt", "createdAt"]);
+// 筛选页的成员资格由标签与检索文本决定；页外对象改变这些字段也可能进入或离开当前筛选。
+const filterMembershipFields = new Set(["tags", "content", "text"]);
+function changesFilterMembership(scope: ScopeState, change: RecordChange): boolean {
+  if (change.operation === "delete") return false;
+  const tag = String(scope.metadata?.tag || "").trim();
+  const query = String(scope.metadata?.query || "").trim();
+  if (tag && change.changedFields?.includes("tags")) return true;
+  return Boolean(query) && Boolean(change.changedFields?.some(field => filterMembershipFields.has(field)));
+}
 function rootIdOf(key: RecordEntityIdentity): string {
   if (key.entityType === "thoughtChain") return key.entityId;
   return key.parentType === "thoughtChain" ? key.parentId || "" : "";
@@ -356,11 +365,14 @@ export function createRecordState() {
           if (scope.kind === "thoughtPage") {
             // 列表范围只接受摘要契约；增量载荷恒为详情形态，合并会污染列表缓存并触发伪冲突，改为失效后按有界 rebase 恢复。
             if (change.key.entityType === "thoughtChain") {
-              if (member || change.operation === "create") scope.stale = true;
+              if (member || change.operation === "create" || changesFilterMembership(scope, change)) scope.stale = true;
             } else if (rootId && scope.orderedEntityKeys.includes(listRootKey(rootId))
               && (change.operation !== "update"
                 || change.changedFields.some(field => listSummaryFields.has(field)))) {
               // 子块增删改变数量与预览；改正文/标签/判定等摘要字段时列表同样需要重新取摘要。
+              scope.stale = true;
+            } else if (rootId && changesFilterMembership(scope, change)) {
+              // 页外对象改标签/正文而进入当前筛选时，服务端可能已有匹配；必须重取有界筛选页。
               scope.stale = true;
             }
           } else {
