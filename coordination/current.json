@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 549,
-  "updated_at": "2026-10-20T17:57:11.227Z",
+  "revision": 551,
+  "updated_at": "2026-10-21T07:00:19.970Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -17,10 +17,10 @@
   "iteration": {
     "id": "v0.5.16",
     "status": "INDEPENDENT_REREVIEW_PENDING",
-    "phase": "12项扩大独立审查缺陷已在54f3b05完成代码与回归返修；待独立复审、有状态门重建与M1/M2/M3部署复验。"
+    "phase": "01:00后独立复审6项：A1-A4已修并补可区分前后行为的回归，A5判定根因在中台5s取消并保持OPEN，A6补齐8项必需门但未生成run-gate回执；待独立复审与有状态门重建。"
   },
   "scope": {
-    "description": "既定v0.5.16范围不变；54f3b05已处理扩大独立审查12项并补齐专项回归，技术门本地通过；独立复审、四账户有状态门与M1/M2/M3部署复验仍阻断。",
+    "description": "既定v0.5.16范围不变；5f85f4f处理01:00后独立复审A1-A4并补齐8项必需门清单，A5保持OPEN；独立复审、四账户有状态门与M1/M2/M3部署复验仍阻断。",
     "baseline": {
       "branch": "feat/v0.5.16-sync-latency",
       "commit": "0b44a8241341ff95b1a7040d4d045924d0711564",
@@ -59,12 +59,12 @@
   },
   "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-54f3b05",
+    "id": "v0.5.16-5f85f4f",
     "branch": "feat/v0.5.16-sync-latency",
-    "sha": "54f3b05b69309f7d7edee0c592983421d170e742",
-    "tree": "df94412c290faf9d12ff6e8958bb7e63289d1a28",
+    "sha": "5f85f4fed3227a5e7efe2ce371155324f8b3a433",
+    "tree": "a6f7536417f0ad71c056486797c176abc156feba",
     "version": "0.5.16",
-    "status": "REMEDIATION_PENDING_INDEPENDENT_REREVIEW",
+    "status": "REMEDIATION_DONE_PENDING_INDEPENDENT_REREVIEW",
     "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
@@ -72,16 +72,20 @@
       "full_regression",
       "release_journeys",
       "release_protection",
-      "stateful_postgres_startup"
+      "stateful_postgres_startup",
+      "control_plane_compatibility",
+      "proposal_checker_compatibility"
     ],
     "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
     "quality_gate": {
       "release_metadata_pwa": "PASS",
       "static_module_contracts": "PASS",
       "full_regression": "PASS",
-      "release_journeys": "PASS",
+      "release_journeys": "PASS_LOCAL_UI_REGRESSION",
       "release_protection": "PASS",
       "stateful_postgres_startup": "NOT_REBUILT_FOR_THIS_CANDIDATE",
+      "control_plane_compatibility": "PASS_LOCAL_NO_RUN_GATE_RECEIPT",
+      "proposal_checker_compatibility": "PASS_LOCAL_NO_RUN_GATE_RECEIPT",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
       "production_rollout": "NOT_RUN"
@@ -267,18 +271,83 @@
     {
       "id": "v0516-independent-M3",
       "priority": "P2",
-      "status": "FIXED_PENDING_DEPLOYMENT",
-      "reason": "外层readyz等待放宽至可配置默认15s（下限5s），慢聚合不再误报不可用；中台自身readyz全量聚合未改，代码未部署。",
+      "status": "OPEN",
+      "reason": "01:00后复审A5确认外层放宽到15s未触及超时发生处：中台fetchProductionData仍在5s取消聚合，本地组合复现5032ms仍为TimeoutError；中台源码不在本仓库，需中台改动与部署窗口，见v0516-rereview2-A5。",
       "refs": [
         "reviews/2026-10-21-expanded-independent-review-import.json#M3",
         "reviews/2026-10-21-expanded-independent-remediation-result.json",
         "scripts/monitor-health.mjs",
         "scripts/monitor-regression.mjs"
       ]
+    },
+    {
+      "id": "v0516-rereview2-A1",
+      "priority": "P1",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "逻辑永久清理不再从单一同ID父项推断多集合批注的归属：缺少parentCollection的annotation/annotationDrift一律不扩展，只有类型到唯一顶层集合的类型保持旧扩展；预览与永久清理共用同一归属校验。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A1",
+        "src/modules/trash/index.mjs",
+        "scripts/trash-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A2",
+      "priority": "P2",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "筛选页把tags与检索正文视为成员资格字段：页外子块改标签进入标签筛选、或正文变化进入检索筛选时，列表范围失效并按有界筛选页恢复。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A2",
+        "public/frontend/state/record-sync.mts",
+        "scripts/record-sync-v2-regression.mts"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A3",
+      "priority": "P2",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "恢复前核对页面身份：列表比较query/tag/sort/requestCursor/direction，详情比较found、根装载与query；不一致返回false走既有rebase，旧查询投影不再被新查询页面接收。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A3",
+        "public/frontend/app/runtime/data-sync-runtime.mts",
+        "scripts/sync-coordinator-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A4",
+      "priority": "P2",
+      "status": "FIXED_PENDING_INDEPENDENT_REREVIEW",
+      "reason": "历史补充优先分支同时预留队列位置与实际预算，并为失败日报各预留1个名额后取较小值；预算余1时日报修复入队、补充继续等待。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A4",
+        "src/app/record-compressions.mjs",
+        "scripts/record-compression-budget-wait-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A5",
+      "priority": "P2",
+      "status": "OPEN",
+      "reason": "监控超时未修到根因：本仓库仅放宽外层等待，中台fetchProductionData的5s取消仍在；本地组合复现仍为TimeoutError。该复现不是当前线上故障确认，需中台仓库修改与部署后复验。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A5",
+        "scripts/monitor-health.mjs"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A6",
+      "priority": "P2",
+      "status": "FIXED_PENDING_GATE_RECEIPTS",
+      "reason": "候选必需门补齐为策略派生的8项并新增两项质量门登记，但两项新增门尚未通过run-gate绑定候选回执，后续放行仍被阻止；本轮未发布。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A6",
+        "coordination/current.json",
+        "scripts/control-plane-gates.mts"
+      ]
     }
   ],
   "next_action": {
-    "description": "由独立审查者复审54f3b05的12项修复与新增回归；冻结前重建四账户default/v0516-combined有状态启动门；部署后复验M1/M2/M3。全部关闭前不得READY_WAIT_OWNER或发布。",
+    "description": "由独立审查者复审5f85f4f的A1-A4修复与新增回归，确认A5保持OPEN、A6的8项门清单与未生成回执的限制；冻结前重建四账户default/v0516-combined有状态启动门；部署后复验M1/M2/M3。全部关闭前不得READY_WAIT_OWNER或发布。",
     "owner": "独立审查者/协调者",
     "requires_owner": true
   },
@@ -1083,6 +1152,27 @@
       "refs": [
         "reviews/2026-10-21-expanded-independent-remediation.md",
         "reviews/2026-10-21-expanded-independent-remediation-result.json"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-remediation-5f85f4f",
+      "object": {
+        "kind": "remediation_receipt",
+        "version": "0.5.16",
+        "candidate": "5f85f4fed3227a5e7efe2ce371155324f8b3a433",
+        "tree": "a6f7536417f0ad71c056486797c176abc156feba"
+      },
+      "conclusion": "01:00后独立复审6项中A1-A4已在代码与可区分修复前后的回归中处理，A6补齐8项必需门，A5保持OPEN；本地定向与主回归通过，未做独立复审、未生成新增门回执、未部署。",
+      "limitations": [
+        "本轮为返修自评，不能替代独立结论；页面身份与监控复现按审查边界保留为运行时接口与本地组合复现。",
+        "A5根因在中台5s取消，本仓库无法修复；M3保持OPEN。",
+        "A6两项新增门未通过run-gate绑定回执，放行仍被工具阻止。",
+        "四账户default/v0516-combined有状态启动门未在新候选重建。",
+        "未push/tag/Release/Preview/部署，未写生产业务数据，未调用真实付费provider。"
+      ],
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation.md",
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json"
       ]
     }
   ],
