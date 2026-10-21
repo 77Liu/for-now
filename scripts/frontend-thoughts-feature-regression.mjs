@@ -530,7 +530,7 @@ console.log(
 }
 
 {
-  const { reconcileThoughtWindowMutation } = await import("../public/frontend/features/thoughts/index.mjs");
+  const { reconcileThoughtWindowMutation } = await import("../public/frontend/features/thoughts/model.mjs");
   const { THOUGHT_PAGING } = await import("../public/generated/thought-pagination-config.mjs");
   const root = { id: "semantic", type: "question", content: "q", tags: ["root"], blockCount: 3, answerCount: 2, preview: { kind: "idea", content: "old", truncated: true }, _sync: { status: "pending" } };
   const state = { thoughtPage: { window: { pages: [], stale: false, generation: 0 } }, thoughts: [root] };
@@ -572,7 +572,7 @@ console.log(
 
 // F9完整同步域经公开有界端口更新列表，不驻留批注/追问/模型正文。
 {
-  const { applyThoughtWindowSync } = await import('../public/frontend/features/thoughts/index.mjs');
+  const { applyThoughtWindowSync } = await import('../public/frontend/features/thoughts/model.mjs');
   const limits = { pageSize: 20, maxPages: 5, maxCheckpoints: 10, questionPreviewLimit: 600, userPreviewLimit: 600 };
   const roots = Array.from({ length: 100 }, (_, i) => ({ id: `sync-${i}`, type: 'question', content: `原问题${i}`, createdAt: new Date(Date.UTC(2026, 9, 20, 0, 0, 100 - i)).toISOString(), version: 1, tags: [], blockCount: 0 }));
   const createSnapshot = (deep = false) => ({ thoughts: structuredClone(roots), thoughtPage: { kind: 'list', sort: 'created', window: { generation: 0, stale: false, ownerKey: 'owner', routeKey: 'route', pages: Array.from({ length: 5 }, (_, i) => ({ requestCursor: i || deep ? `opaque-${i}` : '', prevCursor: i || deep ? 'opaque-prev' : '', nextCursor: 'opaque-next', direction: 'next', items: structuredClone(roots.slice(i * 20, i * 20 + 20)) })) } } });
@@ -622,7 +622,7 @@ console.log(
 
 // 在途增量不能把已读较新详情/未确认编辑回退，完整域权威删除仍有效。
 {
-  const { applyThoughtDetailSync } = await import('../public/frontend/features/thoughts/index.mjs');
+  const { applyThoughtDetailSync } = await import('../public/frontend/features/thoughts/model.mjs');
   const current = [{ id: 'r', type: 'question', version: 3, content: '新正文' }, { id: 'b', relatedTo: 'r', type: 'idea', version: 2, content: '新想法' }];
   const old = [{ id: 'r', type: 'question', version: 2, content: '旧正文' }];
   assert.deepEqual(applyThoughtDetailSync(current, old, 'r'), current);

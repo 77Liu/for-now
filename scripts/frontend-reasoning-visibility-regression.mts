@@ -65,3 +65,37 @@ current = true;
 live.append("must remain disposed");
 assert.equal(host.children.length, 0);
 console.log("Shared reasoning UI passed: collapsed, empty/hidden omitted, escaped, preserved expansion and late-session disposal.");
+
+// Health renders lazily after recognition; a cleared or replaced surface must not
+// receive an import completion belonging to the previous recognition/session.
+const { createHealthView } = await import(source("public/frontend/features/health/view.mjs"));
+const priorDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+Object.defineProperty(globalThis, "document", { configurable: true, value: {
+  documentElement: { dataset: { aiReasoningUiEnabled: "true" } }
+} });
+try {
+  const reasoningHost = { innerHTML: "", textContent: "" };
+  const healthForm = { elements: { attachmentPaths: { value: "" } }, querySelectorAll: () => [] };
+  const healthView = createHealthView({
+    getRoot: () => ({ querySelector: (selector: string) => selector === "#health-recognition-reasoning"
+      ? reasoningHost : selector.startsWith("[data-daily-form=") ? healthForm : null })
+  });
+  const result = (text: string) => ({ reasoningContent: text, reasoningVisibility: "user_viewable" });
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  healthView.applyRecognitionResult("sleep", result("old account"));
+  healthView.clearReasoning();
+  await settle();
+  assert.equal(reasoningHost.innerHTML, "", "unmounted/account-cleared reasoning stays empty");
+  healthView.applyRecognitionResult("sleep", result("older result"));
+  healthView.applyRecognitionResult("sleep", result("latest result"));
+  await settle();
+  assert.match(reasoningHost.innerHTML, /latest result/);
+  assert.doesNotMatch(reasoningHost.innerHTML, /older result/);
+  healthView.applyRecognitionResult("sleep", { reasoningContent: "private", reasoningVisibility: "privileged_only" });
+  await settle();
+  assert.equal(reasoningHost.innerHTML, "", "lazy rendering retains visibility policy");
+} finally {
+  if (priorDocument) Object.defineProperty(globalThis, "document", priorDocument);
+  else Reflect.deleteProperty(globalThis, "document");
+}
+console.log("Health lazy reasoning passed: latest result, session clearing and visibility policy.");

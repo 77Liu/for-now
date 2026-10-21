@@ -38,6 +38,10 @@ const ASSET_BUDGET = Object.freeze({
   lazyRouteImplementationModuleCount: 9,
   lazyRouteTransferBytes: 40 * 1024
 });
+// Captures renders persisted polish/condense reasoning on entry. The shared UI
+// facade and its implementation add two necessary modules; retain the 40 KiB
+// compressed transfer budget and measured interaction timing gates.
+const LAZY_ROUTE_MODULE_COUNT_BUDGET = Object.freeze({ captures: 11 });
 const LAZY_FEATURE_MODULE_COUNT_BUDGET = Object.freeze({
   notifications: 6
 });
@@ -1153,9 +1157,11 @@ for (const [view, closure] of [
   ...Object.entries(captureJournalRouteModules),
   ...Object.entries(f9RouteModules)
 ]) {
+  const moduleCountBudget = LAZY_ROUTE_MODULE_COUNT_BUDGET[view]
+    ?? ASSET_BUDGET.lazyRouteImplementationModuleCount;
   assert.ok(
-    closure.assets.length <= ASSET_BUDGET.lazyRouteImplementationModuleCount,
-    `${view} 路由实现增量 ${closure.assets.length} 个模块超过预算 ${ASSET_BUDGET.lazyRouteImplementationModuleCount}`
+    closure.assets.length <= moduleCountBudget,
+    `${view} 路由实现增量 ${closure.assets.length} 个模块超过预算 ${moduleCountBudget}`
   );
   assert.ok(
     closure.transferBytes <= ASSET_BUDGET.lazyRouteTransferBytes,

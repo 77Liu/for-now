@@ -261,8 +261,7 @@ export function createHealthFeatureController({
     activation = null;
     currentActivation.unlink();
     view.revokePreviews();
-    const reasoning = view.query("#health-recognition-reasoning");
-    if (reasoning) reasoning.innerHTML = "";
+    view.clearReasoning();
     await currentActivation.disposeDelegate();
     return true;
   };

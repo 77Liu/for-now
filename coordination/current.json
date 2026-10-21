@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 554,
-  "updated_at": "2026-10-21T17:53:25.715Z",
+  "revision": 556,
+  "updated_at": "2026-10-21T18:27:16.899Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -63,12 +63,12 @@
   },
   "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-final-cdd1cc80",
+    "id": "v0.5.16-final-a23a46e6",
     "branch": "develop",
-    "sha": "cdd1cc800523492f470d1c5c1495c0ee01b9d4e4",
-    "tree": "20c69c9fc3fd96e3b7fcdc49a48f3e1635a2856a",
+    "sha": "a23a46e65efe0f1300021c879bc810c5801f4e8a",
+    "tree": "fe98f78711bd22107db4b132f4864a2722ff8b99",
     "version": "0.5.16",
-    "status": "RETURNED_FOR_QUEUE_RACE_FIX",
+    "status": "RELEASE_PERFORMANCE_DECISION_PENDING",
     "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
@@ -85,11 +85,11 @@
       "release_metadata_pwa": "PASS",
       "static_module_contracts": "PASS",
       "full_regression": "PASS",
-      "release_journeys": "FAIL_UI_QUEUE_RACE",
+      "release_journeys": "FAIL",
       "release_protection": "PASS",
-      "stateful_postgres_startup": "NOT_REBUILT_FOR_THIS_CANDIDATE",
-      "control_plane_compatibility": "PASS_LOCAL_NO_RUN_GATE_RECEIPT",
-      "proposal_checker_compatibility": "PASS_LOCAL_NO_RUN_GATE_RECEIPT",
+      "stateful_postgres_startup": "PASS",
+      "control_plane_compatibility": "PASS",
+      "proposal_checker_compatibility": "PASS",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
       "production_rollout": "NOT_RUN"
@@ -97,7 +97,7 @@
     "base_sha": "0b44a8241341ff95b1a7040d4d045924d0711564",
     "gate_policy_commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb",
     "gate_inputs": {
-      "snapshot": "artifacts/local/v0516-final-production-snapshot.json"
+      "snapshot": "artifacts/local/v0516-final-production-snapshot-v2.json"
     },
     "gate_environment": {
       "purpose": "v0.5.16 final release; local isolated PostgreSQL; production switches unchanged"
@@ -356,9 +356,19 @@
         "artifacts/local/queue-race-old-code-probe.log",
         "artifacts/local/v0516-queue-race-fix-test-v3.log"
       ]
+    },
+    {
+      "id": "v0516-release-startup-performance",
+      "priority": "P2",
+      "status": "OWNER_DECISION_PENDING",
+      "reason": "收窄健康/思绪依赖后本机10冷+10热样本：首屏104–105请求>92；首页加载thoughts/model；热启动P75 1033.9ms>1000ms。切页/详情/同步时间通过；性能专项FAIL，不写PASS。等待Owner决定是否纳入本版MVP延期。",
+      "refs": [
+        "artifacts/local/v0516-performance-final-report.json",
+        "artifacts/local/v0516-performance-final.log"
+      ]
     }
   ],
-  "next_action": "提交最小同步时序修复、重新固定候选并重建8项发布门；通过后继续已授权发布。",
+  "next_action": "完成已授权最小依赖清理和兼容性验证；等待新增启动性能边界决定后固定新候选，重新执行适用发布门；生产保持0.5.15。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -1199,6 +1209,28 @@
       "refs": [
         "docs/versions/v0.5.16/README.md#2026-10-22-mvp-发布决定",
         "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-final-a23-gates",
+      "object": {
+        "kind": "candidate",
+        "sha": "a23a46e65efe0f1300021c879bc810c5801f4e8a",
+        "tree": "fe98f78711bd22107db4b132f4864a2722ff8b99"
+      },
+      "conclusion": "8项正式门中7项PASS，release_journeys在完整后端/浏览器通过后因性能静态依赖预算FAIL；不宣称整体通过。",
+      "limitations": [
+        "后续未提交依赖清理不是本批回执的候选；需固定新候选后重新绑定证据。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-release-fixed-gates/release_metadata_pwa.json",
+        "artifacts/local/v0516-release-fixed-gates/static_module_contracts.json",
+        "artifacts/local/v0516-release-fixed-gates/full_regression.json",
+        "artifacts/local/v0516-release-fixed-gates/release_journeys.json",
+        "artifacts/local/v0516-release-fixed-gates/release_protection.json",
+        "artifacts/local/v0516-release-fixed-gates/stateful_postgres_startup.json",
+        "artifacts/local/v0516-release-fixed-gates/control_plane_compatibility.json",
+        "artifacts/local/v0516-release-fixed-gates/proposal_checker_compatibility.json"
       ]
     }
   ],

@@ -1,5 +1,4 @@
 import { WEIGHT_BATCH_MAX_ITEMS } from "./drafts.mjs";
-import { reasoningDisclosureMarkup } from "../ui/index.mjs";
 
 const formatBytes=value=>value<1024?`${value} B`:value<1048576?`${(value/1024).toFixed(1)} KB`:`${(value/1048576).toFixed(1)} MB`;
 
@@ -41,6 +40,7 @@ export function createHealthView({
   objectUrls = globalThis.URL
 }) {
   let previewUrls = [];
+  let reasoningGeneration = 0;
   const root = () => getRoot() || null;
   const query = selector => root()?.querySelector?.(selector) || null;
   const queryAll = selector => [...(root()?.querySelectorAll?.(selector) || [])];
@@ -50,6 +50,26 @@ export function createHealthView({
   function revokePreviews() {
     for (const url of previewUrls) objectUrls?.revokeObjectURL?.(url);
     previewUrls = [];
+  }
+
+  function clearReasoning() {
+    reasoningGeneration += 1;
+    const host = query("#health-recognition-reasoning");
+    if (host) host.innerHTML = "";
+  }
+
+  function renderReasoning(result) {
+    clearReasoning();
+    const host = query("#health-recognition-reasoning");
+    if (!host) return;
+    const generation = reasoningGeneration;
+    const current = () => generation === reasoningGeneration
+      && query("#health-recognition-reasoning") === host;
+    import("../ui/index.mjs").then(({ reasoningDisclosureMarkup }) => {
+      if (current()) host.innerHTML = reasoningDisclosureMarkup(result);
+    }).catch(() => {
+      if (current()) host.textContent = "推理暂时无法显示。";
+    });
   }
 
   function clearSurface() {
@@ -63,15 +83,13 @@ export function createHealthView({
     if(parse)parse.disabled=true;
     const status = query("#health-parse-status");
     if(status)status.textContent="";
-    const reasoning = query("#health-recognition-reasoning");
-    if (reasoning) reasoning.innerHTML = "";
+    clearReasoning();
   }
 
   function applyRecognitionResult(type, result) {
     const target = form(type);
     if (!target || !result) return false;
-    const reasoning = query("#health-recognition-reasoning");
-    if (reasoning) reasoning.innerHTML = reasoningDisclosureMarkup(result);
+    renderReasoning(result);
     let normalized = result;
     if (type === "exercise") {
       const { description, ...rest } = result;
@@ -248,6 +266,7 @@ export function createHealthView({
     form,
     revokePreviews,
     clearSurface,
+    clearReasoning,
     applyRecognitionResult,
     resetForm,
     captureActiveWeightItem,
