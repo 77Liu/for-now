@@ -71,11 +71,14 @@ export function createAnnotationsFeatureController({
   const model = createAnnotationModel({
     getSnapshot: data.getSnapshot,
     getAccountId: data.getAccountId,
-    storage: platform.storage
+    storage: platform.storage,
+    isRootComplete: data.isRootComplete
   });
   let activation = null;
   let session = {};
   const timers = new Set();
+  let selectionTimer = null, selectionGeneration = 0;
+  const selectionScope = () => JSON.stringify([activation?.generation ?? null, String(data.getAccountId() || ""), data.getSelectionScope?.() || ""]);
   const isMounted = () => Boolean(activation);
   const ticket = candidate => ({
     candidate,
@@ -109,7 +112,16 @@ export function createAnnotationsFeatureController({
     requestFrame: platform.requestFrame,
     cancelFrame: platform.cancelFrame,
     matchesMedia: platform.matchesMedia,
-    isMounted
+    isMounted,
+    selectionScope,
+    selectionPageKey: () => data.getSelectionPageKey?.() || "",
+    containsSelectionHost: host => activation?.root === document || Boolean(activation?.root?.contains?.(host)),
+    onSelectionReleased: () => {
+      const candidate = activation, scope = selectionScope();
+      queueMicrotask(() => {
+        if (candidate && activation === candidate && scope === selectionScope()) data.onSelectionReleased?.();
+      });
+    }
   });
   const operations = createAnnotationOperations({
     model,
@@ -124,17 +136,24 @@ export function createAnnotationsFeatureController({
   });
 
   function scheduleSelection(delay = 0) {
-    let timer;
-    timer = platform.setTimer(() => {
-      timers.delete(timer);
-      annotationView.showSelectionTools();
+    if (selectionTimer !== null) {
+      platform.clearTimer(selectionTimer);
+      timers.delete(selectionTimer);
+    }
+    const scope = selectionScope(), candidate = activation;
+    selectionTimer = platform.setTimer(() => {
+      timers.delete(selectionTimer);
+      selectionTimer = null;
+      if (activation === candidate && scope === selectionScope()) annotationView.showSelectionTools();
     }, delay);
-    timers.add(timer);
+    timers.add(selectionTimer);
   }
+
   function handleClick(event) {
     const candidate = activation;
     if (!candidate) return;
     const selectionAction = closest(event, "[data-selection-action]");
+    const refresh = closest(event, "[data-annotation-refresh]");
     const panelClose = closest(event, "#comment-panel-close");
     const panelReopen = closest(event, "#comment-panel-reopen");
     const anchor = closest(event, ".comment-anchor");
@@ -144,7 +163,9 @@ export function createAnnotationsFeatureController({
     const remove = closest(event, "[data-comment-delete]");
     const driftRemove = closest(event, "[data-drift-delete]");
     const openComments = closest(event, "[data-open-comments]");
-    if (selectionAction) {
+    if (refresh) {
+      void operations.retryRefresh(candidate);
+    } else if (selectionAction) {
       void operations.selectionAction(candidate, selectionAction);
     } else if (panelClose) {
       annotationView.closePanel();
@@ -154,7 +175,7 @@ export function createAnnotationsFeatureController({
         model.ui.activeAnnotationId
       );
     } else if (anchor) {
-      model.ui.pendingSelection = null;
+      annotationView.invalidateSelection();
       annotationView.openPanel(
         anchor.dataset.commentRoot,
         anchor.dataset.annotationId
@@ -228,6 +249,8 @@ export function createAnnotationsFeatureController({
     activation = null;
     for (const timer of timers) platform.clearTimer(timer);
     timers.clear();
+    selectionTimer = null;
+    annotationView.invalidateSelection();
     annotationView.cancelLayout();
     annotationView.hideSelectionTools();
     return true;
@@ -242,7 +265,7 @@ export function createAnnotationsFeatureController({
     let candidate;
     const dispose = () => disposed ? false : (disposed = true, detach(candidate));
     if (signal?.aborted) return dispose;
-    candidate = { root, signal, dispose, listeners: [] };
+    candidate = { root, signal, dispose, generation: ++selectionGeneration, listeners: [] };
     activation = candidate;
     const listen = (target, type, handler, options) => {
       target?.addEventListener?.(type, handler, options);
@@ -252,9 +275,7 @@ export function createAnnotationsFeatureController({
     };
     listen(root, "mouseup", () => scheduleSelection());
     listen(root, "touchend", () => scheduleSelection(180), { passive: true });
-    listen(root, "selectionchange", () => {
-      if (!window.getSelection()?.isCollapsed) scheduleSelection(80);
-    });
+    listen(document, "selectionchange", () => scheduleSelection(80));
     listen(root, "keyup", event => {
       if (event.key.startsWith("Arrow") || event.key === "Shift") {
         scheduleSelection();
@@ -264,8 +285,17 @@ export function createAnnotationsFeatureController({
       passive: true,
       capture: true
     });
+    const retainMenu = event => {
+      if (closest(event, "#selection-tools")) annotationView.retainSelectionForMenu();
+      else if (model.ui.pendingSelection?.phase === "menu") annotationView.invalidateSelection();
+    };
+    listen(root, "pointerdown", retainMenu, { passive: true });
+    listen(root, "touchstart", retainMenu, { passive: true });
+    listen(root, "pointercancel", () => {
+      if (model.ui.pendingSelection?.phase === "menu") annotationView.invalidateSelection();
+    });
     listen(root, "mousedown", event => {
-      if (closest(event, "#selection-tools")) event.preventDefault();
+      if (closest(event, "#selection-tools")) { retainMenu(event); event.preventDefault(); }
     });
     listen(root, "click", handleClick, { capture: true });
     listen(root, "submit", handleSubmit);
@@ -312,11 +342,17 @@ export function createAnnotationsFeatureController({
     unmount,
     resetSession,
     restoreDrafts: model.restoreDrafts,
-    restoreCommentDraft: annotationView.restoreCommentDraft,
+    restoreCommentDraft: context => {
+      const result = annotationView.restoreCommentDraft(context);
+      if (result === "reselect") view.showToast("评论草稿已保留，原选区已失效；请重新选择正文继续。");
+      return result;
+    },
     commentDraftContext: annotationView.commentDraftContext,
     getRoot: model.rootFor,
     rootLabel: model.rootLabel,
     textContent: annotationView.textContent,
+    /** 当前真实非坍塌原生Range是否占用给定宿主；表单快照不阻止普通重绘，源变会明确失效。 @since unreleased */
+    hasActiveSelection: container => activation ? annotationView.hasActiveSelection(container) : false,
     activeRootKey: () => model.ui.activeRootKey,
     isActiveRoot: value => model.ui.activeRootKey === value,
     openPanel: annotationView.openPanel,

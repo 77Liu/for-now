@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-21",
+  "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+  "reviewSource": "outputs/2026-10-21-after-0100-independent-review.md（独立审查者提供，未入库）",
+  "implementationCandidate": {
+    "version": "0.5.16",
+    "sha": "5f85f4fed3227a5e7efe2ce371155324f8b3a433",
+    "tree": "a6f7536417f0ad71c056486797c176abc156feba",
+    "branch": "feat/v0.5.16-sync-latency"
+  },
+  "findings": [
+    {
+      "id": "A1",
+      "priority": "P1",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Legacy annotations and annotation drafts without parentCollection are no longer inferred from a single same-ID parent. Only types that map to exactly one top-level collection keep legacy expansion.",
+      "entry": "src/modules/trash/index.mjs#L43-L58 (trash.expanded)",
+      "regression": "scripts/trash-regression.mjs#L215-L245"
+    },
+    {
+      "id": "A2",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Filtered list scopes treat tags and search text as membership fields, so an off-page child that changes tags now invalidates the filtered page and triggers a bounded refetch.",
+      "entry": "public/frontend/state/record-sync.mts#L174-L180, #L362-L377",
+      "regression": "scripts/record-sync-v2-regression.mts#L612-L685"
+    },
+    {
+      "id": "A3",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Projection recovery validates page identity (query, tag, sort, cursor, direction) and detail root identity plus found state; mismatched projections are rejected instead of reused.",
+      "entry": "public/frontend/app/runtime/data-sync-runtime.mts#L321-L345",
+      "regression": "scripts/sync-coordinator-regression.mjs#L1694-L1758"
+    },
+    {
+      "id": "A4",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "The historical supplement reservation now covers both queue slots and actual remaining budget, reserving one of each for a failed daily repair.",
+      "entry": "src/app/record-compressions.mjs#L839-L853",
+      "regression": "scripts/record-compression-budget-wait-regression.mjs#L462-L506"
+    },
+    {
+      "id": "A5",
+      "priority": "P2",
+      "status": "OPEN",
+      "closure": "Not fixed. The outer monitor wait was widened, but the middle-platform fetchProductionData still cancels aggregation at 5s; a combined local reproduction still returns TimeoutError at 5032ms.",
+      "entry": "scripts/monitor-health.mjs#L41-L50 (outer only); middle-platform source is outside this repository",
+      "limitation": "Requires a middle-platform code change and a deployment window; cannot be closed from this repository."
+    },
+    {
+      "id": "A6",
+      "priority": "P2",
+      "status": "FIXED_PENDING_GATE_RECEIPTS",
+      "closure": "Candidate required_gates now records all 8 gates derived by gate-plan, including control_plane_compatibility and proposal_checker_compatibility.",
+      "entry": "coordination/current.json candidate.required_gates",
+      "regression": "npm run test:control-plane PASS; npm run test:proposal-checker PASS; gate-plan lists 8 gates",
+      "limitation": "Formal run-gate receipts for the two new gates are not bound yet, so release remains blocked."
+    }
+  ],
+  "validation": {
+    "implementationCommit": "5f85f4fed3227a5e7efe2ce371155324f8b3a433",
+    "buildRuntime": "PASS",
+    "fullRegression": "PASS",
+    "staticCheck": "PASS",
+    "recordSync": "PASS",
+    "monitor": "PASS",
+    "trashRegression": "PASS",
+    "recordCompressionBudgetWait": "PASS",
+    "uiRegression": "PASS",
+    "deploy": "PASS",
+    "releaseFence": "PASS",
+    "postgresStable": {
+      "status": "PASS",
+      "postgres": "16.14"
+    },
+    "controlPlaneCompatibility": "PASS_LOCAL_NO_RUN_GATE_RECEIPT",
+    "proposalCheckerCompatibility": "PASS_LOCAL_NO_RUN_GATE_RECEIPT"
+  },
+  "notCompleted": [
+    "A5 remains open; the middle-platform 5s cancellation is outside this repository.",
+    "A6 formal gate receipts are not generated; required_gates lists 8 gates but the two new gates have no run-gate receipt.",
+    "Independent re-review was not performed; this receipt is a remediation self-assessment.",
+    "The stateful startup gate was not rebuilt; v0516-rereview-stateful-gate-unrebuilt stays OPEN.",
+    "No production access, production writes, real paid provider calls, push, tag, Release, Preview or deployment.",
+    "Browser P75, Safari/installed PWA/real-device and production rollout gaps remain open."
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-10-11T18:03:52.212431+08:00",
+  "purpose": "新规则启动前 Git 只读盘点与可恢复归档",
+  "repository": ".",
+  "git_dir": "./.git",
+  "remote_operations": "未执行",
+  "branches": [
+    {
+      "branch": "develop",
+      "sha": "7c65b59e29c545cfdfac61ecaa226c1b5b42b19e",
+      "archive_ref": "refs/archive/git-startup-20261011/heads/develop"
+    },
+    {
+      "branch": "docs/workflow-control-rules",
+      "sha": "d01ac2e2e1d068bfeb244548db2db80a83d014b8",
+      "archive_ref": "refs/archive/git-startup-20261011/heads/docs/workflow-control-rules"
+    },
+    {
+      "branch": "feat/v0.5.13-save-sync",
+      "sha": "b782d0e35beacaacc4391683440de105bcff99ef",
+      "archive_ref": "refs/archive/git-startup-20261011/heads/feat/v0.5.13-save-sync"
+    },
+    {
+      "branch": "feat/v0.5.13.1-stability",
+      "sha": "9e53b16a62ad689fb9985b4c360bbb25cca08547",
+      "archive_ref": "refs/archive/git-startup-20261011/heads/feat/v0.5.13.1-stability"
+    },
+    {
+      "branch": "main",
+      "sha": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
+      "archive_ref": "refs/archive/git-startup-20261011/heads/main"
+    },
+    {
+      "branch": "release/v0.5.12-clean",
+      "sha": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
+      "archive_ref": "refs/archive/git-startup-20261011/heads/release/v0.5.12-clean"
+    },
+    {
+      "branch": "release/v0.5.13",
+      "sha": "b782d0e35beacaacc4391683440de105bcff99ef",
+      "archive_ref": "refs/archive/git-startup-20261011/heads/release/v0.5.13"
+    },
+    {
+      "branch": "release/v0.5.13.1",
+      "sha": "9e53b16a62ad689fb9985b4c360bbb25cca08547",
+      "archive_ref": "refs/archive/git-startup-20261011/heads/release/v0.5.13.1"
+    }
+  ],
+  "worktrees": [
+    {
+      "path": ".",
+      "head": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
+      "branch": "main",
+      "status": "?? .superpowers/sdd/v0.5.13-two-iterations/progress.md",
+      "status_sha256": "c4389be335354ed7e6ed6b50c69e60789f008b3d1951dcd5ec2d1effa7068ae7",
+      "working_patch": "git-startup-archive-20261011/patches/worktree-0-working.patch",
+      "working_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "index_patch": "git-startup-archive-20261011/patches/worktree-0-index.patch",
+      "index_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "untracked": [
+        ".superpowers/sdd/v0.5.13-two-iterations/progress.md"
+      ],
+      "untracked_archive": "git-startup-archive-20261011/untracked/worktree-0-untracked.tar",
+      "untracked_archive_sha256": "76247c9e828a688ee4470448af283d0e79e0b8ddef8249f43362ac423e5c2399"
+    },
+    {
+      "path": "./.worktrees/develop",
+      "head": "d01ac2e2e1d068bfeb244548db2db80a83d014b8",
+      "branch": "docs/workflow-control-rules",
+      "status": "",
+      "status_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "working_patch": "git-startup-archive-20261011/patches/worktree-1-working.patch",
+      "working_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "index_patch": "git-startup-archive-20261011/patches/worktree-1-index.patch",
+      "index_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "untracked": [],
+      "untracked_archive": "git-startup-archive-20261011/untracked/worktree-1-untracked.tar",
+      "untracked_archive_sha256": "84ff92691f909a05b224e1c56abb4864f01b4f8e3c854e4bb4c7baf1d3f6d652"
+    }
+  ],
+  "archive_namespace": "refs/archive/git-startup-20261011/heads",
+  "notes": [
+    "本归档不授予删除或远程操作权限。",
+    "任何未提交差分和未跟踪文件先保存后再处理。",
+    "旧交接报告不作为本次当前事实。"
+  ]
+}

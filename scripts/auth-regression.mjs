@@ -37,7 +37,8 @@ async function waitForServer(url, child) {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (child.exitCode != null) throw new Error(`认证测试服务提前退出：${child.exitCode}`);
     try {
-      if ((await fetch(`${url}/now/healthz`)).ok) return;
+      // F2在恢复期间先开放liveness；业务回归必须等完整扫描与共享依赖就绪。
+      if ((await fetch(`${url}/now/readyz`)).ok) return;
     } catch {}
     await sleep(50);
   }
@@ -137,7 +138,7 @@ let errors = "";
 const startApp = () => {
   const app = spawn(globalThis.process.execPath, ["server.mjs"], {
     cwd: ROOT,
-    env: { ...globalThis.process.env, NODE_ENV: "test", DATA_DIR: dataDir, PORT: String(port), APP_BASE_PATH: "/now", INVITE_CODE_HASH: invitationHash, COOKIE_SECURE: "1", UPSTREAM_ORIGIN: "", PLATFORM_SERVICE_TOKEN_HASH: platformTokenHash, BACKUP_STATUS_FILE: path.join(dataDir, "missing-backup-marker"), DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}` },
+    env: { ...globalThis.process.env, NODE_ENV: "test", ACCOUNT_RECOVERY_ENABLED: "0", DATA_DIR: dataDir, PORT: String(port), APP_BASE_PATH: "/now", INVITE_CODE_HASH: invitationHash, COOKIE_SECURE: "1", UPSTREAM_ORIGIN: "", PLATFORM_SERVICE_TOKEN_HASH: platformTokenHash, BACKUP_STATUS_FILE: path.join(dataDir, "missing-backup-marker"), DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}` },
     stdio: ["ignore", "pipe", "pipe"]
   });
   app.stderr.on("data", chunk => { errors += chunk; });
@@ -204,7 +205,7 @@ try {
   assert.equal(registered.body.user.recordTimezone, DEFAULT_RECORD_TIMEZONE);
   const ownerSetCookie = registered.response.headers.get("set-cookie");
   assert.match(ownerSetCookie, /;\s*Secure(?:;|$)/i);
-  const ownerCookie = ownerSetCookie.split(";")[0];
+  let ownerCookie = ownerSetCookie.split(";")[0];
   const ownerState = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: ownerCookie } });
   assert.equal(ownerState.body.captures[0].content, "legacy-owner-data");
   assert.equal(ownerState.body.commercialization, undefined);
@@ -531,7 +532,8 @@ try {
     headers: { cookie: ownerCookie },
     body: JSON.stringify({ currentPassword: "wrong-password-1", newPassword: "new-secure-password-2" })
   });
-  assert.equal(wrongCurrentPassword.response.status, 403);
+  assert.equal(wrongCurrentPassword.response.status, 401);
+  assert.equal(wrongCurrentPassword.body.code, "AUTH_INVALID_CREDENTIALS");
 
   const changedPassword = await jsonRequest(`${base}/now/api/auth/password`, {
     method: "PATCH",
@@ -539,7 +541,10 @@ try {
     body: JSON.stringify({ currentPassword: "correct-horse-battery-1", newPassword: "new-secure-password-2" })
   });
   assert.equal(changedPassword.response.status, 200);
-  assert.equal((await fetch(`${base}/now/api/state`, { headers: { cookie: ownerCookie } })).status, 200);
+  assert.equal(changedPassword.body.authenticated, false);
+  assert.equal(changedPassword.body.reauthRequired, true);
+  assert.match(changedPassword.response.headers.get("set-cookie"), /Max-Age=0/);
+  assert.equal((await fetch(`${base}/now/api/state`, { headers: { cookie: ownerCookie } })).status, 401);
 
   const oldPasswordLogin = await jsonRequest(`${base}/now/api/auth/login`, {
     method: "POST",
@@ -551,6 +556,7 @@ try {
     body: JSON.stringify({ username: "keeper", password: "new-secure-password-2" })
   });
   assert.equal(newPasswordLogin.response.status, 200);
+  ownerCookie = newPasswordLogin.response.headers.get("set-cookie").split(";")[0];
 
   const promoted = await jsonRequest(`${base}/now/api/auth/users/${second.body.user.id}/role`, {
     method: "PATCH",
@@ -675,6 +681,20 @@ try {
   assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedFollowUpQuestion.id).followUps.filter(item => item.sourceTaskId === queuedTasks[1].id).length, 0);
   assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedAnnotationQuestion.id).annotations[0].shenji.filter(item => item.sourceTaskId === queuedTasks[2].id).length, 0);
 
+  // 即使恢复开关关闭，认证缺失也不得重新注册为Owner；失败不重建文件或新增账户目录。
+  const authenticationFile = path.join(dataDir, "auth.json");
+  const authenticationOriginal = await fs.readFile(authenticationFile, "utf8");
+  const originalAccountDirectories = (await fs.readdir(path.join(dataDir, "users"))).sort();
+  await fs.unlink(authenticationFile);
+  const missingRegistration = await jsonRequest(`${base}/now/api/auth/register`, {
+    method: "POST", body: JSON.stringify({ username: "replacement-owner", password: "SyntheticPass123", invitation })
+  });
+  assert.equal(missingRegistration.response.status, 503);
+  assert.equal(missingRegistration.body.code, "AUTH_STORAGE_MISSING");
+  await assert.rejects(fs.access(authenticationFile), error => error.code === "ENOENT");
+  assert.deepEqual((await fs.readdir(path.join(dataDir, "users"))).sort(), originalAccountDirectories);
+  await fs.writeFile(authenticationFile, authenticationOriginal);
+  assert.equal((await jsonRequest(`${base}/now/api/auth/me`, { headers: { cookie: secondCookie } })).response.status, 200);
   await fs.writeFile(path.join(dataDir, "auth.json"), "{PRIVATE_CORRUPT_AUTH");
   const damaged = await jsonRequest(`${base}/now/api/auth/me`, { headers: { cookie: secondCookie } });
   assert.equal(damaged.response.status, 500);

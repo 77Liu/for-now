@@ -156,7 +156,8 @@ function resolveSpeechSource(store, sourceType, sourceId) {
 function currentSpeechEntries(store, {
   ownerHash = "",
   currentTime = new Date().toISOString(),
-  hash
+  hash,
+  sourceReceipts = null
 } = {}) {
   if (typeof hash !== "function") throw new TypeError("Public speech assets require a hash function");
   const snapshot = normalizeSpeechCacheStore(structuredClone(store || {}));
@@ -165,12 +166,11 @@ function currentSpeechEntries(store, {
       if (!cachePath(entry)
         || (ownerHash && entry.ownerHash !== ownerHash)
         || speechCacheEntryExpired(entry, currentTime)) return [];
-      const current = resolveSpeechSource(
-        snapshot,
-        entry.sourceType,
-        entry.sourceId
-      );
-      if (!current?.text || entry.textHash !== hash(current.text)) return [];
+      const receipt = sourceReceipts?.find(item => item.sourceType === entry.sourceType && item.sourceId === entry.sourceId);
+      const current = sourceReceipts
+        ? receipt && { sourceVersion: receipt.sourceVersion, text: true }
+        : resolveSpeechSource(snapshot, entry.sourceType, entry.sourceId);
+      if (!current?.text || entry.textHash !== (sourceReceipts ? receipt.textHash : hash(current.text))) return [];
       return [{ entry, current }];
     });
 }
@@ -581,4 +581,28 @@ export function createSpeechCache({
   }, generate);
 
   return { synthesize, synthesizeCapture, synthesizeThoughtChain, readAudio };
+}
+
+/** 当前单根朗读来源投影，不保存正文；供数据库列表验证缓存。 @since unreleased */
+export function thoughtSpeechProjection(thoughts, hash) {
+  return thoughts.flatMap(item => {
+    const sourceType = item.type === "question" ? "thoughtChain" : item.type === "answer" ? "thoughtAnswer" : "";
+    if (!sourceType) return [];
+    const current = resolveSpeechSource({ thoughts }, sourceType, item.id);
+    return current?.text ? [{ sourceType, sourceId: item.id,
+      sourceVersion: current.sourceVersion, textHash: hash(current.text) }] : [];
+  });
+}
+
+/** 按当前页来源身份读取缓存；仅返回通过当前文本摘要校验的公开资产。 @since unreleased */
+export async function readThoughtSpeechAssets(repository, sourceReceipts, options) {
+  if (!sourceReceipts.length) return [];
+  const rows = await repository.queryRecords(({ client, accountId }) => client.query(`
+    SELECT entry AS payload FROM for_now.store_fields,
+      LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(payload)='array' THEN payload ELSE '[]'::jsonb END) entry
+    WHERE account_id=$1 AND field='speechCache' AND entry->>'sourceId'=ANY($2::text[])
+    LIMIT 1001
+  `, [accountId, sourceReceipts.map(item => item.sourceId)]));
+  if (rows.rows.length > 1000) throw Object.assign(new Error("当前页朗读缓存超过读取上限"), { statusCode: 503 });
+  return publicSpeechAssets({ speechCache: rows.rows.map(row => row.payload) }, { ...options, sourceReceipts });
 }

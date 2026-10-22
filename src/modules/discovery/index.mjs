@@ -329,7 +329,7 @@ function candidateValue({ key, genre, id, title, matches, route, occurredAt, occ
   };
 }
 
-function thoughtCandidatesFor(thoughts, filters, nowMilliseconds) {
+function thoughtCandidatesFor(thoughts, filters, nowMilliseconds, indexedStatus = null) {
   const roots = thoughts.filter(item => item?.type === "question" && typeof item.id === "string" && item.id);
   const children = new Map(roots.map(root => [root.id, []]));
   for (const item of thoughts) {
@@ -341,7 +341,8 @@ function thoughtCandidatesFor(thoughts, filters, nowMilliseconds) {
     const matches = blocks.filter(item => blockMatches(item, filters))
       .map(item => projectBlock(item, root.id, filters.query));
     if (!matches.length) return null;
-    const status = statusFor(root, chainChildren, nowMilliseconds);
+    const indexed = indexedStatus?.[root.id];
+    const status = indexed ? currentIndexedStatus(indexed, nowMilliseconds) : statusFor(root, chainChildren, nowMilliseconds);
     if (filters.freshOnly && !status.fresh) return null;
     const question = projectBlock(root, root.id, "");
     const { revision, ...publicStatus } = status;
@@ -545,7 +546,8 @@ function nowValue(now) {
 export function createThoughtDiscoveryService({
   repository,
   now = () => new Date().toISOString(),
-  random = Math.random
+  random = Math.random,
+  thoughtQueries = () => null
 }) {
   if (!repository || typeof repository.read !== "function" || typeof repository.update !== "function") {
     throw new TypeError("Discovery repository must provide read and update");
@@ -562,7 +564,53 @@ export function createThoughtDiscoveryService({
     };
   };
 
+  const otherFields = { capture: "captures", journal: "journals", bookExcerpt: "books", quote: "quotes" };
+  const otherCandidates = async parsed => {
+    const genres = parsed.freshOnly ? [] : parsed.genres.filter(genre => genre !== "thought");
+    if (!genres.length) return [];
+    if (typeof repository.readCollections !== "function") throw new Error("Discovery requires scoped collections");
+    const document = await repository.readCollections([...new Set(genres.map(genre => otherFields[genre]))]);
+    return candidatesFor(document, { ...parsed, genres }, nowValue(now).milliseconds);
+  };
+  async function thoughtCandidatePage(parsed, queries, cursor) {
+    if (!parsed.genres.includes("thought")) return {
+      candidates: [], hasMore: false, total: 0, untracedCount: 0, totalUntracedCount: 0
+    };
+    const clock = nowValue(now);
+    const result = await queries.discovery({ ...parsed, before: cursor, now: clock.milliseconds });
+    return { ...result, candidates: thoughtCandidatesFor(result.thoughts, parsed, clock.milliseconds, result.status).sort(compareCandidates) };
+  }
+  async function boundedCandidates(parsed, queries, cursor) {
+    const [thought, others] = await Promise.all([
+      thoughtCandidatePage(parsed, queries, cursor), otherCandidates(parsed)
+    ]);
+    return {
+      candidates: [...thought.candidates, ...others].sort(compareCandidates),
+      total: thought.total + others.length,
+      untracedCount: thought.untracedCount,
+      totalUntracedCount: thought.totalUntracedCount,
+      hasMore: thought.hasMore
+    };
+  }
+  async function boundedSearch(parsed, queries) {
+    const cursor = decodeCursor(parsed.cursor, parsed);
+    if (cursor === false) return { invalidCursor: true };
+    const result = await boundedCandidates(parsed, queries, cursor);
+    const eligible = cursor ? result.candidates.filter(candidate => beforeCursor(candidate, cursor)) : result.candidates;
+    const selected = eligible.slice(0, parsed.limit);
+    const hasMore = eligible.length > selected.length || result.hasMore;
+    return {
+      items: selected.map(candidate => candidate.value),
+      nextCursor: hasMore && selected.length ? encodeCursor(selected.at(-1), parsed) : "",
+      total: result.total, untracedCount: result.untracedCount, totalUntracedCount: result.totalUntracedCount
+    };
+  }
+
   async function search(input = {}) {
+    const parsed = normalizeThoughtDiscoveryFilters(input);
+    if (parsed.error) return parsed;
+    const queries = thoughtQueries();
+    if (queries?.enabled) return boundedSearch(parsed, queries);
     const result = await readCandidates(input);
     if (result.error) return result;
     const cursor = decodeCursor(result.filters.cursor, result.filters);
@@ -582,20 +630,22 @@ export function createThoughtDiscoveryService({
   }
 
   async function countUntraced(input = {}) {
+    const queries = thoughtQueries();
+    if (queries?.enabled) {
+      const parsed = normalizeThoughtDiscoveryFilters({ ...input, cursor: "", limit: 1 });
+      if (parsed.error) return parsed;
+      return (await boundedCandidates(parsed, queries, null)).untracedCount;
+    }
     const result = await readCandidates({ ...input, cursor: "", limit: MAX_LIMIT });
     if (result.error) return result;
     return result.candidates.filter(candidate => candidate.value.fresh).length;
   }
 
-  async function mutateStatus(id, mutation, { expectedVersion = null, clock = nowValue(now) } = {}) {
-    return repository.update(document => {
-      const thoughts = thoughtsOf(document);
-      const root = thoughts.find(item => item?.id === id && item.type === "question");
+  async function mutateStatus(action, id, mutation, { expectedVersion = null, clock = nowValue(now) } = {}) {
+    const apply = (root, children) => {
       if (!root) return { missing: true };
-      const children = thoughts.filter(item => item?.relatedTo === root.id && item.type !== "question");
       const discovery = root.discovery && typeof root.discovery === "object" && !Array.isArray(root.discovery)
-        ? { ...root.discovery }
-        : {};
+        ? { ...root.discovery } : {};
       const currentVersion = recordVersion(discovery.version);
       if (expectedVersion != null && Number(expectedVersion) !== currentVersion) {
         return { versionConflict: true, currentVersion };
@@ -606,10 +656,19 @@ export function createThoughtDiscoveryService({
       root.discovery = discovery;
       const { revision, ...status } = statusFor(root, children, clock.milliseconds);
       return { value: { id: root.id, status, untraced: status.untraced, fresh: status.fresh } };
+    };
+    const queries = thoughtQueries();
+    if (queries?.enabled) return queries.mutateDiscovery(id, apply, action);
+    return repository.update(document => {
+      const thoughts = thoughtsOf(document);
+      const root = thoughts.find(item => item?.id === id && item.type === "question");
+      if (!root) return { missing: true };
+      const children = thoughts.filter(item => item?.relatedTo === root.id && item.type !== "question");
+      return apply(root, children);
     });
   }
 
-  const markRead = (id, options = {}) => mutateStatus(id, (discovery, root, children, clock) => {
+  const markRead = (id, options = {}) => mutateStatus("markRead", id, (discovery, root, children, clock) => {
     discovery.readAt = clock.iso;
     discovery.seenRevision = chainRevision(root, children);
   }, options);
@@ -624,16 +683,53 @@ export function createThoughtDiscoveryService({
       });
     }
     const normalizedUntil = new Date(untilMilliseconds).toISOString();
-    return mutateStatus(id, discovery => {
+    return mutateStatus("snooze", id, discovery => {
       discovery.snoozedUntil = normalizedUntil;
     }, { ...options, clock });
   }
 
-  const clearSnooze = (id, options = {}) => mutateStatus(id, discovery => {
+  const clearSnooze = (id, options = {}) => mutateStatus("clearSnooze", id, discovery => {
     delete discovery.snoozedUntil;
   }, options);
 
+  async function boundedRandomDoor(input, options, queries) {
+    const parsed = normalizeThoughtDiscoveryFilters({ ...input, cursor: "", limit: MAX_LIMIT });
+    if (parsed.error) return parsed;
+    let page = await thoughtCandidatePage(parsed, queries, null);
+    const others = await otherCandidates(parsed);
+    const total = page.total + others.length;
+    if (!total) return { value: null, total: 0 };
+    const source = typeof options === "function" ? options
+      : typeof options.random === "function" ? options.random : random;
+    if (typeof source !== "function") throw new TypeError("Discovery random source must be a function");
+    const sample = Number(source());
+    const ratio = Number.isFinite(sample) ? Math.max(0, Math.min(sample, 1)) : 0;
+    const index = Math.min(total - 1, Math.floor(ratio * total));
+    let thoughtIndex = 0, otherIndex = 0, selected = null;
+    for (let rank = 0; rank <= index; rank += 1) {
+      if (thoughtIndex >= page.candidates.length && page.hasMore) {
+        const last = page.candidates.at(-1);
+        if (!last) throw new Error("Discovery candidate page made no progress");
+        page = await thoughtCandidatePage({ ...parsed, includeTotals: false }, queries,
+          { sortTime: last.sortTime, key: last.value.key });
+        thoughtIndex = 0;
+      }
+      const thought = page.candidates[thoughtIndex], other = others[otherIndex];
+      if (!thought && !other) break;
+      if (thought && (!other || compareCandidates(thought, other) <= 0)) {
+        selected = thought;
+        thoughtIndex += 1;
+      } else {
+        selected = other;
+        otherIndex += 1;
+      }
+    }
+    return { value: selected?.value || null, index, total };
+  }
+
   async function openRandomDoor(input = {}, options = {}) {
+    const queries = thoughtQueries();
+    if (queries?.enabled) return boundedRandomDoor(input, options, queries);
     const result = await readCandidates({ ...input, cursor: "", limit: MAX_LIMIT });
     if (result.error) return result;
     if (!result.candidates.length) return { value: null, total: 0 };
@@ -665,3 +761,23 @@ export function createThoughtDiscoveryService({
 }
 
 export const createThoughtDiscovery = createThoughtDiscoveryService;
+
+/** 思绪公开投影维护只消费这些发现状态事实，不复制发现业务判定。 @since unreleased */
+export function thoughtDiscoveryProjection(thoughts) {
+  const root = thoughts.find(item => item?.type === "question");
+  if (!root) return null;
+  const blocks = thoughts.filter(item => item.relatedTo === root.id);
+  return {
+    sortTime: rootSortTime(root),
+    status: statusFor(root, blocks, 0),
+    search: [root, ...blocks].map(item => ({
+      type: item.type,
+      texts: [contentOf(item), ...(Array.isArray(item.tags) ? item.tags : [])].map(normalizedText)
+    }))
+  };
+}
+function currentIndexedStatus(status, milliseconds) {
+  const snoozedUntil = validTime(status.snoozedUntil);
+  const snoozed = snoozedUntil != null && snoozedUntil > milliseconds;
+  return { ...status, snoozed, fresh: status.untraced && !status.read && !snoozed };
+}

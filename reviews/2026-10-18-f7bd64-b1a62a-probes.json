@@ -1,0 +1,61 @@
+{
+  "reviewedCommit": "b1a62ae81fdd729969052ee5bfc72fe6d0765172",
+  "reviewedTree": "68247dbfa2e6645aa56c2ef40b1f1dc8850c1fe7",
+  "baselineExclusive": "f7bd6424e76d4be4d17f24f863614de9d2806434",
+  "environment": {
+    "postgres": "16.14",
+    "node": "24.19.0",
+    "timezone": "Asia/Shanghai",
+    "data": "synthetic, isolated local database"
+  },
+  "probes": [
+    {
+      "name": "concurrent_password_changes",
+      "layer": "real PostgreSQL repository, two connections, session-lock barrier",
+      "outcomes": [
+        { "status": "rejected", "code": "40P01" },
+        { "status": "fulfilled", "changed": true }
+      ]
+    },
+    {
+      "name": "revoked_session_password_command",
+      "layer": "real PostgreSQL repository",
+      "sessionVersion": 1,
+      "userVersion": 2,
+      "changedPassword": true,
+      "resultingVersion": 3
+    },
+    {
+      "name": "real_auth_service_revocation_race",
+      "layer": "real authentication service and document port, in-memory document, real scrypt",
+      "mode": "document",
+      "revokedSessionVersion": 1,
+      "versionBeforeCredentialRead": 2,
+      "versionAfterPasswordChange": 3,
+      "passwordActuallyChanged": true,
+      "result": { "authenticated": false, "reauthRequired": true }
+    },
+    {
+      "name": "statistics_local_day",
+      "layer": "real PostgreSQL usage repository and real usage dashboard",
+      "occurredAt": "2026-10-17T18:00:00.000Z",
+      "localDate": "2026-10-18",
+      "rowsWithCurrentCallerOptions": 0,
+      "rowsWithMatchingTimezone": 1,
+      "currentSummaryCalls": 0,
+      "correctSummaryCalls": 1
+    },
+    {
+      "name": "ndjson_usage_recovery",
+      "layer": "real audit producer and recovery parser, failing usage writer, synthetic provider",
+      "providerCalls": 1,
+      "terminalStatus": "success",
+      "usagePersistence": "pending",
+      "recoverableEntriesAfterRestart": 0,
+      "events": [
+        { "event": "ai.log_failed", "target": "usage" },
+        { "event": "dependency.completed" }
+      ]
+    }
+  ]
+}

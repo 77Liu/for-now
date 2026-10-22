@@ -1,0 +1,449 @@
+/**
+ * 思绪持久化闭包、图映射及事务内 typed repository；业务生命周期由思绪领域处理。
+ * 建立时间：2026-10-18
+ * 状态：active
+ * 边界：账户短事务内的精确记录闭包；不执行供应商调用或全账户读写。
+ */
+import type { ObjectRow, EntityRow, Mapping, StoreMapping, RecordEntity, RecordStore, RecordTransaction } from "./record-command-types.mjs";
+import { entityRow, recordObjectKey, recordBusinessIdentity } from "./record-command-types.mjs";
+/** Binds the graph mapper to typed query/write operations. @since unreleased */
+export function createThoughtRecordRepository(mapping: StoreMapping) {
+  const { canonicalJson, mapStoreObjects, rebuildStoreObjects } = mapping;
+  const conflict = () => Object.assign(
+    new Error("思绪已变化，请刷新后重试"),
+    { statusCode: 409, code: "VERSION_CONFLICT" }
+  );
+  const orderTuple = (row: ObjectRow) => [
+    String(row.payload?.occurredAt || row.payload?.occurredOn || row.payload?.createdAt || ""),
+    String(row.id || "")
+  ];
+
+  function normalizedClosureRows(rows: ObjectRow[]) {
+    const groups = new Map<string, ObjectRow[]>();
+    for (const row of rows) {
+      const group = JSON.stringify([row.parentKey, row.field]);
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group)!.push(row);
+    }
+    const normalized = [];
+    for (const group of groups.values()) {
+      const positioned = group.every(row => Number.isInteger(row.position));
+      group.sort(positioned
+        ? (left, right) => Number(left.position) - Number(right.position)
+        : (left, right) => {
+            const a = orderTuple(left), b = orderTuple(right);
+            return a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]);
+          });
+      normalized.push(...group.map((row, position) => ({ ...row, position })));
+    }
+    return normalized;
+  }
+
+  function rebuildRecordCollections(rows: ObjectRow[], collections: string[]) {
+    return rebuildStoreObjects({
+      fields: collections.map(field => ({
+        field,
+        shape: rows.some(row => row.collection === field && JSON.parse(row.objectKey).length === 1)
+          ? "object" : "array",
+        payload: null
+      })),
+      objects: normalizedClosureRows(rows)
+    });
+  }
+
+  async function readThoughtClosure(objects: RecordTransaction["objects"], relations: RecordTransaction["relations"], id: string) {
+    const rootKey = recordObjectKey("thoughts", id);
+    const root = await objects.find(rootKey, { lock: true });
+    if (!root || root.payload?.type !== "question") return null;
+    const blockKeys = await relations.findSources([rootKey], {
+      relation: "thoughtRoot",
+      sourceCollection: "thoughts"
+    });
+    const rows = await objects.findTree([rootKey, ...blockKeys], { lock: true, rootRows: [root] });
+    return {
+      rootKey,
+      rows,
+      thoughts: rebuildRecordCollections(rows, ["thoughts"]).thoughts
+    };
+  }
+
+  /** 按顶层内容身份解析所属思绪，只加载该根及必要子项。 @since unreleased */
+  async function readThoughtTargetClosure(ports: RecordTransaction, id: string, { forDeletion = false } = {}) {
+    const target = await ports.objects.find(recordObjectKey("thoughts", id));
+    if (!target) return null;
+    const rootId = target.payload.type === "question"
+      ? target.id
+      : typeof target.payload.relatedTo === "string" ? target.payload.relatedTo : "";
+    if (!rootId) {
+      const rows = await ports.objects.findTree([target.objectKey], { lock: true });
+      return {
+        rootKey: target.objectKey,
+        rows,
+        store: rebuildRecordCollections(rows, ["thoughts"]),
+        thoughts: rebuildRecordCollections(rows, ["thoughts"]).thoughts
+      };
+    }
+    if (forDeletion) return readThoughtDeleteClosure(ports, rootId);
+    const closure = await readThoughtClosure(ports.objects, ports.relations, rootId);
+    return closure ? {
+      ...closure,
+      store: rebuildRecordCollections(closure.rows, ["thoughts"])
+    } : null;
+  }
+
+  const comparable = (row: ObjectRow) => canonicalJson({
+    childFields: row.childFields,
+    content: row.content,
+    status: row.status,
+    authorType: row.authorType,
+    version: row.version,
+    payload: row.payload,
+    lifecycle: row.lifecycle || "formal",
+    tombstone: row.tombstone === true,
+    deletedAt: row.deletedAt || null
+  });
+
+  async function removeRows(ports: RecordTransaction, rows: ObjectRow[]) {
+    if (!rows.length) return;
+    await ports.relations.detachTargets(rows.map(row => row.objectKey));
+    const deepestFirst = [...rows].sort((left, right) => (
+      JSON.parse(right.objectKey).length - JSON.parse(left.objectKey).length
+    ));
+    for (const row of deepestFirst) {
+      await ports.relations.removeForObject(row.objectKey);
+      await ports.attachments.removeForObject(row.objectKey);
+      if (!await ports.objects.remove(row.objectKey, row.version)) throw conflict();
+    }
+  }
+
+  async function insertRows(ports: RecordTransaction, mapping: Mapping, rows: EntityRow[]) {
+    const inserted = new Set(rows.map(row => row.objectKey));
+    for (const collection of new Set(rows.map(row => row.collection))) {
+      const singleton = rows.some(row => row.collection === collection
+        && JSON.parse(row.objectKey).length === 1);
+      await ports.objects.ensureCollection(collection, singleton ? "object" : "array");
+    }
+    for (const row of rows) await ports.objects.insert({ ...row, position: null });
+    for (const relation of mapping.relations) {
+      if (inserted.has(relation.objectKey)) await ports.relations.insert(relation);
+    }
+    for (const attachment of mapping.attachmentRefs) {
+      if (attachment.ownerKey && inserted.has(attachment.ownerKey)) await ports.attachments.insert(attachment);
+    }
+  }
+
+  function mappedUpdate(current: ObjectRow, row: EntityRow) {
+    if (Number(row.version) > Number(current.version)) {
+      return { ...row, position: current.position };
+    }
+    const version = Number(current.version) + 1;
+    return {
+      ...row,
+      position: current.position,
+      version,
+      payload: { ...row.payload, version }
+    };
+  }
+
+  function relationSignatures(mapping: Mapping, referenceKeys: Map<string, string>) {
+    const signatures = new Map<string, string[]>();
+    for (const relation of mapping.relations) {
+      const values = signatures.get(relation.objectKey) || [];
+      values.push(canonicalJson([
+        relation.relation,
+        referenceKeys.get(JSON.stringify([relation.objectKey, relation.relation]))
+      ]));
+      signatures.set(relation.objectKey, values);
+    }
+    return new Map([...signatures].map(([key, values]) => [key, canonicalJson(values.sort())]));
+  }
+
+  async function resolveClosureRelations(
+    ports: RecordTransaction, accountId: string, store: RecordStore,
+    mapping: Mapping, referenceKeys: Map<string, string>, owners: Set<string>
+  ) {
+    const localKeys = new Set(mapping.objects.map(row => row.objectKey));
+    const externalKeys = new Set(mapping.relations
+      .filter(row => owners.has(row.objectKey))
+      .map(row => referenceKeys.get(JSON.stringify([row.objectKey, row.relation]))!)
+      .filter(key => key && !localKeys.has(key)));
+    if (!externalKeys.size) return mapping;
+    const references = await ports.objects.findMany([...externalKeys]);
+    const resolvedKeys = new Set(references.map(row => row.objectKey));
+    references.push(...await ports.objects.findSourceAlternatives(
+      [...externalKeys].filter(key => !resolvedKeys.has(key))
+    ));
+    return mapStoreObjects(accountId, store, { references });
+  }
+
+  async function refreshIndexes(
+    ports: RecordTransaction, mapping: Mapping,
+    relationKeys: Set<string>, attachmentKeys: Set<string>
+  ) {
+    for (const objectKey of relationKeys) {
+      await ports.relations.removeForObject(objectKey);
+      for (const relation of mapping.relations) {
+        if (relation.objectKey === objectKey) await ports.relations.insert(relation);
+      }
+    }
+    for (const objectKey of attachmentKeys) {
+      await ports.attachments.removeForObject(objectKey);
+      for (const attachment of mapping.attachmentRefs) {
+        if (attachment.ownerKey === objectKey) await ports.attachments.insert(attachment);
+      }
+    }
+  }
+
+  async function persistMappedClosure(
+    ports: RecordTransaction,
+    accountId: string,
+    beforeRows: ObjectRow[],
+    store: RecordStore,
+    {
+      managedCollections = Object.keys(store),
+      refreshIndexesForCollections = [],
+      restoredRows = []
+    }: {
+      managedCollections?: string[];
+      refreshIndexesForCollections?: string[];
+      restoredRows?: ObjectRow[];
+    } = {}
+  ) {
+    const referenceKeys = new Map<string, string>();
+    const mapping = mapStoreObjects(accountId, store, { referenceKeys });
+    const managed = new Set(managedCollections);
+    const previousRows = beforeRows.filter(row => managed.has(row.collection));
+    const mappedRows = mapping.objects.filter(row => managed.has(row.collection));
+    const before = new Map(previousRows.map(row => [row.objectKey, row]));
+    const beforeIdentity = new Map(previousRows.map(row => [recordBusinessIdentity(row), row]));
+    const archived = new Map(restoredRows.map(row => [recordBusinessIdentity(row), row]));
+    const after = new Map(mappedRows.map(row => [row.objectKey, row]));
+    const persistedRows: ObjectRow[] = [];
+    const refreshedRelations = new Set<string>();
+    const refreshedAttachments = new Set<string>();
+    const beforeReferenceKeys = new Map<string, string>();
+    const beforeMapping = mapStoreObjects(accountId,
+      rebuildRecordCollections(beforeRows, [...new Set(beforeRows.map(row => row.collection))]),
+      { referenceKeys: beforeReferenceKeys });
+    const previousRelations = relationSignatures(beforeMapping, beforeReferenceKeys);
+    const nextRelations = relationSignatures(mapping, referenceKeys);
+    const refreshCollections = new Set(refreshIndexesForCollections);
+    const restoredKeys = new Set(restoredRows
+      .filter(row => !before.has(row.objectKey))
+      .map(row => row.objectKey));
+    const restoredRelations = new Set(mapping.relations
+      .filter(relation => relation.targetKey && restoredKeys.has(relation.targetKey))
+      .map(relation => relation.objectKey));
+    await removeRows(ports, previousRows.filter(row => !after.has(row.objectKey)));
+    for (const row of mappedRows) {
+      const current = before.get(row.objectKey);
+      if (!current) continue;
+      if (comparable(current) === comparable(row)) {
+        if (restoredRelations.has(row.objectKey)) refreshedRelations.add(row.objectKey);
+        persistedRows.push(current);
+        continue;
+      }
+      const next = mappedUpdate(current, row);
+      if (!await ports.objects.update(next, current.version)) throw conflict();
+      if (refreshCollections.has(row.collection) || restoredRelations.has(row.objectKey)
+        || previousRelations.get(row.objectKey) !== nextRelations.get(row.objectKey)) {
+        refreshedRelations.add(row.objectKey);
+      }
+      if (current.content !== next.content
+        || canonicalJson(current.payload?.attachmentPaths || []) !== canonicalJson(next.payload?.attachmentPaths || [])
+        || canonicalJson(current.payload?.imageUnderstandings || []) !== canonicalJson(next.payload?.imageUnderstandings || [])) {
+        refreshedAttachments.add(row.objectKey);
+      }
+      persistedRows.push(next);
+    }
+    const insertedRows = mappedRows
+      .filter(row => !before.has(row.objectKey))
+      .map(row => {
+        const previous = beforeIdentity.get(recordBusinessIdentity(row));
+        const deleted = archived.get(recordBusinessIdentity(row));
+        const version = deleted ? Math.max(row.version, deleted.version + 2) : row.version;
+        return {
+          ...(previous ? mappedUpdate(previous, row) : deleted ? {
+            ...row, version, payload: { ...row.payload, version }
+          } : row),
+          position: null
+        };
+      });
+    const resolved = await resolveClosureRelations(ports, accountId, store, mapping,
+      referenceKeys, new Set([...refreshedRelations, ...insertedRows.map(row => row.objectKey)]));
+    await insertRows(ports, resolved, insertedRows);
+    await refreshIndexes(ports, resolved, refreshedRelations, refreshedAttachments);
+    return [...persistedRows, ...insertedRows];
+  }
+
+  async function readThoughtDeleteClosure(ports: RecordTransaction, id: string) {
+    const thoughtClosure = await readThoughtClosure(ports.objects, ports.relations, id);
+    if (!thoughtClosure) return null;
+    const thoughtKeys = thoughtClosure.rows.map(row => row.objectKey);
+    const taskKeys = await ports.relations.findSources(thoughtKeys, {
+      sourceCollection: "aiTasks"
+    });
+    const taskRows = await ports.objects.findTree(taskKeys, { lock: true });
+    const notificationKeys = await ports.relations.findSources(
+      taskRows.map(row => row.objectKey),
+      { relation: "task", sourceCollection: "notifications" }
+    );
+    const evidenceKeys = await ports.relations.findSources(thoughtKeys, {
+      relation: "source",
+      sourceCollection: "evidencePermissions"
+    });
+    const relatedRows = await ports.objects.findTree(
+      [...notificationKeys, ...evidenceKeys],
+      { lock: true }
+    );
+    const rows = [...new Map([
+      ...thoughtClosure.rows,
+      ...taskRows,
+      ...relatedRows
+    ].map(row => [row.objectKey, row])).values()];
+    const store = rebuildRecordCollections(rows, [
+      "thoughts",
+      "aiTasks",
+      "notifications",
+      "evidencePermissions"
+    ]);
+    store.trash = [];
+    return { ...thoughtClosure, rows, store };
+  }
+
+  /** 回收恢复仅加载清单身份、现存所属思绪及来源唯一性冲突记录。 @since unreleased */
+  async function readThoughtRestoreClosure(
+    ports: RecordTransaction,
+    trashId: string,
+    { includeSourceDependents = true } = {}
+  ) {
+    const entry = await ports.objects.find(recordObjectKey("trash", trashId), { lock: true });
+    if (!entry) return null;
+    const value = entry.payload;
+    const location = value.location as Record<string, unknown>;
+    const supported = value.type === "thoughtChain" || value.type === "thoughtBlock"
+      || location?.parentCollection === "thoughts";
+    if (!supported) return { supported: false as const };
+    if (value.permanentlyPurged === true) {
+      throw Object.assign(new Error("该记录已永久清理，禁止删除或恢复"), {
+        statusCode: 409, code: "RESOURCE_PERMANENTLY_PURGED"
+      });
+    }
+    const archived: RecordStore = { thoughts: [] };
+    const payload = value.payload as RecordEntity;
+    const records = payload.items as { item: RecordEntity }[] | undefined;
+    const parentId = value.type === "thoughtChain" ? String(value.resourceId) : String(location.parentId);
+    const closure = includeSourceDependents
+      ? await readThoughtTargetClosure(ports, parentId, { forDeletion: true })
+      : await readThoughtTargetClosure(ports, parentId);
+    const rootId = closure ? String(JSON.parse(closure.rootKey)[1]) : parentId;
+    if (value.type === "thoughtChain") {
+      archived.thoughts = (records || []).map(record => record.item);
+    } else if (value.type === "thoughtBlock") {
+      archived.thoughts = [
+        {
+          id: String(location.parentId),
+          type: "question",
+          ...(value.dependents as object || {})
+        },
+        payload
+      ];
+    } else {
+      const parent = closure?.store.thoughts.find(item => item.id === parentId);
+      archived.thoughts = [{
+        id: parentId,
+        type: parent?.type || "question",
+        ...(parent?.relatedTo ? { relatedTo: parent.relatedTo } : {}),
+        ...(value.dependents as object || {}),
+        [String(location.field)]: [payload]
+      }];
+      if (parentId !== rootId) archived.thoughts.unshift({ id: rootId, type: "question" });
+    }
+    const archivedRows = mapStoreObjects(ports.accountId, archived).objects;
+    const archivedKeys = archivedRows.map(row => row.objectKey);
+    const existingKeys = new Set(closure?.rows.map(row => row.objectKey) || []);
+    const conflicts = await ports.objects.findMany(
+      archivedKeys.filter(key => !existingKeys.has(key)),
+      { lock: true }
+    );
+    const root = archived.thoughts.find(item => item.id === rootId);
+    const source = root?.sourceRef;
+    const sourceRoots = source?.type === "capture"
+      ? await ports.objects.findMany(await ports.relations.findSources(
+          [recordObjectKey("captures", source.id)],
+          { relation: "source", sourceCollection: "thoughts" }
+        ), { lock: true })
+      : [];
+    const rows = [...new Map([
+      ...(closure?.rows || []), ...conflicts, ...sourceRoots, entry
+    ].map(row => [row.objectKey, row])).values()];
+    const store = rebuildRecordCollections(rows, [
+      "thoughts", "trash", "aiTasks", "notifications", "evidencePermissions"
+    ]);
+    return {
+      supported: true as const,
+      rootId,
+      rows,
+      store,
+      archivedRows,
+      archivedKeys
+    };
+  }
+
+  /** 恢复版本必须晚于删除 tombstone，来源副作用读取相同的新版本。 @since unreleased */
+  function advanceRestoredVersions(
+    accountId: string,
+    store: RecordStore,
+    currentRows: ObjectRow[],
+    archivedRows: ObjectRow[]
+  ) {
+    const existing = new Set(currentRows.map(row => row.objectKey));
+    const archived = new Map(archivedRows.map(row => [recordBusinessIdentity(row), row]));
+    const mapping = mapStoreObjects(accountId, { thoughts: store.thoughts });
+    const rows = mapping.objects.map(row => {
+      const deleted = archived.get(recordBusinessIdentity(row));
+      if (!deleted || existing.has(row.objectKey)) return row;
+      const version = Math.max(row.version, deleted.version + 2);
+      return { ...row, version, payload: { ...row.payload, version } };
+    });
+    store.thoughts = rebuildRecordCollections(rows, ["thoughts"]).thoughts;
+  }
+
+  async function createThoughtStoreClosure(ports: RecordTransaction, input: { sourceRef?: RecordEntity["sourceRef"] }) {
+    const store: RecordStore = { thoughts: [], captures: [] };
+    const beforeRows: ObjectRow[] = [];
+    const source = input.sourceRef;
+    const validSource = source?.type === "capture"
+      && typeof source.id === "string"
+      && source.id
+      && Number.isSafeInteger(Number(source.version))
+      && Number(source.version) > 0;
+    if (!validSource) return { store, beforeRows };
+    const captureKey = recordObjectKey("captures", source.id);
+    const capture = await ports.objects.find(captureKey, { lock: true });
+    if (capture) {
+      store.captures.push(structuredClone(entityRow(capture).payload));
+      beforeRows.push(capture);
+    }
+    const rootKeys = await ports.relations.findSources([captureKey], {
+      relation: "source",
+      sourceCollection: "thoughts"
+    });
+    const roots = await ports.objects.findMany(rootKeys, { lock: true });
+    store.thoughts.push(...roots.map(row => structuredClone(entityRow(row).payload)));
+    beforeRows.push(...roots);
+    return { store, beforeRows };
+  }
+
+  return {
+    rebuildRecordCollections,
+    readThoughtClosure,
+    readThoughtTargetClosure,
+    readThoughtDeleteClosure,
+    readThoughtRestoreClosure,
+    advanceRestoredVersions,
+    persistMappedClosure,
+    createThoughtStoreClosure
+  };
+}
+export type ThoughtRecordRepository = ReturnType<typeof createThoughtRecordRepository>;

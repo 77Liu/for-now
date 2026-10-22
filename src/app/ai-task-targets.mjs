@@ -1,6 +1,7 @@
 import { answerCitationSources as compileCitationSources } from "./answer-citations.mjs";
 import { safeText, recordVersion } from "../shared/validation/index.mjs";
 import { renderPrompt } from "../shared/prompts/index.mjs";
+import { businessReasoning } from "../modules/ai/index.mjs";
 import { annotationExcerpt, shenjiSystemPrompt } from "../modules/annotations/index.mjs";
 import { thoughtTaskResult } from "../modules/thoughts/index.mjs";
 import { parseClaimExtractionOutput } from "../modules/user-model/index.mjs";
@@ -36,7 +37,10 @@ export function createAiTaskTargets({
 }) {
   const projectTaskContext = (store, options) => {
     try {
-      return workingContextProjection(store, options);
+      return workingContextProjection(store, {
+        ...options,
+        rawMaterials: store.taskRawMaterials || null
+      });
     } catch (error) {
       if (error?.code === "STALE_PERSONAL_CONTEXT") return null;
       throw error;
@@ -281,6 +285,7 @@ export function createAiTaskTargets({
       inputVersion: recordVersion(root.version),
       subtargetVersion: recordVersion(annotation.version),
       scene: "annotationShenji",
+      triggerType: "user_explicit",
       systemPrompt: shenjiSystemPrompt(),
       contextReceipt: workingContext.receipt,
       contextFingerprint,
@@ -296,6 +301,7 @@ export function createAiTaskTargets({
       targetType: task.payload?.targetType,
       targetId: task.payload?.targetId,
       attachmentPaths: task.payload?.attachmentPaths,
+      owner: task.payload?.owner,
       inputVersion: task.inputVersion
     });
     if (!prepared.value) return null;
@@ -323,7 +329,8 @@ export function createAiTaskTargets({
         originalText: work.originalText
       })),
       prompt,
-      scene: "contentImageUnderstanding"
+      scene: "contentImageUnderstanding",
+      triggerType: "user_action_auto"
     };
   }
 
@@ -460,7 +467,8 @@ export function createAiTaskTargets({
       const accountId = getAccountId();
       const coreUserModel = coreUserModelProjection(store);
       const generatedAt = task.contextGeneratedAt || task.createdAt || now();
-      const recentTrend = getRecentTrend(store, generatedAt);
+      const recentTrend = Object.hasOwn(store, "taskRecentTrend")
+        ? store.taskRecentTrend : getRecentTrend(store, generatedAt);
       const workingContext = projectTaskContext(store, {
         accountId,
         scene: task.kind,
@@ -505,6 +513,7 @@ export function createAiTaskTargets({
           })),
           prompt: workingContext.prompt,
           scene: "thoughtAnswer",
+          triggerType: task.payload?.triggerType || "user_action_auto",
           contextReceipt: workingContext.receipt,
           contextFingerprint,
           citationSources: [
@@ -531,6 +540,7 @@ export function createAiTaskTargets({
         inputHash,
         prompt: workingContext.prompt,
         scene: "followUpAnswer",
+        triggerType: "user_explicit",
         contextReceipt: workingContext.receipt,
         contextFingerprint,
         citationSources: [
@@ -572,6 +582,12 @@ export function createAiTaskTargets({
           rawText: safeText(result.rawText, 120_000),
           polishedText: safeText(result.polishedText, 120_000),
           condensedText: safeText(result.condensedText, 120_000),
+          polishResult: {
+            ...businessReasoning("capturePolish", result.polishReasoningContent, 120_000)
+          },
+          condenseResult: {
+            ...businessReasoning("capturePolish", result.condenseReasoningContent, 120_000)
+          },
           updatedAt: safeText(result.updatedAt, 100) || now(),
           errorCode: safeText(result.polishErrorCode, 120),
           condenseErrorCode: safeText(result.condenseErrorCode, 120)
@@ -584,9 +600,11 @@ export function createAiTaskTargets({
         const saved = contentAttachments.saveUnderstandingInStore(store, {
           targetType: work.targetType,
           targetId: work.targetId,
+          owner: work.owner,
           inputVersion: work.inputVersion,
           attachmentPaths: work.attachmentPaths,
           content: result.content,
+          reasoningContent: result.reasoningContent,
           model: result.model || "deepseek-flash",
           sourceTaskId: task.id,
           clientRequestId: task.clientRequestId

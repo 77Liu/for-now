@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-20",
+  "status": "REREVIEW_REMEDIATION_VERIFIED_AWAITING_INDEPENDENT_REREVIEW",
+  "ruleCommit": "9c4916",
+  "rereviewedCandidate": {
+    "sha": "6dace45ac660c64f905f2b80c9c15a112755c8e0",
+    "tree": "92b96c8970a8fd7b0c791abc04c6fc52c81d9d68"
+  },
+  "rereviewVerdict": {
+    "accepted": false,
+    "closedFromPreviousTwelve": ["R2", "R3", "R4", "R5", "R7", "R8", "R10", "R12"],
+    "partial": ["R1", "R6", "R9", "R11"],
+    "reproducedDefects": ["F1", "F2", "F3", "F4", "F5"],
+    "typeContractGap": "Q1"
+  },
+  "fixedCandidate": {
+    "version": "0.5.16",
+    "sha": "106fc4168eb4ab06411644b03a2c4fd5027b3e74",
+    "tree": "e363448ecd0a6acbc5f0665235dd418ad9e8b6e6",
+    "branch": "feat/v0.5.16-sync-latency"
+  },
+  "supersedes": {
+    "receipt": "reviews/2026-10-20-v0516-independent-remediation.md",
+    "result": "reviews/2026-10-20-v0516-independent-remediation-result.json",
+    "scope": "Both recorded PASS for R1, R6, R9 and R11 on 6dace45a; the independent re-review disproved those self-assessments. History is retained unchanged; this receipt is authoritative for those items."
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "previousFinding": "R1",
+      "priority": "P1",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Thought page scopes accept only the summary contract; detail-shaped increments invalidate the list scope instead of merging, and rebase no longer inherits cache from stale scopes, so same-watermark recovery no longer produces a false conflict. Equal-version genuine conflicts still raise SYNC_ENTITY_VERSION_CONFLICT."
+    },
+    {
+      "id": "F2",
+      "previousFinding": "R11",
+      "priority": "P1",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Trash expansion resolves legacy parent ownership against every visible candidate parent identity; ambiguous same-ID identities expand nothing."
+    },
+    {
+      "id": "F3",
+      "previousFinding": "R9",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Admission read, reservation and settlement handoff share one account-day serial boundary; in-flight reads can no longer be discarded while a stale read rebuilds state from zero."
+    },
+    {
+      "id": "F4",
+      "previousFinding": "R9",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "A call that has started persisting moves immediately from in-flight to recorded, and commit becomes idempotent, so one call consumes exactly one unit of quota across the real write-then-commit window."
+    },
+    {
+      "id": "F5",
+      "previousFinding": "R6",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Unconditional server-side rebase was removed; recovery now depends only on the state layer's actually invalidated scope keys, so a filter change that does not invalidate the open detail scope no longer re-reads it."
+    },
+    {
+      "id": "Q1",
+      "previousFinding": "type contract",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Key sync callbacks use named structural types and the v1/v2 status consumer is an exhaustive switch with assertNever; dropping the record-error branch now fails typecheck with TS2345."
+    }
+  ],
+  "validation": {
+    "mainRegression": "PASS",
+    "staticCheck": {
+      "status": "PASS",
+      "documents": 213,
+      "modules": 134,
+      "ownedRoutes": 243,
+      "maintainedTextFiles": 1154
+    },
+    "recordSync": "PASS",
+    "affectedSuites": {
+      "recordSync": "PASS",
+      "trash": "PASS",
+      "aiDomain": "PASS",
+      "syncCoordinator": "PASS",
+      "pwa": "PASS",
+      "frontendShared": "PASS",
+      "frontendApplication": "PASS",
+      "frontendPorts": "PASS",
+      "pageRouter": "PASS",
+      "aiBudget": "PASS",
+      "entrypoints": "PASS"
+    },
+    "frontendJourney": {
+      "status": "PASS",
+      "candidate": "106fc41",
+      "durationMs": 101709,
+      "subtests": 40,
+      "failures": 0,
+      "note": "Direct run on this candidate, including desktop/responsive UI 74272ms and mobile platform simulation 8276ms."
+    },
+    "pwa": {
+      "status": "PASS",
+      "cachedModules": 93
+    },
+    "postgresStable": {
+      "status": "PASS",
+      "postgres": "16.14",
+      "attempt": 4,
+      "wakeSamples": 8,
+      "wakeP75Ms": 115.52,
+      "wakeSampleRangeMs": [109.17, 148.56]
+    },
+    "retainedFailures": [
+      {
+        "attempt": 2,
+        "command": "npm run test:postgres:stable",
+        "site": "scripts/postgres-runtime-checks.mjs:1741",
+        "detail": "F9 long-poll wake did not advance the cursor within waitMs=1500",
+        "hostLoadAverage": "12-19",
+        "note": "Same candidate and command as the passing attempts; failure site is untouched by this change."
+      },
+      {
+        "attempt": 3,
+        "command": "npm run test:postgres:stable",
+        "site": ".build/typescript/thought-db-regression/scripts/thought-paging-build-regression.mjs:38 (assertStartupRejects)",
+        "detail": "subprocess exit code null !== 0",
+        "hostLoadAverage": "12-19",
+        "note": "Same candidate and command as the passing attempts; failure site is untouched by this change."
+      }
+    ],
+    "dependencyAudit": "UNCHANGED_FROM_ACCEPTED_PACKAGE_LOCK"
+  },
+  "gatesNotRebuilt": {
+    "statefulFourAccountSnapshot": {
+      "status": "NOT_REBUILT_FOR_THIS_CANDIDATE",
+      "reason": "release-state-startup-gate verify binds the sanitized snapshot to the candidate SHA/tree; the existing snapshot artifacts/local/v0516-startup-snapshot-6dace45.json (sha256 f8e57ba2...) is bound to 6dace45/92b96c and rejects this candidate with 'Snapshot and local runtime candidate SHA/tree do not match'.",
+      "previousEvidenceInvalidatedBecause": "backend src/modules/ai/usage.mjs and src/modules/trash/index.mjs changed, plus frontend sync state sources",
+      "unblockCondition": "re-capture a sanitized snapshot for the new candidate (requires the read-only production source URLs) and re-run both default and v0516-combined profiles"
+    }
+  },
+  "snapshot": {
+    "path": "artifacts/local/v0516-startup-snapshot-6dace45.json",
+    "manifestSha256": "50839a6e1ed221ac41cef8108ed21d2eddd2c64f50823f3455e420695f3c3478",
+    "fileSha256": "f8e57ba2949158150ded0ee9e9ea61742ba92c3cfad521cfd7cec1506da50876",
+    "boundCandidate": "6dace45/92b96c",
+    "note": "Reused unchanged for provenance only; it does not verify this candidate."
+  },
+  "limitations": {
+    "independentReReview": "REQUIRED_BEFORE_READY_WAIT_OWNER",
+    "browserP75Under500ms": "PARTIAL",
+    "safariInstalledPwaRealDevice": "PARTIAL",
+    "productionLoad": "NOT_RUN",
+    "productionRollout": "NOT_RUN",
+    "paidProviderCalls": 0,
+    "realCorpus94Rerun": "NOT_RUN"
+  },
+  "externalActions": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "preview": false,
+    "productionDeploy": false,
+    "productionBusinessWrite": false,
+    "productionEnvironmentAccess": false
+  }
+}

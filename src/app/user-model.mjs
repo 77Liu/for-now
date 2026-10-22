@@ -268,7 +268,7 @@ export function prepareUserModelExtraction(store, { sourceRevision = 0 } = {}) {
       scene: "onboardingClaimExtraction",
       json: true,
       retryWithoutThinking: true,
-      auditPrompt: false,
+      triggerType: "system_internal",
       maxTokens: 4000,
       sources
     }

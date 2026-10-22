@@ -62,4 +62,4 @@ echo
 echo "Add this public key to Gitee as a read-only deploy key:"
 cat /home/for-now/.ssh/gitee_deploy.pub
 echo
-echo "Then set INVITE_CODE_HASH in /etc/for-now.env and run: sudo for-now-deploy"
+echo "Then configure /etc/for-now.env and follow deploy/README.md: install the reviewed guard, issue an authorized attempt, and pass explicit DEPLOY_BRANCH plus candidate SHA."

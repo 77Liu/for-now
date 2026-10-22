@@ -9,6 +9,18 @@ export const localDateKey = (value = new Date()) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };
 
+export const dateKeyInTimezone = (value, timezone) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
 export const shiftDateKey = (dateKey, days) => {
   const [year, month, day] = String(dateKey).split("-").map(Number);
   if (![year, month, day].every(Number.isFinite)) return dateKey;

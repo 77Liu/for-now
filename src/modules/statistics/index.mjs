@@ -155,7 +155,8 @@ export function createStatisticsService({
   readAiUsage,
   readOperationEntries,
   aiDashboard,
-  today = () => localDateKey()
+  today = () => localDateKey(),
+  getTimezone = () => undefined
 }) {
   if (!repository || typeof repository.read !== "function") {
     throw new TypeError("Statistics service requires a repository with read()");
@@ -171,20 +172,31 @@ export function createStatisticsService({
 
   return {
     async dashboard(rangeInput = {}, { includeOwner = true } = {}) {
-      const range = statisticsRange(rangeInput, today());
+      const timezone = getTimezone();
+      const range = statisticsRange(rangeInput, today(timezone));
       if (range.error) return range;
       const { from, to } = range.value;
       const store = await repository.read();
       if (!includeOwner) return { value: { records: recordStatistics(store) } };
       await ensureAiUsage();
       const [usage, operations] = await Promise.all([
-        readAiUsage(),
+        readAiUsage({
+          from,
+          to,
+          ...(timezone ? { timezone } : {})
+        }),
         readOperationEntries(from, to)
       ]);
       return {
         value: {
           records: recordStatistics(store),
-          ai: aiDashboard(usage, from, to, store.commercialization?.assumptions?.common?.usdCny),
+          ai: aiDashboard(
+            usage,
+            from,
+            to,
+            store.commercialization?.assumptions?.common?.usdCny,
+            timezone
+          ),
           service: operationStatistics(operations)
         }
       };

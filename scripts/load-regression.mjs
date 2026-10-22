@@ -6,6 +6,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -110,11 +111,17 @@ const provider = http.createServer(async (request, response) => {
   response.end(JSON.stringify({
     id: `load-provider-${providerCalls}`,
     model: "deepseek-flash",
-    choices: [{ message: { content: "隔离压测回答" }, finish_reason: "stop" }],
+    choices: [{
+      message: {
+        content: JSON.stringify({ answer: "隔离压测回答", citations: [] })
+      },
+      finish_reason: "stop"
+    }],
     usage: { prompt_tokens: 120, completion_tokens: 20 }
   }));
 });
 await new Promise((resolve, reject) => provider.once("error", reject).listen(providerPort, "127.0.0.1", resolve));
+const authFixture = await installAuthenticatedJsonRuntime(dataDir);
 
 let stderr = "";
 const child = spawn(process.execPath, ["server.mjs"], {
@@ -124,8 +131,7 @@ const child = spawn(process.execPath, ["server.mjs"], {
     NODE_ENV: "test",
     PORT: String(appPort),
     DATA_DIR: dataDir,
-    AUTH_REQUIRED: "0",
-    INVITE_CODE_HASH: "",
+    ...authFixture.env,
     UPSTREAM_ORIGIN: "",
     DEEPSEEK_API_URL: `http://127.0.0.1:${providerPort}/chat/completions`,
     AI_GLOBAL_QPS: "100",
@@ -138,6 +144,14 @@ const child = spawn(process.execPath, ["server.mjs"], {
 child.stderr.on("data", chunk => { stderr += chunk; });
 
 const base = `http://127.0.0.1:${appPort}`;
+const systemFetch = globalThis.fetch;
+globalThis.fetch = (input, init = {}) => {
+  const target = String(input instanceof Request ? input.url : input);
+  if (!target.startsWith(base)) return systemFetch(input, init);
+  const headers = new Headers(init.headers);
+  if (!headers.has("cookie")) headers.set("cookie", authFixture.cookie);
+  return systemFetch(input, { ...init, headers });
+};
 const jsonHeaders = { "content-type": "application/json" };
 const report = { config, phases: {}, provider: {} };
 
@@ -209,7 +223,11 @@ try {
     await sleep(25);
   }
   assert.equal(tasks.length, config.aiTasks);
-  assert.deepEqual([...new Set(tasks.map(item => item.status))], ["succeeded"]);
+  assert.deepEqual(
+    [...new Set(tasks.map(item => item.status))],
+    ["succeeded"],
+    JSON.stringify(tasks)
+  );
   const taskDurations = tasks.map(task => new Date(task.completedAt).getTime() - new Date(task.createdAt).getTime());
   report.phases.aiTasks = {
     tasks: tasks.length,
@@ -238,6 +256,7 @@ try {
   if (stderr.trim()) error.message = `${error.message}\nApplication stderr:\n${stderr.trim()}`;
   throw error;
 } finally {
+  globalThis.fetch = systemFetch;
   child.kill("SIGTERM");
   if (child.exitCode == null) await new Promise(resolve => child.once("exit", resolve));
   await new Promise(resolve => provider.close(resolve));

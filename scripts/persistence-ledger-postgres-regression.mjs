@@ -28,6 +28,51 @@ const cleanEnvironment = source => Object.fromEntries(Object.entries(source).fil
   && !/^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/.test(key)
 )));
 
+// Separate OS processes exercise durable audit recovery after the producer exits.
+if (["--audit-write", "--audit-recover"].includes(process.argv[2])) {
+  const { createAiAudit } = await import("../src/modules/ai/index.mjs");
+  const runtime = await createPostgresRuntime({
+    connectionString: process.env.TEST_DATABASE_URL,
+    authConnectionString: process.env.TEST_AUTH_DATABASE_URL,
+    budgetConnectionString: process.env.TEST_AI_BUDGET_DATABASE_URL,
+    getAccountId: () => process.env.TEST_ACCOUNT_ID
+  });
+  try {
+    let sequence = 0;
+    const writing = process.argv[2] === "--audit-write";
+    const audit = createAiAudit({
+      repository: runtime.aiAudit,
+      getContext: () => ({ user: { id: process.env.TEST_ACCOUNT_ID } }),
+      append: async () => {}, updateUsage: async () => {}, logEvent: async () => {},
+      now: () => "2026-08-01T00:00:00.000Z",
+      createId: () => `process-audit-${++sequence}`,
+      recordUsageAttempt: writing
+        ? async () => { throw new Error("injected usage DB failure"); }
+        : entry => runtime.aiUsage.recordAttempt(entry)
+    });
+    if (writing) {
+      for (const billing of [
+        { costKnown: true, costCny: 0.005 },
+        { costKnown: true, costCny: 0 },
+        { costKnown: false, costCny: 0 }
+      ]) {
+        await audit.providerCall({
+          provider: "test-provider", service: "test", scene: "visionOcr",
+          action: "test", ...billing
+        }, async () => ({ requestId: "synthetic-provider" }));
+      }
+      process.stdout.write(JSON.stringify({ produced: sequence }));
+    } else {
+      const first = await audit.recoverPending();
+      const repeated = await audit.recoverPending();
+      process.stdout.write(JSON.stringify({ first, repeated }));
+    }
+  } finally {
+    await runtime.close();
+  }
+  process.exit(0);
+}
+
 if (process.argv[2] === WORKER_FLAG) {
   const runtime = await createPostgresRuntime({
     connectionString: process.env.TEST_DATABASE_URL,
@@ -94,8 +139,8 @@ const freePort = () => new Promise((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve(port));
   });
 });
-const childResponse = environment => new Promise((resolve, reject) => {
-  const child = spawn(process.execPath, [import.meta.filename, WORKER_FLAG], {
+const childResponse = (environment, flag = WORKER_FLAG) => new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [import.meta.filename, flag], {
     cwd: ROOT,
     env: environment,
     stdio: ["ignore", "pipe", "pipe"]
@@ -161,6 +206,39 @@ try {
     TEST_AI_BUDGET_DATABASE_URL: url("ledger_budget"),
     TEST_ACCOUNT_ID: "ledger-account"
   };
+  assert.deepEqual(await childResponse(workerEnvironment, "--audit-write"), { produced: 6 });
+  const retainedRuntime = await createPostgresRuntime(runtimeOptions);
+  assert.equal(await retainedRuntime.aiAudit.deleteExpired("2026-10-01T00:00:00.000Z"), 0);
+  assert.equal((await retainedRuntime.aiAudit.findMissingUsage("", 1)).length, 1);
+  await retainedRuntime.close();
+  // A different account cannot recover or clean this account's missing charges.
+  const otherOptions = { ...runtimeOptions, getAccountId: () => "ledger-other" };
+  const otherRuntime = await createPostgresRuntime(otherOptions);
+  await otherRuntime.createStoreRepository({ normalize: value => value, emptyDocument: emptyStore() }).initialize({ allowCreate: true });
+  assert.deepEqual(await otherRuntime.aiAudit.findMissingUsage(), []);
+  assert.equal(await otherRuntime.aiAudit.deleteExpired("2026-10-01T00:00:00.000Z"), 0);
+  await otherRuntime.close();
+  const recovered = await childResponse(workerEnvironment, "--audit-recover");
+  assert.equal(recovered.first.recoveredUsage, 3);
+  assert.equal(recovered.first.pendingUsage, 0);
+  assert.equal(recovered.repeated.recoveredUsage, 0);
+  const rows = (await admin.query(`
+    SELECT call_id, cost_known, cost_micros, payload FROM for_now.ai_usage_attempts
+    WHERE account_id='ledger-account' ORDER BY call_id
+  `)).rows;
+  assert.deepEqual(rows.map(row => [row.cost_known, Number(row.cost_micros)]), [[true, 5000], [true, 0], [false, 0]]);
+  const payloadMatches = (await admin.query(`
+    SELECT audit.usage_payload->'usageRecovery'=usage.payload AS same
+    FROM for_now.ai_request_audit audit
+    JOIN for_now.ai_usage_attempts usage USING (account_id, call_id)
+    WHERE audit.account_id='ledger-account'
+  `)).rows;
+  assert.equal(payloadMatches.length, 3);
+  assert.ok(payloadMatches.every(row => row.same === true));
+  const cleanupRuntime = await createPostgresRuntime(runtimeOptions);
+  assert.equal(await cleanupRuntime.aiAudit.deleteExpired("2026-10-01T00:00:00.000Z"), 3);
+  assert.equal((await cleanupRuntime.aiUsage.read({ from: "2026-08-01", to: "2026-08-01" })).entries.length, 3);
+  await cleanupRuntime.close();
   const responses = await Promise.all([childResponse(workerEnvironment), childResponse(workerEnvironment)]);
   assert.deepEqual(responses[0], responses[1]);
   assert.match(responses[0].value.id, /^[A-Za-z0-9_-]{16}$/);

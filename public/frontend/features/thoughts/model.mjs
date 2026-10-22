@@ -1,3 +1,4 @@
+import { summarizeThoughtWindowItems, reconcileThoughtSyncWindow, reconcileThoughtDetailSync } from "../../../generated/thought-page-window.mjs";
 import { plainPreview } from "../../content/index.mjs";
 import { eventDate, eventTimestamp } from "../../time/index.mjs";
 import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
@@ -173,3 +174,27 @@ export function pendingThoughtTask(tasks, kind, targetId, subtargetId = "") {
     && isPendingAiTaskStatus(task.status)
   ));
 }
+
+/**
+ * 将本地思绪变更接入当前列表摘要，保留既有_sync及用户结论语义。
+ * 连续分页失效后释放旧页引用；完整原文仍属于持久队列、草稿或单条详情。
+ * @since unreleased
+ */
+export function reconcileThoughtWindowMutation(snapshot, route, enabled, limits) {
+  if (!enabled || route?.view !== "thoughts" || route.kind === "detail" || !snapshot.thoughtPage?.window) return false;
+  const page = snapshot.thoughtPage, window = page.window;
+  if (!window.stale) { window.stale = true; window.generation += 1; }
+  page.stale = true;
+  window.pages = [];
+  snapshot.thoughts = summarizeThoughtWindowItems(snapshot.thoughts || [], limits, (blocks, previous) => thoughtListPreview(blocks, blocks.length ? null : previous));
+  return true;
+}
+
+/** 权威完整thought域经同一有界摘要/用户预览端口接入，不保留完整子项或另建阅读状态。 @since unreleased */
+export function applyThoughtWindowSync(snapshot, incoming, route, limits, canEvict, changes = []) {
+  return reconcileThoughtSyncWindow(snapshot, incoming, route, limits,
+    (blocks, previous) => thoughtListPreview(blocks, blocks.length ? null : previous), canEvict, changes);
+}
+
+/** 单条详情复用同一稳定ID/版本接入边界，完整域缺失不复活目标。 @since unreleased */
+export const applyThoughtDetailSync = (current, incoming, rootId) => reconcileThoughtDetailSync(current, incoming, rootId);

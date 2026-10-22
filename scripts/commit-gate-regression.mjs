@@ -35,7 +35,7 @@ async function makeRepository(name, { failingCheck = false, delayedCheck = false
   await fs.mkdir(path.join(directory, "public/frontend/features/home"), { recursive: true });
   await fs.mkdir(path.join(directory, "public/frontend/features/personal-context"), { recursive: true });
   await fs.mkdir(path.join(directory, "scripts"), { recursive: true });
-  await fs.mkdir(path.join(directory, "reports"), { recursive: true });
+  await fs.mkdir(path.join(directory, "docs"), { recursive: true });
   const checkSource = [
     "import assert from 'node:assert/strict';",
     "import fs from 'node:fs';",
@@ -128,7 +128,7 @@ async function waitForFile(file) {
 try {
   {
     const directory = await makeRepository("allowed");
-    git(directory, ["switch", "-c", "feature/actions"]);
+    git(directory, ["switch", "-c", "feat/actions"]);
     await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
     await fs.writeFile(path.join(directory, "outside.txt"), "unstaged workspace value\n");
     git(directory, ["add", "src/modules/actions/index.mjs"]);
@@ -151,7 +151,7 @@ try {
 
   {
     const directory = await makeRepository("fix");
-    git(directory, ["switch", "-c", "fix/actions"]);
+    git(directory, ["switch", "-c", "feat/actions"]);
     await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
     git(directory, ["add", "src/modules/actions/index.mjs"]);
     const result = invokeGate(directory, "fix(actions): preserve action state");
@@ -161,7 +161,7 @@ try {
 
   {
     const directory = await makeRepository("test-only");
-    git(directory, ["switch", "-c", "test/records"]);
+    git(directory, ["switch", "-c", "feat/records"]);
     await fs.appendFile(path.join(directory, "scripts/frontend-actions-feature-regression.mjs"), "// frontend case changed\n");
     await fs.appendFile(path.join(directory, "scripts/g2-actions-regression.mjs"), "// backend case changed\n");
     git(directory, ["add", "scripts/frontend-actions-feature-regression.mjs", "scripts/g2-actions-regression.mjs"]);
@@ -175,7 +175,7 @@ try {
 
   {
     const directory = await makeRepository("mixed-actions");
-    git(directory, ["switch", "-c", "feature/mixed-actions"]);
+    git(directory, ["switch", "-c", "feat/mixed-actions"]);
     await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
     await fs.writeFile(path.join(directory, "public/frontend/features/actions/index.mjs"), "export const value = 2;\n");
     git(directory, ["add", "src/modules/actions/index.mjs", "public/frontend/features/actions/index.mjs"]);
@@ -194,7 +194,7 @@ try {
 
   {
     const directory = await makeRepository("home-feature");
-    git(directory, ["switch", "-c", "feature/home"]);
+    git(directory, ["switch", "-c", "feat/home"]);
     await fs.writeFile(path.join(directory, "public/frontend/features/home/index.mjs"), "export const value = 2;\n");
     git(directory, ["add", "public/frontend/features/home/index.mjs"]);
     const result = invokeGate(directory, "feat(home): update home behavior");
@@ -205,7 +205,7 @@ try {
 
   {
     const directory = await makeRepository("context-source-feature");
-    git(directory, ["switch", "-c", "feature/context-source"]);
+    git(directory, ["switch", "-c", "feat/context-source"]);
     await fs.writeFile(path.join(directory, "public/frontend/features/personal-context/index.mjs"), "export const value = 2;\n");
     git(directory, ["add", "public/frontend/features/personal-context/index.mjs"]);
     const result = invokeGate(directory, "feat(basic-surfaces): preserve source navigation");
@@ -225,9 +225,9 @@ try {
 
   {
     const directory = await makeRepository("docs-only");
-    git(directory, ["switch", "-c", "docs/task"]);
-    await fs.writeFile(path.join(directory, "reports/task.md"), "# Task record\n");
-    git(directory, ["add", "reports/task.md"]);
+    git(directory, ["switch", "-c", "feat/task"]);
+    await fs.writeFile(path.join(directory, "docs/task.md"), "# Task record\n");
+    git(directory, ["add", "docs/task.md"]);
     const result = invokeGate(directory, "docs(task): record local delivery");
     assert.equal(result.status, 0, result.stderr);
     assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Type: docs/);
@@ -235,7 +235,7 @@ try {
 
   {
     const directory = await makeRepository("docs-with-code");
-    git(directory, ["switch", "-c", "docs/code"]);
+    git(directory, ["switch", "-c", "feat/code"]);
     await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
     git(directory, ["add", "src/modules/actions/index.mjs"]);
     const result = invokeGate(directory, "docs(actions): reject product code");
@@ -254,17 +254,19 @@ try {
 
   {
     const directory = await makeRepository("non-task-branch");
-    git(directory, ["switch", "-c", "archive/history"]);
     await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
     git(directory, ["add", "src/modules/actions/index.mjs"]);
-    const result = invokeGate(directory, "feat(actions): reject archive branch");
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /not an explicit task branch/);
+    for (const branch of ["archive/history", "develop", "preview", "docs/task", "fix/task", "test/task", "feature/task"]) {
+      git(directory, ["switch", "-c", branch]);
+      const result = invokeGate(directory, "feat(actions): reject non-feat branch");
+      assert.equal(result.status, 1, branch);
+      assert.match(result.stderr, /not an explicit task branch/, branch);
+    }
   }
 
   {
     const directory = await makeRepository("risky");
-    git(directory, ["switch", "-c", "feature/risky"]);
+    git(directory, ["switch", "-c", "feat/risky"]);
     await fs.mkdir(path.join(directory, "src/shared/persistence"), { recursive: true });
     await fs.writeFile(path.join(directory, "src/shared/persistence/risky.mjs"), "export const unsafe = true;\n");
     git(directory, ["add", "src/shared/persistence/risky.mjs"]);
@@ -275,7 +277,7 @@ try {
 
   {
     const directory = await makeRepository("self-change");
-    git(directory, ["switch", "-c", "feature/self-change"]);
+    git(directory, ["switch", "-c", "feat/self-change"]);
     const fixtureGate = path.join(directory, "scripts/commit-gate.mjs");
     const trustedGate = await fs.readFile(fixtureGate);
     await fs.writeFile(fixtureGate, `${trustedGate.toString("utf8")}\n// staged policy change\n`);
@@ -287,17 +289,34 @@ try {
 
   {
     const directory = await makeRepository("governance");
-    git(directory, ["switch", "-c", "feature/governance"]);
-    await fs.writeFile(path.join(directory, "PROJECT_RULES.md"), "# Weakened rules\n");
-    git(directory, ["add", "PROJECT_RULES.md"]);
-    const result = invokeGate(directory, "feat(tooling): reject governance change");
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /shared, security-sensitive, migration/);
+    git(directory, ["switch", "-c", "feat/governance"]);
+    const before = git(directory, ["rev-parse", "HEAD"]).stdout.trim();
+    // Exercise moved rule bodies and nested details individually: a docs subject
+    // must not regain automatic-commit permission merely through relocation.
+    for (const file of [
+      "PROJECT_RULES.md",
+      "knowledge/engineering-rules.md",
+      "knowledge/design-contracts.md",
+      "knowledge/source-documentation-rules.md",
+      "knowledge/commit-and-release-rules.md",
+      "knowledge/modules/backend.md",
+      "SOP/release-and-observation.md",
+      "SOP/ui/browser-checks.md"
+    ]) {
+      await fs.mkdir(path.dirname(path.join(directory, file)), { recursive: true });
+      await fs.writeFile(path.join(directory, file), "# Changed governance\n");
+      git(directory, ["add", file]);
+      const result = invokeGate(directory, "docs(rules): change authoritative rule");
+      assert.equal(result.status, 1, file);
+      assert.match(result.stderr, /shared, security-sensitive, migration/, file);
+      assert.equal(git(directory, ["rev-parse", "HEAD"]).stdout.trim(), before, file);
+      git(directory, ["reset", "--", file]);
+    }
   }
 
   {
     const directory = await makeRepository("unstaged");
-    git(directory, ["switch", "-c", "feature/unstaged"]);
+    git(directory, ["switch", "-c", "feat/unstaged"]);
     const file = path.join(directory, "src/modules/actions/index.mjs");
     await fs.writeFile(file, "export const value = 2;\n");
     git(directory, ["add", "src/modules/actions/index.mjs"]);
@@ -309,7 +328,7 @@ try {
 
   {
     const directory = await makeRepository("failure", { failingCheck: true });
-    git(directory, ["switch", "-c", "feature/failure"]);
+    git(directory, ["switch", "-c", "feat/failure"]);
     await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
     git(directory, ["add", "src/modules/actions/index.mjs"]);
     const before = git(directory, ["rev-parse", "HEAD"]).stdout.trim();
@@ -321,7 +340,7 @@ try {
 
   {
     const directory = await makeRepository("drift", { delayedCheck: true });
-    git(directory, ["switch", "-c", "feature/drift"]);
+    git(directory, ["switch", "-c", "feat/drift"]);
     const source = path.join(directory, "src/modules/actions/index.mjs");
     const marker = path.join(temporary, "drift-ready");
     await fs.writeFile(source, "export const value = 2;\n");

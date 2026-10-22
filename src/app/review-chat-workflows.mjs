@@ -60,6 +60,8 @@ export function createReviewChatWorkflows({
   getImportanceModelSnapshot = () => null,
   contextKey = () => "local",
   getAccountId = contextKey,
+  periodicAnalysisEnabled = false,
+  readPeriodicPreferences = async () => ({}),
   currentTime = () => Date.now(),
   createId = () => crypto.randomUUID()
 }) {
@@ -90,6 +92,15 @@ export function createReviewChatWorkflows({
   }
 
   const active = new Map();
+  const periodicAllowed = async () => periodicAnalysisEnabled === true
+    && (await readPeriodicPreferences())?.periodicReviews?.analysisEnabled === true;
+  const assertPeriodicConsent = async () => {
+    if (await periodicAllowed()) return;
+    throw Object.assign(new Error("周期认知复盘未开启，未创建新结果"), {
+      code: "PERIODIC_ANALYSIS_CONSENT_REQUIRED",
+      statusCode: 409
+    });
+  };
   const coreModelSnapshot = store => {
     if (!coreModelReadiness(store)?.ready) return null;
     const projected = coreUserModelProjection(store);
@@ -229,6 +240,11 @@ export function createReviewChatWorkflows({
     }
   };
   const personalizedTaskHandler = {
+    async canExecute(task) {
+      return task?.kind !== "analysis"
+        || task.payload?.reason !== "weekly-background"
+        || await periodicAllowed();
+    },
     inspectIntent(_store, task) {
       if (!["chat", "analysis"].includes(task?.kind)) return false;
       return { inputVersion: 0, subtargetVersion: 0, inputHash: intentHash(task) };
@@ -265,6 +281,7 @@ export function createReviewChatWorkflows({
             task: payload.message
           }),
           scene: "chat",
+          triggerType: "user_explicit",
           json: true,
           citationsEnabled: true,
           citationSources: answerCitationSources(coreModel.model, [...trendCitationSources(trend.trend), ...(personalContext.importanceSources || [])]),
@@ -317,6 +334,7 @@ export function createReviewChatWorkflows({
             evidenceLevel: evidence.evidenceLevel
           }),
           scene: "analysis",
+          triggerType: task.payload?.reason === "weekly-background" ? "scheduled" : "user_explicit",
           json: true,
           citationsEnabled: true,
           citationSources: answerCitationSources(coreModel.model, [
@@ -745,6 +763,7 @@ export function createReviewChatWorkflows({
     reason = "manual",
     clientRequestId = ""
   } = {}) {
+    if (reason === "weekly-background") await assertPeriodicConsent();
     const requestHash = clientRequestId ? hash(JSON.stringify({ reason })) : "";
     return generatedIdempotent({
       kind: "analysis",
@@ -776,14 +795,17 @@ export function createReviewChatWorkflows({
         ]), JSON.stringify([getAccountId(), clientRequestId, personalContext.receipt, evidenceHash]));
         const result = await generate(referenceRequest.prompt, {
           scene: "analysis",
+          triggerType: reason === "weekly-background" ? "scheduled" : "user_explicit",
           json: true,
           systemPrompt: citationSystemPrompt(
             renderPrompt("orchestration.role.periodicSynthesis"),
             "reflectionData 中明确标记的 citationId 对应本轮获准的思绪、追问、回答或行动反馈原文。"
           ),
           captureReasoning: true,
+          isCurrent: async () => reason !== "weekly-background" || await periodicAllowed(),
           contextReceipt: { ...personalContext.receipt, referenceRequest: referenceRequest.receipt }
         });
+        if (reason === "weekly-background") await assertPeriodicConsent();
         const freshness = {
           reason,
           contextReceipt: personalContext.receipt,
@@ -836,6 +858,7 @@ export function createReviewChatWorkflows({
   }
 
   async function maybeRunPeriodicAnalysis() {
+    if (!await periodicAllowed()) return null;
     const store = await repository.read();
     if (store.thoughts.filter(item => item.type === "question").length < 5) return null;
     const last = store.analyses[0]?.createdAt
@@ -870,6 +893,7 @@ export function createReviewChatWorkflows({
       }, requestId);
     },
     async queueAnalysisIfCold({ reason = "manual", clientRequestId = "" } = {}) {
+      if (reason === "weekly-background") await assertPeriodicConsent();
       const requestId = clientRequestId || createId();
       return queueColdTask("analysis", "", { reason }, requestId);
     }

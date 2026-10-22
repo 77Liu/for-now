@@ -83,28 +83,47 @@ assert.deepEqual(
 
 let runtimeAuth = { version: 1, users: [], sessions: [] };
 const runtimeAuthCommits = [], provisions = [];
-const runtimeAuthRepository = createAuthRepository({
-  runtime: {
-    auth: {
-      read: async () => structuredClone(runtimeAuth),
-      update: async mutator => {
-        const next = structuredClone(runtimeAuth);
-        const result = await mutator(next);
-        runtimeAuth = next;
-        return result;
-      },
-      provision: (...args) => provisions.push(args)
-    }
+const runtimeAuthBackend = {
+  read: async () => structuredClone(runtimeAuth),
+  update: async mutator => {
+    const next = structuredClone(runtimeAuth);
+    const result = await mutator(next);
+    runtimeAuth = next;
+    return result;
   },
-  onCommit: async (before, after) => runtimeAuthCommits.push([before, after])
+  provision: (...args) => provisions.push(args)
+};
+const runtimeAuthRepository = createAuthRepository({
+  runtime: { auth: runtimeAuthBackend },
+  normalizeDocument: value => structuredClone(value),
+  onCommitted: async change => runtimeAuthCommits.push(change)
 });
-await runtimeAuthRepository.update(auth => {
-  auth.users.push({ id: "runtime-user" });
+await runtimeAuthRepository.register({
+  user: {
+    id: "runtime-user",
+    username: "runtime-user",
+    usernameKey: "runtime-user",
+    passwordHash: "runtime-password-hash",
+    role: "user",
+    sessionVersion: 1,
+    createdAt: "2026-10-18T00:00:00.000Z"
+  },
+  session: {
+    tokenHash: "runtime-token-hash",
+    userId: "runtime-user",
+    sessionVersion: 1,
+    createdAt: "2026-10-18T00:00:00.000Z",
+    expiresAt: "2099-10-18T00:00:00.000Z"
+  },
+  initialize: async (user, first) => {
+    runtimeAuthBackend.provision(user.id, { version: 16 }, { first });
+    return null;
+  }
 });
-runtimeAuthRepository.provision("runtime-user", { version: 16 }, {});
 assert.equal(runtimeAuthCommits.length, 1);
-assert.deepEqual(runtimeAuthCommits[0][0].users, []);
-assert.deepEqual(runtimeAuthCommits[0][1].users, [{ id: "runtime-user" }]);
+assert.equal(runtimeAuthCommits[0].type, "registered");
+assert.equal(runtimeAuthCommits[0].user.id, "runtime-user");
+assert.equal(runtimeAuth.users[0].role, "owner");
 assert.equal(provisions.length, 1);
 
 const metadataFile = path.join(root, "metadata-store.json");
@@ -322,7 +341,14 @@ unorderedMetadata.idempotency.reverse();
 assert.deepEqual(rebuildStoreObjects(unorderedMetadata), durablePlan.snapshot);
 const badMetadataPosition = structuredClone(durablePlan.business);
 badMetadataPosition.lifecycles[1].position = badMetadataPosition.lifecycles[0].position;
-assert.throws(() => rebuildStoreObjects(badMetadataPosition), /Non-contiguous positions: lifecycles/);
+assert.throws(() => rebuildStoreObjects(badMetadataPosition), /Duplicate positions: lifecycles/);
+const sparseMetadata = structuredClone(durablePlan.business);
+sparseMetadata.lifecycles.splice(0, 1);
+sparseMetadata.idempotency.splice(0, 1);
+const sparseMetadataSnapshot = structuredClone(durablePlan.snapshot);
+sparseMetadataSnapshot._persistence.lifecycles.splice(0, 1);
+sparseMetadataSnapshot._persistence.idempotency.splice(0, 1);
+assert.deepEqual(rebuildStoreObjects(sparseMetadata), sparseMetadataSnapshot);
 const extendedMetadataStore = structuredClone(durablePlan.snapshot);
 extendedMetadataStore._persistence.futureMetadata = { retained: true };
 extendedMetadataStore._persistence.lifecycles[0].futureLifecycle = { retained: true };
@@ -582,9 +608,38 @@ for (const corrupt of [
   corrupt(broken);
   assert.throws(() => buildPostgresMigrationPlan({ accountId: "broken", store: broken }));
 }
-const badPosition = structuredClone(fullPlan.business);
-badPosition.objects.find(row => row.kind === "bookNote").position = 3;
-assert.throws(() => rebuildStoreObjects(badPosition), /Non-contiguous positions/);
+const sparseFields = [{ field: "captures", shape: "array", payload: null }];
+const sparseRows = ["first", "middle-a", "middle-b", "last"].map((id, position) => ({
+  objectKey: JSON.stringify(["captures", id]),
+  parentKey: null,
+  field: "captures",
+  position,
+  id,
+  childFields: [],
+  payload: {
+    id,
+    createdAt: `2026-10-${String(position + 1).padStart(2, "0")}T00:00:00.000Z`
+  }
+}));
+const sparseIds = rows => rebuildStoreObjects({
+  fields: sparseFields,
+  objects: rows
+}).captures.map(item => item.id);
+assert.deepEqual(sparseIds(sparseRows.filter(row => row.id !== "first")), [
+  "middle-a", "middle-b", "last"
+]);
+assert.deepEqual(sparseIds(sparseRows.filter(row => row.id !== "middle-a")), [
+  "first", "middle-b", "last"
+]);
+assert.deepEqual(sparseIds(sparseRows.filter(row => row.id !== "last")), [
+  "first", "middle-a", "middle-b"
+]);
+const mixedPositions = structuredClone(sparseRows.slice(0, 3));
+mixedPositions[1].position = null;
+assert.deepEqual(sparseIds(mixedPositions), ["middle-b", "middle-a", "first"]);
+const duplicatePositions = structuredClone(sparseRows.slice(0, 2));
+duplicatePositions[1].position = 0;
+assert.throws(() => sparseIds(duplicatePositions), /Duplicate positions: captures/);
 const orphan = structuredClone(fullPlan.business);
 orphan.objects.find(row => row.kind === "bookNote").parentKey = "missing";
 assert.throws(() => rebuildStoreObjects(orphan), /Orphan/);

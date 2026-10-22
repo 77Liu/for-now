@@ -1,3 +1,4 @@
+import { projectAnnotationCounts, annotationCountLabel } from "../../../generated/annotation-counts.mjs";
 import {
   escapeHtml,
   plainPreview,
@@ -28,6 +29,7 @@ import {
   thoughtMonthLabel
 } from "./model.mjs";
 import { pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
+import { reasoningDisclosureMarkup } from "../ui/index.mjs";
 
 function requireFunction(value, name) {
   if (typeof value !== "function") {
@@ -38,6 +40,7 @@ function requireFunction(value, name) {
 
 export function createThoughtPresentation({
   getSnapshot,
+  isAnnotationRootLoaded,
   getGenerationRate = () => undefined,
   appUrl,
   contextReceiptMarkup,
@@ -111,7 +114,7 @@ export function createThoughtPresentation({
         label: "AI 回答文字朗读"
       })
       : "";
-    const answerEvidence = contextReceiptMarkup(
+    const answerEvidence = reasoningDisclosureMarkup(item) + contextReceiptMarkup(
       item.contextReceipt,
       item.citations,
       item.citationStatus,
@@ -128,7 +131,7 @@ export function createThoughtPresentation({
       followUp.id
     );
     const answerMarkup = followUp.answer
-      ? `<div class="model-answer-content">${contextReceiptMarkup(followUp.contextReceipt, followUp.citations, followUp.citationStatus, followUp.providedReferences)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div></div>`
+      ? `<div class="model-answer-content">${contextReceiptMarkup(followUp.contextReceipt, followUp.citations, followUp.citationStatus, followUp.providedReferences)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div>${reasoningDisclosureMarkup(followUp)}</div>`
       : `<form class="manual-followup-answer" data-followup-manual-answer="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}" data-version="${followUp.version || 1}">
           <textarea rows="3" placeholder="直接写下回答…" aria-label="追问回答" required></textarea>
           <div>
@@ -202,8 +205,8 @@ export function createThoughtPresentation({
       ? Number(question.answerCount)
       : answers.length;
     const preview = thoughtListPreview(children, question.preview);
-    const annotationCount = (question.annotations || []).length
-      + (question.annotationDrift || []).length;
+    const annotationCounts = projectAnnotationCounts(question, { complete: isAnnotationRootLoaded?.(question.id) });
+    const annotationLabel = annotationCountLabel(annotationCounts);
     const syncing = question._sync?.status;
     const dispositionActions = `${question.disposition !== "kept" ? `<button class="subtle-action" data-disposition="${escapeHtml(question.id)}" data-value="kept">保留</button>` : ""}${question.disposition !== "discarded" ? `<button class="subtle-action" data-disposition="${escapeHtml(question.id)}" data-value="discarded">舍弃</button>` : ""}`;
     const tags = question.tags?.length
@@ -239,7 +242,7 @@ export function createThoughtPresentation({
       : eventDate({ occurredAt: displayedAt });
     const moreActions = `<details class="thought-more-menu"><summary aria-label="更多思绪操作" title="更多思绪操作">•••</summary><div><button class="subtle-action" type="button" data-remark="${escapeHtml(question.id)}">备注</button>${dispositionActions}<button class="subtle-action" type="button" data-edit-chain="${escapeHtml(question.id)}">编辑问题</button><button class="subtle-action danger" type="button" data-delete-chain="${escapeHtml(question.id)}">移入回收站</button></div></details>`;
     const detailHeader = detail
-      ? `<header class="thought-detail-header"><div class="thought-detail-nav"><button class="subtle-action" type="button" data-thought-list>‹ 返回</button><div>${annotationCount ? `<button class="subtle-action" type="button" data-open-comments="${escapeHtml(question.id)}">批注 ${annotationCount}</button>` : ""}${moreActions}</div></div><div class="thought-detail-meta"><time>${formatDate(displayedAt)}</time> <span>${tags}</span>${tracePending ? ` ${tracePending}` : ""}</div><div class="thought-detail-title thought-question-content markdown-content" role="heading" aria-level="1">${renderMarkdown(question.content || "图片记录")}</div>${contentImagesMarkup(question, "thoughtRoot")}</header>`
+      ? `<header class="thought-detail-header"><div class="thought-detail-nav"><button class="subtle-action" type="button" data-thought-list>‹ 返回</button><div><button class="subtle-action" type="button" data-open-comments="${escapeHtml(question.id)}" data-annotation-count-root="thought:${escapeHtml(question.id)}" data-annotation-count-state="${annotationCounts.loaded ? "loaded" : "unknown"}" >${escapeHtml(annotationLabel)}</button>${moreActions}</div></div><div class="thought-detail-meta"><time>${formatDate(displayedAt)}</time> <span>${tags}</span>${tracePending ? ` ${tracePending}` : ""}</div><div class="thought-detail-title thought-question-content markdown-content" role="heading" aria-level="1">${renderMarkdown(question.content || "图片记录")}</div>${contentImagesMarkup(question, "thoughtRoot")}</header>`
       : "";
     const summary = detail
       ? '<summary hidden aria-hidden="true"></summary>'

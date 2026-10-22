@@ -35,9 +35,7 @@ THIRD_PARTY_DEEPSEEK_SETTINGS_FILE=data/llm-settings.json \
 | 阿里云图片分割 | 1 次提交及必要轮询、1 次结果下载 | 返回有效 PNG |
 | 阿里云 OSS | 1 次临时对象写入、鉴权读取、匿名读取检查和删除 | 内容一致、匿名非 200、删除后 404 |
 
-脚本固定预留 `¥2.30`，`THIRD_PARTY_TEST_MAX_CNY` 默认且最高只能设为 `3`。
-这是调用次数保护值，不是账单金额承诺。真实金额仍须在供应商控制台按请求 ID
-和账单延迟核对。
+单轮预留、参数上限和调用矩阵以当前实测脚本为准，不能把单轮保护值当成版本总额度或账单承诺。所有真实验收调用累计使用[版本费用持续授权](release-authorization-policy.md#上线前付费验收持续授权)；已有授权覆盖时不逐次申请，超额度先报告。真实金额按供应商回执和实际账单核对。
 
 缺少某服务凭据时，该项标记为 `not_configured`；真实请求失败时标记为
 `failed`。`--live` 下只要存在未通过项，进程退出码为 `2`，不得将部分通过
@@ -52,7 +50,7 @@ THIRD_PARTY_DEEPSEEK_SETTINGS_FILE=data/llm-settings.json \
 - OSS 还要求 `OSS_ATTACHMENT_BUCKET` 和 `OSS_ENDPOINT`。
 - 本地密钥文件必须位于 `.secrets/`、权限 `0600` 且被 Git 忽略。
 - 生产环境只读核对不得输出值；在生产执行分割或 OSS 写读删测试仍属于生产
-  写操作，必须另有当次授权。
+  写操作，须核对[当前生产动作授权](release-authorization-policy.md)，不得由本地费用授权推定。
 
 ## 2026-10-01 收口实测
 

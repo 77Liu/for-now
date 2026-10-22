@@ -44,7 +44,7 @@ assert.match(deploySource, /^export PATH=.*\/usr\/sbin$/m);
 assert.match(deploySource, /\/bin\/sh -c 'cd "\$HOME" && exec "\$@"'/);
 assert.match(deploySource, /chown -R "\$runtime_user:\$runtime_user" "\$candidate"[\s\S]*preview_run npm/);
 assert.match(deploySource, /preview_run npm[\s\S]*chown -R "root:root" "\$candidate"[\s\S]*chmod 0755 "\$candidate"/);
-assert.match(deploySource, /npm --prefix "\$candidate" ci --omit=dev/);
+assert.match(deploySource, /npm --prefix "\$candidate" ci[\s\S]*npm --prefix "\$candidate" run build:runtime[\s\S]*npm --prefix "\$candidate" prune --omit=dev/);
 assert.match(deploySource, /prompt-catalog-regression\.mjs/);
 assert.match(deploySource, /FFmpeg is required for M4A speech transcription/);
 assert.match(deploySource, /gzip -n -6/);
@@ -402,7 +402,7 @@ try {
     const second = invoke(fixture);
     assert.equal(second.status, 0, second.stderr);
     const commands = await fs.readFile(path.join(fixture.directory, "commands.log"), "utf8");
-    assert.equal(commands.match(/^npm /gm)?.length, 1, "same commit must not rerun npm ci");
+    assert.equal(commands.match(/^npm /gm)?.length, 3, "same commit must not reinstall, rebuild, or prune again");
     assert.match(commands, /node .*\/scripts\/prompt-catalog-regression\.mjs/);
     assert.match(commands, /curl -fsS http:\/\/127\.0\.0\.1:4175\/preview\/readyz/);
     assert.deepEqual(await productionSnapshot(fixture.directory), productionBefore);

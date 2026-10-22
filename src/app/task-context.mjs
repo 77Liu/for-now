@@ -367,6 +367,25 @@ function sourceRecord(store, sourceRef, indexes = null) {
   if (!collection) return null;
   const records = list(store?.[collection]);
   const byId = indexes?.get(collection);
+  const nestedMatch = /^(remark|followup-question|followup-answer|reflection|note|annotation|annotation-reply):(.+)$/
+    .exec(String(sourceRef.targetKey || ""));
+  if (sourceRef.rootId && nestedMatch) {
+    const root = byId?.get(sourceRef.rootId)
+      || records.find(value => value?.id === sourceRef.rootId);
+    if (!root) return null;
+    const type = nestedMatch[1];
+    const field = type === "remark" ? "remarks"
+      : type.startsWith("followup-") ? "followUps"
+        : type === "reflection" ? "reflections"
+          : type === "note" ? "notes" : "annotations";
+    const annotations = [...list(root.annotations), ...list(root.annotationDrift)];
+    const values = type === "annotation-reply"
+      ? annotations.filter(annotation => nestedMatch[2] === sourceRef.resourceId
+          || annotation.id === nestedMatch[2]).flatMap(annotation => list(annotation.replies))
+      : type === "annotation" ? annotations : list(root[field]);
+    const matches = values.filter(value => value?.id === sourceRef.resourceId);
+    return matches.length === 1 ? { item: matches[0], root } : null;
+  }
   let item = byId?.get(sourceRef.resourceId)
     || records.find(value => value?.id === sourceRef.resourceId)
     || null;
@@ -605,22 +624,23 @@ export function legalImportanceMaterial(store, sourceRef, accountId, purpose = "
  * 不依赖感知任务完成的用户原始来源池；子项以真实坐标单独计数。
  * @since unreleased
  */
-export function legalImportanceSources(store, accountId, purpose = "context") {
-  const result = [];
+function visitImportanceSources(store, visit) {
   const add = (resourceType, root, item, targetKey) => {
     if (!item?.id || !root?.id) return;
-    const sourceRef = { resourceType, resourceId: item.id, rootId: item === root && !["thought", "chat"].includes(resourceType) ? "" : root.id,
-      targetKey: item === root && !["thought", "chat"].includes(resourceType) ? "" : targetKey, version: recordVersion(item.version) };
-    const material = legalImportanceMaterial(store, sourceRef, accountId, purpose);
-    if (!material?.text.trim()) return;
-    result.push({ ...material, sourceRef, occurredAt: ["date", "unknown"].includes(item.eventTimePrecision)
-      ? "" : (targetKey.startsWith("followup-question:") ? item.questionOccurredAt : item.occurredAt) || "",
-      occurredOn: item.occurredOn || (item === root ? root.occurredOn : "") || "",
-      recordedAt: item.createdAt || "",
-      permissionRevision: taskContextSourcePermission(store, sourceRef, accountId).permissionRevision });
+    const sourceRef = {
+      resourceType,
+      resourceId: item.id,
+      rootId: item === root && !["thought", "chat"].includes(resourceType) ? "" : root.id,
+      targetKey: item === root && !["thought", "chat"].includes(resourceType) ? "" : targetKey,
+      version: recordVersion(item.version)
+    };
+    visit(sourceRef, root, item, targetKey);
   };
-  for (const resourceType of ["capture", "journal", "thought", "chat", "quote", "keepsake", "book", "checkin", "dailyRecord",
-    "action", "habit", "habitCheckin", "feedback", "experiment", "customMetric", "validationLedger"]) {
+  for (const resourceType of [
+    "capture", "journal", "thought", "chat", "quote", "keepsake", "book", "checkin",
+    "dailyRecord", "action", "habit", "habitCheckin", "feedback", "experiment",
+    "customMetric", "validationLedger"
+  ]) {
     for (const root of list(store?.[SOURCE_COLLECTIONS[resourceType]])) {
       if (resourceType === "thought") {
         if (["question", "idea", "record"].includes(root.type)) add(resourceType, root, root, `${root.type}:${root.id}`);
@@ -640,7 +660,35 @@ export function legalImportanceSources(store, accountId, purpose = "context") {
       }
     }
   }
-  return [...new Map(result.map(item => [item.sourceKey, item])).values()];
+}
+
+/** 给只读资料装配提供完整许可身份；不得先以缺省许可过滤来源。 @since unreleased */
+export function importanceSourcePermissionKeys(store) {
+  const keys = new Set();
+  visitImportanceSources(store, ref => keys.add(sourceIdentity(ref)));
+  return [...keys];
+}
+
+/**
+ * 不依赖感知任务完成的用户原始来源池；子项以真实坐标单独计数。
+ * @since unreleased
+ */
+export function legalImportanceSources(store, accountId, purpose = "context") {
+  const result = new Map();
+  visitImportanceSources(store, (sourceRef, root, item, targetKey) => {
+    const material = legalImportanceMaterial(store, sourceRef, accountId, purpose);
+    if (!material?.text.trim()) return;
+    result.set(material.sourceKey, {
+      ...material,
+      sourceRef,
+      occurredAt: ["date", "unknown"].includes(item.eventTimePrecision)
+        ? "" : (targetKey.startsWith("followup-question:") ? item.questionOccurredAt : item.occurredAt) || "",
+      occurredOn: item.occurredOn || (item === root ? root.occurredOn : "") || "",
+      recordedAt: item.createdAt || "",
+      permissionRevision: taskContextSourcePermission(store, sourceRef, accountId).permissionRevision
+    });
+  });
+  return [...result.values()];
 }
 
 /**
@@ -1026,6 +1074,7 @@ export function workingContextProjection(store, {
   compilePrompt = null,
   importanceChoice = null,
   frozenSelectionPlan = null,
+  rawMaterials = null,
   selectionSeed = ""
 } = {}) {
   const accountId = safeText(inputAccountId, 100);
@@ -1086,7 +1135,8 @@ export function workingContextProjection(store, {
   if (useImportance) {
     const currentKeys = new Set(currentMaterial.map(item => item.sourceKey));
     const queryTerms = searchTerms(queryText);
-    const raw = legalImportanceSources(store, accountId).filter(item => !currentKeys.has(item.sourceKey)).map(item => ({
+    const raw = (rawMaterials || legalImportanceSources(store, accountId))
+      .filter(item => !currentKeys.has(item.sourceKey)).map(item => ({
       ...item, originalText: item.text, id: `raw:${digest(item.sourceKey)}`, rawSource: true, reasons: [],
       relevanceScore: relevanceScore(queryTerms, item, task.text, task.eventId)
     }));
@@ -1392,8 +1442,12 @@ export function contextDerivedOutputAllowed(store, item, accountId, expectedTask
   if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) return false;
   if (receipt.schemaVersion !== 2) {
     if (!supplementalImportanceReceiptMatches(store, receipt.importanceReferences, accountId)) return false;
-    try { contextDerivedLegacyDependencies(store, item); return true; }
-    catch { return false; }
+    try {
+      contextDerivedLegacyDependencies(store, item);
+      return true;
+    } catch {
+      return false;
+    }
   }
   const expected = expectedTask || (
     item?.type === "answer" && item.relatedTo

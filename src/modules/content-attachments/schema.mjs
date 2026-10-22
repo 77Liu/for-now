@@ -1,4 +1,5 @@
 import { safeText } from "../../shared/validation/index.mjs";
+import { businessReasoning } from "../ai/index.mjs";
 
 export const CONTENT_ATTACHMENT_TARGET_TYPES = Object.freeze([
   "comment",
@@ -85,6 +86,7 @@ export function imageUnderstandingResult(input = {}, options = {}) {
   return {
     value: {
       content,
+      ...businessReasoning("contentImageUnderstanding", input.reasoningContent, 50000),
       sourceAttachmentPaths: paths.value,
       model: safeText(input.model, 120),
       sourceTaskId,

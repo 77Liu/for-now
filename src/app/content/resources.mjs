@@ -41,7 +41,8 @@ export function createContentFoundation({
   const annotationCommands = createAnnotationCommands({
     repository,
     annotations: annotationService,
-    moveNestedItemToTrash: trashMutations.moveNestedItemToTrash
+    moveNestedItemToTrash: trashMutations.moveNestedItemToTrash,
+    now
   });
   return {
     annotationService,
@@ -145,6 +146,7 @@ const createReviewRepository = repository => ({
 export function createContentRecords({
   repository,
   sourceRepository = repository,
+  thoughtQueries = null,
   foundation,
   contentAttachments,
   getCursorScope,
@@ -166,6 +168,7 @@ export function createContentRecords({
     eventTimeFields,
     reanchorAnnotations: annotationService.reanchorAnnotations,
     getCursorScope,
+    queryRuntime: thoughtQueries,
     reconcileOriginalImages: (...args) => (
       contentAttachments.reconcileOriginalImagesInStore(...args)
     )

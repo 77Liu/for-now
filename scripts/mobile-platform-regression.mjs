@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const CHROME = resolveHeadlessBrowser();
@@ -19,11 +20,11 @@ async function freePort() {
   return port;
 }
 
-async function waitForUrl(url, child) {
+async function waitForUrl(url, child, request = fetch, errors = () => "") {
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    if (child.exitCode != null) throw new Error(`应用服务提前退出：${child.exitCode}`);
+    if (child.exitCode != null) throw new Error(`应用服务提前退出：${child.exitCode}\n${errors()}`);
     try {
-      if ((await fetch(url)).ok) return;
+      if ((await request(url)).ok) return;
     } catch {}
     await sleep(50);
   }
@@ -181,11 +182,12 @@ assert.match(uiTestSource, /try attachStartupBreakdown\(in: measuredApp\)/);
 assert.match(uiTestSource, /JSONSerialization\.jsonObject\(with: data\)/);
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "growth-mobile-platform-"));
+const authFixture = await installAuthenticatedJsonRuntime(dataDir);
 const appPort = await freePort();
 const debugPort = await freePort();
 const app = spawn(process.execPath, ["server.mjs"], {
   cwd: ROOT,
-  env: { ...process.env, NODE_ENV: "test", PORT: String(appPort), DATA_DIR: dataDir, VOLCENGINE_SPEECH_API_KEY: "mobile-platform-test-key" },
+  env: { ...process.env, ...authFixture.env, NODE_ENV: "test", PORT: String(appPort), DATA_DIR: dataDir, VOLCENGINE_SPEECH_API_KEY: "mobile-platform-test-key" },
   stdio: ["ignore", "pipe", "pipe"]
 });
 let appErrors = "";
@@ -212,29 +214,34 @@ const chrome = spawn(CHROME, [
 let cdp;
 try {
   const base = `http://127.0.0.1:${appPort}`;
-  await waitForUrl(`${base}/api/state`, app);
-  const captureResponse = await fetch(`${base}/api/v1/captures`, {
+  const authenticatedFetch = (url, options = {}) => {
+    const headers = new Headers(options.headers);
+    headers.set("cookie", authFixture.cookie);
+    return fetch(url, { ...options, headers });
+  };
+  await waitForUrl(`${base}/api/state`, app, authenticatedFetch, () => appErrors);
+  const captureResponse = await authenticatedFetch(`${base}/api/v1/captures`, {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": "mobile-platform-speech-card" },
     body: JSON.stringify({ content: "移动端文字朗读控件" })
   });
   assert.equal(captureResponse.status, 201);
   const speechCaptureId = (await captureResponse.json()).data.id;
-  const thoughtResponse = await fetch(`${base}/api/v1/thought-chains`, {
+  const thoughtResponse = await authenticatedFetch(`${base}/api/v1/thought-chains`, {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": "mobile-platform-follow-up" },
     body: JSON.stringify({ question: "移动端追问安全区测试", occurredAt: "2026-10-03T08:30:00", tags: ["移动回归"] })
   });
   assert.equal(thoughtResponse.status, 201);
   const thoughtRootId = (await thoughtResponse.json()).data.items.find(item => item.type === "question").id;
-  const followUpResponse = await fetch(`${base}/api/thoughts/${thoughtRootId}/follow-ups`, {
+  const followUpResponse = await authenticatedFetch(`${base}/api/thoughts/${thoughtRootId}/follow-ups`, {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": "mobile-platform-follow-up-edit" },
     body: JSON.stringify({ question: "移动端编辑追问安全区测试", answer: "已有回答用于展示编辑表单" })
   });
   assert.equal(followUpResponse.status, 201);
   const followUpId = (await followUpResponse.json()).id;
-  const manifestResponse = await fetch(`${base}/manifest.webmanifest`);
+  const manifestResponse = await authenticatedFetch(`${base}/manifest.webmanifest`);
   assert.equal(manifestResponse.status, 200);
   assert.match(manifestResponse.headers.get("content-type") || "", /^application\/manifest\+json/);
   assert.equal((await manifestResponse.json()).display, "standalone");
@@ -243,6 +250,13 @@ try {
   await cdp.send("Page.enable");
   await cdp.send("Runtime.enable");
   await cdp.send("Network.enable");
+  await cdp.send("Network.setCookie", {
+    name: "for_now_session",
+    value: authFixture.token,
+    url: base,
+    httpOnly: true,
+    sameSite: "Lax"
+  });
   const evaluate = async expression => {
     const response = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
     if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text);

@@ -3,6 +3,7 @@ import { publishDomains, state } from "../../state/index.mjs";
 import { createHomeChatRenderer } from "./home-chat-renderer.mjs";
 import { createHomeCheckinRenderer } from "./home-checkin-renderer.mjs";
 import { createHomeSelectionQuoteModal } from "./home-selection-quote-modal.mjs";
+import { compactNumber, formatCny, formatDuration, shiftLocalDateKey } from "./home-formatters.mjs";
 
 export function createHomeRuntime({
   runtime,$,$$,eventDate,eventTimestamp,formatDate,formatDateKey,
@@ -120,32 +121,6 @@ function llmProfile(scene = "thoughtAnswer") {
   return {tier, ...profile, effort};
 }
 
-const shiftLocalDateKey = (dateKey, days) => {
-  const [year, month, day] = String(dateKey).split("-").map(Number);
-  const shiftedDate = new Date(Date.UTC(year, month - 1, day + days));
-  return shiftedDate.toISOString().slice(0, 10);
-};
-const compactNumber=value=>new Intl.NumberFormat("zh-CN",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0);
-const formatCny = value => {
-  const number = Number(value) || 0;
-  const absolute = Math.abs(number);
-  let digits = 6;
-  if (absolute === 0) digits = 2;
-  else if (absolute >= 100) digits = 0;
-  else if (absolute >= 10) digits = 1;
-  else if (absolute >= 1) digits = 2;
-  else if (absolute >= 0.1) digits = 3;
-  else if (absolute >= 0.01) digits = 4;
-  const sign = number < 0 ? "-" : "";
-  return `${sign}¥${absolute.toFixed(digits)}`;
-};
-
-const formatDuration = value => {
-  const milliseconds = Number(value) || 0;
-  if (milliseconds >= 60000) return `${(milliseconds / 60000).toFixed(1)} 分钟`;
-  if (milliseconds >= 1000) return `${(milliseconds / 1000).toFixed(1)} 秒`;
-  return `${Math.round(milliseconds)} ms`;
-};
 function openCommercialSource(view,id,date){
   if(view==="together"&&date){runtime.activeDate=eventDate({occurredAt:date});renderDate();renderChat()}
   if(view==="thoughts")openThoughtDetail(id);else switchView(view);
@@ -272,9 +247,31 @@ function homeMemorySource(item){
   if(item.type==="quote")return `拾句 · ${item.sourceTitle||"来源未记"} · ${date}`;
   return `思绪 · ${date}`
 }
-function renderHomeMemories({advance=false}={}){
+let renderedMemoryScope = null;
+/** 状态通知只重建可见首页；显式首页准备允许在揭幕前装配。账户/会话变化先清旧DOM和索引。 */
+function renderHomeMemories({advance=false,preparing=false}={}){
   const container=$("#home-memory-grid"),status=$("#home-memory-status"),shuffle=$("#home-shuffle");
   if(!container)return;
+  const scope = JSON.stringify([runtime.currentUser?.id || "local", runtime.sessionSerial]);
+  const scopeChanged = renderedMemoryScope !== scope;
+  if (scopeChanged) {
+    runtime.homeMemoryKeys = [];
+    runtime.homeMemoryByKey = new Map();
+  }
+  const surface = container.closest(".view");
+  const visible = (runtime.pageRouter?.currentRoute()?.view || "today") === "today"
+    && (preparing || (!surface?.hidden && surface?.classList.contains("active")
+      && !document.body.classList.contains("auth-locked")));
+  if (!visible) {
+    if (scopeChanged && renderedMemoryScope !== null) {
+      container.replaceChildren();
+      status.textContent = "";
+      shuffle.hidden = true;
+    }
+    renderedMemoryScope = scope;
+    return;
+  }
+  renderedMemoryScope = scope;
   const pool=Array.isArray(state.homeMemories)?state.homeMemories:createHomeMemoryPool(state),poolByKey=new Map(pool.map(item=>[item.key,item])),limit=Math.min(3,pool.length);
   runtime.homeMemoryByKey=poolByKey;
   let selected=advance?[]:runtime.homeMemoryKeys.map(key=>poolByKey.get(key)).filter(Boolean).slice(0,limit);
@@ -368,7 +365,7 @@ function renderHomeKeepsake(){
 }
 function renderHomeMood(){renderCheckinSurfaces(["checkins"])}
 function renderHome(){
-  renderHomeMemories();
+  renderHomeMemories({preparing:true});
   renderHomeKeepsake();
   renderHomeMood()
 }

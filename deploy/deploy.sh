@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_url=${REPO_URL:-git@gitee.com:Liu_772021/for-now.git}
-branch=${DEPLOY_BRANCH:-main}
+branch=${DEPLOY_BRANCH:-}
 base=/opt/for-now
 mirror=$base/repository.git
 releases=$base/releases
@@ -10,12 +10,15 @@ current=$base/app
 ssh_key=/home/for-now/.ssh/gitee_deploy
 git_ssh="ssh -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 
+# The reviewed branch is explicit: new candidates deploy before main promotion.
 case "$branch" in
-  explore/*|checkpoint/*)
-    echo "Non-release branches cannot be used as production release candidates: $branch" >&2
-    exit 1
-    ;;
+  release/*|hotfix/*|main) ;;
+  *) echo "Non-release branches cannot be used as production release candidates; set DEPLOY_BRANCH explicitly." >&2; exit 1 ;;
 esac
+if [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || ! git check-ref-format "refs/heads/$branch" >/dev/null; then
+  echo "Invalid deployment branch." >&2
+  exit 1
+fi
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run as root." >&2
   exit 1
@@ -51,13 +54,13 @@ release_guard chown root:root "$base" "$releases"
 release_guard chown -R for-now:for-now "$mirror"
 release_guard chmod 0755 "$base" "$releases"
 release_guard chmod 0700 "$mirror"
-if [ ! -d "$mirror" ]; then
+if [ ! -f "$mirror/HEAD" ]; then
   release_guard sudo -u for-now env GIT_SSH_COMMAND="$git_ssh" git clone --mirror "$repo_url" "$mirror"
 else
   release_guard sudo -u for-now env GIT_SSH_COMMAND="$git_ssh" git --git-dir="$mirror" fetch --prune origin
 fi
 
-commit=$(release_guard sudo -u for-now git --git-dir="$mirror" rev-parse "refs/heads/$branch")
+commit=$(release_guard sudo -u for-now git --git-dir="$mirror" rev-parse --verify "refs/heads/$branch^{commit}")
 if [ "$commit" != "$RELEASE_CANDIDATE_SHA" ]; then echo "Fetched commit differs from approved candidate." >&2; exit 1; fi
 if [ -n "${DEPLOY_EXPECTED_COMMIT:-}" ] && [ "$commit" != "$DEPLOY_EXPECTED_COMMIT" ]; then
   echo "Release branch changed; expected commit does not match. Deployment stopped." >&2

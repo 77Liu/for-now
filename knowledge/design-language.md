@@ -53,7 +53,7 @@
 - 原型：[`../prototypes/home-v0.2/index.html`](../prototypes/home-v0.2/index.html)，可直接文件打开。
 - 开发预览：[`../prototypes/home-v0.2/guide.html`](../prototypes/home-v0.2/guide.html)，桌面与手机并排。
 - 实施规格：[home-v0.2-handoff.md](home-v0.2-handoff.md)。
-- V0.4.0 全端 UI/UX 调研、设计约束与实施计划：[ui-ux-v0.4.0.md](ui-ux-v0.4.0.md)。
+- V0.4.0 历史全端调研与版本方案（不作为当前通用流程；当前执行见[UI SOP](../SOP/ui-ux-optimization.md)）：[ui-ux-v0.4.0.md](ui-ux-v0.4.0.md)。
 - 双端背景：[`../public/assets/home-v0.2/`](../public/assets/home-v0.2/)。
 
 验收时重点看：真实内容是否仍清楚、首次进入能否立即找到记录入口、状态低值是否被额外渲染为失败、小物是否可达、手机是否能舒适阅读、背景是否退在内容之后。具体像素不比这些目标更重要。

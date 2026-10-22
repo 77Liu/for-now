@@ -145,7 +145,7 @@ export function createVisionWorkflows({
           budgetExecution,
           stageIds: ocrStageIds
         });
-        const raw = await runDeepSeek(
+        const generated = await runDeepSeek(
           recognizedText
             ? `${config.prompt}${dateContext}\n\n以下是火山 OCR 提取的原始文字，请只据此提取字段；无法确认的字段保持为空：\n${recognizedText}`
             : `${config.prompt}${dateContext}`,
@@ -153,11 +153,13 @@ export function createVisionWorkflows({
             scene: config.scene,
             ...(recognizedText ? {} : { imagePaths: uploaded.files }),
             json: true,
+            captureReasoning: true,
             maxTokens: 4000,
             budgetExecution,
             budgetStageIds: [modelStageId]
           }
         );
+        const raw = typeof generated === "string" ? generated : generated.content;
         let parsed = {};
         try {
           parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || "");
@@ -169,6 +171,10 @@ export function createVisionWorkflows({
         }
         return {
           ...normalizeHealthImage(kind, parsed),
+          ...(typeof generated === "object" && generated.reasoningContent ? {
+            reasoningContent: generated.reasoningContent,
+            reasoningVisibility: generated.reasoningVisibility
+          } : {}),
           attachmentPaths: uploaded.attachmentPaths
         };
       });
@@ -208,6 +214,7 @@ export function createVisionWorkflows({
           scene: config.scene,
           ...(recognizedText ? {} : { imagePaths: files }),
           json: true,
+          captureReasoning: true,
           maxTokens: 4000,
           budgetExecution,
           budgetStageIds: [modelStageId]

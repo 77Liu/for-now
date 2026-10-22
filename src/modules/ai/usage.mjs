@@ -329,49 +329,125 @@ export function providerUsageEntry({
   }).entries[0];
 }
 
+const usageCostCny = (entry, cnyPerUsd) => (
+  entry.costKnown
+    ? Number(entry.costCny || 0)
+    : Number(entry.costsUsd?.total || 0) * cnyPerUsd
+);
+
 export function createAiUsageService({ repository, getAccountKey, dailyCallLimit, dailyCostLimitCny, cnyPerUsd, now = () => new Date().toISOString() }) {
-  const reservations = new Map();
+  const quotaStates = new Map();
+  const read = options => repository.read(options);
+  const update = repository.update
+    ? mutator => repository.update(mutator)
+    : async () => { throw new Error("AI usage repository does not support document updates"); };
+  const ensure = repository.ensure
+    ? () => repository.ensure(AI_USAGE_VERSION, original => Number(original.version || 1) < AI_USAGE_VERSION)
+    : async () => {};
+  const recordAttempt = repository.recordAttempt
+    ? entry => repository.recordAttempt(entry)
+    : entry => update(value => {
+        if (!Array.isArray(value.entries)) value.entries = [];
+        const callId = entry.callId || entry.id;
+        if (!value.entries.some(item => (item.callId || item.id) === callId)) value.entries.push(entry);
+      });
+  const persistedDay = async day => {
+    if (repository.readDaySummary) return repository.readDaySummary(day);
+    const usage = await read();
+    const entries = usage.entries.filter(item => item.createdAt.slice(0, 10) === day);
+    return {
+      calls: entries.length,
+      knownCostCny: entries.reduce((sum, entry) => sum + usageCostCny(entry, cnyPerUsd), 0),
+      unknownCostCalls: 0
+    };
+  };
+  const quotaState = key => {
+    let state = quotaStates.get(key);
+    if (!state) {
+      state = {
+        active: new Map(),
+        recordedCalls: 0,
+        recordedCostCny: 0,
+        // 本进程首次读到的持久基数与本地已记录增量必须相加，不能取两者最大值，否则已有用量会吞掉待入账的新调用。
+        baselineCalls: null,
+        baselineCostCny: null,
+        tail: Promise.resolve()
+      };
+      quotaStates.set(key, state);
+    }
+    return state;
+  };
+  const serialize = (state, task) => {
+    const run = state.tail.then(task, task);
+    state.tail = run.then(() => {}, () => {});
+    return run;
+  };
   return {
-    read: repository.read,
-    update: repository.update,
-    ensure: () => repository.ensure(AI_USAGE_VERSION, original => Number(original.version || 1) < AI_USAGE_VERSION),
+    read,
+    update,
+    ensure,
+    recordAttempt,
     async reserveAttempt({ estimatedCostCny = 0 } = {}) {
       const accountKey = getAccountKey();
-      const usage = await repository.read(), day = now().slice(0, 10);
-      const entries = usage.entries.filter(item => item.createdAt.slice(0, 10) === day);
-      const reservationKey = `${accountKey}\u0000${day}`, active = reservations.get(reservationKey) || new Map();
-      if (entries.length + active.size >= dailyCallLimit) {
-        throw Object.assign(new Error("今日 AI 调用次数已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_CALL_LIMIT" });
+      const day = now().slice(0, 10);
+      const reservationKey = `${accountKey}\u0000${day}`;
+      for (const [key, value] of quotaStates) {
+        if (key !== reservationKey && key.startsWith(`${accountKey}\u0000`) && !value.active.size) {
+          quotaStates.delete(key);
+        }
       }
-      const persistedCostCny = entries.reduce((sum, item) => (
-        sum + (item.costKnown ? Number(item.costCny || 0) : Number(item.costsUsd?.total || 0) * cnyPerUsd)
-      ), 0);
-      const reservedCostCny = [...active.values()].reduce((sum, item) => sum + item.costCny, 0);
-      const requestedCostCny = Math.max(0, Number(estimatedCostCny) || 0);
-      if (Number.isFinite(dailyCostLimitCny) && persistedCostCny + reservedCostCny + requestedCostCny >= dailyCostLimitCny) {
-        throw Object.assign(new Error("今日 AI 费用额度已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_COST_LIMIT" });
-      }
-      const id = crypto.randomUUID(), state = { costCny: requestedCostCny };
-      if (!reservations.has(reservationKey)) reservations.set(reservationKey, active);
-      active.set(id, state);
-      let settled = false;
-      const settle = () => {
-        if (settled) return;
-        settled = true;
-        const current = reservations.get(reservationKey);
-        current?.delete(id);
-        if (!current?.size) reservations.delete(reservationKey);
-      };
-      const reservation = () => settle();
-      reservation.release = settle;
-      reservation.commit = settle;
-      reservation.retain = entry => {
-        if (settled) return;
-        state.costCny = entry?.costKnown
-          ? Math.max(0, Number(entry.costCny) || 0)
-          : Math.max(0, Number(entry?.costsUsd?.total) || 0) * cnyPerUsd;
-      };
-      return reservation;
+      const state = quotaState(reservationKey);
+      // 准入读取、预留与结算交接共用同一账户/日期串行边界，旧读数不再能基于过期快照同时放行。
+      return serialize(state, async () => {
+        const persisted = await persistedDay(day);
+        if (state.baselineCalls == null) state.baselineCalls = Number(persisted.calls) || 0;
+        if (state.baselineCostCny == null) state.baselineCostCny = Number(persisted.knownCostCny) || 0;
+        // 持久账目可能已含本地写账，也可能因复制/落盘延迟暂时落后；取并集上界，既不漏计也不重复计数。
+        const knownCalls = Math.max(
+          Number(persisted.calls) || 0,
+          state.baselineCalls + state.recordedCalls
+        );
+        const knownCostCny = Math.max(
+          Number(persisted.knownCostCny) || 0,
+          state.baselineCostCny + state.recordedCostCny
+        );
+        const reservedCostCny = [...state.active.values()].reduce((sum, item) => sum + item.costCny, 0);
+        if (knownCalls + state.active.size >= dailyCallLimit) {
+          throw Object.assign(new Error("今日 AI 调用次数已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_CALL_LIMIT" });
+        }
+        const requestedCostCny = Math.max(0, Number(estimatedCostCny) || 0);
+        if (Number.isFinite(dailyCostLimitCny)
+          && knownCostCny + reservedCostCny + requestedCostCny >= dailyCostLimitCny) {
+          throw Object.assign(new Error("今日 AI 费用额度已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_COST_LIMIT" });
+        }
+        const id = crypto.randomUUID(), reservationState = { costCny: requestedCostCny };
+        state.active.set(id, reservationState);
+        let settled = false;
+        const settle = committed => {
+          if (settled) return;
+          settled = true;
+          if (state.active.delete(id) && committed) {
+            state.recordedCalls += 1;
+            state.recordedCostCny += reservationState.costCny;
+          }
+        };
+        const reservation = () => settle(false);
+        reservation.release = () => settle(false);
+        reservation.commit = () => settle(true);
+        reservation.retain = entry => {
+          if (settled) return;
+          reservationState.costCny = entry?.costKnown
+            ? Math.max(0, Number(entry.costCny) || 0)
+            : Math.max(0, Number(entry?.costsUsd?.total) || 0) * cnyPerUsd;
+          // 写账已发起，该调用必然进入持久账目；立即从在途转为已记录，避免与持久读数重复占用额度。
+          if (state.active.delete(id)) {
+            state.recordedCalls += 1;
+            state.recordedCostCny += reservationState.costCny;
+          }
+          settled = true;
+        };
+        return reservation;
+      });
     }
   };
 }

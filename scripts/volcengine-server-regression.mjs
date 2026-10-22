@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import sharp from "sharp";
 import { WebSocketServer } from "ws";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -143,6 +144,7 @@ await listen(websocketServer);
 
 const appPort = await freePort();
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-volcengine-server-"));
+const authFixture = await installAuthenticatedJsonRuntime(dataDir);
 const app = spawn(process.execPath, ["server.mjs"], {
   cwd: ROOT,
   env: {
@@ -150,7 +152,7 @@ const app = spawn(process.execPath, ["server.mjs"], {
     NODE_ENV: "test",
     PORT: String(appPort),
     DATA_DIR: dataDir,
-    AUTH_REQUIRED: "0",
+    ...authFixture.env,
     PERSISTENCE_BACKEND: "json",
     ATTACHMENT_STORAGE: "local",
     AI_USER_DAILY_CALL_LIMIT: "13",
@@ -169,6 +171,14 @@ app.stdout.resume();
 let stderr = "";
 app.stderr.on("data", chunk => { stderr += chunk; });
 const base = `http://127.0.0.1:${appPort}`;
+const systemFetch = globalThis.fetch;
+globalThis.fetch = (input, init = {}) => {
+  const target = String(input instanceof Request ? input.url : input);
+  if (!target.startsWith(base)) return systemFetch(input, init);
+  const headers = new Headers(init.headers);
+  if (!headers.has("cookie")) headers.set("cookie", authFixture.cookie);
+  return systemFetch(input, { ...init, headers });
+};
 const waitFor = async predicate => {
   for (let attempt = 0; attempt < 300; attempt += 1) {
     try {
@@ -684,6 +694,7 @@ try {
     trash: [],
     attachmentCleanup: []
   }, null, 2)}\n`);
+  const oldCatalogAuth = await installAuthenticatedJsonRuntime(oldCatalogDataDir);
   const oldCatalogApp = spawn(process.execPath, ["server.mjs"], {
     cwd: ROOT,
     env: {
@@ -691,7 +702,7 @@ try {
       NODE_ENV: "test",
       PORT: String(oldCatalogPort),
       DATA_DIR: oldCatalogDataDir,
-      AUTH_REQUIRED: "0",
+      ...oldCatalogAuth.env,
       PERSISTENCE_BACKEND: "json",
       ATTACHMENT_STORAGE: "local",
       PROMPT_CATALOG_VERSION: "2026.10.04.1",
@@ -721,6 +732,7 @@ try {
     await fs.rm(oldCatalogDataDir, { recursive: true, force: true });
   }
 } finally {
+  globalThis.fetch = systemFetch;
   await stopChild(app);
   await new Promise(resolve => websocket.close(() => resolve()));
   await new Promise(resolve => websocketServer.close(() => resolve()));

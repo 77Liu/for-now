@@ -148,6 +148,8 @@ export const thoughtComponents = Object.freeze({
         occurredOn: { type: "string", format: "date" },
         tags: { type: "array", items: { type: "string" } },
         attachmentPaths: { type: "array", maxItems: 2, uniqueItems: true, items: { $ref: "#/components/schemas/ContentAttachmentPath" } },
+        reasoningContent: { type: "string" },
+        reasoningVisibility: { const: "user_viewable" },
         relatedTo: { type: ["string", "null"] },
         sourceRef: { $ref: "#/components/schemas/ThoughtSourceRef" }
       },

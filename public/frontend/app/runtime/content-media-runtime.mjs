@@ -1,5 +1,6 @@
 import { state } from "../../state/index.mjs";
 import { isPendingAiTaskStatus, isWaitingForUserModelTask, pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
+import { imageUnderstandingMarkup } from "../../features/content-attachments/index.mjs";
 
 export function createContentMediaRuntime({
   runtime,$,mediaDraftStore,runPublicValidation,validatedImageFiles,
@@ -227,9 +228,9 @@ function contentImagesMarkup(resource, targetType) {
       `<button class="content-original-button" type="button" data-image-viewer-path="${escapeHtml(source)}" title="查看原图 ${index + 1}" aria-label="查看原图 ${index + 1}"><img src="${escapeHtml(appUrl(source))}" alt="图片 ${index + 1}" loading="lazy"></button>`
     )).join("")}</div>`
     : "";
-  const understandingMarkup = understandings.map(item => (
-    `<div class="content-understanding"><small>AI 图片理解</small><div class="markdown-content">${renderMarkdown(item.content)}</div></div>`
-  )).join("");
+  const understandingMarkup = understandings
+    .map(item => imageUnderstandingMarkup(item, renderMarkdown))
+    .join("");
   const actions = paths.length
     ? `<div class="content-image-actions"><button type="button" data-content-image-understand="${escapeHtml(targetType)}" data-content-target-id="${escapeHtml(resource.id)}" data-content-version="${resource.version || 1}" ${pending ? "disabled" : ""}>✦ ${understandings.length ? "重新理解" : "理解图片"}</button><span class="content-image-task-status">${pending ? pendingAiTaskMessage(pending, "正在后台理解…") : ""}</span></div>`
     : "";

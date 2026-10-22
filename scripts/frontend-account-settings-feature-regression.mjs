@@ -585,6 +585,7 @@ function createSettingsHarness(overrides = {}) {
   const authCalls = [];
   const resets = [];
   const toasts = [];
+  const listCalls = [];
   let logouts = 0;
   const controller = createAccountFeatureController({
     auth: {
@@ -593,6 +594,7 @@ function createSettingsHarness(overrides = {}) {
         if (path === "/api/auth/username") {
           return { user: { ...user, username: body.username } };
         }
+        if (path === "/api/auth/password") return { authenticated: false, reauthRequired: true };
         if (path.includes("/role")) {
           return { user: { id: path.split("/").at(-2), username: "更新账户", role: body.role } };
         }
@@ -601,12 +603,21 @@ function createSettingsHarness(overrides = {}) {
       reset: message => resets.push(message),
       logout: () => { logouts += 1; }
     },
-    request: async () => ({
-      users: [
-        { id: "owner-a", username: "Owner A", role: "owner" },
-        { id: "user-b", username: "User B", role: "user" }
-      ]
-    }),
+    request: async path => {
+      listCalls.push(path);
+      return path.includes("cursor=next-page")
+        ? {
+            users: [{ id: "user-c", username: "User C", role: "user" }],
+            nextCursor: null
+          }
+        : {
+            users: [
+              { id: "owner-a", username: "Owner A", role: "owner" },
+              { id: "user-b", username: "User B", role: "user" }
+            ],
+            nextCursor: "next-page"
+          };
+    },
     currentUser: { get: () => user, set: next => { user = next; } },
     hasCapability: capability => capability === "account-roles",
     showToast: message => toasts.push(message),
@@ -615,6 +626,17 @@ function createSettingsHarness(overrides = {}) {
   const fixture = createAccountRoot();
   controller.mount({ root: fixture.root });
   await waitFor(() => /User B/.test(fixture.roleList.innerHTML), "owner role list did not load");
+  assert.equal(listCalls[0], "/api/auth/users?limit=50");
+  assert.match(fixture.roleList.innerHTML, /加载更多/);
+  const moreButton = element({
+    tagName: "BUTTON",
+    dataset: { contentAction: "load-more-account-users" }
+  });
+  moreButton.root = fixture.root;
+  fixture.root.dispatch("click", moreButton);
+  await waitFor(() => /User C/.test(fixture.roleList.innerHTML), "next account page did not load");
+  assert.match(listCalls[1], /cursor=next-page/);
+  assert.doesNotMatch(fixture.roleList.innerHTML, /加载更多/);
 
   fixture.username.value = "Owner 新名";
   fixture.root.dispatch("submit", fixture.usernameForm);
@@ -630,7 +652,9 @@ function createSettingsHarness(overrides = {}) {
   fixture.newPassword.value = "new-password-1";
   fixture.confirmPassword.value = "new-password-1";
   fixture.root.dispatch("submit", fixture.passwordForm);
-  await waitFor(() => toasts.includes("密码已更新"), "password request did not settle");
+  await waitFor(() => resets.length === 1, "password change did not force reauthentication");
+  assert.equal(resets[0], "密码已更新，所有设备已退出，请使用新密码重新登录。");
+  assert.ok(toasts.includes("密码已更新，请重新登录"));
   assert.equal(authCalls[1][0], "/api/auth/password");
   assert.equal(authCalls[1][2], "PATCH");
 
@@ -660,8 +684,8 @@ function createSettingsHarness(overrides = {}) {
   selfButton.root = fixture.root;
   selfButton.parent = selfRow;
   fixture.root.dispatch("click", selfButton);
-  await waitFor(() => resets.length === 1, "self-demotion did not force reauthentication");
-  assert.equal(resets[0], "账户权限已变更，请重新登录。");
+  await waitFor(() => resets.length === 2, "self-demotion did not force reauthentication");
+  assert.equal(resets[1], "账户权限已变更，请重新登录。");
 
   fixture.root.dispatch("click", fixture.logout);
   assert.equal(logouts, 1);

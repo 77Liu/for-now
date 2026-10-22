@@ -4,7 +4,10 @@ export function createAttachmentCleanup({ repository, remove, now, contextKey, d
   const timers = new Map();
   const references = store => {
     const { _persistence, attachmentCleanup, ...visibleStore } = store;
-    return collectAttachmentPaths(visibleStore);
+    return collectAttachmentPaths({
+      ...visibleStore,
+      trash: (visibleStore.trash || []).filter(entry => entry.permanentlyPurged !== true)
+    });
   };
   const enqueue = (store, candidates) => enqueueAttachmentCleanup(store.attachmentCleanup, candidates, references(store), now);
   const drain = store => drainAttachmentCleanup(store.attachmentCleanup, references(store), { remove, now });
@@ -14,7 +17,7 @@ export function createAttachmentCleanup({ repository, remove, now, contextKey, d
     if (timers.has(key)) return;
     timers.set(key, dispatch(() => {
       timers.delete(key);
-      void resume().catch(error => { onRetryFailure(error); schedule(); });
+      return resume().catch(error => { onRetryFailure(error); schedule(); });
     }, 60_000));
   }
 

@@ -13,6 +13,7 @@ const attachmentName = resourcePath => {
 export function collectBackupAttachmentPaths(value, output = new Set(), pathParts = []) {
   const key = pathParts.at(-1) || "";
   if (key === "attachmentCleanup") return output;
+  if (pathParts[0] === "trash" && value?.permanentlyPurged === true) return output;
   if (pathParts[0] === "_persistence" && pathParts[1] === "idempotency" && key === "response") {
     return output;
   }

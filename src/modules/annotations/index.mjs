@@ -1,6 +1,7 @@
 import { cleanAttachmentPaths } from "../../shared/attachments/index.mjs";
 import { markdownText } from "../../shared/content/index.mjs";
 import { recordVersion, safeText } from "../../shared/validation/index.mjs";
+import { businessReasoning } from "../ai/index.mjs";
 export { shenjiSystemPrompt, annotationPrompt } from "./prompts.mjs";
 
 export const ANNOTATION_KINDS = Object.freeze(["comment", "highlight", "emphasis"]);
@@ -149,7 +150,7 @@ export function createAnnotationService({ createId, now }) {
           answer: result.content,
           sourceTaskId: task.id,
           clientRequestId: task.clientRequestId,
-          ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
+          ...businessReasoning("annotationShenji", result.reasoningContent, 6000),
           ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}),
           ...(Array.isArray(result.citations) ? { citations: structuredClone(result.citations) } : {}),
           ...(Array.isArray(result.providedReferences) ? { providedReferences: structuredClone(result.providedReferences) } : {}),

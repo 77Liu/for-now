@@ -26,13 +26,13 @@ function legacyView(params,hash) { const query=params.get("view");if(sections[qu
 export function normalizeRouteQuery(view, input = {}) {
   if (view !== "thoughts") return {};
   const params=input instanceof URLSearchParams?input:new URLSearchParams(Object.entries(input||{}).filter(([,entry])=>entry!=null&&entry!==""));
-  const tag=String(params.get("tag")||"").normalize("NFKC").trim().replace(/[\u0000-\u001f\u007f]/g,"").slice(0,30),q=String(params.get("q")||"").normalize("NFKC").trim().replace(/\s+/g," ").replace(/[\u0000-\u001f\u007f]/g,"").slice(0,200),sort=params.get("sort")==="created"?"created":"occurred",pageValue=Number.parseInt(params.get("page")||"1",10),page=Number.isSafeInteger(pageValue)&&pageValue>0?Math.min(pageValue,5):1;
-  return {...tag&&tag!=="all"?{tag}:{},...q?{q}:{},...sort!=="occurred"?{sort}:{},...page!==1?{page}:{}};
+  const tag=String(params.get("tag")||"").normalize("NFKC").trim().replace(/[\u0000-\u001f\u007f]/g,"").slice(0,30),q=String(params.get("q")||"").normalize("NFKC").trim().replace(/\s+/g," ").replace(/[\u0000-\u001f\u007f]/g,"").slice(0,200),sort=params.get("sort")==="created"?"created":"occurred",pageValue=params.get("page"),page=pageValue==null?1:(Number.isInteger(Number(pageValue))?Number(pageValue):pageValue);
+  return {...tag&&tag!=="all"?{tag}:{},...q?{q}:{},...sort!=="occurred"?{sort}:{},...(page!==1||(params.has("page")&&(params.has("cursor")||params.has("direction"))))?{page}:{},...params.has("cursor")?{cursor:params.get("cursor")}:{},...params.has("direction")?{direction:params.get("direction")}:{}};
 }
 
 function queryString(view, query) {
   const value=normalizeRouteQuery(view,query),params=new URLSearchParams();
-  if(value.tag)params.set("tag",value.tag);if(value.q)params.set("q",value.q);if(value.sort)params.set("sort",value.sort);if(value.page)params.set("page",String(value.page));
+  if(value.tag)params.set("tag",value.tag);if(value.q)params.set("q",value.q);if(value.sort)params.set("sort",value.sort);if(value.page)params.set("page",String(value.page));if(value.cursor!=null)params.set("cursor",value.cursor);if(value.direction)params.set("direction",value.direction);
   const queryValue=params.toString();return queryValue?`?${queryValue}`:"";
 }
 

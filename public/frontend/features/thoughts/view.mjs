@@ -14,6 +14,10 @@ function requireFunction(value, name) {
 
 export function createThoughtView({
   getSnapshot,
+  getDraftOwnerScope = () => "",
+  getDraftStorageKey = () => "",
+  draftStorage = () => undefined,
+  hasActiveSelection = () => false,
   getActiveDate,
   isFullRouteStateLoaded,
   contentState,
@@ -27,7 +31,10 @@ export function createThoughtView({
   document,
   presentation,
   audioLifecycle,
-  audioScope = () => null
+  audioScope = () => null,
+  readingState,
+  captureReadingPosition = () => null,
+  restoreReadingPosition = () => {}
 } = {}) {
   for (const [name, value] of Object.entries({
     getSnapshot,
@@ -53,6 +60,66 @@ export function createThoughtView({
   let query = "";
   let routeResult = null;
   const expandedContent = new Set();
+  let renderedScope = "";
+  let draftOwner = "";
+  let draftKey = "";
+  const retainedDrafts = new Map();
+  function writeDrafts() {
+    if (!draftKey) return;
+    try {
+      const storage = draftStorage();
+      const previous = JSON.parse(storage?.getItem(draftKey) || "{}");
+      const next = { ...previous };
+      if (retainedDrafts.size) next.thoughtForms = [...retainedDrafts.values()];
+      else delete next.thoughtForms;
+      if (Object.keys(next).length) storage?.setItem(draftKey, JSON.stringify(next));
+      else storage?.removeItem?.(draftKey);
+    } catch { /* 受限存储保留内存草稿，沿用既有 session-drafts 的失败语义。 */ }
+  }
+  function currentDrafts() {
+    const owner = getDraftOwnerScope();
+    if (owner !== draftOwner) {
+      retainedDrafts.clear();
+      draftOwner = owner;
+      draftKey = getDraftStorageKey();
+      try {
+        const saved = JSON.parse(draftStorage()?.getItem(draftKey) || "{}").thoughtForms;
+        if (Array.isArray(saved)) for (const draft of saved) {
+          if (typeof draft?.key === "string" && draft.key.startsWith("follow-up:")
+            && Array.isArray(draft.fields) && draft.fields.every(field => typeof field?.key === "string" && typeof field.value === "string")) {
+            retainedDrafts.set(draft.key, draft);
+          }
+        }
+      } catch { /* 损坏草稿不阻断实际记录读取。 */ }
+    }
+    return owner ? [...retainedDrafts.values()] : [];
+  }
+  /** 仅记录用户实际编辑的表单，沿既有账户 session-drafts 保存，不缓存加载正文。 @since unreleased */
+  function rememberDrafts() {
+    if (draftOwner !== getDraftOwnerScope()) {
+      currentDrafts();
+      return;
+    }
+    if (!draftOwner || !surface) return;
+    for (const draft of captureFormDrafts(surface)) {
+      if (!draft.dirty) continue;
+      const edited = draft.fields.some(field => typeof field.value === "string" && field.value.trim());
+      if (edited) retainedDrafts.set(draft.key, { ...draft, submitting: false });
+      else retainedDrafts.delete(draft.key);
+    }
+    writeDrafts();
+  }
+  function draftsForRender(root) {
+    const drafts = new Map(currentDrafts().map(draft => [draft.key, draft]));
+    if (renderedScope === renderToken.scope) for (const draft of captureFormDrafts(root)) {
+      if (draft.dirty || !drafts.has(draft.key)) drafts.set(draft.key, draft);
+    }
+    return [...drafts.values()];
+  }
+  let renderToken = null;
+  const currentFrame = (root, callback, token = renderToken) => requestFrame(() => {
+    if (root?.isConnected !== false && readingState.isCurrent(token)) callback();
+  });
   const queryOne = selector => document.querySelector(selector);
 
   function formIdentity(form, index) {
@@ -78,15 +145,18 @@ export function createThoughtView({
     const active = document.activeElement;
     return [...root.querySelectorAll("form")].map((form, index) => ({
       key: formIdentity(form, index),
+      dirty: form.dataset.thoughtDraftDirty === "true",
       hidden: form.hidden,
       requestId: form.dataset.requestId || "",
+      submitting: Boolean(form.querySelector('button[type="submit"]')?.disabled),
       fields: [...form.querySelectorAll("input,textarea,select")].map((field, fieldIndex) => ({
         key: fieldIdentity(field, fieldIndex),
         value: field.value,
         checked: ["checkbox", "radio"].includes(field.type) ? field.checked : null,
         focused: field === active,
         selectionStart: typeof field.selectionStart === "number" ? field.selectionStart : null,
-        selectionEnd: typeof field.selectionEnd === "number" ? field.selectionEnd : null
+        selectionEnd: typeof field.selectionEnd === "number" ? field.selectionEnd : null,
+        selectionDirection: field.selectionDirection || "none"
       }))
     }));
   }
@@ -97,6 +167,9 @@ export function createThoughtView({
       const draft = drafts.find(item => item.key === formIdentity(form, index));
       if (!draft) return;
       form.hidden = draft.hidden;
+      if (draft.dirty) form.dataset.thoughtDraftDirty = "true";
+      const submit = form.querySelector('button[type="submit"]');
+      if (submit) submit.disabled = draft.submitting;
       if (draft.requestId) form.dataset.requestId = draft.requestId;
       if (form.dataset.followUpRoot) {
         form.closest("[data-chain-id]")?.querySelector("[data-followup-compose]")
@@ -116,35 +189,78 @@ export function createThoughtView({
         && typeof focused.field.setSelectionRange === "function") {
         focused.field.setSelectionRange(
           focused.saved.selectionStart,
-          focused.saved.selectionEnd
+          focused.saved.selectionEnd,
+          focused.saved.selectionDirection
         );
       }
     }
     return focused?.field || null;
   }
 
+  function captureFocus(root) {
+    const active = document.activeElement;
+    if (!active || !root.contains?.(active) || !active.matches?.("button,summary,a")) return null;
+    return {
+      rootId: active.closest("[data-chain-id]")?.dataset.chainId,
+      followUpId: active.closest("[data-followup-id]")?.dataset.followupId,
+      tagName: active.tagName,
+      className: active.className,
+      type: active.type,
+      formKey: active.closest("form") ? formIdentity(active.closest("form"), 0) : "",
+      id: active.id,
+      data: Object.entries(active.dataset)
+    };
+  }
+
+  function restoreFocus(root, focus) {
+    if (!focus) return;
+    const chain = focus.rootId
+      ? root.querySelector(`[data-chain-id="${escapeSelector(focus.rootId)}"]`)
+      : root;
+    const parent = focus.followUpId
+      ? chain?.querySelector(`[data-followup-id="${escapeSelector(focus.followUpId)}"]`)
+      : chain;
+    const focusParent = focus.formKey
+      ? [...(parent?.querySelectorAll("form") || [])].find(form => formIdentity(form, 0) === focus.formKey)
+      : parent;
+    const target = [...(focusParent?.querySelectorAll("button,summary,a") || [])].find(item => (
+      item.tagName === focus.tagName && item.id === focus.id
+      && item.className === focus.className && item.type === focus.type
+      && focus.data.every(([key, value]) => item.dataset[key] === value)
+    ));
+    if (target) {
+      target.focus({ preventScroll: true });
+      currentFrame(root, () => target.isConnected && target.focus({ preventScroll: true }));
+    }
+  }
+
   function openState(root) {
-    const roots = new Set();
-    const followUps = new Set();
-    root?.querySelectorAll(".chain-record[open][data-chain-id]").forEach(card => {
-      roots.add(card.dataset.chainId);
-    });
-    root?.querySelectorAll(".response-entry[open][data-followup-id]").forEach(entry => {
-      const rootId = entry.closest("[data-chain-id]")?.dataset.chainId;
-      if (rootId) followUps.add(`${rootId}:${entry.dataset.followupId}`);
+    const roots = new Map();
+    const followUps = new Map();
+    if (renderedScope !== renderToken.scope) return { roots, followUps };
+    root?.querySelectorAll(".chain-record[data-chain-id]").forEach(card => {
+      roots.set(card.dataset.chainId, card.open);
+      card.querySelectorAll("[data-followup-id]").forEach(entry => {
+        followUps.set(`${card.dataset.chainId}:${entry.dataset.followupId}`, entry.open);
+      });
     });
     return { roots, followUps };
   }
 
   function restoreOpenState(root, state) {
     root?.querySelectorAll("[data-chain-id]").forEach(card => {
-      if (state.roots.has(card.dataset.chainId)) card.open = true;
+      if (state.roots.has(card.dataset.chainId)) card.open = state.roots.get(card.dataset.chainId);
       card.querySelectorAll("[data-followup-id]").forEach(entry => {
-        if (state.followUps.has(`${card.dataset.chainId}:${entry.dataset.followupId}`)) {
-          entry.open = true;
-        }
+        const key = `${card.dataset.chainId}:${entry.dataset.followupId}`;
+        if (state.followUps.has(key)) entry.open = state.followUps.get(key);
       });
     });
+  }
+
+  function extraOpenState(state, extra) {
+    if (extra.chainId && state.roots.get(extra.chainId) !== false) state.roots.set(extra.chainId, true);
+    const key = `${extra.chainId}:${extra.followUpId}`;
+    if (extra.followUpId && state.followUps.get(key) !== false) state.followUps.set(key, true);
   }
 
   function syncOverflow(root = surface) {
@@ -173,18 +289,15 @@ export function createThoughtView({
     tagCommentableTargets(root, chains);
     renderLatex(root);
     applyCommentAnchors(root);
-    requestFrame(() => syncOverflow(root));
+    currentFrame(root, () => syncOverflow(root));
   }
 
   function renderTogether(snapshot, extraOpen) {
     const root = queryOne("#today-thoughts");
     if (!root) return false;
-    const drafts = captureFormDrafts(root);
+    const drafts = draftsForRender(root);
     const open = openState(root);
-    if (extraOpen.chainId) open.roots.add(extraOpen.chainId);
-    if (extraOpen.followUpId) {
-      open.followUps.add(`${extraOpen.chainId}:${extraOpen.followUpId}`);
-    }
+    extraOpenState(open, extraOpen);
     const items = createThoughtChains(snapshot.thoughts, "occurred")
       .filter(chain => thoughtDate(chain) === getActiveDate())
       .slice(0, 5);
@@ -198,21 +311,16 @@ export function createThoughtView({
     restoreOpenState(root, open);
     const focused = restoreFormDrafts(root, drafts);
     decorate(root, items);
-    if (focused) requestFrame(() => focused.isConnected && focused.focus({ preventScroll: true }));
+    if (focused) currentFrame(root, () => focused.isConnected && focused.focus({ preventScroll: true }));
     return true;
   }
 
   function renderThoughtPage(snapshot, extraOpen) {
     const root = queryOne("#all-thoughts");
     if (!root) return false;
-    const drafts = captureFormDrafts(root);
-    const open = root.dataset.routeMode === "list"
-      ? openState(root)
-      : { roots: new Set(), followUps: new Set() };
-    if (extraOpen.chainId) open.roots.add(extraOpen.chainId);
-    if (extraOpen.followUpId) {
-      open.followUps.add(`${extraOpen.chainId}:${extraOpen.followUpId}`);
-    }
+    const drafts = draftsForRender(root);
+    const open = openState(root);
+    extraOpenState(open, extraOpen);
     document.querySelectorAll("[data-thought-sort]").forEach(button => {
       const active = button.dataset.thoughtSort === sortMode;
       button.classList.toggle("active", active);
@@ -243,11 +351,26 @@ export function createThoughtView({
     if (searchControl) searchControl.hidden = detailMode;
     root.dataset.routeMode = detailMode ? "detail" : "list";
     if (pagination) {
-      pagination.hidden = detailMode || !snapshot.thoughtPage?.nextCursor;
+      const status = pagination.querySelector("#thought-pagination-status");
+      status?.setAttribute("role", "status"); status?.setAttribute("aria-live", "polite");
+      const page = snapshot.thoughtPage;
+      pagination.hidden = detailMode || (!page?.nextCursor && !page?.stale);
+      let top = surface.querySelector("#thought-pagination-top");
+      if (!top) { top = document.createElement("div"); top.id = "thought-pagination-top"; top.className = "thought-pagination"; root.before(top); }
+      top.hidden = detailMode || !page?.window || !page?.prevCursor;
+      let previous = top.querySelector("#thought-load-previous");
+      if (!previous) { previous = document.createElement("button"); previous.id = "thought-load-previous"; previous.type = "button"; previous.className = "quiet-button"; previous.textContent = "加载较新内容"; top.append(previous); }
+      previous.hidden = !page?.window || !page?.prevCursor;
+      let refresh = pagination.querySelector("#thought-refresh-window");
+      if (!refresh) { refresh = document.createElement("button"); refresh.id = "thought-refresh-window"; refresh.type = "button"; refresh.className = "quiet-button"; refresh.textContent = "内容已变化，刷新列表"; pagination.append(refresh); }
+      refresh.hidden = !page?.stale;
+      const next = pagination.querySelector("#thought-load-more");
+      if (next) { next.hidden = !page?.nextCursor; next.disabled = Boolean(page?.stale); }
+      previous.disabled = Boolean(page?.stale);
     }
     if (detailMode) {
       root.innerHTML = presentation.cardsMarkup([selected], sortMode, { detail: true });
-      open.roots.add(activeId);
+      if (!open.roots.has(activeId)) open.roots.set(activeId, true);
     } else {
       if (filters) {
         filters.hidden = false;
@@ -292,12 +415,30 @@ export function createThoughtView({
     if (status && pagination && !pagination.hidden) {
       status.textContent = `已加载 ${(snapshot.thoughts || []).length} 条`;
     }
-    if (focused) requestFrame(() => focused.isConnected && focused.focus({ preventScroll: true }));
+    if (focused) currentFrame(root, () => focused.isConnected && focused.focus({ preventScroll: true }));
     return true;
   }
 
+  let deferredRender = false;
+  const deferredPatches = new Map();
+  function clearSelectionRender() { deferredRender = false; deferredPatches.clear(); }
+  /** 选区释放后消费原ACK凭据并用当前快照呈现；凭据随现有挂载清理，不保存第二份业务/阅读状态。 @since unreleased */
+  function flushSelectionRender() {
+    if (!surface || hasActiveSelection(surface)) return false;
+    const patches = [...deferredPatches.values()];
+    deferredPatches.clear();
+    const needed = deferredRender;
+    deferredRender = false;
+    for (const target of patches) patchTarget(target);
+    return needed ? render() : patches.length > 0;
+  }
   function render(extraOpen = {}) {
     if (!surface || !route) return false;
+    if (hasActiveSelection(surface)) { deferredRender = true; return false; }
+    renderToken = readingState.beginRender();
+    if (renderedScope !== renderToken.scope) expandedContent.clear();
+    const position = renderedScope === renderToken.scope ? captureReadingPosition(surface) : null;
+    const focus = renderedScope === renderToken.scope ? captureFocus(surface) : null;
     const snapshot = getSnapshot();
     const scope = audioScope();
     if (scope) audioLifecycle.beforeRender(surface, scope);
@@ -305,6 +446,11 @@ export function createThoughtView({
       ? renderTogether(snapshot, extraOpen)
       : renderThoughtPage(snapshot, extraOpen);
     if (scope) audioLifecycle.afterRender(surface, scope);
+    renderedScope = renderToken.scope;
+    const available = new Set([...surface.querySelectorAll("[data-expand-key]")].map(item => item.dataset.expandKey));
+    for (const key of expandedContent) if (!available.has(key)) expandedContent.delete(key);
+    restoreFocus(surface, focus);
+    restoreReadingPosition(surface, position, renderToken);
     return rendered;
   }
 
@@ -361,10 +507,21 @@ export function createThoughtView({
   );
 
   function patchTarget(target) {
+    if (!surface || !route) return false;
+    if (hasActiveSelection(surface)) {
+      const key = JSON.stringify([target.targetId, target.consumeFollowUp?.kind || "", target.consumeFollowUp?.followUpId || ""]);
+      deferredPatches.set(key, target);
+      deferredRender = true;
+      return true;
+    }
+    renderToken = readingState.beginRender();
+    if (renderedScope !== renderToken.scope) expandedContent.clear();
+    const position = renderedScope === renderToken.scope ? captureReadingPosition(surface) : null;
+    const focus = renderedScope === renderToken.scope ? captureFocus(surface) : null;
     const chain = createThoughtChains(getSnapshot().thoughts, sortMode)
       .find(item => item.question.id === target.targetId);
     if (!chain) return false;
-    const cards = [...document.querySelectorAll(
+    const cards = [...surface.querySelectorAll(
       `[data-chain-id="${escapeSelector(target.targetId)}"]`
     )];
     if (!cards.length) return true;
@@ -372,13 +529,20 @@ export function createThoughtView({
       ? followUpFormKey(target.consumeFollowUp)
       : "";
     for (const current of cards) {
-      const drafts = captureFormDrafts(current)
-        .filter(draft => draft.key !== consumedKey);
-      const rootOpen = current.open;
-      const openFollowUps = new Set(
-        [...current.querySelectorAll("[data-followup-id][open]")]
-          .map(item => item.dataset.followupId)
-      );
+      const drafts = captureFormDrafts(current).flatMap(draft => {
+        if (draft.key !== consumedKey) return [draft];
+        const submitted = target.consumeFollowUp?.submitted;
+        const changed = submitted && draft.fields.some(field => {
+          const name = field.key.startsWith("name:") ? field.key.slice(5) : "";
+          return Object.hasOwn(submitted, name) && field.value !== submitted[name];
+        });
+        // ACK只消费本次提交的文本；等待期间新输入仍是用户草稿。
+        if (changed) retainedDrafts.set(consumedKey, { ...draft, submitting: false, requestId: "" });
+        else retainedDrafts.delete(consumedKey);
+        writeDrafts();
+        return changed ? [{ ...draft, submitting: false, requestId: "" }] : [];
+      });
+      const open = openState(current.parentElement);
       const template = document.createElement("template");
       const detail = current.classList.contains("thought-detail-record");
       template.innerHTML = presentation.card(chain, false, sortMode, { detail }).trim();
@@ -388,44 +552,59 @@ export function createThoughtView({
       if (scope) audioLifecycle.beforeRender(current, scope);
       current.replaceWith(next);
       if (scope) audioLifecycle.afterRender(next, scope);
-      next.open = rootOpen;
-      next.querySelectorAll("[data-followup-id]").forEach(item => {
-        item.open = openFollowUps.has(item.dataset.followupId);
-      });
+      restoreOpenState(next.parentElement, open);
       restoreFormDrafts(next, drafts);
       decorate(next.parentElement, [chain]);
     }
+    renderedScope = renderToken.scope;
+    restoreFocus(surface, focus);
+    restoreReadingPosition(surface, position, renderToken);
     return true;
   }
 
-  function applySavedFollowUp(rootId, saved, { kind, followUpId = "" }) {
+  function applySavedFollowUp(rootId, saved, { kind, followUpId = "", submitted, rootVersion }) {
     const root = (getSnapshot().thoughts || [])
       .find(item => item.id === rootId && item.type === "question");
-    if (!root) return false;
-    root.followUps ||= [];
+    // 分页摘要只证明根存在；迟到ACK不能补出未加载追问，也不能把它当作已删除。
+    if (!root || Object.hasOwn(root, "blockCount") || !Array.isArray(root.followUps)) return false;
     const current = root.followUps.find(item => item.id === saved.id);
-    if (current) Object.assign(current, saved);
-    else root.followUps.push({ ...saved });
-    root.version = Math.max(1, Number(root.version) || 1) + 1;
-    root.updatedAt = saved.updatedAt || saved.createdAt || new Date().toISOString();
+    // 同步可能先于ACK接入同版或新版；事实不回退，但本次表单仍须结算。
+    const changed = current
+      ? Number(current.version) < Number(saved.version)
+      : kind === "create" && root.version === rootVersion;
+    if (changed) {
+      if (current) Object.assign(current, saved);
+      else root.followUps.push({ ...saved });
+      root.version = Math.max(1, Number(root.version) || 1) + 1;
+      root.updatedAt = saved.updatedAt || saved.createdAt || new Date().toISOString();
+    }
     return patchTarget({
       targetId: rootId,
-      consumeFollowUp: { rootId, kind, followUpId }
+      consumeFollowUp: { rootId, kind, followUpId, submitted }
     });
   }
 
   return Object.freeze({
     mount(root, nextRoute, result) {
+      clearSelectionRender();
       surface = root;
       updateRoute(nextRoute, result);
     },
     updateRoute,
+    rememberDrafts,
     render,
     syncOverflow,
     toggleExpanded,
     clear() {
+      clearSelectionRender();
       audioLifecycle?.dispose(surface);
       expandedContent.clear();
+      retainedDrafts.clear();
+      writeDrafts();
+      draftOwner = "";
+      draftKey = "";
+      renderedScope = "";
+      readingState.invalidate();
       queryOne("#all-thoughts")?.replaceChildren();
       queryOne("#today-thoughts")?.replaceChildren();
       surface = null;
@@ -440,6 +619,8 @@ export function createThoughtView({
       query = String(value || "");
     },
     patchTarget,
+    flushSelectionRender,
+    clearSelectionRender,
     applySavedFollowUp,
     chains: mode => createThoughtChains(getSnapshot().thoughts, mode || sortMode),
     findChain: id => createThoughtChains(getSnapshot().thoughts, sortMode)

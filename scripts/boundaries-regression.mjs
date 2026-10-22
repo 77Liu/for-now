@@ -5,6 +5,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "growth-boundaries-"));
@@ -36,6 +37,7 @@ await new Promise(resolve => free.listen(0, "127.0.0.1", resolve));
 const port = free.address().port;
 await new Promise(resolve => free.close(resolve));
 await fs.writeFile(path.join(dataDir, "llm-settings.json"), JSON.stringify({ version: 4, apiKey: "test-key" }));
+const authFixture = await installAuthenticatedJsonRuntime(dataDir);
 const child = spawn(process.execPath, ["server.mjs"], {
   cwd: root,
   env: {
@@ -43,8 +45,7 @@ const child = spawn(process.execPath, ["server.mjs"], {
     NODE_ENV: "test",
     DATA_DIR: dataDir,
     PORT: String(port),
-    AUTH_REQUIRED: "0",
-    INVITE_CODE_HASH: "",
+    ...authFixture.env,
     DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}`,
     ATTACHMENT_STORAGE: "mock",
     OSS_MOCK_DIR: mockDir,
@@ -67,7 +68,10 @@ child.stderr.on("data", chunk => { stderr += chunk; });
 const base = `http://127.0.0.1:${port}`;
 const post = (route, body = {}) => fetch(`${base}${route}`, {
   method: "POST",
-  headers: { "content-type": "application/json" },
+  headers: {
+    "content-type": "application/json",
+    cookie: authFixture.cookie
+  },
   body: JSON.stringify(body)
 });
 try {
@@ -102,10 +106,12 @@ try {
   assert.equal(firstUpload.status, 201);
   const attachmentPath = (await firstUpload.json()).attachmentPath;
   const name = attachmentPath.split("/").at(-1);
-  const stored = path.join(mockDir, "attachments", "local", name);
+  const stored = path.join(mockDir, "attachments", authFixture.userId, name);
   assert.deepEqual(await fs.readFile(stored), largePixelBytes);
   await assert.rejects(fs.access(path.join(dataDir, "attachments", name)));
-  const fetched = await fetch(`${base}${attachmentPath}`);
+  const fetched = await fetch(`${base}${attachmentPath}`, {
+    headers: { cookie: authFixture.cookie }
+  });
   assert.equal(fetched.status, 200);
   assert.deepEqual(Buffer.from(await fetched.arrayBuffer()), await fs.readFile(stored));
   const secondUpload = await post("/api/images/upload", { image: pixel });

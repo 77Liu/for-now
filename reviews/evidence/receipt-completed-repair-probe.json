@@ -1,0 +1,58 @@
+{
+  "fixedStatus": "succeeded",
+  "usage": [
+    {
+      "scene": "recordCompression",
+      "createdAt": "2026-10-10T16:30:00.000Z",
+      "costKnown": true,
+      "costCny": 0.7
+    },
+    {
+      "scene": "recordCompression",
+      "createdAt": "2026-10-10T16:30:00.000Z",
+      "costKnown": true,
+      "costCny": 0.01
+    }
+  ],
+  "remainingBudgetCalls": 1,
+  "rounds": [
+    {
+      "queuedCount": 0,
+      "operations": [],
+      "waiting": [
+        "historicalSupplement"
+      ]
+    },
+    {
+      "queuedCount": 0,
+      "operations": [],
+      "waiting": [
+        "historicalSupplement"
+      ]
+    },
+    {
+      "queuedCount": 0,
+      "operations": [],
+      "waiting": [
+        "historicalSupplement"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "status": "succeeded",
+      "operation": "daily",
+      "date": "2026-10-10"
+    },
+    {
+      "status": "waitingBudget",
+      "operation": "historicalSupplement",
+      "date": "2026-10-10"
+    },
+    {
+      "status": "failed",
+      "operation": "daily",
+      "date": "2026-10-10"
+    }
+  ]
+}

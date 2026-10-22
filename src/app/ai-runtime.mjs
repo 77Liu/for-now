@@ -1,3 +1,4 @@
+import { normalizePersistedDocument } from "../shared/persistence/index.mjs";
 import nodeCrypto from "node:crypto";
 import { promises as nodeFs } from "node:fs";
 import nodePath from "node:path";
@@ -11,6 +12,7 @@ import {
   createLlmSettingsService,
   defaultLlmSettings,
   normalizeAiUsage,
+  normalizeAiBudgetState,
   normalizeLlmSettings,
   resolveOfficialProviderPricing,
   usageEntryFromAudit
@@ -40,6 +42,8 @@ const DEFAULT_BILLING_GAP = "运行时计量单位或合同单价尚未完成映
 export async function createAiRuntime({
   dataRoot,
   postgresRuntime = null,
+  accountRuntime = null,
+  aiQueue = null,
   storagePaths,
   requestStorage,
   readStoredJson,
@@ -55,6 +59,7 @@ export async function createAiRuntime({
   recordCompressionDailyInvocationLimit = 0,
   recordCompressionPerCallBudgetCny = 0,
   cnyPerUsd,
+  auditDatabaseEnabled = false,
   auditTextLimit,
   auditRetentionDays,
   budgetPolicy = AI_BUDGET_POLICY,
@@ -64,6 +69,9 @@ export async function createAiRuntime({
   if (typeof storagePaths !== "function") throw new TypeError("AI runtime storagePaths is required");
   if (typeof requestStorage?.getStore !== "function") throw new TypeError("AI runtime requestStorage is required");
   if (typeof logEvent !== "function") throw new TypeError("AI runtime logEvent is required");
+  if (auditDatabaseEnabled && (!postgresRuntime?.aiAudit || !postgresRuntime?.aiUsage)) {
+    throw new TypeError("AI audit database mode requires PostgreSQL audit and usage repositories");
+  }
 
   const {
     fs: fileSystem = nodeFs,
@@ -85,12 +93,46 @@ export async function createAiRuntime({
   } = dependencies;
   const createId = () => cryptoApi.randomUUID();
 
-  const aiGate = createRateGateImpl(aiQps, aiConcurrency);
-  const recordCompressionGate = createRateGateImpl(aiQps, 1);
+  const gateOptions = aiQueue?.enabled ? { maxPending: aiQueue.maxPendingPerGate } : undefined;
+  const aiGate = createRateGateImpl(aiQps, aiConcurrency, gateOptions);
+  const recordCompressionGate = createRateGateImpl(aiQps, 1, gateOptions);
   const aiBudgetRepository = createAiBudgetRepositoryImpl({
     runtime: postgresRuntime,
     dataRoot
   });
+  const validateGlobalBudget = async () => {
+    const raw = await aiBudgetRepository.read();
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("全局预算数据无效");
+    for (const key of ["days", "months", "reservations", "events"]) {
+      if (Object.hasOwn(raw, key) && !Array.isArray(raw[key])) throw new Error("全局预算集合无效");
+    }
+    const normalized = normalizeAiBudgetState(raw);
+    // 对照真实消费者的规范化结果验证已有字段；缺失旧字段允许补默认，但不得归零、丢行或改写引用。
+    const identity = item => item && typeof item === "object" ? item.id ?? item.key ?? item.accountId ?? item.reservationId : undefined;
+    const verify = (before, after, field = "budget") => {
+      const invalid = () => { throw new Error("全局预算数据无法无损读取"); };
+      if (Array.isArray(after)) {
+        if (!Array.isArray(before) || before.length !== after.length) invalid();
+        const keyed = before.length > 0 && before.every(item => identity(item) !== undefined);
+        if (keyed && new Set(before.map(identity)).size !== before.length) invalid();
+        for (let index = 0; index < before.length; index++) {
+          const current = keyed ? after.find(item => identity(item) === identity(before[index])) : after[index];
+          if (current === undefined) invalid();
+          verify(before[index], current, field);
+        }
+      } else if (after && typeof after === "object") {
+        if (!before || typeof before !== "object" || Array.isArray(before)) invalid();
+        for (const key of Object.keys(after)) if (Object.hasOwn(before, key)) verify(before[key], after[key], key);
+      } else if (typeof after === "number") {
+        if ((typeof before !== "number" && typeof before !== "string") || String(before).trim() === "" || !Number.isFinite(Number(before)) || Number(before) !== after) invalid();
+      } else if (["createdAt", "startedAt"].includes(field) && before !== after && typeof before === "string" && before && after) {
+        if (!Number.isFinite(Date.parse(before)) || Date.parse(before) !== Date.parse(after)) invalid();
+      } else if (before !== after) invalid();
+    };
+    verify(raw, normalized);
+
+  };
+  if (accountRuntime?.enabled) await validateGlobalBudget();
   const aiBudgetService = createAiBudgetServiceImpl({
     repository: aiBudgetRepository,
     policy: budgetPolicy,
@@ -103,6 +145,7 @@ export async function createAiRuntime({
   });
   const aiBudgetRuntime = createAiBudgetRuntimeImpl({
     budget: aiBudgetService,
+    assertAccountReady: () => accountRuntime?.assertDispatch(),
     onRecoveryError: (error, details) => logEvent("system", "ai.budget_recovery_failed", {
       level: "error",
       ...details,
@@ -110,6 +153,7 @@ export async function createAiRuntime({
     })
   });
   const aiBudgetRecovery = await aiBudgetRuntime.recover();
+  if (accountRuntime?.enabled && aiBudgetRecovery.failures.length) throw new Error("全局预算恢复失败，拒绝就绪");
   if (aiBudgetRecovery.scanned || aiBudgetRecovery.failures.length) {
     await logEvent("system", "ai.budget_recovery_completed", {
       level: aiBudgetRecovery.failures.length ? "error" : "info",
@@ -127,6 +171,7 @@ export async function createAiRuntime({
     readDocument: readStoredJson,
     writeDocument: writeJsonAtomic,
     normalize: normalizeLlmSettings,
+    assertCommit: (before, after, name) => accountRuntime?.assertCommit(before, after, name),
     emptyDocument: defaultLlmSettings,
     onCommit: auditChanges
   });
@@ -139,15 +184,18 @@ export async function createAiRuntime({
     ensure: ensureLlmSettings
   } = llmSettingsService;
 
-  const usageRepository = createAccountDocumentRepositoryImpl({
-    runtime: postgresRuntime,
-    name: "usage",
-    getFile: () => storagePaths().aiUsageFile,
-    readDocument: readStoredJson,
-    writeDocument: writeJsonAtomic,
-    normalize: normalizeAiUsage,
-    emptyDocument: {}
-  });
+  const usageRepository = auditDatabaseEnabled
+    ? postgresRuntime.aiUsage
+    : createAccountDocumentRepositoryImpl({
+        runtime: postgresRuntime,
+        name: "usage",
+        getFile: () => storagePaths().aiUsageFile,
+        readDocument: readStoredJson,
+        writeDocument: writeJsonAtomic,
+        normalize: normalizeAiUsage,
+        assertCommit: (before, after, name) => accountRuntime?.assertCommit(before, after, name),
+        emptyDocument: {}
+      });
   const aiUsageService = createAiUsageServiceImpl({
     repository: usageRepository,
     getAccountKey: () => storagePaths().aiUsageFile,
@@ -160,7 +208,8 @@ export async function createAiRuntime({
     read: readAiUsage,
     update: updateAiUsage,
     ensure: ensureAiUsage,
-    reserveAttempt: reserveAiAttempt
+    reserveAttempt: reserveAiAttempt,
+    recordAttempt: recordAiUsageAttempt
   } = aiUsageService;
 
   const aiAudit = createAiAuditImpl({
@@ -171,6 +220,11 @@ export async function createAiRuntime({
       entry
     ),
     updateUsage: updateAiUsage,
+    repository: auditDatabaseEnabled ? postgresRuntime.aiAudit : null,
+    recordUsageAttempt: recordAiUsageAttempt,
+    beginCall: id => accountRuntime?.beginAuditCall(id),
+    endUninvokedCall: id => accountRuntime?.endUninvokedAuditCall(id),
+    finalizeUsage: (entry, operation) => accountRuntime ? accountRuntime.finalizeUsage(entry, operation) : operation(),
     logEvent,
     now,
     createId
@@ -234,6 +288,7 @@ export async function createAiRuntime({
   );
 
   async function meteredProviderCall(details, invoke, summarize, budgetContext = null) {
+    accountRuntime?.assertDispatch();
     const {
       budgeted = true,
       estimatedCostCny,
@@ -244,7 +299,21 @@ export async function createAiRuntime({
       0,
       Number(estimatedCostCny ?? budgetStage.estimatedCostCny) || 0
     );
-    if (!budgeted) return aiAudit.providerCall(auditDetails, invoke, summarize);
+    let providerDispatched = false;
+    const dispatch = prepared => {
+      accountRuntime?.assertDispatch();
+      providerDispatched = true;
+      return prepared.invoke(invoke);
+    };
+    if (!budgeted) {
+      const prepared = await aiAudit.prepareProviderCall(auditDetails, summarize);
+      try {
+        return await dispatch(prepared);
+      } catch (error) {
+        if (!providerDispatched) await prepared.finishUninvoked(error);
+        throw error;
+      }
+    }
 
     const execute = async execution => {
       const accountReservation = await reserveAiAttempt({
@@ -264,24 +333,26 @@ export async function createAiRuntime({
         },
         commit: typeof commitQuota === "function" ? () => commitQuota() : () => {}
       };
-      const auditedCall = () => aiAudit.providerCall({
-        ...auditDetails,
-        reservation
-      }, invoke, summarize);
-      let stageStarted = false;
+      let prepared = null;
       try {
+        prepared = await aiAudit.prepareProviderCall({
+          ...auditDetails,
+          reservation
+        }, summarize);
         return await execution.runStage(
           budgetContext?.stageId || "provider-call",
           async ({ recordUsage }) => {
             recordSiteUsage = typeof recordUsage === "function"
               ? recordUsage
               : () => false;
-            stageStarted = true;
-            return auditedCall();
+            return dispatch(prepared);
           }
         );
       } catch (error) {
-        if (!stageStarted && typeof releaseQuota === "function") releaseQuota();
+        if (!providerDispatched) {
+          await prepared?.finishUninvoked(error);
+          if (typeof releaseQuota === "function") releaseQuota();
+        }
         throw error;
       }
     };
@@ -301,7 +372,7 @@ export async function createAiRuntime({
     }
   }
 
-  async function executeDeepSeekBudgetTask(details, execute) {
+  async function executeDeepSeekBudgetTask(details, execute, options) {
     try {
         if (details.scene === RECORD_COMPRESSION_TASK_KIND) {
         const maximumCost = estimateDeepSeekPeakCostCny({
@@ -327,9 +398,9 @@ export async function createAiRuntime({
           maxOutputTokens: details.maxOutputTokens,
           maxAttempts: details.maxAttempts
         })
-      }, execute);
+      }, execute, options);
     } catch (error) {
-      if (error.statusCode === 429 || /(?:BUDGET|LIMIT)/.test(error.code || "")) {
+      if (!["AI_QUEUE_FULL", "AI_QUEUE_TIMEOUT", "AI_REQUEST_TIMEOUT", "AI_TASK_CANCELLED"].includes(error.code) && (error.statusCode === 429 || /(?:BUDGET|LIMIT)/.test(error.code || ""))) {
         await logBudgetRejection(details, error);
       }
       throw error;
@@ -343,6 +414,7 @@ export async function createAiRuntime({
     readDocument: readStoredJson,
     writeDocument: writeJsonAtomic,
     normalize: value => value,
+    assertCommit: (before, after, name) => accountRuntime?.assertCommit(before, after, name),
     emptyDocument: null,
     onCommit: auditChanges
   });
@@ -351,7 +423,11 @@ export async function createAiRuntime({
     readSettings: readLlmSettings,
     readUsage: readAiUsage,
     cnyPerUsd,
-    now
+    now,
+    getTimezone: () => (
+      requestStorage.getStore()?.user?.recordTimezone
+      || DEFAULT_RECORD_TIMEZONE
+    )
   });
 
   let readModelRuntimeSettings = readLlmSettings;
@@ -364,6 +440,8 @@ export async function createAiRuntime({
     getContext: () => requestStorage.getStore(),
     reserveAttempt: reserveAiAttempt,
     gate: aiGate,
+    aiQueue,
+    assertAccountReady: () => accountRuntime?.assertDispatch(),
     sceneGates: { [RECORD_COMPRESSION_TASK_KIND]: recordCompressionGate },
     audit: aiAudit,
     executeBudgetTask: executeDeepSeekBudgetTask,
@@ -379,6 +457,10 @@ export async function createAiRuntime({
   };
 
   async function recoverAiUsageFromAuditLogs() {
+    if (auditDatabaseEnabled) {
+      await aiAudit.recoverPending();
+      return;
+    }
     let names = [];
     try {
       names = await fileSystem.readdir(storagePaths().logsDir);
@@ -418,10 +500,35 @@ export async function createAiRuntime({
   async function ensureAuditLogs() {
     await pruneLogsImpl(storagePaths().logsDir, auditRetentionDays);
     await recoverAiUsageFromAuditLogs();
+    if (auditDatabaseEnabled) {
+      await aiAudit.maintain({ retentionDays: auditRetentionDays });
+    }
+  }
+
+  /**
+   * 读取已由认证层确认的Owner共享模型settings；仅此固定文档，不授予Owner业务store、写入或新派发资格。
+   * 独立只读校验失败直接报错，不能以默认配置覆盖或掩盖损坏。
+   * @since unreleased
+   */
+  async function readSharedSettings({ accountId, file }) {
+    try {
+    const value = postgresRuntime
+      ? await postgresRuntime.readSharedSettings(accountId)
+      : JSON.parse(await fileSystem.readFile(file, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw Object.assign(new Error("共享模型配置不可用"), { code: "SHARED_MODEL_SETTINGS_INVALID" });
+    for (const key of ["profiles", "scenarios", "sceneEfforts"]) {
+      if (value[key] != null && (typeof value[key] !== "object" || Array.isArray(value[key]))) throw Object.assign(new Error("共享模型配置不可用"), { code: "SHARED_MODEL_SETTINGS_INVALID" });
+    }
+    return normalizePersistedDocument(value, normalizeLlmSettings);
+    } catch (cause) {
+      throw Object.assign(new Error("共享模型配置不可用", { cause }), { code: "SHARED_MODEL_SETTINGS_INVALID", statusCode: 503 });
+    }
   }
 
   return Object.freeze({
     aiGate,
+    validateGlobalBudget,
+    readSharedSettings,
     recordCompressionGate,
     deepSeekProvider,
     aiBudgetRepository,
@@ -440,6 +547,7 @@ export async function createAiRuntime({
     updateAiUsage,
     ensureAiUsage,
     reserveAiAttempt,
+    recordAiUsageAttempt,
     costRepository,
     aiCosts,
     aiAudit,

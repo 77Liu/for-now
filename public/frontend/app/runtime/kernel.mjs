@@ -7,8 +7,8 @@ import { captureRecordPayload, createIndexedDbMediaDraftStore, imageRecordPayloa
 import { createPageAudioCoordinator } from "../../media/page-audio.mjs";
 import { createPageRouter, createUnavailableRouteResult, ownerViewCapabilities, viewSections } from "../../pages/index.mjs";
 import { sessionScope, sessionSerial, rotateSession } from "../../session/index.mjs";
-import { emptyClientState, state, replaceState, mergeStateSnapshot, resetState, subscribeState, publishDomains, createRefreshCoordinator } from "../../state/index.mjs";
-import { createIndexedDbSyncStore, createIncrementalSync, createRequestCoordinator } from "../../sync/index.mjs";
+import { emptyClientState, state, replaceState, mergeStateSnapshot, resetState, subscribeState, publishDomains, createRefreshCoordinator, applyRecordBatch, rebaseRecordScopes } from "../../state/index.mjs";
+import { createIndexedDbSyncStore, createIncrementalSync, createRecordSyncLoop, createRequestCoordinator } from "../../sync/index.mjs";
 import { entryKeyIntent, eventDate, eventTimestamp, formatDate, formatDateKey, formatTime, localDateKey, localDateTimeForDate, persistedDateTimeInput, toLocalDateTimeInput } from "../../time/index.mjs";
 import { createOccurrenceControls } from "../../components/occurrence-control/index.mjs";
 import { createRuntimeFeatureLoaders } from "./loaders.mjs";
@@ -221,7 +221,8 @@ const occurrenceKeyboardSubmit=occurrenceControls.keyboardSubmit;
 
 const dataRuntime=createDataRuntime({
   runtime:runtimeState,apiClient,syncStore,createRequestCoordinator,
-  createRefreshCoordinator,createIncrementalSync,$,
+  createRefreshCoordinator,createIncrementalSync,createRecordSyncLoop,
+  applyRecordBatch,rebaseRecordScopes,$,
   getActionsCoordinator:()=>actionsCoordinator,
   renderStateChart:(...args)=>renderStateChart(...args),
   renderHomeMood:(...args)=>renderHomeMood(...args),
@@ -332,7 +333,6 @@ subscribeState((next,wanted)=>{
   }
   if(wanted.has("thoughts")){
     renderTagComposer();
-    renderHomeMemories();
   }
   if(wanted.has("checkins")){
     renderStateChart();
@@ -341,11 +341,10 @@ subscribeState((next,wanted)=>{
   }
   if(wanted.has("chat")||wanted.has("chats"))renderChat();
   if(wanted.has("books")){
-    renderHomeMemories();
     if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel();
   }
   if(wanted.has("keepsakes"))renderHomeKeepsake();
-  if(wanted.has("quotes"))renderHomeMemories();
+  if(wanted.has("thoughts")||wanted.has("books")||wanted.has("quotes"))renderHomeMemories();
   if(wanted.has("comments"))renderCommentPanel();
   renderNotificationSummary();
 });

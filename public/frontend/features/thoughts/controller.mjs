@@ -1,3 +1,4 @@
+import { createThoughtReadingState } from "../../../generated/thought-page-window.mjs";
 import { createCaptureAudioLifecycle } from "../../../generated/capture-audio-lifecycle.mjs";
 import { normalizeTtsPlaybackRate } from "../../media/index.mjs";
 import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
@@ -121,8 +122,25 @@ export function createThoughtsFeatureController({
     sessionId: data.getSessionSerial(),
     pageToken: activation
   } : null;
+  const readingState = createThoughtReadingState(() => JSON.stringify([
+    String(data.getAccountId() || ""), data.getSessionSerial(),
+    activation?.generation ?? null,
+    (() => {
+      const route = navigation.currentRoute();
+      return [route?.view, route?.kind, route?.resourceType, route?.resourceId,
+        route?.query?.q, route?.query?.tag, route?.query?.sort];
+    })()
+  ]));
+  /** 当前账户实际详情已读取时才可声称根批注完整；摘要不是空集合。 @since unreleased */
+  function isAnnotationRootLoaded(id) {
+    const route = navigation.currentRoute();
+    return Boolean(activation && data.isRouteDataReady()
+      && (data.isFullRouteStateLoaded() || (route.kind === "detail"
+        && route.resourceType === "thought-chain" && route.resourceId === id)));
+  }
   const presentation = createThoughtPresentation({
     getSnapshot: data.getSnapshot,
+    isAnnotationRootLoaded,
     getGenerationRate: () => data.getSpeechGenerationRate?.(),
     appUrl: viewPort.appUrl,
     contextReceiptMarkup: viewPort.contextReceiptMarkup,
@@ -130,6 +148,10 @@ export function createThoughtsFeatureController({
   });
   const thoughtView = createThoughtView({
     getSnapshot: data.getSnapshot,
+    getDraftOwnerScope: () => JSON.stringify([data.getAccountId(), data.getSessionSerial()]),
+    getDraftStorageKey: () => data.getAccountId() ? `cike:session-drafts:${data.getAccountId()}` : "",
+    draftStorage: () => { try { return window.sessionStorage; } catch { return undefined; } },
+    hasActiveSelection: container => annotations.hasActiveSelection?.(container) || false,
     getActiveDate: crossDomain.getActiveDate,
     isFullRouteStateLoaded: data.isFullRouteStateLoaded,
     contentState: viewPort.contentState,
@@ -143,7 +165,10 @@ export function createThoughtsFeatureController({
     document,
     presentation,
     audioLifecycle,
-    audioScope
+    audioScope,
+    readingState,
+    captureReadingPosition: root => operations.captureReadingPosition(root),
+    restoreReadingPosition: (root, position, token) => operations.restoreReadingPosition(root, position, token)
   });
 
   let activation = null;
@@ -187,6 +212,7 @@ export function createThoughtsFeatureController({
     viewPort,
     platform,
     thoughtView,
+    readingState,
     createTicket,
     isCurrent,
     isActive: () => Boolean(activation)
@@ -228,7 +254,9 @@ export function createThoughtsFeatureController({
     const summary = closest(event, ".chain-summary");
     if (summary) {
       event.preventDefault();
-      navigation.openDetail(summary.closest("[data-chain-id]")?.dataset.chainId);
+      const rootId = summary.closest("[data-chain-id]")?.dataset.chainId;
+      operations.capturePosition(rootId);
+      navigation.openDetail(rootId);
       return;
     }
     const button = closest(event, "button");
@@ -254,6 +282,11 @@ export function createThoughtsFeatureController({
       await operations.removeFollowUp(button);
     } else if (button.dataset.followupAnswer) {
       await operations.answerFollowUp(button);
+    } else if (button.id === "thought-load-previous") {
+      await operations.loadPrevious();
+    } else if (button.id === "thought-refresh-window") {
+      operations.resetPaging();
+      await data.refresh("thoughts");
     } else if (button.id === "thought-load-more") {
       await operations.loadMore();
     } else if (button.id === "thought-create-toggle"
@@ -261,15 +294,16 @@ export function createThoughtsFeatureController({
       crossDomain.openComposer(button);
     } else if (button.dataset.thoughtSort) {
       navigation.replaceQuery({
+        cursor: null, direction: null, page: null,
         sort: button.dataset.thoughtSort === "created" ? "created" : null
       });
     } else if (button.dataset.tagFilter != null) {
       navigation.replaceQuery({
         tag: button.dataset.tagFilter === "all" ? null : button.dataset.tagFilter,
-        page: null
+        page: null, cursor: null, direction: null
       });
     } else if (button.dataset.contentAction === "clear-thought-filter") {
-      navigation.replaceQuery({ tag: null, page: null });
+      navigation.replaceQuery({ tag: null, page: null, cursor: null, direction: null });
     } else if (button.dataset.contentAction === "dismiss-route-result") {
       navigation.clearResult();
     } else if (button.dataset.openComments) {
@@ -312,6 +346,11 @@ export function createThoughtsFeatureController({
   }
 
   function handleInput(event) {
+    const form = event.target?.closest?.("form");
+    if (form?.matches?.(".followup-form,[data-followup-manual-answer],[data-followup-edit]")) {
+      form.dataset.thoughtDraftDirty = "true";
+      thoughtView.rememberDrafts();
+    }
     if (event.target?.matches?.("[data-speech-generation-rate]")) {
       const output = event.target.closest("label")?.querySelector("output");
       if (output) output.textContent = (1 + Number(event.target.value) / 100).toFixed(2) + "×";
@@ -328,7 +367,7 @@ export function createThoughtsFeatureController({
       searchTimer = 0;
       const route = navigation.currentRoute();
       if (route.view === "thoughts" && thoughtView.query() !== (route.query?.q || "")) {
-        navigation.replaceQuery({ q: thoughtView.query() || null, page: null });
+        navigation.replaceQuery({ q: thoughtView.query() || null, page: null, cursor: null, direction: null });
       }
     }, 250);
   }
@@ -357,6 +396,10 @@ export function createThoughtsFeatureController({
   const unmount = async () => {
     const current = activation;
     if (!current) return false;
+    thoughtView.rememberDrafts();
+    operations.resetPaging();
+    readingState.invalidate();
+    thoughtView.clearSelectionRender();
     activation = null;
     current.unlink();
     platform.clearTimer(searchTimer);
@@ -392,6 +435,7 @@ export function createThoughtsFeatureController({
         throw abortFailure();
       }
       activation = current;
+      operations.beginPagingRoute();
       thoughtView.mount(context.root, context.route, context.route?.result);
       const listen = (target, type, listener, options) => {
         target?.addEventListener?.(type, listener, options);
@@ -406,7 +450,11 @@ export function createThoughtsFeatureController({
       listen(context.root, "change", handleChange);
       listen(context.root, "toggle", event => {
         if (event.target?.matches?.(".chain-record[open]")) {
-          platform.requestFrame(() => thoughtView.syncOverflow(event.target));
+          const ticket = createTicket();
+          const readingToken = readingState.capture();
+          platform.requestFrame(() => {
+            if (isCurrent(ticket) && readingState.isCurrent(readingToken) && event.target.isConnected) thoughtView.syncOverflow(event.target);
+          });
         }
       }, true);
       const editModal = document.querySelector("#edit-chain-modal");
@@ -422,7 +470,20 @@ export function createThoughtsFeatureController({
       listen(blockModal, "change", handleChange);
       listen(blockModal, "input", persistBlockDraft);
       listen(blockModal, "change", persistBlockDraft);
-      listen(window, "resize", () => platform.requestFrame(() => thoughtView.syncOverflow()));
+      for (const event of ["wheel", "touchstart", "pointerdown", "keydown", "input"]) {
+        listen(window, event, () => {
+          readingState.interact();
+          operations.cancelPositionRestore({ user: true });
+        }, { passive: true });
+      }
+      listen(window, "scroll", () => operations.capturePosition(), { passive: true });
+      listen(window, "resize", () => {
+        const ticket = createTicket();
+        const readingToken = readingState.capture();
+        platform.requestFrame(() => {
+          if (isCurrent(ticket) && readingState.isCurrent(readingToken)) thoughtView.syncOverflow();
+        });
+      });
       const abort = () => {
         if (activation === current) void unmount();
       };
@@ -434,7 +495,9 @@ export function createThoughtsFeatureController({
         context.signal?.removeEventListener("abort", abort);
       };
       delegate.render({ snapshot: data.getSnapshot(), route: context.route });
+      operations.synchronizePaging({ restore: false });
       thoughtView.render();
+      operations.synchronizePaging();
       return () => activation === current ? unmount() : false;
     },
     render(context = {}) {
@@ -445,13 +508,16 @@ export function createThoughtsFeatureController({
         : new Set(typeof context.changedDomains === "string"
           ? [context.changedDomains]
           : context.changedDomains);
+      operations.synchronizePaging({ restore: false });
       const rendered = changed === null || changed.has("thoughts") || changed.has("speech") || changed.has("aiTasks")
         ? thoughtView.render(context)
         : false;
+      operations.synchronizePaging();
       return rendered || delegated || false;
     },
     unmount,
     async resetSession() {
+      operations.resetPaging({ logout: true });
       session = {};
       generation += 1;
       const failures = [];
@@ -462,6 +528,11 @@ export function createThoughtsFeatureController({
         throw new AggregateError(failures, "Thoughts feature session reset failed");
       }
     },
+    isAnnotationRootLoaded,
+    /** 当前实际选区是否占用本挂载正文；公开给后续同步保护，不另建选区状态。 @since unreleased */
+    hasActiveAnnotationSelection: () => Boolean(activation && annotations.hasActiveSelection?.(activation.root)),
+    /** 释放原生选区后结算同一视图暂缓的呈现/ACK，不跨挂载恢复旧页面。 @since unreleased */
+    resumeSelectionRender: () => activation ? thoughtView.flushSelectionRender() : false,
     patchTarget: target => activation ? thoughtView.patchTarget(target) : false,
     reconcileRoute: operations.reconcileRoute
   });

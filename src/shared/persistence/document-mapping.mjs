@@ -8,6 +8,8 @@ const GROUPS = {
   usage: { entries: "array" },
   costPlan: { scenarios: "array" }
 };
+/** 保留旧认证文档字段存在性，导出时移除。 @since unreleased */
+export const AUTH_DOCUMENT_FIELDS_MARKER = "__forNowAuthDocumentFieldsV1";
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const define = (target, key, value) => Object.defineProperty(target, key, {
   value, enumerable: true, writable: true, configurable: true
@@ -94,18 +96,58 @@ export function mapAuthDocument(source) {
   const users = source.users.map((item, position) => {
     const { id, username, passwordHash, ...payload } = item;
     if (typeof id !== "string" || !/^[\w-]+$/.test(id) || userIds.has(id)) throw new Error("Invalid or duplicate account identity");
-    if (typeof username !== "string" || !username || usernames.has(username.toLocaleLowerCase())) throw new Error("Invalid or duplicate username");
+    const usernameKey = typeof username === "string"
+      ? username.toLocaleLowerCase()
+      : "";
+    if (!usernameKey || usernames.has(usernameKey)) throw new Error("Invalid or duplicate username");
     if (typeof passwordHash !== "string" || !passwordHash) throw new Error("Missing password hash");
     userIds.add(id);
-    usernames.add(username.toLocaleLowerCase());
-    return { id, username, usernameKey: username.toLocaleLowerCase(), passwordHash, position, payload };
+    usernames.add(usernameKey);
+    return {
+      id,
+      username,
+      usernameKey,
+      passwordHash,
+      role: ["user", "owner"].includes(item.role)
+        ? item.role
+        : position === 0 ? "owner" : "user",
+      sessionVersion: Number.isSafeInteger(item.sessionVersion) && item.sessionVersion > 0
+        ? item.sessionVersion : 1,
+      recordTimezone: String(item.recordTimezone || "Asia/Shanghai"),
+      createdAt: item.createdAt || "1970-01-01T00:00:00.000Z",
+      updatedAt: item.updatedAt || null,
+      position,
+      payload,
+      promoted: {
+        role: Object.hasOwn(item, "role"),
+        sessionVersion: Object.hasOwn(item, "sessionVersion"),
+        recordTimezone: Object.hasOwn(item, "recordTimezone"),
+        createdAt: Object.hasOwn(item, "createdAt"),
+        updatedAt: Object.hasOwn(item, "updatedAt")
+      }
+    };
   });
+  const usersById = new Map(users.map(user => [user.id, user]));
   const sessions = source.sessions.map((item, position) => {
     const { tokenHash, userId, ...payload } = item;
     if (typeof tokenHash !== "string" || !tokenHash || tokens.has(tokenHash)) throw new Error("Invalid or duplicate session digest");
     if (!userIds.has(userId)) throw new Error("Session references missing account");
     tokens.add(tokenHash);
-    return { tokenHash, userId, position, payload };
+    return {
+      tokenHash,
+      userId,
+      sessionVersion: Number.isSafeInteger(item.sessionVersion) && item.sessionVersion > 0
+        ? item.sessionVersion : usersById.get(userId).sessionVersion,
+      createdAt: item.createdAt || "1970-01-01T00:00:00.000Z",
+      expiresAt: item.expiresAt,
+      position,
+      payload,
+      promoted: {
+        sessionVersion: Object.hasOwn(item, "sessionVersion"),
+        createdAt: Object.hasOwn(item, "createdAt"),
+        expiresAt: Object.hasOwn(item, "expiresAt")
+      }
+    };
   });
   const fields = Object.entries(source).filter(([field]) => !["users", "sessions"].includes(field))
     .map(([field, payload]) => ({ field, payload: structuredClone(payload) }));
@@ -118,11 +160,51 @@ export function rebuildAuthDocument({ fields, users, sessions }) {
     if (Object.hasOwn(result, field) || ["users", "sessions"].includes(field)) throw new Error("Duplicate auth field");
     define(result, field, structuredClone(payload));
   }
-  const ordered = rows => rows.toSorted((a, b) => a.position - b.position).map((row, index) => {
-    if (row.position !== index) throw new Error("Invalid auth ordering");
+  const ordered = (rows, stableKey) => rows.toSorted((a, b) => {
+    if (Number.isInteger(a.position) && Number.isInteger(b.position)) {
+      return a.position - b.position;
+    }
+    return stableKey(a).localeCompare(stableKey(b));
+  }).map((row, index, sorted) => {
+    if (sorted.every(item => Number.isInteger(item.position))
+      && row.position !== index) throw new Error("Invalid auth ordering");
     return row;
   });
-  result.users = ordered(users).map(({ id, username, passwordHash, payload }) => ({ ...structuredClone(payload), id, username, passwordHash }));
-  result.sessions = ordered(sessions).map(({ tokenHash, userId, payload }) => ({ ...structuredClone(payload), tokenHash, userId }));
+  const projectedPayload = (payload, promoted) => {
+    const value = structuredClone(payload);
+    const fields = promoted || value[AUTH_DOCUMENT_FIELDS_MARKER] || {};
+    delete value[AUTH_DOCUMENT_FIELDS_MARKER];
+    return { value, fields };
+  };
+  const iso = value => value instanceof Date ? value.toISOString() : value;
+  result.users = ordered(users, row => `${row.createdAt || ""}\u0000${row.id}`)
+    .map(({ id, username, passwordHash, role, sessionVersion, recordTimezone, createdAt, updatedAt, payload, promoted }) => {
+      const projected = projectedPayload(payload, promoted);
+      return {
+        ...projected.value,
+        id,
+        username,
+        passwordHash,
+        ...((projected.fields.role ?? true) ? { role } : {}),
+        ...((projected.fields.sessionVersion ?? true) ? { sessionVersion } : {}),
+        ...((projected.fields.recordTimezone ?? true) ? { recordTimezone } : {}),
+        ...((projected.fields.createdAt ?? true) ? { createdAt: iso(createdAt) } : {}),
+        ...((projected.fields.updatedAt ?? true) && updatedAt ? { updatedAt: iso(updatedAt) } : {})
+      };
+    });
+  result.sessions = ordered(
+    sessions,
+    row => `${row.createdAt || ""}\u0000${row.tokenHash}`
+  ).map(({ tokenHash, userId, sessionVersion, createdAt, expiresAt, payload, promoted }) => {
+    const projected = projectedPayload(payload, promoted);
+    return {
+      ...projected.value,
+      tokenHash,
+      userId,
+      ...((projected.fields.sessionVersion ?? true) ? { sessionVersion } : {}),
+      ...((projected.fields.createdAt ?? true) ? { createdAt: iso(createdAt) } : {}),
+      ...((projected.fields.expiresAt ?? true) ? { expiresAt: iso(expiresAt) } : {})
+    };
+  });
   return result;
 }

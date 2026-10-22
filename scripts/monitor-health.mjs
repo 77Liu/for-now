@@ -38,9 +38,11 @@ async function serviceActive(name) {
   }
 }
 
+// 中台 readyz 内部等待主应用聚合（中台侧上限 5s）；外层监控必须更宽，避免把一次慢聚合误报成服务不可用。
+const readyTimeoutMs = () => Math.max(5000, numberEnv("MONITOR_READY_TIMEOUT_MS", 15000));
 async function ready(url) {
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(readyTimeoutMs()) });
     return response.ok;
   } catch {
     return false;
@@ -224,7 +226,7 @@ function logSummary(entry, kind) {
     if (Number.isFinite(duration) && duration >= 0) result.durationMs = Math.round(duration);
     const errorCode = safeKey(entry.error?.code || entry.errorCode, 80);
     if (errorCode) result.errorCode = errorCode;
-    const errorName = safeKey(entry.error?.name, 40);
+    const errorName = safeKey(typeof entry.error === "string" ? entry.error : entry.error?.name, 40);
     if (errorName) result.error = errorName;
   } else {
     const method = safeKey(entry.method, 12);
@@ -361,7 +363,7 @@ async function jsonUsageDocuments(dataDir) {
   return documents;
 }
 
-async function postgresUsageDocuments(connectionString) {
+async function postgresUsageDocuments(connectionString, { databaseEnabled, day }) {
   if (!connectionString) throw new Error("PG_BACKUP_DATABASE_URL is required for PostgreSQL monitoring");
   const client = new pg.Client({
     connectionString,
@@ -372,17 +374,28 @@ async function postgresUsageDocuments(connectionString) {
   await client.connect();
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    const users = (await client.query("SELECT id FROM for_now_auth.users ORDER BY position")).rows;
+    const users = (await client.query(
+      "SELECT id FROM for_now_auth.users ORDER BY created_at, id"
+    )).rows;
     const accountIds = users.length ? users.map(user => user.id) : ["local"];
     const entries = [];
     for (const accountId of accountIds) {
       await client.query("SELECT set_config('app.account_id', $1, true)", [accountId]);
-      const rows = (await client.query(`
-        SELECT payload
-        FROM for_now.document_records
-        WHERE account_id = $1 AND document = 'usage' AND field = 'entries'
-        ORDER BY position
-      `, [accountId])).rows;
+      const rows = databaseEnabled
+        ? (await client.query(`
+            SELECT payload
+            FROM for_now.ai_usage_attempts
+            WHERE account_id=$1
+              AND occurred_at >= $2::date::timestamp AT TIME ZONE 'UTC'
+              AND occurred_at < ($2::date + 1)::timestamp AT TIME ZONE 'UTC'
+            ORDER BY occurred_at, call_id
+          `, [accountId, day])).rows
+        : (await client.query(`
+            SELECT payload
+            FROM for_now.document_records
+            WHERE account_id = $1 AND document = 'usage' AND field = 'entries'
+            ORDER BY position
+          `, [accountId])).rows;
       entries.push(...rows.map(row => row.payload));
     }
     await client.query("COMMIT");
@@ -397,11 +410,15 @@ async function postgresUsageDocuments(connectionString) {
 
 export async function dailyAiUsage(dataDir, timestamp, {
   persistenceBackend = process.env.PERSISTENCE_BACKEND || "json",
-  backupDatabaseUrl = process.env.PG_BACKUP_DATABASE_URL
+  backupDatabaseUrl = process.env.PG_BACKUP_DATABASE_URL,
+  auditDatabaseEnabled = process.env.AI_AUDIT_DB_ENABLED === "1"
 } = {}) {
   const day = new Date(timestamp).toISOString().slice(0, 10);
   const documents = persistenceBackend === "postgres"
-    ? await postgresUsageDocuments(backupDatabaseUrl)
+    ? await postgresUsageDocuments(backupDatabaseUrl, {
+        databaseEnabled: auditDatabaseEnabled,
+        day
+      })
     : await jsonUsageDocuments(dataDir);
   const total = { calls: 0, costUsd: 0, costCny: 0, costUnknownCalls: 0 };
   for (const value of documents) {

@@ -152,11 +152,32 @@ function clearThoughtTracePending(rootKey){
     card.closest(".thought-timeline-entry")?.querySelector(".thought-trace-pending")?.remove()
   })
 }
+function currentAnnotationPageKey(){
+  const route=runtime.pageRouter?.currentRoute();
+  return JSON.stringify([route?.view,route?.kind,route?.resourceType,route?.resourceId,
+    Object.entries(route?.query||{}).filter(([key])=>route?.view!=="thoughts"||!["cursor","direction","page"].includes(key)).sort(([a],[b])=>a.localeCompare(b))])
+}
 function createRuntimeAnnotationsController(module){return module.createAnnotationsFeatureController({
   data:{
     getSnapshot:()=>state,
     getAccountId:()=>runtime.currentUser?.id||"",
+    getSelectionPageKey:currentAnnotationPageKey,
+    getSelectionScope:()=>JSON.stringify([sessionSerial,currentAnnotationPageKey()]),
+    onSelectionReleased:()=>{for(const controller of thoughtsFeatureControllers)controller.resumeSelectionRender?.()},
     request,
+    isRootComplete:rootKey=>{
+      const {type,id}=parseCommentRootKey(rootKey);
+      // 这些路由和同步保留完整根；review分析会裁切批注，不能由两数组推断完整。
+      if(runtime.fullRouteStateLoaded)return true;
+      if(["capture","journal","chat","book","quote"].includes(type))return true;
+      return type==="thought" && [...thoughtsFeatureControllers]
+        .some(controller=>controller.isAnnotationRootLoaded?.(id));
+    },
+    refreshRoot:rootKey=>{
+      const {type,id}=parseCommentRootKey(rootKey);
+      const domain={thought:"thoughts",capture:"captures",journal:"journals",chat:"chat",analysis:"review",book:"books",quote:"quotes"}[type];
+      return domain?refreshState(domain,{chainId:id,patchOnly:true}):Promise.resolve(false);
+    },
     refreshNotifications:()=>refreshState("notifications"),
     scheduleNotificationPoll,
     clearThoughtTracePending,
@@ -164,7 +185,7 @@ function createRuntimeAnnotationsController(module){return module.createAnnotati
   },
   media:{
     resetDraft:()=>resetContentImageEditor("comment"),
-    startDraft:selection=>{void runtime.contentImageDraftManager.persist("comment",{selection,text:"",requestId:"",assistantClientRequestId:""})},
+    startDraft:selection=>{void runtime.contentImageDraftManager.persist("comment",{selection,text:$("#comment-text")?.value||"",requestId:"",assistantClientRequestId:""})},
     persistDraft:()=>persistContentImageDraft("comment"),
     submitDraft:()=>contentImagePaths("comment"),
     buildPayload:imageRecordPayload,

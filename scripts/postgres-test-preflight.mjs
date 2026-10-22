@@ -36,7 +36,7 @@ function run(command, args, options = {}) {
 }
 
 function unique(values) {
-  return [...new Set(values.filter(Boolean).map(value => path.resolve(value)))];
+  return [...new Set(values.filter(Boolean).map(value => path.resolve(root, value)))];
 }
 
 async function inspectCandidate(binDirectory) {

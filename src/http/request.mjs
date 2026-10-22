@@ -16,6 +16,10 @@ export function createRequestHandler({ requestContext, rootDir, basePath, logEve
       requestBodySha256: crypto.createHash("sha256").update("").digest("hex"),
       secrets: []
     };
+    const controller = new AbortController();
+    context.signal = controller.signal;
+    const disconnected = () => { if (!res.writableFinished) controller.abort(); };
+    req.once("aborted", disconnected); res.once("close", disconnected);
     const started = Date.now();
     return requestContext.run(context, async () => {
       try {
@@ -47,10 +51,12 @@ export function createRequestHandler({ requestContext, rootDir, basePath, logEve
         if (!res.headersSent && !res.destroyed) sendError(res, context.applicationStatus, {
           error: databaseError ? "数据服务暂时不可用，请稍后重试" : redact(error.message || "服务暂时不可用", context.secrets),
           code: databaseError ? "STORAGE_UNAVAILABLE" : context.errorCode,
-          ...(error.details ? { details: error.details } : {})
+          ...(error.details ? { details: error.details } : {}),
+          ...(Number.isFinite(error.retryAfterMs) ? { retryAfterMs: error.retryAfterMs } : {})
         }, context);
         else if (!res.writableEnded) res.end();
       } finally {
+        req.removeListener("aborted", disconnected); res.removeListener("close", disconnected);
         if (context.route.startsWith("/api/") || context.errorCode) {
           const status = context.applicationStatus || res.statusCode;
           const fields = {

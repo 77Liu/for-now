@@ -1,7 +1,8 @@
 export { createJsonStoreRepository } from "./json-repository.mjs";
 export { createAccountDocumentRepository } from "./account-document-repository.mjs";
+export { createAccountUnitOfWork } from "../../../.build/typescript/backend/shared/persistence/account-unit-of-work.mjs";
 export { AI_BUDGET_DOCUMENT_FILE, createAiBudgetRepository } from "./ai-budget-repository.mjs";
-export { createAuthRepository } from "./auth-repository.mjs";
+export { createAuthRepository, createDocumentAuthPort } from "./auth-repository.mjs";
 export { createPostgresRuntime } from "./postgres-runtime.mjs";
 export { checkPersistenceMarker, markPostgresDirectory, hasJsonData } from "./persistence-mode.mjs";
 export {
@@ -40,8 +41,11 @@ export {
   readAttachmentInventory
 } from "./postgres-documents.mjs";
 export {
+  AI_AUDIT_EXPORT_FILE, AI_USAGE_ATTEMPTS_EXPORT_FILE,
   EMPTY_RECORD_COMPRESSION_QUOTA, RECORD_COMPRESSION_QUOTA_FILE,
   validateRecordCompressionQuota, discoverJsonBundle, applyPostgresBundle, readPostgresBundle
 } from "./postgres-bundle.mjs";
 export { exportPostgresDirectory } from "./postgres-export.mjs";
 export { createBusinessId } from "../../../.build/typescript/backend/shared/persistence/business-identifiers.mjs";
+
+export { normalizePersistedDocument } from "./normalization.mjs";

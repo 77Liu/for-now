@@ -300,6 +300,7 @@ export function createCaptureJournalWorkflows({
           coreModelModelFingerprint: coreModel.modelFingerprint,
           coreModelPermissionFingerprint: coreModel.permissionFingerprint,
           scene: ASSIST_SCENES[payload.mode],
+          triggerType: "user_explicit",
           systemPrompt: diaryAssistSystemPrompt(),
           maxTokens: 2_000,
           taskOutput: {
@@ -333,6 +334,7 @@ export function createCaptureJournalWorkflows({
             ...journalReflectionInput(journal, { materialInContext: true })
           }),
           scene: "diaryReflection",
+          triggerType: "user_explicit",
           json: true,
           citationsEnabled: true,
           citationSources: answerCitationSources(coreModel.model, [
@@ -472,6 +474,8 @@ export function createCaptureJournalWorkflows({
       return {
         mode,
         content: markJournalAssistContent(mode, result.content),
+        reasoningContent: result.reasoningContent,
+        reasoningVisibility: result.reasoningVisibility,
         ...binding
       };
     },

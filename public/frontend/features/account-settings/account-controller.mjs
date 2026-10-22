@@ -1,3 +1,9 @@
+/**
+ * 账户设置表单与当前账户页面生命周期协调。
+ * 建立时间：未知
+ * 状态：active
+ * 边界：异步结果仅更新发起账户；改密成功通过完整认证退出入口失效旧页面与同步。
+ */
 import {
   ACCOUNT_SELECTORS,
   renderAccountIdentity,
@@ -38,6 +44,7 @@ export function createAccountFeatureController({
   let session = {};
   let loadSerial = 0;
   let users = [];
+  let nextCursor = "";
   let loadState = "idle";
   let roleStatus = "";
   let identityKey = "";
@@ -86,29 +93,38 @@ export function createAccountFeatureController({
     return renderAccountRoles(candidate.root, {
       users,
       loadState,
+      nextCursor,
       currentUserId: ownerId(),
       statusMessage: roleStatus
     });
   }
 
-  async function load(candidate = activation) {
+  async function load(candidate = activation, { append = false } = {}) {
     if (!active(candidate) || !ownerId() || !hasCapability("account-roles")) return false;
     const operation = { ...ticket(candidate), serial: ++loadSerial };
-    loadState = "loading";
+    const cursor = append ? nextCursor : "";
+    if (append && !cursor) return false;
+    loadState = append ? "loading-more" : "loading";
     roleStatus = "";
     renderRoles(candidate);
     try {
-      const result = await request("/api/auth/users", {
+      const result = await request(`/api/auth/users?limit=50${cursor
+        ? `&cursor=${encodeURIComponent(cursor)}`
+        : ""}`, {
         signal: candidate.signal
       });
       if (!current(operation) || operation.serial !== loadSerial) return false;
-      users = Array.isArray(result?.users) ? result.users : [];
+      const page = Array.isArray(result?.users) ? result.users : [];
+      users = append
+        ? [...new Map([...users, ...page].map(item => [item.id, item])).values()]
+        : page;
+      nextCursor = String(result?.nextCursor || "");
       loadState = "ready";
       renderRoles(candidate);
       return true;
     } catch (error) {
       if (!current(operation) || operation.serial !== loadSerial) return false;
-      loadState = "failure";
+      loadState = append ? "ready" : "failure";
       roleStatus = error?.message || "账户读取失败";
       renderRoles(candidate);
       return false;
@@ -158,17 +174,20 @@ export function createAccountFeatureController({
     if (button) button.disabled = true;
     if (status) status.textContent = "正在修改…";
     try {
-      await auth.request("/api/auth/password", {
+      const result = await auth.request("/api/auth/password", {
         currentPassword: currentPassword?.value || "",
         newPassword: newPassword?.value || ""
       }, "PATCH");
       if (!sameSession(operation)) return false;
-      if (current(operation)) {
-        form.reset?.();
-        const nextStatus = query(candidate, ACCOUNT_SELECTORS.passwordStatus);
-        if (nextStatus) nextStatus.textContent = "密码已更新，其他设备上的登录已退出。";
+      if (current(operation)) form.reset?.();
+      // 使用现有完整会话退出入口，停止同步、失效异步回调并清除私有页面状态。
+      // 兼容旧服务端成功形状：主动退出仍会在下一次登录前清理当前会话。
+      if (result?.authenticated === false || result?.reauthRequired) {
+        auth.reset("密码已更新，所有设备已退出，请使用新密码重新登录。");
+      } else {
+        await auth.logout();
       }
-      showToast("密码已更新");
+      showToast("密码已更新，请重新登录");
       return true;
     } catch (error) {
       if (current(operation) && status) status.textContent = error?.message || "密码修改失败";
@@ -289,11 +308,13 @@ export function createAccountFeatureController({
   function handleClick(event) {
     const candidate = activation;
     const retry = closest(candidate, event, ACCOUNT_SELECTORS.retryRoles);
+    const more = closest(candidate, event, ACCOUNT_SELECTORS.moreRoles);
     const save = closest(candidate, event, ACCOUNT_SELECTORS.roleSave);
     const logout = closest(candidate, event, ACCOUNT_SELECTORS.logout);
-    if (!retry && !save && !logout) return;
+    if (!retry && !more && !save && !logout) return;
     event.preventDefault?.();
     if (retry) void load(candidate);
+    else if (more) void load(candidate, { append: true });
     else if (save) void changeRole(candidate, save);
     else void auth.logout();
   }
@@ -354,6 +375,7 @@ export function createAccountFeatureController({
     session = {};
     loadSerial += 1;
     users = [];
+    nextCursor = "";
     loadState = "idle";
     roleStatus = "";
     identityKey = "";

@@ -8,6 +8,7 @@ import {
   normalizeAuthDocument,
   publicUser
 } from "../src/modules/auth/index.mjs";
+import { createDocumentAuthPort } from "../src/shared/persistence/index.mjs";
 
 const passwordHash = password => {
   const salt = Buffer.alloc(16, 11);
@@ -69,8 +70,12 @@ const repository = memoryRepository({
     }
   ]
 });
+const authPort = createDocumentAuthPort({
+  source: repository,
+  normalizeDocument: normalizeAuthDocument
+});
 const service = createAuthService({
-  repository,
+  repository: authPort,
   initializeUserStorage: async () => {},
   authRequired: true,
   inviteCodeHash: crypto.createHash("sha256").update("invite").digest("hex")
@@ -111,6 +116,24 @@ await assert.rejects(
 const promoted = await service.setRole(legacyOwnerToken, "member", "owner");
 assert.equal(promoted.role, "owner");
 assert.deepEqual(await service.authenticate(legacyUserToken), { user: null, reauthRequired: true });
+const staleCredential = await authPort.findCredentialByUserId("member");
+const stalePasswordHash = passwordHash("member-password-stale-race");
+assert.equal(await authPort.changePasswordAndRevokeSessions({
+  tokenHash: tokenHash(legacyUserToken),
+  snapshot: {
+    id: staleCredential.id,
+    usernameKey: staleCredential.usernameKey,
+    passwordHash: staleCredential.passwordHash,
+    sessionVersion: staleCredential.sessionVersion
+  },
+  passwordHash: stalePasswordHash,
+  updatedAt: "2026-10-01T00:00:00.000Z",
+  nowMs: Date.parse("2026-10-01T00:00:00.000Z")
+}), null);
+assert.notEqual(
+  repository.snapshot().users.find(user => user.id === "member").passwordHash,
+  stalePasswordHash
+);
 await assert.rejects(
   service.me(legacyUserToken),
   error => error.statusCode === 401 && error.code === "AUTH_REAUTH_REQUIRED"
@@ -127,7 +150,10 @@ assert.equal((await service.authenticate(legacyOwnerToken)).user.role, "owner");
 
 const emptyRepository = memoryRepository({ version: 1, users: [], sessions: [] });
 const emptyService = createAuthService({
-  repository: emptyRepository,
+  repository: createDocumentAuthPort({
+    source: emptyRepository,
+    normalizeDocument: normalizeAuthDocument
+  }),
   initializeUserStorage: async () => {},
   authRequired: true,
   inviteCodeHash: crypto.createHash("sha256").update("invite").digest("hex")

@@ -467,13 +467,9 @@ assert.deepEqual(thoughtList.thoughtPage.tags, ["test"]);
 assert.equal(thoughtList.thoughtPage.sort, "occurred");
 assert.ok(thoughtList.thoughts.every(item => item.type === "question" && !Object.hasOwn(item, "blocks")));
 assertNoPrivateFields(thoughtList);
-const restoredThoughtList = routeStateProjection(publicState, {
-  view: "thoughts",
-  currentDate: CURRENT_DATE,
-  query: { q: "earlier", page: 2 }
-});
-assert.equal(restoredThoughtList.thoughts.length, 29);
-assert.equal(restoredThoughtList.thoughtPage.nextId, "");
+assert.throws(() => routeStateProjection(publicState, {
+  view: "thoughts", currentDate: CURRENT_DATE, query: { q: "earlier", page: 2 }
+}), { code: "LEGACY_PAGE_UNSUPPORTED" });
 const thoughtDetail = routeStateProjection(publicState, {
   view: "thoughts",
   currentDate: CURRENT_DATE,
@@ -588,3 +584,19 @@ assert.deepEqual(responses.at(-1), { status: 400, message: "页面标识无效",
 assert.equal(await http.handleV1({ method: "POST" }, {}, new URL("http://local/api/v1/startup"), v1), false);
 
 console.log(`Startup projection checks passed: today ${todayBytes} B, review ${reviewBytes} B; bounded DTOs, field exclusion and route isolation.`);
+
+// 新F4：仅page=1规范化为首屏；旧深页不累计读取前缀。
+{
+  const rows = Array.from({ length: 121 }, (_, index) => ({ id: `f4-route-${String(index).padStart(3, "0")}`, type: "question", content: "摘要", occurredAt: "2026-10-01" }));
+  const first = routeStateProjection({ thoughts: rows }, { view: "thoughts", query: { page: "1" }, cursorScope: "owner" });
+  assert.equal(first.thoughts.length, 20);
+  assert.ok(first.thoughtPage.nextId);
+  assert.equal(Object.hasOwn(first.thoughtPage, "pages"), false);
+  for (const page of ["2", "5", "6", "0"]) {
+    assert.throws(() => routeStateProjection({ thoughts: rows }, { view: "thoughts", query: { page } }), { code: "LEGACY_PAGE_UNSUPPORTED" });
+  }
+  for (const query of ["page=2", "page=5", "page=6", "page=0", "page=1&cursor=x", "direction=prev", "direction=other"]) {
+    await http.handleV1({ method: "GET" }, {}, new URL(`http://local/api/v1/route-state?view=thoughts&${query}`), v1);
+    assert.equal(responses.at(-1).status, 400, query);
+  }
+}

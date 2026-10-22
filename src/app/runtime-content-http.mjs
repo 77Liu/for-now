@@ -35,6 +35,7 @@ export function createRuntimeContentHttp({
   const {
     trashService,
     trashMutations,
+    trashCommands,
     thoughtService,
     captureRecords,
     journalRecords,
@@ -53,8 +54,7 @@ export function createRuntimeContentHttp({
   } = contentRuntime;
   const {
     moveCollectionItemToTrash,
-    moveNestedItemToTrash,
-    moveThoughtBlockToTrash
+    moveNestedItemToTrash
   } = trashMutations;
   const { bodyJson, sendJson, respondModel } = access;
   const {
@@ -66,8 +66,8 @@ export function createRuntimeContentHttp({
   const thoughtHttp = createThoughtHttp({
     service: thoughtService,
     workflows: thoughtWorkflows,
-    removeBlock: id => updateSourceStore(store => moveThoughtBlockToTrash(store, id)),
-    removeNested: input => updateSourceStore(store => moveNestedItemToTrash(store, input)),
+    removeBlock: id => trashCommands.removeThoughtBlock(id),
+    removeNested: input => trashCommands.removeThoughtNested(input),
     backgroundAi,
     sendTaskCreation: taskHttp.sendCreation,
     eventTimeFields,

@@ -3,8 +3,8 @@
  * 建立时间：2026-10-13；状态：active。
  * 边界：旧事件原样读取；新格式以必要检查点或已校验状态为基线，不推断缺失值。
  */
-/** 首个格式3事件启用六位记录与稳定ID差量；旧格式2仍按原契约读取。 @since v0.5.14 */
-export const CONTROL_EVENT_FORMAT = 3;
+/** 格式4保留完整哈希；格式3的六位规范化和格式2的位置差量仅用于历史回放。 */
+export const CONTROL_EVENT_FORMAT = 4;
 
 type Row = Record<string, unknown>;
 type Cell = { present: false } | { present: true; value: unknown };
@@ -20,7 +20,7 @@ const stableValue = (value: unknown): unknown => Array.isArray(value) ? value.ma
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(stableValue(a)) === JSON.stringify(stableValue(b));
 const cell = (present: boolean, value?: unknown): Cell => present ? { present: true, value } : { present: false };
 
-/** 项目记录的哈希缩为六位；协议必需的认证、签名及锁文件字段保持原值。 @since v0.5.14 */
+/** 仅供历史格式3核对与回放；新记录禁止调用此六位规范化。 @since v0.5.14 */
 export function shortRecordHashes<T>(value: T): T {
   const visit = (item: unknown, key = "", hashes = false): unknown => {
     if (/^(?:signature|sign|token|secret|password|integrity|protocol_fields)$/iu.test(key)) return structuredClone(item);
@@ -135,13 +135,13 @@ export function replayChanges(before: Row, value: unknown, format = CONTROL_EVEN
     return parent;
   };
   for (const input of value) {
-    const special = row(input) && format === CONTROL_EVENT_FORMAT && ["item", "order"].includes(String(input.kind));
+    const special = row(input) && [3, CONTROL_EVENT_FORMAT].includes(format) && ["item", "order"].includes(String(input.kind));
     const allowed = special ? ["kind", "path", "id_key", "id", "before", "after"] : ["path", "before", "after"];
     if (!row(input) || Object.keys(input).some(key => !allowed.includes(key))
       || !Array.isArray(input.path) || !input.path.length) throw new Error("差量路径无效");
     const keys = input.path as Segment[];
     if (keys.some(key => typeof key === "string" ? forbidden(key)
-      : typeof key === "number" ? !Number.isInteger(key) || key < 0 : format !== CONTROL_EVENT_FORMAT || !selector(key))) throw new Error("差量路径无效");
+      : typeof key === "number" ? !Number.isInteger(key) || key < 0 : ![3, CONTROL_EVENT_FORMAT].includes(format) || !selector(key))) throw new Error("差量路径无效");
     const readCell = (raw: unknown, allowItem = false): Cell => {
       if (!row(raw) || typeof raw.present !== "boolean" || Object.keys(raw).some(key => !["present", "value"].includes(key))
         || Object.hasOwn(raw, "value") !== raw.present) throw new Error("差量缺失语义无效");

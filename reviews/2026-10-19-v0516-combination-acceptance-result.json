@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-19",
+  "ruleCommit": "9c4916",
+  "status": "PASS_REQUIRED_GATES_READY_WAIT_OWNER",
+  "candidate": {
+    "version": "0.5.16",
+    "branch": "feat/v0.5.16-sync-latency",
+    "sha": "2d97b585258cc7d241f6566d5d994418253889dc",
+    "tree": "6527cad5a12df5b271cd00e31c4e5196bddf6c83"
+  },
+  "requiredGates": {
+    "release_metadata_pwa": "PASS",
+    "static_module_contracts": "PASS",
+    "full_regression": "PASS",
+    "release_journeys": "PASS",
+    "release_protection": "PASS",
+    "stateful_postgres_startup": "PASS"
+  },
+  "validation": {
+    "npmTest": {
+      "status": "PASS",
+      "candidate": "2d97b58"
+    },
+    "npmCheck": {
+      "status": "PASS",
+      "candidate": "2d97b58",
+      "activeModules": 133,
+      "ownedRoutes": 243
+    },
+    "startupGateSelfTest": {
+      "status": "PASS",
+      "candidate": "2d97b58",
+      "profiles": [
+        "default",
+        "v0516-combined"
+      ]
+    },
+    "frontendReleaseJourney": {
+      "status": "PASS",
+      "directCandidate": "e2d51a0",
+      "durationMs": 97985,
+      "subtests": 39,
+      "reuseReason": "The final two commits only modify scripts/release-state-startup-gate.mts; application, frontend and journey fixtures are unchanged."
+    },
+    "postgresStable": {
+      "status": "PASS",
+      "directCandidate": "1bc3e0",
+      "postgres": "16.14",
+      "reuseReason": "All later commits only modify the isolated release-state startup gate; application persistence and PostgreSQL stable fixtures are unchanged."
+    },
+    "releaseProtection": {
+      "status": "PASS",
+      "directCandidate": "e52db12",
+      "coverage": [
+        "release fence",
+        "deploy dry-run",
+        "preview dry-run"
+      ],
+      "reuseReason": "No later candidate changes deployment, release fence, rollback or preview implementation."
+    },
+    "dependencyAudit": {
+      "status": "PASS",
+      "productionDependencies": 149,
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0
+      }
+    }
+  },
+  "snapshot": {
+    "path": "artifacts/local/v0516-startup-snapshot-2d97b58.json",
+    "format": "release-state-startup-gate-snapshot",
+    "schemaVersion": 2,
+    "capturedAt": "2026-10-19T17:45:17.086Z",
+    "manifestSha256": "2d0f799995821349ca6c7a2d3465d3ff81d335bfe9d48bb5551ad25826c3fa6e",
+    "fileSha256": "037488be845e6fec29670d0266d2370d273c3c43cf4b1851d76073001e622ad9",
+    "candidateSha": "2d97b585258cc7d241f6566d5d994418253889dc",
+    "candidateTree": "6527cad5a12df5b271cd00e31c4e5196bddf6c83",
+    "source": {
+      "role": "for_now_backup",
+      "database": "for_now",
+      "postgresMajor": 16,
+      "transaction": "REPEATABLE READ READ ONLY",
+      "accounts": 4
+    },
+    "sanitizedCoverage": {
+      "taskStates": 134,
+      "requiredAccountDocuments": [
+        "settings",
+        "usage"
+      ],
+      "optionalCostPlanAccounts": 0
+    }
+  },
+  "statefulProfiles": {
+    "default": {
+      "status": "PASS",
+      "postgres": "16.14",
+      "accounts": 4,
+      "taskStates": 134,
+      "startupAndRestartAccountCleanupCalls": [
+        4,
+        4
+      ],
+      "externalEffects": {
+        "provider": 0,
+        "outbound": 0,
+        "media": 0
+      },
+      "attachmentInventoryReadsDuringAttachmentFreeSave": 0
+    },
+    "v0516-combined": {
+      "status": "PASS",
+      "postgres": "16.14",
+      "accounts": 4,
+      "taskStates": 134,
+      "configuration": {
+        "accountRecovery": true,
+        "pgSyncReadMode": "metadata",
+        "pgSyncAccountAllowlist": [
+          "*"
+        ],
+        "aiQueue": true,
+        "syncAccountWake": true,
+        "thoughtPaging": true,
+        "incrementalSync": true,
+        "recordCommands": [
+          "notification.read",
+          "notification.readAll",
+          "task.status",
+          "thought.update",
+          "thought.delete",
+          "thought.create",
+          "thought.aiWriteback"
+        ],
+        "syncV2": true,
+        "syncV2AccountAllowlist": [
+          "*"
+        ]
+      },
+      "startupAndRestartAccountCleanupCalls": [
+        4,
+        4
+      ],
+      "externalEffects": {
+        "provider": 0,
+        "outbound": 0,
+        "media": 0
+      },
+      "attachmentInventoryReadsDuringAttachmentFreeSave": 0
+    }
+  },
+  "retainedFailures": [
+    {
+      "candidate": "1bc3e0",
+      "finding": "Production snapshot reused a post-migration auth document reader against the current pre-migration schema.",
+      "closedBy": "e2d51a0"
+    },
+    {
+      "candidate": "e2d51a0",
+      "finding": "The gate incorrectly required an attachment inventory query for an attachment-free thought save.",
+      "closedBy": "620fff6"
+    },
+    {
+      "candidate": "620fff6",
+      "finding": "The combined profile omitted record command prerequisites and stage 11 sync v2.",
+      "closedBy": "2d97b58"
+    },
+    {
+      "candidate": "2d97b58",
+      "finding": "One startup self-test overlapped two shared build writers and observed a transient missing generated module.",
+      "closedBy": "Sequential exact-candidate rerun"
+    }
+  ],
+  "limitations": {
+    "browserP75Under500ms": "PARTIAL",
+    "safariInstalledPwaRealDevice": "PARTIAL",
+    "productionRollout": "NOT_RUN",
+    "productionLoad": "NOT_RUN",
+    "paidProviderCalls": 0,
+    "realCorpus94RebuildOrRerun": "NOT_RUN"
+  },
+  "externalActions": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "preview": false,
+    "productionDeploy": false,
+    "productionBusinessWrite": false
+  }
+}

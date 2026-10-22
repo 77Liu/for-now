@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertPostgresSchemaRegistry } from "../../../.build/typescript/backend/shared/persistence/migrations/registry.mjs";
 import { canonicalJson, mapStoreObjects, rebuildStoreObjects, storeContentSha256 } from "./store-mapping.mjs";
 import { clearStoreObjects, verifyStoreObjects, writeStoreObjects } from "./postgres-objects.mjs";
 import { preparePersistenceDocument } from "./persistence-metadata.mjs";
@@ -289,6 +290,8 @@ export async function applyPostgresMigration(client, plan, { expectedTargetSha25
     );
 
     await clearStoreObjects(client, plan.accountId);
+    // Derived readers stay unavailable until their explicit, bounded maintenance command completes.
+    await client.query("DELETE FROM for_now.record_projection_status WHERE account_id=$1", [plan.accountId]);
     await writeStoreObjects(client, plan.business);
 
     const counts = await targetCounts(client, plan.accountId);
@@ -313,7 +316,9 @@ export async function applyPostgresMigration(client, plan, { expectedTargetSha25
 export async function initializePostgresSchema(client) {
   await client.query("BEGIN");
   try {
-    await client.query(await fs.readFile(SCHEMA_FILE, "utf8"));
+    const schema = await fs.readFile(SCHEMA_FILE, "utf8");
+    assertPostgresSchemaRegistry(schema);
+    await client.query(schema);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");

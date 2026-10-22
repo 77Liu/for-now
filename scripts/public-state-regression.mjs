@@ -1,5 +1,5 @@
 import { withoutReferenceOwnerMetadata } from "../src/app/index.mjs";
-import { createJsonHttp, createModelResponseHttp } from "../src/http/index.mjs";
+import { createJsonHttp, createModelResponseHttp, createApiV1Http } from "../src/http/index.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {
@@ -95,7 +95,16 @@ const store = {
   perceptionEvents: [{ id: "private-perception-event", accountId: "member" }],
   ownerExtension: {
     visible: true,
-    tokenBudget: { limit: 5000 }
+    tokenBudget: { limit: 5000 },
+    reasoningContent: "legacy-hidden-reasoning",
+    visibleResult: {
+      reasoningVisibility: "user_viewable",
+      reasoningContent: "visible-reasoning"
+    },
+    privateResult: {
+      reasoningVisibility: "privileged_only",
+      reasoningContent: "private-reasoning"
+    }
   },
   userClaims: [{ id: "private-claim", statement: "MODEL_DETAIL_MARKER" }],
   modelUnknowns: [{ id: "private-unknown", question: "UNKNOWN_DETAIL_MARKER" }],
@@ -121,6 +130,22 @@ const store = {
 };
 const snapshot = structuredClone(store);
 
+// 按域投影只消费声明的真实字段，派生与完整投影一致；不以未读取字段的空默认值充数。
+for (const user of [{ id: "owner", role: "owner" }, { id: "member", role: "user" }]) {
+  const complete = projectPublicState(store, user);
+  for (const domains of [["notifications"], ["aiTasks"], ["speechCache"], ["captures"], ["keepsakes"], ["trash"], ["journalDraft"], ["onboardingV2"], ["captures", "notifications", "speechCache"]]) {
+    const fields = projectPublicState.syncProjectionFields(domains);
+    const subset = Object.fromEntries(fields.map(field => [field, structuredClone(store[field])]));
+    const projected = projectPublicState(subset, user, domains);
+    const expected = new Set(domains.filter(domain => !["trash", "speechCache"].includes(domain)));
+    if (domains.some(domain => ["notifications", "aiTasks"].includes(domain))) for (const key of ["notifications", "aiTasks", "notificationUnread"]) expected.add(key);
+    if (domains.includes("captures")) for (const key of ["clusters", "insights"]) expected.add(key);
+    if (domains.includes("speechCache")) expected.add("speech");
+    if (domains.includes("trash")) expected.add("trashCount");
+    for (const field of expected) assert.deepEqual(projected[field], complete[field], `${user.role}: ${domains}: ${field}`);
+  }
+}
+assert.equal(projectPublicState.syncProjectionFields(["future-domain"]), null);
 const ownerState = projectPublicState(store, { id: "owner", role: "owner" });
 assert.equal(Object.hasOwn(ownerState, "commercialization"), false);
 assert.equal(Object.hasOwn(ownerState, "trash"), false);
@@ -139,6 +164,9 @@ assert.equal(Object.hasOwn(ownerState.captures[0], "speechCache"), false);
 assert.equal(Object.hasOwn(ownerState.keepsakes[0], "originalPath"), false);
 assert.equal(Object.hasOwn(ownerState.keepsakes[0], "requestHash"), false);
 assert.equal(ownerState.ownerExtension.tokenBudget.limit, 5000);
+assert.equal(Object.hasOwn(ownerState.ownerExtension, "reasoningContent"), false);
+assert.equal(ownerState.ownerExtension.visibleResult.reasoningContent, "visible-reasoning");
+assert.equal(Object.hasOwn(ownerState.ownerExtension.privateResult, "reasoningContent"), false);
 assert.equal(ownerState.userClaims[0].statement, "MODEL_DETAIL_MARKER");
 assert.equal(ownerState.modelUnknowns[0].question, "UNKNOWN_DETAIL_MARKER");
 assert.deepEqual(ownerState.clusters.map(item => [item.theme, item.count]), [["工作与创造", 1]]);
@@ -206,6 +234,43 @@ assert.equal(Object.hasOwn(memberState, "evidenceSources"), false);
 assert.equal(Object.hasOwn(memberState, "evidencePermissions"), false);
 assert.equal(Object.hasOwn(memberState, "perceptionEvents"), false);
 assert.deepEqual(memberState.speech.assets, [], "speech assets must be account-bound");
+// 权限裁剪先后必须保留原始派生计数，同时剥离派生条目中的Owner资料。
+const privateRoot = {
+  ...store.thoughts[0], id: "private-root", resourceType: "userClaim"
+};
+const referenceFixture = {
+  providedReferences: [
+    { citationId: "private-reference", resourceType: "onboardingV2" },
+    { citationId: "visible-reference", resourceType: "thought" }
+  ],
+  contextReceipt: { referenceRequest: { providedCount: 7 } },
+  sourceIds: ["userClaim:hidden", "modelUnknown:hidden", "thought:question"],
+  userModel: { readiness: { ready: true }, claims: [{ private: true }], unknowns: [] }
+};
+const edgeStore = {
+  ...store,
+  thoughts: [{ ...store.thoughts[0], ...referenceFixture }, privateRoot],
+  trash: [...store.trash, privateRoot],
+  projectionExtension: { ...referenceFixture, nested: { ...referenceFixture } },
+  ...referenceFixture
+};
+const edgeMember = projectPublicState(edgeStore);
+const edgeOwner = projectPublicState(edgeStore, { id: "owner", role: "owner" });
+assert.equal(edgeMember.clusters[0].count, 2, "raw derived count must not use filtered Store");
+assert.equal(edgeMember.insights.weekly.rootCount30, 2);
+assert.equal(edgeMember.clusters[0].items.length, 1);
+assert.equal(edgeMember.trashCount, 2, "member trash count retains prior filtered semantics");
+assert.equal(edgeOwner.trashCount, 3);
+for (const result of [edgeMember, edgeMember.projectionExtension, edgeMember.projectionExtension.nested,
+  edgeMember.thoughts[0], edgeMember.clusters[0].items[0]]) {
+  assert.equal(result.providedReferenceCount, 7);
+  assert.deepEqual(result.providedReferences.map(item => item.citationId), ["visible-reference"]);
+  assert.deepEqual(result.sourceIds, ["thought:question"]);
+  assert.deepEqual(result.userModel, { readiness: { ready: true }, claims: [], unknowns: [] });
+}
+assert.equal(edgeOwner.providedReferences.length, 2);
+assert.equal(Object.hasOwn(edgeOwner, "providedReferenceCount"), false);
+
 assert.deepEqual(store, snapshot, "public projection must not modify Store");
 
 assert.throws(
@@ -251,5 +316,17 @@ for (const owner of [false, true]) {
   assert.equal(done.result.providedReferences.length, owner ? 2 : 1);
   assert.equal(done.result.contextReceipt.referenceRequest.promptBytes, 2000);
   assert.equal(JSON.stringify(done.result).includes("CORE_RESOURCE_MARKER"), owner);
+}
+// F5：SSE已发头保留终态code，v1包装保留可选重试间隔，不将失败伪装为done。
+for (const [code, statusCode] of [["AI_TASK_CANCELLED", 409], ["AI_QUEUE_TIMEOUT", 504], ["AI_REQUEST_TIMEOUT", 504], ["AI_QUEUE_FULL", 429]]) {
+  const chunks = []; const current = {};
+  const response = { destroyed: false, writableEnded: false, writeHead(status) { this.statusCode = status; }, write(value) { chunks.push(value); }, end() { this.writableEnded = true; } };
+  const v1 = createApiV1Http({ getContext: () => current, sendJson: () => {} });
+  const stream = createModelResponseHttp({ getContext: () => current, logEvent: async () => {}, sendJson: () => {} });
+  await stream({ headers: { accept: "text/event-stream" } }, response, { run: async () => { throw Object.assign(new Error("终止"), { code, statusCode, retryAfterMs: 5000 }); }, formatError: error => ({ type: "error", ...v1.errorEnvelope(error) }) });
+  const events = chunks.join("").split("\n").filter(line => line.startsWith("data: ")).map(line => JSON.parse(line.slice(6)));
+  assert.equal(response.statusCode, 200); assert.equal(current.applicationStatus, statusCode);
+  assert.ok(events.some(event => event.type === "error" && event.error.code === code && event.error.details.retryAfterMs === 5000));
+  assert.equal(events.some(event => event.type === "done"), false);
 }
 console.log("Public state regression passed.");

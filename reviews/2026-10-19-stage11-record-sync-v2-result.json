@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-19",
+  "baselineCommit": "0b44a82",
+  "ruleCommit": "9c4916",
+  "status": "PASS_STAGE11_LOCAL_CORRECTNESS_PERFORMANCE_AND_DEVICES_PARTIAL",
+  "scope": {
+    "completeEntities": [
+      "thoughtChain",
+      "thoughtBlock"
+    ],
+    "deferredEntities": [
+      "notification",
+      "aiTask",
+      "evidencePermission",
+      "perceptionEvent",
+      "other legacy domains"
+    ],
+    "v1Retained": true,
+    "pwaRetirementImplemented": false
+  },
+  "validation": {
+    "main": "PASS",
+    "check": "PASS",
+    "recordSync": "PASS",
+    "postgres16": "PASS",
+    "chromeDualTab": "PASS_CORRECTNESS",
+    "cursorTrimAndRebase": "PASS",
+    "unknownTypeNoAdvance": "PASS"
+  },
+  "performance": {
+    "postgresWakeSamples": 8,
+    "postgresWakeP75Ms": 124.1,
+    "memoryProtocolSamples": 8,
+    "memoryProtocolP75Ms": 0.1,
+    "chromeResponseToObservedPaintUpperBoundMs": 1101,
+    "p75Target500ms": "PARTIAL_INSUFFICIENT_BROWSER_SAMPLES"
+  },
+  "browser": {
+    "engine": "real Chrome browser bridge",
+    "checks": [
+      "cross-tab create visible",
+      "automatic active-scope rebase",
+      "draft and focus retained during incremental apply",
+      "reload restores bounded scope, draft and persisted cursor",
+      "expected navigation aborts only"
+    ]
+  },
+  "limitations": [
+    "Safari, installed PWA and mobile devices not tested",
+    "no production load or rollout",
+    "v1 retirement remains a separate v0.6 decision"
+  ]
+}

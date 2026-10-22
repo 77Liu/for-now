@@ -132,6 +132,12 @@ function requireFunction(value, name) {
   return value;
 }
 
+function withoutLiveReasoning(value) {
+  if (!value || typeof value !== "object") return value;
+  const { reasoningContent, reasoningVisibility, ...fields } = value;
+  return fields;
+}
+
 function serializeItem(item, now) {
   return {
     blob: item.file,
@@ -142,7 +148,7 @@ function serializeItem(item, now) {
     assignedDate: item.assignedDate || "",
     revision: Number(item.revision) || 1,
     status: item.status || "selected",
-    recognition: item.recognition || null,
+    recognition: withoutLiveReasoning(item.recognition) || null,
     recognitionRequestId: item.recognitionRequestId || "",
     createRequestId: item.createRequestId || "",
     submissionOperationId: item.submissionOperationId || "",
@@ -204,7 +210,7 @@ export function createHealthDraftLifecycle({
       id: healthDraftKey(type, current.date),
       type,
       date: current.date,
-      result: current.result,
+      result: withoutLiveReasoning(current.result),
       submissionOperationId: current.submissionOperationId || "",
       activeIndex: current.activeIndex || 0,
       updatedAt: new Date(now()).toISOString(),
@@ -249,7 +255,7 @@ export function createHealthDraftLifecycle({
 
       const current = draft(type);
       current.date = type === "weight" ? (stored.date || date) : date;
-      current.result = stored.result || null;
+      current.result = withoutLiveReasoning(stored.result) || null;
       current.submissionOperationId = stored.submissionOperationId || "";
       current.activeIndex = Number(stored.activeIndex) || 0;
       const limit = type === "sleep" ? 2 : type === "weight" ? WEIGHT_BATCH_MAX_ITEMS : 1;
@@ -266,7 +272,7 @@ export function createHealthDraftLifecycle({
         assignedDate: item.assignedDate || stored.date || date,
         revision: Number(item.revision) || 1,
         status: item.status || ((item.recognition || (index === 0 && stored.result)) ? "review" : "selected"),
-        recognition: item.recognition || (index === 0 && stored.result) || null,
+        recognition: withoutLiveReasoning(item.recognition || (index === 0 && stored.result)) || null,
         recognitionRequestId: item.recognitionRequestId || "",
         createRequestId: item.createRequestId || "",
         submissionOperationId: item.submissionOperationId || "",

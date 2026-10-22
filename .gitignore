@@ -16,27 +16,19 @@ dist/
 coverage/
 *.tsbuildinfo
 
-# 仅忽略明确标记为生成的报告。控制面、发布证据和审计记录仍由 reports/ 下的已跟踪文件维护。
-reports/generated/
-reports/local/
-reports/*.generated.*
-reports/**/*.generated.*
+# reports 只保存本地临时材料；正式状态、版本资料、审计和长期知识使用各自目录。
+reports/
 
-# 正式版本事件与收口归档必须可跟踪；运行锁和原子写临时文件不入库。
-!reports/iterations/
-!reports/iterations/*/
-!reports/iterations/*/events.jsonl
-!reports/iterations/*/terminal.json
-reports/iterations/.control-plane.lock
-reports/requirement-coordination-current.json.tmp.*
-reports/iterations/*/terminal.json.tmp.*
+# 正式协调记录可跟踪；运行锁和原子写临时文件不入库。
+coordination/.control-plane.lock
+coordination/current.json.tmp.*
+coordination/versions/*/terminal.json.tmp.*
 
 # TS 运行候选由 build:runtime 组装；这些路径只保留本地/部署产物，不进入 Git。
 src/shared/record-compression-config.mjs
 public/generated/
 
 deploy/*.local
-reports/keepsake-segmentation-preview/
 .xcode-home/
 .xcode-cache/
 .xcode-packages/

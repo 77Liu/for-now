@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-18",
+  "baseline_commit": "f25154",
+  "rule_commit": "9c4916",
+  "scope": "阶段1/5本轮返修；阶段6新F4仅只读准备",
+  "status": "PASS",
+  "findings": [
+    {
+      "id": "R1",
+      "status": "CLOSED",
+      "result": "删块后批注完整身份标记删除；恢复仅还原dependents清单，之前单独删除的批注保持删除，跨父同ID隔离且重复恢复不重复插入",
+      "test": "scripts/postgres-runtime-checks.mjs:runBlockDeletionRemediationChecks"
+    },
+    {
+      "id": "R2",
+      "status": "CLOSED",
+      "result": "queued取消和running取消中均同事务写根、任务、通知变化；停止完成后的任务和通知终态再次记录",
+      "test": "scripts/postgres-runtime-checks.mjs:runBlockDeletionRemediationChecks"
+    },
+    {
+      "id": "R3",
+      "status": "CLOSED",
+      "result": "真实审计生产者进程注入账本失败后退出；新OS进程按账户/callId差额补账，重复恢复不重复；覆盖费用0.005、已知零、未知费用，到期清理先保护后放行，另一账户不可补账或清理",
+      "test": "scripts/persistence-ledger-postgres-regression.mjs:--audit-write/--audit-recover"
+    },
+    {
+      "id": "TOMB",
+      "status": "CLOSED",
+      "result": "DB回收记录及payload保留，permanentlyPurged=true/lifecycleState=purged；HTTP列表和计数不可见，直接DELETE和restore返回409；重复purge拒绝；保留历史不再作为附件引用",
+      "test": "scripts/postgres-runtime-checks.mjs:HTTP永久清理及runBlockDeletionRemediationChecks"
+    },
+    {
+      "id": "R4",
+      "status": "CLOSED",
+      "result": "通知/任务/思绪业务命令迁至所属领域.mts；生命周期独立，精确闭包仓库位于persistence；应用仅装配。strict后端配置覆盖命令与仓库；coverage脚本迁移.mts独立编译",
+      "test": "npm run typecheck:backend; npm run test:record-commands; npm run check"
+    }
+  ],
+  "validation": [
+    {
+      "command": "npm run test:postgres:stable --silent",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run check --silent",
+      "result": "PASS"
+    },
+    {
+      "command": "npm test --silent",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:auth --silent",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:record-commands --silent",
+      "result": "PASS"
+    },
+    {
+      "command": "node scripts/ai-domain-regression.mjs",
+      "result": "PASS"
+    },
+    {
+      "command": "node scripts/ai-runtime-regression.mjs",
+      "result": "PASS"
+    },
+    {
+      "command": "node scripts/public-state-regression.mjs",
+      "result": "PASS"
+    },
+    {
+      "command": "node scripts/persistence-regression.mjs",
+      "result": "PASS"
+    },
+    {
+      "command": "node scripts/trash-regression.mjs",
+      "result": "PASS"
+    },
+    {
+      "command": "PG_TEST_BIN=<项目PostgreSQL16目录> node scripts/persistence-ledger-postgres-regression.mjs",
+      "result": "PASS",
+      "detail": "最终新增完整audit/ledger payload等价断言单独复验；应用源码未变，复用此前完整PG门其他证据"
+    }
+  ],
+  "environment": {
+    "node": "24.19.0",
+    "postgres": "16.14",
+    "database": "临时集群、隔离非owner角色、合成账户与本地mock provider"
+  },
+  "review": {
+    "producer_to_consumer": "思绪编辑→回收dependents→关系闭包→持久化→生命周期/changes→恢复及终态写回；审计producer→完整usageRecovery→差额查询→账本唯一约束/聚合→retention；purge→持久payload/tomb→HTTP列表/计数/删除恢复→附件映射/备份/上传引用",
+    "fixed_during_review": [
+      "保留永久清理记录导致附件引用悬空，完整PG门暴露并修复",
+      "数据库重试与内存reservation同一callId时保留reservation并清除已成功pending",
+      "新思绪创建输入与更新输入分离，避免把新记录错误要求已有ID"
+    ]
+  },
+  "failure_history": [
+    {
+      "result": "FAIL",
+      "cause": "新增PG夹具按数组位置读取思绪根，排序后取到sibling；改为按ID定位，未放宽业务断言"
+    },
+    {
+      "result": "FAIL",
+      "cause": "跨进程fixture的createId同时生成callGroupId，期望生产计数有误；以及旧日期查询使用默认窗口，改为显式日期范围"
+    },
+    {
+      "result": "FAIL",
+      "cause": "永久清理保留payload后仍生成附件引用，修复映射及相关消费者；最终完整PG门通过"
+    },
+    {
+      "result": "FAIL",
+      "cause": "删除JS源码后旧评审导航链接失效、未暂存新目标；归档固定提交源码并更新迁移导航，最终链接和check通过"
+    }
+  ],
+  "limitations": [
+    "仅本地提交；未push、发布、部署或生产写入",
+    "阶段6仅只读，本轮没有实现新F4",
+    "首批记录生产者仍含legacy/partial，notification/aiTask/thoughtChain的F9 v2保持关闭",
+    "现有F9与首页未提交差分未纳入修复提交，相关全工作区测试结果不等于这些UI改动获验收",
+    "本轮不是整版发布门；未执行付费调用、真实设备或生产容量观测"
+  ],
+  "source_manifest": [
+    {
+      "path": "package.json",
+      "sha256": "e421bb"
+    },
+    {
+      "path": "scripts/persistence-ledger-postgres-regression.mjs",
+      "sha256": "b1c481"
+    },
+    {
+      "path": "scripts/postgres-runtime-checks.mjs",
+      "sha256": "4b4c19"
+    },
+    {
+      "path": "scripts/record-command-producer-coverage-regression.mts",
+      "sha256": "c18276"
+    },
+    {
+      "path": "scripts/trash-regression.mjs",
+      "sha256": "c0604a"
+    },
+    {
+      "path": "src/app/attachment-cleanup.mjs",
+      "sha256": "a691ea"
+    },
+    {
+      "path": "src/app/content/background.mjs",
+      "sha256": "5ff9a8"
+    },
+    {
+      "path": "src/app/index.mjs",
+      "sha256": "3d9f3e"
+    },
+    {
+      "path": "src/app/media/upload-workflows.mjs",
+      "sha256": "f2e08e"
+    },
+    {
+      "path": "src/app/public-state.mjs",
+      "sha256": "31eadc"
+    },
+    {
+      "path": "src/app/record-commands/notifications.mjs",
+      "sha256": "9aae93"
+    },
+    {
+      "path": "src/app/record-commands/thoughts.mjs",
+      "sha256": "602645"
+    },
+    {
+      "path": "src/app/trash.mjs",
+      "sha256": "0082a7"
+    },
+    {
+      "path": "src/modules/ai/audit.mjs",
+      "sha256": "3021ac"
+    },
+    {
+      "path": "src/modules/notifications/index.mjs",
+      "sha256": "d3e4ce"
+    },
+    {
+      "path": "src/modules/notifications/record-commands.mts",
+      "sha256": "10cee2"
+    },
+    {
+      "path": "src/modules/tasks/index.mjs",
+      "sha256": "22505c"
+    },
+    {
+      "path": "src/modules/tasks/record-commands.mts",
+      "sha256": "5c80fa"
+    },
+    {
+      "path": "src/modules/tasks/record-contracts.mts",
+      "sha256": "8809b3"
+    },
+    {
+      "path": "src/modules/thoughts/index.mjs",
+      "sha256": "cef2ba"
+    },
+    {
+      "path": "src/modules/thoughts/record-commands.mts",
+      "sha256": "b66cd1"
+    },
+    {
+      "path": "src/modules/thoughts/record-contracts.mts",
+      "sha256": "0687d1"
+    },
+    {
+      "path": "src/modules/thoughts/record-lifecycle.mts",
+      "sha256": "263e27"
+    },
+    {
+      "path": "src/modules/trash/index.mjs",
+      "sha256": "68591a"
+    },
+    {
+      "path": "src/shared/attachments/backup.mjs",
+      "sha256": "8880e3"
+    },
+    {
+      "path": "src/shared/persistence/account-unit-of-work.mts",
+      "sha256": "b76255"
+    },
+    {
+      "path": "src/shared/persistence/ai-audit-repository.mts",
+      "sha256": "57ac0f"
+    },
+    {
+      "path": "src/shared/persistence/persistence-metadata.mjs",
+      "sha256": "e17fbe"
+    },
+    {
+      "path": "src/shared/persistence/postgres-runtime.mjs",
+      "sha256": "92de94"
+    },
+    {
+      "path": "src/shared/persistence/record-command-types.mts",
+      "sha256": "3c2b97"
+    },
+    {
+      "path": "src/shared/persistence/store-mapping.mjs",
+      "sha256": "0d0e6c"
+    },
+    {
+      "path": "src/shared/persistence/task-record-repository.mts",
+      "sha256": "866570"
+    },
+    {
+      "path": "src/shared/persistence/thought-record-repository.mts",
+      "sha256": "ac7e47"
+    },
+    {
+      "path": "tsconfig.backend.json",
+      "sha256": "81bfc3"
+    },
+    {
+      "path": "tsconfig.record-commands-regression.json",
+      "sha256": "af3656"
+    }
+  ],
+  "candidate_commit": "533053",
+  "candidate_tree": "f9c50c",
+  "control_plane_audit": {
+    "result": "PASS",
+    "revision": 445,
+    "event_count": 115,
+    "scope": "控制面与事件持久化一致性；业务结论由源码审查与专项验收支持"
+  }
+}

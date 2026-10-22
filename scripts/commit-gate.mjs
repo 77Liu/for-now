@@ -9,10 +9,11 @@ const MAX_FILES = 16;
 const MAX_CHANGED_LINES = 1200;
 const MAX_FILE_BYTES = 512 * 1024;
 const PROTECTED_BRANCH = /^(?:main|master|production|release(?:\/|$)|hotfix(?:\/|$))/;
-const TASK_BRANCH = /^(?:feat|feature|fix|test|docs)\//;
+const TASK_BRANCH = /^feat\//;
 const ALLOWED_COMMIT_TYPES = new Set(["feat", "fix", "test", "docs"]);
 const SECRET_ENV_KEY = /^(?:DATABASE_URL|AUTH_DATABASE_URL|AI_BUDGET_DATABASE_URL|PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL|APP_URL|UPSTREAM_ORIGIN)$/;
 const SECRET_ENV_PREFIX = /^(?:OSS_|MEDIA_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/;
+const PROJECT_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const moduleScopes = new Map([
   ["actions", "actions"],
@@ -169,7 +170,7 @@ function regressionSurface(name) {
 function isDocumentation(file) {
   return (
     /^(?:README(?:-TODO)?|one-mistake-one-rule)\.md$/.test(file)
-    || /^(?:knowledge|reports)\/.+\.md$/.test(file)
+    || /^(?:docs|knowledge|SOP)\/.+\.md$/.test(file)
   );
 }
 
@@ -187,9 +188,9 @@ function blockedReason(file) {
     || file === "server.mjs"
     || file === "admin-snapshot.mjs"
     || file === "PROJECT_RULES.md"
-    || file === "knowledge/engineering-rules.md"
-    || file === "knowledge/pre-launch-confirmation.md"
-    || file === "knowledge/development-release-checklist.md"
+    // Knowledge and SOP contain authoritative rules and their split details. Treating
+    // any of them as ordinary docs would let a file move bypass governance review.
+    || /^(?:knowledge|SOP)\//.test(file)
     || /^(?:deploy|prompts)\//.test(file)
     || /^src\/(?:app|config|http|infrastructure|shared)\//.test(file)
     || /^src\/modules\/(?:ai|annotations|auth|content-attachments|exports|feedback|notifications|tasks|trash)\//.test(file)
@@ -202,7 +203,6 @@ function blockedReason(file) {
   ) return "shared, security-sensitive, migration, dependency, deployment, or release surface";
   if (
     /^public\/explore/.test(file)
-    || /^reports\/(?:exploration|feature-atlas)/.test(file)
   ) return "exploration assets are outside the automatic feat gate";
   return "";
 }
@@ -466,7 +466,7 @@ async function main() {
   const options = parseArguments(process.argv.slice(2));
   const subject = validateMessage(options.message);
 
-  const root = git(["rev-parse", "--show-toplevel"], { cwd: process.cwd() }).stdout.trim();
+  const root = git(["rev-parse", "--show-toplevel"], { cwd: PROJECT_ROOT }).stdout.trim();
   validateTrustedGate(root);
   const branch = git(["branch", "--show-current"], { cwd: root }).stdout.trim();
   if (!branch) fail("detached HEAD is not eligible for automatic commits");

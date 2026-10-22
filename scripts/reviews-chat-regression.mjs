@@ -328,6 +328,10 @@ const workflows = createReviewChatWorkflows({
   generate,
   hash,
   contextKey: accountId,
+  periodicAnalysisEnabled: true,
+  readPeriodicPreferences: async () => ({
+    periodicReviews: { analysisEnabled: accountId() === "account-b" }
+  }),
   currentTime: () => Date.parse("2026-09-29T08:00:00.000Z")
 });
 const eventTime = { occurredAt: timestamp, occurredOn: "2026-09-29" };
@@ -836,6 +840,10 @@ const durableWorkflowOptions = {
   generate: durableGenerate,
   hash,
   contextKey: accountId,
+  periodicAnalysisEnabled: true,
+  readPeriodicPreferences: async () => ({
+    periodicReviews: { analysisEnabled: accountId() === durableAccount }
+  }),
   currentTime: () => Date.parse(timestamp)
 };
 const durableWorkflows = createReviewChatWorkflows(durableWorkflowOptions);
@@ -1076,10 +1084,14 @@ assert.equal(statisticsRange({ from: "2026-09-30", to: "2026-09-29" }, "2026-09-
 assert.equal(statisticsRange({ from: "2010-01-01", to: "2026-09-29" }, "2026-09-29").code, "STATISTICS_RANGE_TOO_LARGE");
 
 let ensuredUsage = 0;
+let usageQuery = null;
 const statistics = createStatisticsService({
   repository: fullRepository,
   ensureAiUsage: async () => { ensuredUsage += 1; },
-  readAiUsage: async () => ({ entries: [{ id: "usage" }] }),
+  readAiUsage: async options => {
+    usageQuery = options;
+    return { entries: [{ id: "usage" }] };
+  },
   readOperationEntries: async (from, to) => {
     assert.equal(from <= to, true);
     return operations;
@@ -1090,10 +1102,16 @@ const statistics = createStatisticsService({
     to,
     usdCny
   }),
-  today: () => "2026-09-29"
+  today: () => "2026-09-29",
+  getTimezone: () => "Asia/Shanghai"
 });
 const dashboard = await run("account-a", () => statistics.dashboard({}));
 assert.equal(ensuredUsage, 1);
+assert.deepEqual(usageQuery, {
+  from: "2026-09-23",
+  to: "2026-09-29",
+  timezone: "Asia/Shanghai"
+});
 assert.deepEqual(dashboard.value.ai, {
   calls: 1,
   from: "2026-09-23",

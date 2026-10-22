@@ -18,6 +18,8 @@ import {
   RECORD_COMPRESSION_TREND_CONTEXT_CHARACTER_BUDGET,
   RECORD_COMPRESSION_TREND_CONTEXT_TOKEN_BUDGET,
   RECORD_COMPRESSION_WINDOW_DAYS,
+  RECORD_SLOT_OUTPUT_SCHEMA_VERSION,
+  recordCompressionWindow,
   sevenLocalDatesForTimezone
 } from "../src/modules/record-compressions/index.mjs";
 
@@ -267,4 +269,112 @@ for (const metric of pressureTrend.payload.metrics) {
 }
 assert.ok(estimateRecordCompressionTokens(pressureTrend.payload) <= RECORD_COMPRESSION_TREND_CONTEXT_TOKEN_BUDGET);
 assert.ok(JSON.stringify(pressureTrend.payload).length <= RECORD_COMPRESSION_TREND_CONTEXT_CHARACTER_BUDGET);
+// 无可消费摘要的候选不应触发趋势来源扫描；候选存在仍须验证当前来源哈希。
+const noSummaryStore = { ...store, recordCompressions: [] };
+const trendOptions = { accountId: "account-a", timezone: DEFAULT_RECORD_TIMEZONE, asOf, hash };
+let emptyHashCalls = 0;
+const emptyTrend = currentRecordCompressionTrend(noSummaryStore, {
+  ...trendOptions, hash: value => { emptyHashCalls += 1; return hash(value); }
+});
+for (const patch of [
+  { status: "failed" }, { invalidatedAt: "" }, { daily: null },
+  { schemaVersion: "unknown-schema" }, { promptVersion: "unknown-prompt" },
+  { timezone: "UTC" }, { localDate: "2020-01-01" }
+]) {
+  let calls = 0;
+  const rejected = currentRecordCompressionTrend({
+    ...store, recordCompressions: [{ ...store.recordCompressions.at(-1), ...patch }]
+  }, { ...trendOptions, hash: value => { calls += 1; return hash(value); } });
+  assert.deepEqual(rejected, emptyTrend);
+  assert.equal(calls, emptyHashCalls, "ineligible envelopes cannot force unused trend source hashes");
+}
+let mismatchedHashCalls = 0;
+const mismatched = currentRecordCompressionTrend({
+  ...store, recordCompressions: [{ ...store.recordCompressions.at(-1), sourceManifestHash: "0".repeat(64) }]
+}, { ...trendOptions, hash: value => { mismatchedHashCalls += 1; return hash(value); } });
+assert.deepEqual(mismatched, emptyTrend);
+assert.ok(mismatchedHashCalls > emptyHashCalls, "eligible envelope still requires actual source validation");
+const revokedStore = structuredClone(store);
+revokedStore.thoughts.at(-1).contextAllowed = false;
+const revokedTrend = currentRecordCompressionTrend(revokedStore, trendOptions);
+assert.equal(revokedTrend.payload.availableDays, RECORD_COMPRESSION_WINDOW_DAYS - 1);
+assert.equal(revokedTrend.citationSources.some(source => source.source.resourceId === `question-${quoteDate}`), false);
+
+const evening = recordCompressionWindow(pressureDate, "evening");
+const slotInput = buildRecordCompressionInput(pressureStore, {
+  ...trendOptions, localDate: pressureDate, windowKey: evening.windowKey,
+  promptVersion: RECORD_COMPRESSION_PROMPT_VERSION, sourcePermission: () => true
+});
+const slotSource = slotInput.userSources.find(source => source.recordId === pressureQuestionId);
+const slotSummary = parseRecordCompressionOutput({
+  schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+  thoughtsIdeas: { openQuestions: [{ text: "有效晚间增量摘要。", sourceIds: [slotSource.sourceId] }] }
+}, { input: slotInput, id: "eligible-evening", generatedAt: asOf });
+// 与正式保存边界一致：模型解析结果再绑定日期及来源引用。
+Object.assign(slotSummary, { localDate: pressureDate, sourceRefs: slotInput.sourceManifest });
+assert.equal(slotSummary.schemaVersion, RECORD_SLOT_OUTPUT_SCHEMA_VERSION);
+const fallbackStore = { ...pressureStore, recordCompressions: [pressureSummary,
+  { ...slotSummary, sourceManifestHash: "0".repeat(64) }] };
+assert.deepEqual(currentRecordCompressionTrend(fallbackStore, trendOptions), pressureTrend,
+  "a slot envelope with stale sources must still fall back to the valid legacy daily summary");
+const slotTrend = currentRecordCompressionTrend({
+  ...pressureStore, recordCompressions: [pressureSummary, slotSummary]
+}, trendOptions);
+assert.ok(slotTrend.payload.userSubjective.some(row => row.text === "有效晚间增量摘要。"));
+assert.equal(slotTrend.payload.userSubjective.some(row => row.text === "希望安排晚间散步。"), false,
+  "validated incremental summaries still take precedence over the legacy daily summary");
+for (const invalid of [
+  { accountId: 123 }, { accountId: " " }, { asOf: "2026-10-10T12:00:00" },
+  { asOf: "not-a-date" }, { timezone: "invalid-timezone" }
+]) {
+  assert.throws(() => currentRecordCompressionTrend(noSummaryStore, { ...trendOptions, ...invalid }),
+    /accountId|asOf|时区|timestamp/);
+}
+
+// S1：多日正文同时超预算时必须先裁最旧日期，最新一天始终保留。
+const newestFirstStore = createEmptyStore();
+for (const localDate of localDates) {
+  newestFirstStore.thoughts.push({
+    id: `order-question-${localDate}`, type: "question",
+    content: `当天原文 ${localDate}。`, authorType: "user", origin: "manual",
+    occurredAt: `${localDate}T08:00:00.000Z`, occurredOn: localDate, version: 1
+  });
+}
+for (const localDate of localDates) {
+  const input = buildRecordCompressionInput(newestFirstStore, {
+    accountId: "account-a", localDate, timezone: DEFAULT_RECORD_TIMEZONE,
+    asOf, promptVersion: RECORD_COMPRESSION_PROMPT_VERSION, sourcePermission: () => true, hash
+  });
+  const userSource = input.userSources.find(source => source.recordId === `order-question-${localDate}`);
+  const rows = count => Array.from({ length: count }, (_, index) => ({
+    text: `${localDate}｜${`观察正文${index}。`.repeat(30)}`,
+    nature: "user_fact",
+    sourceIds: [userSource.sourceId]
+  }));
+  const summary = parseRecordCompressionOutput({
+    schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+    daily: { observations: rows(2), metricKeys: [], missing: [] },
+    thoughtsIdeas: {
+      focus: rows(1).map(row => ({ ...row, nature: "user_subjective" })),
+      changes: [],
+      openQuestions: []
+    },
+    other: { themes: rows(1), collectedQuotes: [] }
+  }, { input, id: `order-summary-${localDate}`, generatedAt: asOf });
+  Object.assign(summary, {
+    localDate, timezone: DEFAULT_RECORD_TIMEZONE, promptVersion: RECORD_COMPRESSION_PROMPT_VERSION,
+    periodStart: input.window.start, periodEnd: input.window.endExclusive, sourceRefs: input.sourceManifest
+  });
+  newestFirstStore.recordCompressions.push(summary);
+}
+const orderedTrend = currentRecordCompressionTrend(newestFirstStore, trendOptions);
+assert.equal(orderedTrend.payload.contextTruncated, true, "multi-day text must exceed the trend budget");
+assert.equal(orderedTrend.payload.days[0].localDate, localDates.at(-1));
+assert.ok(orderedTrend.payload.userFacts.some(row => row.localDate === localDates.at(-1)
+  && row.text.startsWith(`${localDates.at(-1)}｜`)), "the newest day must survive trend trimming");
+assert.equal(orderedTrend.payload.userFacts.some(row => row.localDate === localDates[0]), false,
+  "the oldest day must be trimmed first");
+const trimmedDates = orderedTrend.payload.days.map(day => day.localDate);
+assert.deepEqual(trimmedDates, [...trimmedDates].sort().reverse(), "retained days must stay newest-first");
+
 console.log("Record-compression trend context source separation and AI-reference regression passed.");

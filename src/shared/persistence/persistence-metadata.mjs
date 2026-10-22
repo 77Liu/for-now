@@ -159,7 +159,9 @@ function trashResources(store) {
         lifecycle: currentLifecycle,
         createdAt: timestamp(item.createdAt),
         deletedAt,
-        trashId: String(entry.id || "")
+        trashId: String(entry.id || ""),
+        permanentlyPurged: entry.permanentlyPurged === true,
+        purgedAt: timestamp(entry.purgedAt)
       });
       for (const field of CHILD_FIELDS) {
         if (!Array.isArray(item[field])) continue;
@@ -437,6 +439,23 @@ export function synchronizePersistenceMetadata(before, after, now = () => new Da
 
   for (const [key, resource] of deleted) {
     let entry = entries.get(key);
+    if (resource.permanentlyPurged) {
+      if (!entry) {
+        entry = {
+          ...resource, state: "deleted", tombstone: true,
+          restoredAt: "", history: []
+        };
+        entries.set(key, entry);
+      }
+      if (entry.state !== "purged") {
+        Object.assign(entry, {
+          state: "purged", tombstone: true,
+          purgedAt: resource.purgedAt || at, trashId: resource.trashId
+        });
+        appendEvent(entry, "purged", resource.purgedAt || at, { trashId: resource.trashId });
+      }
+      continue;
+    }
     if (!entry) {
       entry = {
         ...resource,

@@ -318,6 +318,31 @@ assert.deepEqual(providerDashboard.services.find(item => item.key === "volcengin
 assert.equal(providerDashboard.daily[0].services.volcengineAsr.calls, 1);
 assert.equal(providerDashboard.daily[0].services.volcengineOcr.calls, 1);
 assert.equal(providerDashboard.pricing.providerRates.length, 6);
+const midnightUsage = normalizeAiUsage({
+  trackingStartedAt: "2026-10-17T18:00:00.000Z",
+  entries: [{
+    ...peak,
+    id: "shanghai-midnight",
+    callId: "shanghai-midnight",
+    createdAt: "2026-10-17T18:00:00.000Z"
+  }]
+});
+assert.equal(
+  usageDashboard(
+    midnightUsage,
+    "2026-10-18",
+    "2026-10-18",
+    7.2,
+    7.2,
+    "Asia/Shanghai"
+  ).summary.calls,
+  1
+);
+assert.equal(
+  usageDashboard(midnightUsage, "2026-10-18", "2026-10-18", 7.2, 7.2, "UTC")
+    .summary.calls,
+  0
+);
 assert.ok(providerDashboard.pricing.providerRates.every(item => (
   item.priceCny > 0
   && item.checkedAt === "2026-10-02"
@@ -431,6 +456,7 @@ try {
   });
 
   let costSettingsFail = false, costReads = 0, costWrites = 0;
+  const costUsageQueries = [];
   const costRepository = createAccountDocumentRepository({
     name: "costPlan", getFile: () => path.join(directory, `${context.getStore().account}-cost.json`),
     readDocument, writeDocument: async (...args) => { costWrites += 1; await writeDocument(...args); },
@@ -440,7 +466,11 @@ try {
   const costs = createAiCostService({
     repository: costRepository, cnyPerUsd: 7.2, now,
     readSettings: async () => { costReads += 1; if (costSettingsFail && costReads % 2 === 0) throw new Error("settings read failed"); return initial; },
-    readUsage: async () => sampleUsage
+    readUsage: async options => {
+      costUsageQueries.push(options);
+      return sampleUsage;
+    },
+    getTimezone: () => "Asia/Shanghai"
   });
   const unchangedSettings = structuredClone(initial), unchangedUsage = structuredClone(sampleUsage);
   await Promise.all(["a", "b"].map((account, index) => run(account, () => costs.save({ monthlyBudgetCny: 50 + index }))));
@@ -455,6 +485,7 @@ try {
   assert.equal(changes.length, previousChanges);
   costSettingsFail = false;
   assert.equal((await run("a", costs.read)).monthlyBudgetCny, 30);
+  assert.ok(costUsageQueries.every(query => query.timezone === "Asia/Shanghai"));
   assert.deepEqual(initial, unchangedSettings);
   assert.deepEqual(sampleUsage, unchangedUsage);
 
@@ -522,6 +553,141 @@ try {
   (await pendingCostQuota.reserveAttempt()).release();
   pendingCost.commit();
 
+  let persistedRaceCalls = 0, holdRaceRead = false, releaseRaceRead, enterRaceRead;
+  const raceReadEntered = new Promise(resolve => { enterRaceRead = resolve; });
+  const callRaceQuota = createAiUsageService({
+    repository: {
+      readDaySummary: async () => {
+        const snapshot = { calls: persistedRaceCalls, knownCostCny: 0, unknownCostCalls: 0 };
+        if (holdRaceRead) {
+          enterRaceRead();
+          await new Promise(resolve => { releaseRaceRead = resolve; });
+        }
+        return snapshot;
+      }
+    },
+    getAccountKey: () => "quota-race",
+    dailyCallLimit: 1,
+    dailyCostLimitCny: 100,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const firstRaceReservation = await callRaceQuota.reserveAttempt();
+  holdRaceRead = true;
+  const secondRaceReservation = callRaceQuota.reserveAttempt();
+  await raceReadEntered;
+  persistedRaceCalls = 1;
+  firstRaceReservation.commit();
+  releaseRaceRead();
+  await assert.rejects(secondRaceReservation, { code: "AI_DAILY_CALL_LIMIT" });
+
+  let persistedRaceCost = 0, holdCostRead = false, releaseCostRead, enterCostRead;
+  const costReadEntered = new Promise(resolve => { enterCostRead = resolve; });
+  const costRaceQuota = createAiUsageService({
+    repository: {
+      readDaySummary: async () => {
+        const snapshot = { calls: 0, knownCostCny: persistedRaceCost, unknownCostCalls: 0 };
+        if (holdCostRead) {
+          enterCostRead();
+          await new Promise(resolve => { releaseCostRead = resolve; });
+        }
+        return snapshot;
+      }
+    },
+    getAccountKey: () => "cost-race",
+    dailyCallLimit: 100,
+    dailyCostLimitCny: 1,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const firstCostReservation = await costRaceQuota.reserveAttempt({ estimatedCostCny: 0.6 });
+  holdCostRead = true;
+  const secondCostReservation = costRaceQuota.reserveAttempt({ estimatedCostCny: 0.5 });
+  await costReadEntered;
+  persistedRaceCost = 0.6;
+  firstCostReservation.commit();
+  releaseCostRead();
+  await assert.rejects(secondCostReservation, { code: "AI_DAILY_COST_LIMIT" });
+
+  let interleaveCalls = 0;
+  const interleaveQuota = createAiUsageService({
+    repository: {
+      readDaySummary: async () => {
+        const snapshot = { calls: interleaveCalls, knownCostCny: 0, unknownCostCalls: 0 };
+        await new Promise(resolve => setImmediate(resolve));
+        if (interleaveCalls === 0) interleaveCalls = 1;
+        return snapshot;
+      }
+    },
+    getAccountKey: () => "order-interleave",
+    dailyCallLimit: 2,
+    dailyCostLimitCny: 100,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const interleaved = await Promise.allSettled([
+    interleaveQuota.reserveAttempt(),
+    interleaveQuota.reserveAttempt(),
+    interleaveQuota.reserveAttempt()
+  ]);
+  assert.equal(interleaved.filter(item => item.status === "fulfilled").length, 1);
+  assert.equal(interleaved.find(item => item.status === "rejected").reason.code, "AI_DAILY_CALL_LIMIT");
+  assert.equal(interleaveCalls, 1);
+  interleaved.filter(item => item.status === "fulfilled").forEach(item => item.value.release());
+
+  const handoffEntries = [];
+  const handoffQuota = createAiUsageService({
+    repository: { read: async () => ({ entries: handoffEntries }) },
+    getAccountKey: () => "order-handoff",
+    dailyCallLimit: 2,
+    dailyCostLimitCny: 100,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const handoffFirst = await handoffQuota.reserveAttempt();
+  handoffFirst.retain({ costKnown: true, costCny: 0 });
+  handoffEntries.push({ createdAt: now(), costKnown: true, costCny: 0 });
+  const handoffSecond = await handoffQuota.reserveAttempt();
+  assert.equal(typeof handoffSecond, "function");
+  await assert.rejects(handoffQuota.reserveAttempt(), { code: "AI_DAILY_CALL_LIMIT" });
+  handoffSecond.release();
+  handoffFirst.commit();
+  const handoffThird = await handoffQuota.reserveAttempt();
+  assert.equal(typeof handoffThird, "function");
+  handoffThird.release();
+
+  // G2：持久基数与本地已记录增量必须相加，已有用量不得吞掉待入账的新调用。
+  const g2Calls = { calls: 5, knownCostCny: 0, unknownCostCalls: 0 };
+  const g2CallQuota = createAiUsageService({
+    repository: { readDaySummary: async () => ({ ...g2Calls }) },
+    getAccountKey: () => "quota-baseline-calls",
+    dailyCallLimit: 6,
+    dailyCostLimitCny: 100,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const g2Retained = await g2CallQuota.reserveAttempt();
+  g2Retained.retain({ costKnown: true, costCny: 0 });
+  await assert.rejects(g2CallQuota.reserveAttempt(), { code: "AI_DAILY_CALL_LIMIT" });
+  g2Calls.calls = 6;
+  await assert.rejects(g2CallQuota.reserveAttempt(), { code: "AI_DAILY_CALL_LIMIT" });
+
+  const g2Cost = { calls: 0, knownCostCny: 5, unknownCostCalls: 0 };
+  const g2CostQuota = createAiUsageService({
+    repository: { readDaySummary: async () => ({ ...g2Cost }) },
+    getAccountKey: () => "quota-baseline-cost",
+    dailyCallLimit: 100,
+    dailyCostLimitCny: 6.4,
+    cnyPerUsd: 7.2,
+    now
+  });
+  const g2RetainedCost = await g2CostQuota.reserveAttempt();
+  g2RetainedCost.retain({ costKnown: true, costCny: 1 });
+  await assert.rejects(g2CostQuota.reserveAttempt({ estimatedCostCny: 0.5 }), { code: "AI_DAILY_COST_LIMIT" });
+  // 持久账目追上本地写账后仍只计一次：6 + 0.3 < 6.4 应放行，而不是按双份基数拒绝。
+  g2Cost.knownCostCny = 6;
+  (await g2CostQuota.reserveAttempt({ estimatedCostCny: 0.3 })).release();
+
   let auditFails = false, usageFails = false;
   const auditRecords = [], usageRecords = [], events = [];
   const audit = createAiAudit({
@@ -535,23 +701,32 @@ try {
   const terminal = { callId: "audit-test", status: "success", startedAt: now(), response: { httpStatus: 200, content: "private-test-value" } };
   await run("audit-a", async () => {
     await audit.start(terminal);
-    await audit.recordDeepSeekAttempt({ usage: null, audit: terminal, usageMetadata: { model: "deepseek-flash", createdAt: now() } });
+    await audit.recordDeepSeekAttempt({ usage: null, audit: terminal, usageMetadata: { callId: terminal.callId, model: "deepseek-flash", createdAt: now() } });
     auditFails = true;
-    await audit.start(terminal);
-    await audit.recordDeepSeekAttempt({ audit: terminal, usageMetadata: { model: "deepseek-flash", createdAt: now() } });
+    await assert.rejects(audit.start({ ...terminal, callId: "begin-failed" }), { code: "AI_AUDIT_UNAVAILABLE" });
     auditFails = false;
     usageFails = true;
-    await audit.recordDeepSeekAttempt({ audit: terminal, usageMetadata: { model: "deepseek-flash", createdAt: now() } });
+    const usageFailure = { ...terminal, callId: "usage-failed", id: "usage-failed" };
+    await audit.start(usageFailure);
+    await audit.recordDeepSeekAttempt({ audit: usageFailure, usageMetadata: { callId: usageFailure.callId, model: "deepseek-flash", createdAt: now() } });
+    usageFails = false;
+    await audit.recoverPending();
+    const finishFailure = { ...terminal, callId: "finish-failed", id: "finish-failed" };
+    await audit.start(finishFailure);
     auditFails = true;
-    await audit.recordDeepSeekAttempt({ audit: terminal, usageMetadata: { model: "deepseek-flash", createdAt: now() } });
+    await audit.recordDeepSeekAttempt({ audit: finishFailure, usageMetadata: { callId: finishFailure.callId, model: "deepseek-flash", createdAt: now() } });
+    auditFails = false;
+    await audit.recoverPending();
     assert.equal(await audit.segmentationCall("mock", "group", {}, async () => "success", () => ({})), "success");
     await assert.rejects(audit.segmentationCall("mock", "group", {}, async () => { throw Object.assign(new Error("provider failed"), { code: "PROVIDER_FAIL" }); }), { code: "PROVIDER_FAIL" });
   });
-  assert.equal(usageRecords.length, 1);
-  assert.equal(auditRecords.length, 3);
+  assert.equal(usageRecords.length, 5);
+  assert.ok(auditRecords.length >= 10);
   assert.doesNotMatch(JSON.stringify(auditRecords), /private-test-value/);
-  for (const target of ["usage", "audit", "audit_start"]) assert.ok(events.some(([, name, fields]) => name === "ai.log_failed" && fields.target === target));
-  assert.equal(events.filter(([, name]) => name === "ai.completed").length, 4);
+  for (const target of ["usage", "audit_finish", "audit_start"]) {
+    assert.ok(events.some(([, name, fields]) => name === "ai.log_failed" && fields.target === target));
+  }
+  assert.equal(events.filter(([, name]) => name === "ai.completed").length, 3);
 
   let recoveryUsageFails = true, recoveryAuditFails = true, retained = 0, committed = 0;
   const recoveredUsage = [], recoveredAudits = [];
@@ -577,13 +752,13 @@ try {
   const persistence = await run("recovery-a", () => recoverableAudit.recordDeepSeekAttempt({
     usage: { prompt_tokens: 20, completion_tokens: 5 },
     audit: { ...recoverableTerminal, actor: { userId: "recovery-a" } },
-    usageMetadata: { model: "deepseek-flash", createdAt: now(), scene: "thoughtAnswer", status: "success" },
+    usageMetadata: { callId: recoverableTerminal.callId, model: "deepseek-flash", createdAt: now(), scene: "thoughtAnswer", status: "success" },
     reservation: {
       retain() { retained += 1; },
       commit() { committed += 1; }
     }
   }));
-  assert.deepEqual(persistence, { usagePersisted: false, auditPersisted: false, pendingUsage: 1, pendingAudit: 1 });
+  assert.deepEqual(persistence, { usagePersisted: false, auditPersisted: false });
   assert.equal(retained, 1);
   assert.equal(committed, 0);
   recoveryUsageFails = false;
@@ -603,16 +778,103 @@ try {
   });
   assert.equal(committed, 1);
   assert.equal(recoveredUsage.length, 1);
-  assert.equal(recoveredAudits.length, 2);
+  assert.equal(recoveredAudits.length, 1);
   assert.equal(recoveredAudits[0].entry.usage.costKnown, true);
   assert.equal(recoveredAudits[0].entry.usage.costCny, recoveredUsage[0].costCny);
   assert.deepEqual(recoveredAudits[0].entry.usage.ratesCnyPerMillion, recoveredUsage[0].ratesCnyPerMillion);
   assert.deepEqual(recoveredAudits[0].entry.usage.costsCny, recoveredUsage[0].costsCny);
-  assert.equal(recoveredAudits.at(-1).entry.type, "ai.usage_recovered");
-  assert.deepEqual(
-    usageEntryFromAudit(recoveredAudits[0].entry),
-    recoveredUsage[0]
-  );
+  assert.deepEqual(usageEntryFromAudit(recoveredAudits[0].entry), recoveredUsage[0]);
+
+  const databaseRows = new Map();
+  const databaseUsage = new Map();
+  let databaseBeginFails = true;
+  let compatibilityFails = true;
+  let databaseProviderCalls = 0;
+  let databaseCallSequence = 0;
+  const databaseAudit = createAiAudit({
+    textLimit: 100,
+    getContext: () => ({
+      user: { id: "database-audit-account" },
+      traceId: "database-audit-trace",
+      secrets: []
+    }),
+    repository: {
+      async beginAttempt(row) {
+        if (databaseBeginFails) throw new Error("database begin failed");
+        if (databaseRows.has(row.callId)) throw Object.assign(new Error("duplicate"), { code: "AI_AUDIT_CALL_ID_CONFLICT" });
+        databaseRows.set(row.callId, { ...structuredClone(row), status: "started" });
+      },
+      async finishAttempt(callId, terminalRow) {
+        const row = databaseRows.get(callId);
+        if (!row) throw Object.assign(new Error("missing"), { code: "AI_AUDIT_ATTEMPT_MISSING" });
+        if (row.status !== "started") throw Object.assign(new Error("conflict"), { code: "AI_AUDIT_STATE_CONFLICT" });
+        Object.assign(row, structuredClone(terminalRow));
+      }
+    },
+    recordUsageAttempt: async entry => {
+      if (databaseUsage.has(entry.callId)) throw new Error("duplicate usage");
+      databaseUsage.set(entry.callId, structuredClone(entry));
+    },
+    append: async () => {
+      if (compatibilityFails) throw new Error("compatibility unavailable");
+    },
+    updateUsage: async () => {
+      throw new Error("database audit must not update the account usage document");
+    },
+    logEvent: async (...args) => events.push(args),
+    now,
+    createId: () => `database-call-${++databaseCallSequence}`
+  });
+  await assert.rejects(databaseAudit.providerCall({
+    provider: "volcengine",
+    service: "vision",
+    scene: "visionOcr",
+    action: "OCRNormal"
+  }, async () => {
+    databaseProviderCalls += 1;
+    return {};
+  }), { code: "AI_AUDIT_UNAVAILABLE" });
+  assert.equal(databaseProviderCalls, 0);
+  assert.equal(databaseRows.size, 0);
+  databaseBeginFails = false;
+  const databaseResult = await databaseAudit.providerCall({
+    provider: "volcengine",
+    service: "vision",
+    scene: "visionOcr",
+    action: "OCRNormal",
+    request: { imageBytes: 12 }
+  }, async () => {
+    databaseProviderCalls += 1;
+    return { requestId: "database-provider-request" };
+  });
+  assert.equal(databaseResult.requestId, "database-provider-request");
+  assert.equal(databaseProviderCalls, 1);
+  assert.equal(databaseRows.size, 1);
+  assert.equal(databaseUsage.size, 1);
+  const databaseRow = [...databaseRows.values()][0];
+  assert.equal(databaseRow.status, "success");
+  assert.equal(databaseRow.triggerType, "system_internal");
+  assert.equal(databaseRow.resultAudience, "internal");
+  assert.equal(databaseRow.reasoningVisibility, "privileged_only");
+  assert.equal(databaseRow.persistenceMode, "audit_only");
+  assert.deepEqual(databaseRow.requestPayload.systemPrompt, { notApplicable: true });
+  assert.equal(databaseRow.responsePayload.reasoningContent, null);
+  const preparedWithoutDispatch = await databaseAudit.prepareProviderCall({
+    provider: "volcengine",
+    service: "speech",
+    scene: "speechSynthesis",
+    action: "synthesize"
+  });
+  assert.equal(await preparedWithoutDispatch.finishUninvoked(
+    Object.assign(new Error("budget rejected"), { code: "AI_SITE_DAILY_COST_LIMIT" })
+  ), true);
+  assert.equal(await preparedWithoutDispatch.finishUninvoked(new Error("duplicate")), false);
+  const notInvokedRow = [...databaseRows.values()].find(row => row.dispatchState === "not_invoked");
+  assert.ok(notInvokedRow);
+  assert.equal(notInvokedRow.status, "failed");
+  assert.equal(notInvokedRow.dispatchState, "not_invoked");
+  assert.equal(notInvokedRow.usagePayload, null);
+  assert.equal(databaseUsage.size, 1);
 
   const providerUsage = [], providerAudits = [], providerEvents = [];
   const providerAudit = createAiAudit({

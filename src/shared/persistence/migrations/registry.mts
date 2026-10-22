@@ -1,0 +1,122 @@
+/**
+ * Registers ordered PostgreSQL schema components owned by the active serial stage.
+ * Established: 2026-10-18
+ * Status: active
+ * Boundary: registration validates ownership and source markers; SQL remains in postgres-schema.sql.
+ */
+
+export type MigrationDescriptor = Readonly<{
+  id: string;
+  order: number;
+  ownerRequirementId: string;
+  marker: string;
+}>;
+
+export const POSTGRES_SCHEMA_COMPONENTS: readonly MigrationDescriptor[] = Object.freeze([
+  Object.freeze({
+    id: "core-schema-v1",
+    order: 10,
+    ownerRequirementId: "legacy-core",
+    marker: "migration:core-schema-v1"
+  }),
+  Object.freeze({
+    id: "ai-audit-v1",
+    order: 20,
+    ownerRequirementId: "reczz28ORRaxSCBn",
+    marker: "migration:ai-audit-v1"
+  }),
+  Object.freeze({
+    id: "auth-row-v1",
+    order: 30,
+    ownerRequirementId: "reczz28ORRaxPAap",
+    marker: "migration:auth-row-v1"
+  }),
+  Object.freeze({
+    id: "record-commands-v1",
+    order: 40,
+    ownerRequirementId: "reczz28ORRaxPiK3",
+    marker: "migration:record-commands-v1"
+  }),
+  Object.freeze({
+    id: "thought-chain-index-v1",
+    order: 50,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:thought-chain-index-v1"
+  }),
+  Object.freeze({
+    id: "record-closure-index-v1",
+    order: 60,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:record-closure-index-v1"
+  }),
+  Object.freeze({
+    id: "task-request-index-v1",
+    order: 70,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-request-index-v1"
+  }),
+  Object.freeze({
+    id: "task-recovery-index-v1",
+    order: 80,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-recovery-index-v1"
+  }),
+  Object.freeze({
+    id: "task-model-input-index-v1",
+    order: 90,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-model-input-index-v1"
+  }),
+  Object.freeze({
+    id: "task-context-order-index-v1",
+    order: 100,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-context-order-index-v1"
+  }),
+  Object.freeze({
+    id: "task-learning-source-index-v1",
+    order: 110,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-learning-source-index-v1"
+  }),
+  Object.freeze({
+    id: "task-source-calendar-index-v1",
+    order: 120,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-source-calendar-index-v1"
+  }),
+  Object.freeze({
+    id: "task-material-candidate-index-v1",
+    order: 130,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-material-candidate-index-v1"
+  }),
+  Object.freeze({
+    id: "task-importance-score-index-v1",
+    order: 140,
+    ownerRequirementId: "reczz28ORRaxSFnV",
+    marker: "migration:task-importance-score-index-v1"
+  })
+]);
+
+/**
+ * Rejects duplicate, unordered, or missing schema registrations before executing SQL.
+ * @since unreleased
+ */
+export function assertPostgresSchemaRegistry(schema: string): void {
+  const ids = new Set<string>();
+  let previousOrder = Number.NEGATIVE_INFINITY;
+  for (const descriptor of POSTGRES_SCHEMA_COMPONENTS) {
+    if (!descriptor.id || ids.has(descriptor.id)) {
+      throw new Error(`Duplicate PostgreSQL schema component: ${descriptor.id}`);
+    }
+    if (!Number.isSafeInteger(descriptor.order) || descriptor.order <= previousOrder) {
+      throw new Error(`PostgreSQL schema component order is invalid: ${descriptor.id}`);
+    }
+    if (!schema.includes(descriptor.marker)) {
+      throw new Error(`PostgreSQL schema component marker is missing: ${descriptor.id}`);
+    }
+    ids.add(descriptor.id);
+    previousOrder = descriptor.order;
+  }
+}

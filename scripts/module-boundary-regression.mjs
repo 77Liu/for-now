@@ -37,6 +37,18 @@ try {
   for (const relative of checkerFiles) {
     await write(relative, await fs.readFile(path.join(ROOT, relative), "utf8"));
   }
+  await fs.symlink(
+    path.join(ROOT, "node_modules"),
+    path.join(temporary, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir"
+  );
+  await write("fixture.ts", "export {};\n");
+  const fixtureTsconfig = JSON.stringify({
+    compilerOptions: { noEmit: true, skipLibCheck: true },
+    files: ["fixture.ts"]
+  });
+  await write("tsconfig.ai-migrations.json", fixtureTsconfig);
+  await write("tsconfig.thought-db-regression.json", fixtureTsconfig);
   await write("server.mjs", "export {};\n");
   await write("admin-snapshot.mjs", "export {};\n");
   await write("public/app.js", "export {};\n");

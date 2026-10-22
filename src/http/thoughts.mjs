@@ -1,3 +1,4 @@
+import { THOUGHT_PAGING } from "../../.build/typescript/backend/shared/thought-pagination/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 import { publicAiTask } from "../modules/tasks/index.mjs";
 
@@ -50,14 +51,18 @@ export function createThoughtHttp({
 
   async function handleV1(req, res, url, v1) {
     if (req.method === "GET" && url.pathname === "/api/v1/thought-chains") {
+      const direction = url.searchParams.get("direction") || "next";
+      if (!["next", "prev"].includes(direction) || (direction === "prev" && !url.searchParams.get("cursor")) || (url.searchParams.has("page") && url.searchParams.get("page") !== "1")
+        || (url.searchParams.has("page") && url.searchParams.has("cursor"))) return v1.error(res, 400, "分页参数冲突或方向无效", "INVALID_QUERY");
       const page = await workflows.listChains({
-        ...v1.pagination(url, { defaultLimit: 20, maxLimit: 20, maxCursorLength: 256 }),
+        direction,
+        ...v1.pagination(url, { defaultLimit: THOUGHT_PAGING.pageSize, maxLimit: THOUGHT_PAGING.pageSize, maxCursorLength: THOUGHT_PAGING.maxCursorDecodedLength }),
         query: safeText(url.searchParams.get("q"), 200),
         tag: safeText(url.searchParams.get("tag"), 30),
         sort: url.searchParams.get("sort") === "created" ? "created" : "occurred"
       });
       if (page.invalidCursor) return v1.error(res, 400, "游标无效或已过期", "INVALID_CURSOR");
-      return v1.success(res, 200, page.items, { meta: { nextCursor: v1.nextCursor(page.nextId), tags: page.tags } });
+      return v1.success(res, 200, page.items, { meta: { nextCursor: v1.nextCursor(page.nextId), prevCursor: v1.nextCursor(page.prevId), tags: page.tags } });
     }
     if (req.method === "POST" && url.pathname === "/api/v1/thought-chains") {
       const input = await bodyJson(req);

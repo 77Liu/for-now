@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# A fresh production decision is issued separately for this fixed candidate.
+# The coordinator issues a fresh attempt within the existing authorization for this candidate.
 expected=${1:-}
 attempt=${2:-}
-if [ "$#" -ne 2 ] || [[ ! "$expected" =~ ^[a-f0-9]{40}$ ]] || [[ ! "$attempt" =~ ^[a-f0-9]{32}$ ]]; then
-  echo "Usage: deploy-with-media.sh <full reviewed main SHA> <fresh production attempt ID>" >&2
+branch=${3:-}
+if [ "$#" -ne 3 ] || [[ ! "$expected" =~ ^[a-f0-9]{40}$ ]] || [[ ! "$attempt" =~ ^[a-f0-9]{32}$ ]]; then
+  echo "Usage: deploy-with-media.sh <full reviewed candidate SHA> <production attempt ID> <release/...|hotfix/...|main>" >&2
+  exit 1
+fi
+# A release candidate need not be on main; the remote fetch must still match its exact SHA.
+case "$branch" in
+  release/*|hotfix/*|main) ;;
+  *) echo "A release/hotfix candidate or an already formal main branch is required." >&2; exit 1 ;;
+esac
+if [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || ! git check-ref-format "refs/heads/$branch" >/dev/null; then
+  echo "Invalid deployment branch." >&2
   exit 1
 fi
 project=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -37,4 +47,4 @@ scp "${ssh_options[@]}" "$project/deploy/media-delivery.production.json" "$targe
 scp "${ssh_options[@]}" "$manifest" "$target:$stage/SHA256SUMS"
 # Only the independently installed guarded entry may write env/profile or switch code.
 ssh "${ssh_options[@]}" "$target" \
-  "cd '$stage' && chmod 600 media-delivery.production.json SHA256SUMS && sha256sum -c SHA256SUMS && test \"\$(sha256sum /usr/local/sbin/for-now-deploy | cut -d ' ' -f 1)\" = '$deployer_hash' && RELEASE_ATTEMPT_ID='$attempt' RELEASE_CANDIDATE_SHA='$expected' DEPLOY_BRANCH=main DEPLOY_EXPECTED_COMMIT='$expected' DEPLOY_MEDIA_CONFIG='$stage/media-delivery.production.json' /usr/local/sbin/for-now-deploy"
+  "cd '$stage' && chmod 600 media-delivery.production.json SHA256SUMS && sha256sum -c SHA256SUMS && test \"\$(sha256sum /usr/local/sbin/for-now-deploy | cut -d ' ' -f 1)\" = '$deployer_hash' && RELEASE_ATTEMPT_ID='$attempt' RELEASE_CANDIDATE_SHA='$expected' DEPLOY_BRANCH='$branch' DEPLOY_EXPECTED_COMMIT='$expected' DEPLOY_MEDIA_CONFIG='$stage/media-delivery.production.json' /usr/local/sbin/for-now-deploy"

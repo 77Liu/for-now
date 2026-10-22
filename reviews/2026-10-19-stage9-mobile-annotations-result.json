@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "task": "v0516-stage9-mobile-annotations",
+  "status": "PASS_LOCAL_FUNCTIONAL_DEVICE_PARTIAL",
+  "base": {
+    "kind": "git_commit",
+    "value": "2119f6"
+  },
+  "rule": {
+    "kind": "git_commit",
+    "value": "9c4916"
+  },
+  "candidate": {
+    "kind": "source_manifest",
+    "files": [
+      {
+        "path": "public/frontend/features/annotations/view.mjs",
+        "sha256": "8f7bc3"
+      },
+      {
+        "path": "scripts/frontend-annotations-feature-regression.mjs",
+        "sha256": "e4b978"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "command": [
+        "npm",
+        "run",
+        "check:modules"
+      ],
+      "exit": 0,
+      "seconds": 11.189939667005092,
+      "log": "/tmp/for-now-stage9-final-check-0.log"
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "typecheck:frontend"
+      ],
+      "exit": 0,
+      "seconds": 0.5372175409866031,
+      "log": "/tmp/for-now-stage9-final-check-1.log"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/frontend-annotations-feature-regression.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.032377875002566725,
+      "log": "/tmp/for-now-stage9-final-check-2.log"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/frontend-thoughts-feature-regression.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.3429119580250699,
+      "log": "/tmp/for-now-stage9-final-check-3.log"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/collaboration-regression.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.4726316250162199,
+      "log": "/tmp/for-now-stage9-final-check-4.log"
+    }
+  ],
+  "browser": {
+    "environment": "desktop Chrome, loopback HTTP, real DOM and public controller, isolated data/media ports",
+    "range": {
+      "start": 3,
+      "end": 17,
+      "quote": "重复正文第一段跨段第二处重复"
+    },
+    "touch": "synthetic touchstart before native Range collapse; menu remains visible and real agent-browser click opens composer",
+    "summary_during_draft_wait": {
+      "requests": 0,
+      "draft_clears": 0,
+      "phase": "invalid",
+      "text_retained": true,
+      "submit_disabled": false,
+      "reselection_message": true
+    },
+    "complete_source_remount": {
+      "restored": true,
+      "phase": "composing",
+      "text_retained": true
+    },
+    "limits": [
+      "not native long press",
+      "not real media upload",
+      "not a PostgreSQL write probe"
+    ]
+  },
+  "public_checks": [
+    "summary replacement before submit: zero POST and retained text",
+    "summary replacement after persist await: zero POST and restored button",
+    "summary replacement after upload await: zero POST and invalid selection",
+    "predecessor ACK, reread, session isolation and thought consumer regressions"
+  ],
+  "prior_failures": [
+    {
+      "exit": 1,
+      "log": "/tmp/for-now-stage9-summary-baseline.log",
+      "kind": "FIXTURE_FAIL",
+      "reason": "fake visible host omitted getBoundingClientRect"
+    },
+    {
+      "exit": 1,
+      "log": "/tmp/for-now-stage9-summary-baseline-2.log",
+      "kind": "BUSINESS_FAIL",
+      "reason": "summary replacement allowed one POST, expected zero",
+      "resolution": "isSelectionCurrent now rejects blockCount summaries"
+    },
+    {
+      "kind": "FIXTURE_FAIL",
+      "reason": "DOM probe passed unbound window timer methods",
+      "resolution": "wrap timer/frame ports before valid menu probe"
+    },
+    {
+      "exit": null,
+      "kind": "UNKNOWN_COMMAND_RESULT",
+      "reason": "first long check attempt produced no persisted result",
+      "resolution": "final checks captured every subprocess exit"
+    }
+  ],
+  "reuse": {
+    "f8": "artifacts/local/v0516-f8-acceptance-current.json",
+    "stage8": "reviews/2026-10-19-stage8-annotation-counts-result.json",
+    "unchanged_source_fingerprints": {
+      "public/frontend/shared/annotation-selection.mts": "70222c",
+      "public/frontend/features/annotations/index.mjs": "8ae2ed",
+      "public/frontend/features/annotations/model.mjs": "b866fa",
+      "public/frontend/features/annotations/controller.mjs": "6e5ade",
+      "public/frontend/features/thoughts/loader.mjs": "4a92e5",
+      "public/frontend/app/runtime/collaboration-runtime.mjs": "2d9f0f",
+      "public/frontend/app/runtime/page-descriptors-insights.mjs": "49ab90",
+      "public/frontend/app/runtime/global-events.mjs": "2431e7",
+      "ios/App/AppUITests/AppUITests.swift": "d6d34b"
+    },
+    "native": "old SE3 iOS27 simulator 375pt WKWebView long press and cross-paragraph handles, 1 pass 0 fail 0 skip; not rerun",
+    "postgres": "stage8 AUTH_REQUIRED1 isolated PG Chrome create/reply/convert/delete readback; HTTP/backend unchanged this stage"
+  },
+  "limits": [
+    "Safari, installed PWA and real devices remain PARTIAL",
+    "stage8 final PG parent exit was not captured; retain its original restriction",
+    "production load and whole-version release gate not covered",
+    "94 real samples reused, no new sampling or search"
+  ],
+  "function_lines": {
+    "isSelectionCurrent": 14
+  },
+  "protected_f9_files": {
+    "public/frontend/app/runtime/home-runtime.mjs": "f6e3bf",
+    "public/frontend/app/runtime/kernel.mjs": "3d52f4",
+    "public/frontend/state/index.mjs": "7a714f",
+    "scripts/sync-coordinator-regression.mjs": "c22c4a",
+    "src/http/sync.mjs": "7afb9c"
+  },
+  "cleanup": {
+    "browser": "closed",
+    "http_probe": "stopped"
+  },
+  "review_ref": "reviews/2026-10-19-stage9-mobile-annotations.md"
+}

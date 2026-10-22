@@ -1,3 +1,5 @@
+import { THOUGHT_PAGING } from "../../../generated/thought-pagination-config.mjs";
+import { reconcileThoughtWindowMutation } from "../../features/thoughts/model.mjs";
 import { createNotificationRuntime } from "../../../generated/app/runtime/notification-runtime.mjs";
 import { BUSINESS_ID_BYTES, encodeBusinessId, isBusinessId } from "../../../generated/business-identifiers.mjs";
 import { sessionScope, sessionSerial } from "../../session/index.mjs";
@@ -5,6 +7,7 @@ import { mergeStateSnapshot, publishDomains, state } from "../../state/index.mjs
 import { localDateKey } from "../../time/index.mjs";
 import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
 import { createPersonalizedTaskRuntime } from "./personalized-task-runtime.mjs";
+import { createDataSyncRuntime } from "./data-sync-runtime.mjs";
 
 export function createDataRuntime({
   runtime,
@@ -13,6 +16,9 @@ export function createDataRuntime({
   createRequestCoordinator,
   createRefreshCoordinator,
   createIncrementalSync,
+  createRecordSyncLoop,
+  applyRecordBatch,
+  rebaseRecordScopes,
   $,
   getActionsCoordinator,
   renderStateChart,
@@ -25,14 +31,25 @@ export function createDataRuntime({
   ensureBackgroundResultsController,
   backgroundResultsRetryLimit
 } = {}) {
-const requestCoordinator=createRequestCoordinator({store:syncStore,send:(url,options)=>request(url,options)});
+// 真实publicControl提供mode/switchedAt；snapshotAt/loadedScopes不是工作区身份。
+const syncWorkspace=()=>runtime.localTestConfig?.enabled
+  ?JSON.stringify([runtime.localTestConfig.mode,runtime.localTestConfig.switchedAt||""]):"";
+const syncScope=()=>String(sessionSerial);
+function captureDataScope(){
+  const owner=runtime.currentUser?.id,session=sessionSerial,workspace=syncWorkspace();
+  return{owner,session,workspace,isCurrent:()=>owner===runtime.currentUser?.id&&session===sessionSerial&&workspace===syncWorkspace()}
+}
+const requestCoordinator=createRequestCoordinator({store:syncStore,send:(url,options)=>request(url,options),getWorkspace:syncWorkspace,getScope:syncScope});
 const refreshCoordinator=createRefreshCoordinator({
   session:sessionScope,
   requestState:async()=>{
     const route=runtime.pageRouter?.currentRoute(),key=routeDataKey(route),snapshot=await requestRouteState(route);
-    return key===routeDataKey(runtime.pageRouter?.currentRoute())?{...state,...snapshot}:state
+    if(key!==routeDataKey(runtime.pageRouter?.currentRoute()))return state;
+    if(!runtime.featureFlags?.recordSyncV2)return{...state,...snapshot};
+    const{thoughts:_recordThoughts,thoughtPage:_recordPage,...legacySnapshot}=snapshot;
+    return{...state,...legacySnapshot}
   },
-  afterReplace:()=>restorePendingProjections()
+  afterReplace:consumer=>restorePendingProjections(consumer)
 });
 function setAnswerStatus(id,message,kind="working"){
   document.querySelectorAll(`[data-answer-chain="${CSS.escape(id)}"]`).forEach(button=>{
@@ -106,7 +123,7 @@ function restorePendingProjection(snapshot,operationId){
     const prefix=`${snapshot.temporaryId}:`,previousLength=(state.thoughts||[]).length;
     state.thoughts=(state.thoughts||[]).filter(item=>(item.id!==snapshot.temporaryId&&!String(item.id).startsWith(prefix))||item._sync?.operationId!==operationId);
     if(state.thoughts.length===previousLength)return false;
-    publishDomains(new Set(["thoughts"]));return true
+    publishThoughtMutation();return true
   }
   if(snapshot.kind==="book.note.create"){
     const book=(state.books||[]).find(item=>item.id===snapshot.bookId);if(!book)return false;
@@ -136,14 +153,14 @@ function restorePendingProjection(snapshot,operationId){
   if(snapshot.kind==="thought.chain.update"){
     const root=snapshot.items.find(entry=>entry.value.id===snapshot.id),index=(state.thoughts||[]).findIndex(item=>item.id===snapshot.id);
     if(!root||index<0||state.thoughts[index]._sync?.operationId!==operationId)return false;
-    state.thoughts[index]=root.value;publishDomains(new Set(["thoughts"]));return true
+    state.thoughts[index]=root.value;publishThoughtMutation();return true
   }
   if(snapshot.kind==="thought.chain.delete"){
     if((state.thoughts||[]).some(item=>item.id===snapshot.id))return false;
     for(const entry of [...snapshot.items].sort((left,right)=>left.index-right.index)){
       if(!state.thoughts.some(item=>item.id===entry.value.id))state.thoughts.splice(Math.min(entry.index,state.thoughts.length),0,entry.value)
     }
-    publishDomains(new Set(["thoughts"]));return true
+    publishThoughtMutation();return true
   }
   return false
 }
@@ -165,12 +182,13 @@ function settlePendingProjection(projection,operationId,data){
     const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
     if(!root||root._sync?.operationId!==operationId)return false;
     if(data&&typeof data==="object")Object.assign(root,data);
-    delete root._sync;publishDomains(new Set(["thoughts"]));return true
+    delete root._sync;publishThoughtMutation();return true
   }
   return false
 }
 async function requestV1(url,options={},coordination={}){
   const method=String(options.method||"GET").toUpperCase();
+  const consumer=captureDataScope();
   let result,operationId="";
   if(["GET","HEAD"].includes(method))result=await request(url,options);
   else{
@@ -185,23 +203,25 @@ async function requestV1(url,options={},coordination={}){
         allocateBusinessId:true,
         provisionalId:isBusinessId(coordination.projection?.temporaryId)?coordination.projection.temporaryId:"",
         owner:runtime.currentUser?.id,url,options,domains:syncDomainsFor(url),...coordination,
-        onQueued:record=>{operationId=record.operationId;return onQueued?.(record)}
+        onQueued:record=>{operationId=record.operationId;if(consumer.isCurrent())return onQueued?.(record)}
       });
+      if(!consumer.isCurrent())throw new DOMException("数据作用域已变化","AbortError");
       settlePendingProjection(coordination.projection,operationId,result?.data);
       if(coordination.projection?.kind==="thought.chain.delete"){
         const id=coordination.projection.id,previousLength=(state.thoughts||[]).length;
         state.thoughts=(state.thoughts||[]).filter(item=>item.id!==id&&item.relatedTo!==id);
-        if(state.thoughts.length!==previousLength)publishDomains(new Set(["thoughts"]));
+        if(state.thoughts.length!==previousLength)publishThoughtMutation();
         reconcileActiveThoughtRoute()
       }
     }catch(error){
-      if(["failed","conflict"].includes(error?.syncStatus)){
+      if(consumer.isCurrent()&&["failed","conflict"].includes(error?.syncStatus)){
         if(typeof coordination.restoreProjection==="function")await coordination.restoreProjection(snapshot,operationId,error);
         else restorePendingProjection(snapshot,operationId)
       }
       throw error
     }
   }
+  if(!consumer.isCurrent())throw new DOMException("数据作用域已变化","AbortError");
   if(!result||result.error)throw new Error(result?.error?.message||"接口返回异常");
   return{data:result.data,meta:result.meta||{}}
 }
@@ -224,7 +244,13 @@ async function loadRouteState(route,requestSerial=++runtime.routeDataRequestSeri
   try{
     const snapshot=await requestRouteState(route);
     if(requestSerial!==runtime.routeDataRequestSerial||owner!==runtime.currentUser?.id||session!==sessionSerial)return false;
-    clearRouteLoadFailure(route);mergeStateSnapshot(snapshot);runtime.loadedRouteKey=key;runtime.fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);runtime.routeDataReady=true;renderVisibleRoute();runtime.runtimeFeatureRegistry?.notifyState(state,new Set(Object.keys(snapshot||{})));reconcileActiveThoughtRoute();return true
+    const recordOwned=runtime.featureFlags?.recordSyncV2&&runtime.applicationLifecycleReady;
+    const incoming=recordOwned?(({thoughts:_recordThoughts,thoughtPage:_recordPage,...rest})=>rest)(snapshot):snapshot;
+    clearRouteLoadFailure(route);mergeStateSnapshot(incoming);runtime.loadedRouteKey=key;runtime.fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);runtime.routeDataReady=true;
+    if(recordOwned)await runtime.syncController?.rebaseRecords?.();
+    if(requestSerial!==runtime.routeDataRequestSerial||owner!==runtime.currentUser?.id||session!==sessionSerial||key!==routeDataKey(runtime.pageRouter?.currentRoute()))return false;
+    renderVisibleRoute();runtime.runtimeFeatureRegistry?.notifyState(state,new Set(Object.keys(incoming||{})));reconcileActiveThoughtRoute();
+    return true
   }catch(error){
     if(requestSerial===runtime.routeDataRequestSerial&&owner===runtime.currentUser?.id&&session===sessionSerial){runtime.routeLoadFailureKey=key;renderRouteLoadFailure(route);showToast("当前页面读取失败，已有记录没有变化。","error")}
     return false
@@ -267,6 +293,11 @@ function showToast(message,kind="success"){
   clearTimeout(runtime.toastTimer);
   runtime.toastTimer=setTimeout(()=>toast.hidden=true,3200)
 }
+function publishThoughtMutation() {
+  reconcileThoughtWindowMutation(state, runtime.pageRouter?.currentRoute(), runtime.featureFlags?.thoughtPaging?.enabled, THOUGHT_PAGING);
+  publishDomains(new Set(["thoughts"]));
+}
+
 function applyPendingProjection(record){
   const projection=record?.projection;
   if(!projection)return false;
@@ -333,71 +364,42 @@ function applyPendingProjection(record){
     }];
     if(projection.payload.idea)items.push({id:`${projection.temporaryId}:idea`,type:"idea",relatedTo:rootId,content:projection.payload.idea,authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync});
     if(projection.payload.answer)items.push({id:`${projection.temporaryId}:answer`,type:"answer",relatedTo:rootId,content:projection.payload.answer,authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync});
-    state.thoughts=[...items,...state.thoughts];publishDomains(new Set(["thoughts"]));return true
+    state.thoughts=[...items,...state.thoughts];publishThoughtMutation();return true
   }
   if(projection.kind==="thought.chain.delete"){
     const previousLength=(state.thoughts||[]).length;
     state.thoughts=(state.thoughts||[]).filter(item=>item.id!==projection.id&&item.relatedTo!==projection.id);
     if(state.thoughts.length===previousLength)return false;
-    publishDomains(new Set(["thoughts"]));return true
+    publishThoughtMutation();return true
   }
   if(projection.kind==="thought.chain.update"){
     const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
     if(!root)return false;
     Object.assign(root,{content:projection.payload.question,tags:projection.payload.tags,occurredAt:projection.payload.occurredAt,_sync:sync});
-    publishDomains(new Set(["thoughts"]));return true
+    publishThoughtMutation();return true
   }
   if(projection.kind==="action.command")return getActionsCoordinator().applyPendingRecord(record);
   return false
 }
-async function restorePendingProjections(){
-  const owner=runtime.currentUser?.id,session=sessionSerial;if(!owner)return 0;
+async function restorePendingProjections(recovery=null){
+  const consumer=captureDataScope(),owner=consumer.owner;
+  const current=()=>consumer.isCurrent()&&(!recovery||recovery.isCurrent());
+  if(!owner||!current())return 0;
   const records=await requestCoordinator.list(owner,["pending","sending"]);
-  if(owner!==runtime.currentUser?.id||session!==sessionSerial)return 0;
+  if(!current())return 0;
   let restored=0;
   for(const record of records){
-    if(owner!==runtime.currentUser?.id||session!==sessionSerial)return restored;
+    if(!current())return restored;
     if(applyPendingProjection(record))restored+=1
   }
   const route=runtime.pageRouter?.currentRoute();
   if(runtime.routeLoadFailureKey&&routeDataKey(route)===runtime.routeLoadFailureKey)renderRouteLoadFailure(route);
   return restored
 }
-async function applyIncrementalSnapshot(snapshot,changes){
-  const domains=mergeStateSnapshot(snapshot);
-  getActionsCoordinator().applyIncrementalSnapshot(snapshot,{sessionTicket:sessionScope.capture()});
-  const rendered=new Set([...domains].filter(domain=>!["actions","habits","habitCheckins"].includes(domain)));
-  if(domains.has("clusters")||domains.has("insights"))rendered.add("review");
-  if(rendered.size)publishDomains(rendered);
-  await restorePendingProjections();
-  return changes.length
-}
-async function updateSyncHealth(event){
-  if(!runtime.currentUser?.id)return;
-  if(event.type==="operation")getActionsCoordinator().applyOperationStatus(event);
-  const metrics=await requestCoordinator.metrics(runtime.currentUser.id);
-  const oldest=metrics.oldestPendingAt?Math.max(0,Date.now()-new Date(metrics.oldestPendingAt).getTime()):0;
-  runtime.syncHealth={
-    status:event.type==="disabled"?"disabled":metrics.conflicts?"conflict":event.type==="error"||metrics.failed?"error":metrics.pending?"pending":metrics.durable?"synced":"degraded",
-    pending:metrics.pending,
-    conflicts:metrics.conflicts,
-    failed:metrics.failed,
-    oldestAgeMs:oldest,
-    enqueueToAckP95Ms:metrics.enqueueToAckP95Ms,
-    lastPullMs:event.type==="pull"?event.durationMs:runtime.syncHealth.lastPullMs,
-    lastError:event.type==="error"?(event.code||"SYNC_FAILED"):""
-  };
-  runtime.runtimeFeatureRegistry?.notifyState(state,new Set(["syncHealth"]))
-}
-runtime.syncController=createIncrementalSync({
-  coordinator:requestCoordinator,
-  request:url=>requestV1(url),
-  applySnapshot:applyIncrementalSnapshot,
-  resnapshot:async()=>{
-    await refreshState(["checkins","dailyRecords","captures","journals","thoughts","chat","review","books","keepsakes","quotes","notifications","onboardingV2","feedback"]);
-    await getActionsCoordinator().load()
-  },
-  onStatus:event=>void updateSyncHealth(event)
+const {applyIncrementalSnapshot,updateSyncHealth}=createDataSyncRuntime({
+  runtime,requestCoordinator,getActionsCoordinator,requestV1,syncScope,syncWorkspace,captureDataScope,
+  restorePendingProjections,refreshState:(...args)=>refreshState(...args),
+  createIncrementalSync,createRecordSyncLoop,applyRecordBatch,rebaseRecordScopes
 });
 const {
   notificationUnread, renderNotificationSummary, publishNotificationState,
@@ -434,7 +436,8 @@ const refreshState=async(domains,options={})=>{
   if(others.length&&(await refreshCoordinator.refresh(others,{...options,patchOnly:options.patchOnly===true}))===false)return false;
   // 通知任务有独立HTTP读取；当前路由快照成功不代表通知读取成功。
   // 结果接入由显式恢复或轮询完成，此处不重复同步同一结果。
-  return readNotificationSnapshot(false)
+  if(options.isCurrent&&!options.isCurrent())return false;
+  return readNotificationSnapshot(false,{isCurrent:options.isCurrent})
 };
 const resolvePersonalizedTask=createPersonalizedTaskRuntime({
   runtime,

@@ -1,0 +1,77 @@
+--- a/scripts/postgres-runtime-checks.mjs
++++ b/scripts/postgres-runtime-checks.mjs
+@@ -1235,7 +1235,8 @@
+       WHERE account_id = 'repo-test' AND cursor = 3
+     `)).rows, [{ cursor: "3", version: 3, operation: "delete" }]);
+     await runNotificationRecordCommandChecks({ database, repo, account });
+-    await runThoughtRecordCommandChecks({ database, repo, account });
++    await runFollowupReviewProbe({ database, repo, account, runtime });
++    return [];
+     await account("repo-test", async () => {
+       const captureBaseline = (await repo.read()).captures.length;
+       await Promise.all(Array.from({ length: 12 }, (_, index) => (index % 2 ? repo : peerRepo).update(value => {
+@@ -2306,3 +2307,64 @@
+     await Promise.all([runtime.close(), peer.close()]);
+   }
+ }
++
++async function runFollowupReviewProbe({ database, repo, account, runtime }) {
++  await account("repo-test", () => repo.update(store => {
++    store.thoughts = thoughtRecordFixtures();
++    store.trash ||= [];
++    const root = store.thoughts.find(item => item.id === "thought-root");
++    root.annotations[0].targetKey = "idea:thought-idea";
++    root.annotations[0].quote = "原想法";
++    root.annotations[0].start = 0;
++    root.annotations[0].end = 3;
++    store.aiTasks.push({
++      id: "review-block-task", kind: "annotationAnswer", resourceType: "thought",
++      targetId: "thought-root", subtargetId: "annotation-1", status: "queued",
++      payload: {}, attempt: 0, createdAt: "2026-10-18T03:05:00.000Z",
++      updatedAt: "2026-10-18T03:05:00.000Z"
++    });
++    store.notifications.push({
++      id: "review-block-notice", taskId: "review-block-task", kind: "aiTask",
++      resourceType: "thought", targetId: "thought-root", subtargetId: "annotation-1",
++      status: "queued", title: "批注回答", message: "排队", readAt: "",
++      createdAt: "2026-10-18T03:05:00.000Z", updatedAt: "2026-10-18T03:05:00.000Z"
++    });
++  }));
++  const { createAiAudit } = await import("../src/modules/ai/index.mjs");
++  const compatibility = [];
++  const auditOptions = {
++    textLimit: 10000,
++    getContext: () => ({ user: { id: "repo-test" }, secrets: [] }),
++    repository: runtime.aiAudit,
++    append: async (_day, entry) => compatibility.push(structuredClone(entry)),
++    updateUsage: async () => {},
++    logEvent: async () => {},
++    now: () => "2026-10-18T04:00:00.000Z",
++    createId: () => "review-db-recovery"
++  };
++  const producer = createAiAudit({ ...auditOptions, recordUsageAttempt: async () => { throw new Error("injected usage write failure"); } });
++  await account("repo-test", () => producer.providerCall({
++    provider: "volcengine", service: "vision", scene: "visionOcr", action: "OCRNormal", costKnown: true, costCny: 0.005
++  }, async () => ({ requestId: "review-request" })));
++  const restarted = createAiAudit({ ...auditOptions, recordUsageAttempt: entry => runtime.aiUsage.recordAttempt(entry) });
++  const recovery = await account("repo-test", () => restarted.recoverPending());
++  const auditRows = (await database.query("SELECT status, usage_payload FROM for_now.ai_request_audit WHERE account_id='repo-test' AND call_id='review-db-recovery'")).rows;
++  const usageCount = (await database.query("SELECT count(*)::int AS n FROM for_now.ai_usage_attempts WHERE account_id='repo-test' AND call_id='review-db-recovery'")).rows[0].n;
++  console.log("FOLLOWUP_DB_RECOVERY_PROBE", JSON.stringify({recovery,auditRows,usageCount,compatibilityHasRecovery:compatibility.some(item=>item.usageRecovery)}));
++  const before = (await database.query("SELECT current_cursor FROM for_now.account_sync_heads WHERE account_id='repo-test'")).rows[0].current_cursor;
++  const harness = createThoughtRecordHarness(repo);
++  const result = await account("repo-test", () => harness.commands.update({
++    ...thoughtUpdateInput, questionText: "前文关键后文", idea: "", expectedVersion: 1
++  }));
++  const stored = await account("repo-test", () => repo.read());
++  const lifecycle = (await database.query(`SELECT resource_key, state, tombstone, trash_id FROM for_now.resource_lifecycle WHERE account_id='repo-test' AND resource_id='annotation-1' ORDER BY resource_key`)).rows;
++  const changes = (await database.query(`SELECT command_id, entity_type, entity_id, operation FROM for_now.record_changes WHERE account_id='repo-test' AND cursor > $1 ORDER BY cursor, ordinal`, [before])).rows;
++  console.log("FOLLOWUP_BLOCK_PROBE", JSON.stringify({
++    version: result.value.version,
++    remainingAnnotations: stored.thoughts.find(item=>item.id==='thought-root').annotations,
++    taskStatus: stored.aiTasks.find(item=>item.id==='review-block-task').status,
++    notificationStatus: stored.notifications.find(item=>item.id==='review-block-notice').status,
++    lifecycle, changes,
++    trash: stored.trash.filter(item=>item.type==='thoughtBlock').map(item=>({id:item.id,dependents:item.dependents}))
++  }));
++}

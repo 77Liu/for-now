@@ -50,8 +50,16 @@ export function createLibraryWorkflows({
       needsLocalFiles: true
     });
     try {
-      const raw = await recognizeBook(files);
-      return { ...normalizeBookRecognition(parsedRecognition(raw)), attachmentPaths };
+      const generated = await recognizeBook(files);
+      const raw = typeof generated === "string" ? generated : generated.content;
+      return {
+        ...normalizeBookRecognition(parsedRecognition(raw)),
+        ...(typeof generated === "object" && generated.reasoningContent ? {
+          reasoningContent: generated.reasoningContent,
+          reasoningVisibility: generated.reasoningVisibility
+        } : {}),
+        attachmentPaths
+      };
     } catch (error) {
       await discardAttachments(attachmentPaths);
       throw error;

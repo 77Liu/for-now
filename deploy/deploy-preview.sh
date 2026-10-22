@@ -103,7 +103,7 @@ validate_environment() {
       NODE_ENV|PORT|TZ|DATA_DIR|APP_BASE_PATH|APP_VERSION|INCREMENTAL_SYNC_ENABLED|PROMPT_CATALOG_VERSION|\
       PERSISTENCE_BACKEND|ATTACHMENT_STORAGE|AUTH_REQUIRED|COOKIE_SECURE|INVITE_CODE_HASH|\
       PERIODIC_ANALYSIS_ENABLED|SPEECH_CACHE_SWEEP_ENABLED|RUNTIME_MEMORY_SAMPLE_INTERVAL_MS|\
-      AI_AUDIT_RETENTION_DAYS|AI_AUDIT_TEXT_LIMIT|AI_GLOBAL_QPS|AI_GLOBAL_CONCURRENCY|\
+      AI_AUDIT_DB_ENABLED|AI_AUDIT_RETENTION_DAYS|AI_AUDIT_TEXT_LIMIT|AI_GLOBAL_QPS|AI_GLOBAL_CONCURRENCY|\
       AI_USER_DAILY_CALL_LIMIT|AI_COST_CNY_PER_USD|AI_USER_DAILY_COST_LIMIT_CNY|\
       SEGMENTATION_GLOBAL_QPS|SEGMENTATION_GLOBAL_CONCURRENCY|SPEECH_GLOBAL_QPS|\
       SPEECH_GLOBAL_CONCURRENCY|OCR_GLOBAL_QPS|OCR_GLOBAL_CONCURRENCY|\
@@ -214,7 +214,9 @@ if [ "$action" = "deploy" ]; then
     trap cleanup_candidate EXIT
     release_guard preview_git --git-dir="$mirror" archive "$target_commit" | tar -x -C "$candidate"
     release_guard chown -R "$runtime_user:$runtime_user" "$candidate"
-    release_guard preview_run npm --prefix "$candidate" ci --omit=dev
+    release_guard preview_run npm --prefix "$candidate" ci
+    release_guard preview_run npm --prefix "$candidate" run build:runtime
+    release_guard preview_run npm --prefix "$candidate" prune --omit=dev
 
     /usr/local/bin/node --check "$candidate/server.mjs"
     /usr/local/bin/node --check "$candidate/admin-snapshot.mjs"

@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "task": "v0516-stage8-annotation-counts",
+  "status": "PASS_LOCAL",
+  "base": "bd5f6b",
+  "rule": "9c4916",
+  "candidate": {
+    "tree": "e3deda8883e08b02e910e20ca4c44392a8f2387f",
+    "files": [
+      {
+        "path": "public/frontend/features/annotations/operations.mjs",
+        "sha256": "6eef98579bf02f588eb3b8f75acc2897ba84437e5590d717ed772adf14fa1178"
+      },
+      {
+        "path": "public/frontend/features/annotations/view.mjs",
+        "sha256": "21b87f33d4bbfd33f2359446bef6803d3d93e4b8201832d7bf4955ae6b916a34"
+      },
+      {
+        "path": "scripts/frontend-annotations-feature-regression.mjs",
+        "sha256": "c18f2ddbfba52dc012d191dc9793989edfa3cec0fb6ab7f21e981eeeb8beb2b4"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "command": "npm run check:modules",
+      "exit": 0,
+      "log": "/tmp/for-now-stage8-final-build.log",
+      "result": "129 modules, 243 routes; no deep imports or cycles"
+    },
+    {
+      "command": "npm run typecheck:frontend",
+      "exit": 0,
+      "log": "/tmp/for-now-stage8-final-check-0.log"
+    },
+    {
+      "command": "node scripts/frontend-annotations-feature-regression.mjs",
+      "exit": 0,
+      "log": "/tmp/for-now-stage8-final-check-1.log"
+    },
+    {
+      "command": "node scripts/frontend-thoughts-feature-regression.mjs",
+      "exit": 0,
+      "log": "/tmp/for-now-stage8-final-check-2.log"
+    },
+    {
+      "command": "node scripts/collaboration-regression.mjs",
+      "exit": 0,
+      "log": "/tmp/for-now-stage8-final-check-3.log"
+    },
+    {
+      "command": "npm run test:postgres:stable",
+      "exit": null,
+      "result": "PASS_ALL_SUITE_MARKERS",
+      "log": "/tmp/for-now-stage8-final-pg.log",
+      "note": "background parent did not persist exit status; process exited, all four constituent suites completed PASS markers; do not infer a captured exit0",
+      "completed": [
+        "AI budget PostgreSQL persistence",
+        "full PostgreSQL integration including formal runtime and independent boot",
+        "lifecycle/idempotency cross-process",
+        "compression rollback mapping"
+      ]
+    },
+    {
+      "command": "npm run check:links",
+      "exit": 0,
+      "result": "207 documents, 68 external links"
+    }
+  ],
+  "browser": {
+    "tree": "6f760d6ba95b716094fb8d42606ab4189feba689",
+    "environment": "desktop Chrome 1280x720, AUTH_REQUIRED=1, isolated PostgreSQL16.14, mock provider",
+    "actions": "native Range preparation; real agent-browser clicks for create, reply, menu, conversion and confirmed deletion",
+    "counts": [
+      "0 threads / 0 replies",
+      "1 thread / 0 replies",
+      "1 thread / 1 reply",
+      "0 threads / 0 replies / 1 mark",
+      "0 threads / 0 replies"
+    ],
+    "persistence": "formal detail HTTP200 readback after reply, conversion and delete",
+    "reply_readback": {
+      "threads": 1,
+      "replies": 1,
+      "saved_text": "已提交的第一条回复"
+    },
+    "conversion_readback": {
+      "kind": "highlight",
+      "version": 2,
+      "replies_preserved": 1
+    },
+    "delete_readback": {
+      "annotations": 0,
+      "cards": 0,
+      "anchors": 0
+    },
+    "reply_input_after_ack": {
+      "value": "等待期间新写的回复",
+      "focused": true,
+      "selection": [2, 5],
+      "disabled": false
+    },
+    "response_hold": {
+      "status": 201,
+      "stage": "after server commit",
+      "exit": {
+        "held": true,
+        "released": false,
+        "expired": true
+      },
+      "limitation": "120-second auto-expiry released response; release checkpoint not observed"
+    },
+    "primary_entries": 1,
+    "line_labels": ["↗"],
+    "reopen_count": "",
+    "later_changes": "read-failure recovery rendering when incomplete root still has target; matching negative tests and readable formatting only; normal browser paths unchanged"
+  },
+  "public_port_checks": [
+    "sync before reply ACK deduplicates stable reply ID",
+    "missing target and incomplete root reread precisely",
+    "reread failure exposes unknown and retry, confirmed input not resubmitted",
+    "reply request failure retains input and unlocks form",
+    "edited reply retained after old ACK",
+    "delete failure preserves confirmed count",
+    "delete ACK applies to current root after replacement",
+    "newer conversion version wins",
+    "missing conversion target rereads",
+    "successful reread after deletion does not resurrect target",
+    "late reread does not overwrite another root panel",
+    "session reset prevents late reply mutation, DOM write and toast"
+  ],
+  "prior_failures": [
+    {
+      "command": "node scripts/frontend-annotations-feature-regression.mjs before fix",
+      "result": "FAIL",
+      "reason": "saved reply evicted target: authoritative rereads actual0 expected1",
+      "resolution": "reuse precise refreshSavedRoot for reply and conversion"
+    },
+    {
+      "command": "node scripts/system-test.mjs annotations",
+      "exit": 1,
+      "reason": "unknown suite; no test run",
+      "resolution": "existing collaboration-regression passed"
+    },
+    {
+      "command": "node scripts/postgres-integration.mjs",
+      "exit": 1,
+      "log": "/tmp/for-now-stage8-pg-2.log",
+      "reason": "IMAGE_PROCESSOR_UNAVAILABLE in later keepsake derivative",
+      "resolution": "standard test:postgres:stable isolated test-node entry rerun",
+      "note": "real annotation UI/readback passed before later suite failure; whole suite remains FAIL"
+    },
+    {
+      "command": "node scripts/check-links.mjs",
+      "exit": 1,
+      "reason": "script does not exist",
+      "resolution": "actual npm run check:links exit0"
+    },
+    {
+      "command": "node scripts/module-boundary-regression.mjs",
+      "exit": 1,
+      "log": "/tmp/for-now-stage8-review-check-1.log",
+      "reason": "checker self-test fixture lacks tsconfig.ai-migrations.json",
+      "note": "unchanged checker; formal check:modules on fixed business candidate exit0"
+    }
+  ],
+  "limits": [
+    "iOS Safari/PWA real devices and native long-press not verified",
+    "production load and release gates remain separate",
+    "94 real samples reused; no new corpus search",
+    "backend contracts unchanged; predecessor evidence reused"
+  ],
+  "protected_f9_files": {
+    "public/frontend/app/runtime/home-runtime.mjs": "f6e3bf",
+    "public/frontend/app/runtime/kernel.mjs": "3d52f4",
+    "public/frontend/state/index.mjs": "7a714f",
+    "scripts/sync-coordinator-regression.mjs": "c22c4a",
+    "src/http/sync.mjs": "7afb9c"
+  },
+  "review_ref": "reviews/2026-10-19-stage8-annotation-counts.md"
+}

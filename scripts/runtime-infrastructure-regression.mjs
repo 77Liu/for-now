@@ -27,7 +27,53 @@ assert.equal(defaults.port, 4173);
 assert.equal(defaults.version, "development");
 assert.equal(defaults.promptCatalogVersion, "");
 assert.equal(defaults.persistenceBackend, "json");
-assert.deepEqual(defaults.features, { incrementalSync: true });
+assert.deepEqual(defaults.auth, { queryMode: "document", required: false });
+assert.equal(config({
+  PERSISTENCE_BACKEND: "postgres",
+  AUTH_QUERY_MODE: "row"
+}).auth.queryMode, "row");
+assert.equal(defaults.aiQueue.enabled, false);
+assert.ok(Object.isFrozen(defaults.aiQueue));
+assert.throws(() => config({ AI_QUEUE_ENABLED: "1", AI_QUEUE_MAX_OUTSTANDING: "1", AI_QUEUE_MAX_OUTSTANDING_PER_ACCOUNT: "2" }), /must not exceed/);
+assert.throws(() => config({ AI_QUEUE_MAX_QUEUE_WAIT_MS: "0" }), /positive integer/);
+assert.deepEqual(defaults.recordCommands.allowlist, []);
+assert.equal(defaults.recordCommands.enabled("notification.read"), false);
+assert.equal(config({
+  PERSISTENCE_BACKEND: "postgres",
+  RECORD_COMMAND_ALLOWLIST: "notification.read,thought.update"
+}).recordCommands.enabled("thought.update"), true);
+assert.throws(() => config({ RECORD_COMMAND_ALLOWLIST: "notification.read" }), /requires PERSISTENCE_BACKEND=postgres/);
+assert.throws(() => config({
+  PERSISTENCE_BACKEND: "postgres",
+  RECORD_COMMAND_ALLOWLIST: "unknown.command"
+}), /Unknown RECORD_COMMAND_ALLOWLIST/);
+assert.throws(() => config({
+  PERSISTENCE_BACKEND: "postgres",
+  RECORD_COMMAND_ALLOWLIST: "notification.read,notification.read"
+}), /must not contain duplicates/);
+assert.equal(defaults.features.incrementalSync, true);
+assert.equal(defaults.features.thoughtPaging.enabled, false);
+assert.equal(defaults.features.recordSyncV2, false);
+assert.equal(defaults.syncV2.accountEnabled("account-a"), false);
+assert.throws(() => config({ SYNC_V2_ENABLED: "1" }), /requires SYNC_V2_ACCOUNT_ALLOWLIST/);
+assert.throws(() => config({
+  SYNC_V2_ENABLED: "1",
+  SYNC_V2_ACCOUNT_ALLOWLIST: "*"
+}), /requires PostgreSQL, thought paging and complete thought record commands/);
+const syncV2Config = config({
+  PERSISTENCE_BACKEND: "postgres",
+  THOUGHT_PAGING_ENABLED: "1",
+  RECORD_COMMAND_ALLOWLIST: "thought.create,thought.update,thought.delete,thought.aiWriteback,task.status",
+  SYNC_V2_ENABLED: "1",
+  SYNC_V2_ACCOUNT_ALLOWLIST: "account-a",
+  SYNC_V2_BATCH_LIMIT: "25"
+});
+assert.equal(syncV2Config.syncV2.accountEnabled("account-a"), true);
+assert.equal(syncV2Config.syncV2.accountEnabled("account-b"), false);
+assert.equal(syncV2Config.syncV2.batchLimit, 25);
+assert.throws(() => config({
+  SYNC_CHANGE_RETENTION_DAYS: "7"
+}), /must be configured together/);
 assert.equal(config({ INCREMENTAL_SYNC_ENABLED: "0" }).features.incrementalSync, false);
 assert.deepEqual(defaults.limits, {
   aiQps: 20, aiConcurrency: 20, segmentationQps: 5, segmentationConcurrency: 5,
@@ -44,6 +90,13 @@ assert.equal(config({ AI_GLOBAL_QPS: "bad" }).limits.aiQps, 20);
 assert.equal(config({ AI_GLOBAL_QPS: "3000" }).limits.aiQps, 2500);
 assert.equal(config({ OCR_GLOBAL_QPS: "99" }).limits.ocrQps, 10);
 assert.equal(config({ DOCUMENT_PARSE_GLOBAL_CONCURRENCY: "99" }).limits.documentConcurrency, 2);
+assert.equal(defaults.audit.databaseEnabled, false);
+assert.throws(() => config({ AI_AUDIT_DB_ENABLED: "yes" }), /must be 0 or 1/);
+assert.throws(() => config({ AI_AUDIT_DB_ENABLED: "1" }), /requires PERSISTENCE_BACKEND=postgres/);
+assert.equal(config({
+  PERSISTENCE_BACKEND: "postgres",
+  AI_AUDIT_DB_ENABLED: "1"
+}).audit.databaseEnabled, true);
 assert.equal(config({ AI_AUDIT_TEXT_LIMIT: "1" }).audit.textLimit, 10000);
 assert.equal(config({ AI_AUDIT_RETENTION_DAYS: "4000" }).audit.retentionDays, 3650);
 assert.equal(config({ ATTACHMENT_USER_QUOTA_BYTES: "1" }).limits.attachmentBytes, 1024 ** 2);
@@ -172,8 +225,11 @@ assert.equal(config({
 }).speechCacheSweepEnabled, false);
 for (const env of [
   { AUTH_REQUIRED: "1" }, { PERSISTENCE_BACKEND: "invalid" },
+  { AUTH_QUERY_MODE: "invalid" },
+  { AUTH_QUERY_MODE: "row" },
   { LOCAL_TEST_MODE: "1", NODE_ENV: "production" },
   { LOCAL_TEST_MODE: "1", INVITE_CODE_HASH: "a".repeat(64) },
+  { LOCAL_TEST_MODE: "1", AUTH_QUERY_MODE: "row" },
   { LOCAL_TEST_MODE: "1", ATTACHMENT_STORAGE: "oss" },
   { PERSISTENCE_BACKEND: "postgres", LOCAL_TEST_MODE: "1" },
   { PERSISTENCE_BACKEND: "postgres", UPSTREAM_ORIGIN: "http://localhost" }
@@ -203,7 +259,9 @@ const { sendJson, bodyJson } = createJsonHttp({ getContext: requestContext.getSt
 const pending = new Set(), consoleMessages = [];
 const originalConsoleError = console.error;
 console.error = message => consoleMessages.push(message);
-let firstEntered, releaseFirst;
+let firstEntered, releaseFirst, waitingRequestEntered;
+let disconnectedSignalObserved = false;
+const waitingRequest = new Promise(resolve => { waitingRequestEntered = resolve; });
 const entered = new Promise(resolve => { firstEntered = resolve; });
 const released = new Promise(resolve => { releaseFirst = resolve; });
 const handler = createRequestHandler({
@@ -219,6 +277,11 @@ const handler = createRequestHandler({
       return res.end('data: {"type":"error"}\n\n');
     }
     if (url.pathname === "/api/disconnect") return res.destroy();
+    if (url.pathname === "/api/ai-wait") {
+      waitingRequestEntered();
+      await new Promise(resolve => current.signal.addEventListener("abort", () => { disconnectedSignalObserved = current.signal.aborted; resolve(); }, { once: true }));
+      return;
+    }
     if (req.method !== "POST") return sendJson(res, 200, {});
     const user = req.headers["x-user"];
     assert.ok(["a", "b"].includes(user));
@@ -270,6 +333,10 @@ try {
   assert.deepEqual(await database.json(), { error: "数据服务暂时不可用，请稍后重试", code: "STORAGE_UNAVAILABLE" });
   assert.equal((await fetch(`${base}/now/api/stream`)).status, 200);
   await assert.rejects(fetch(`${base}/now/api/disconnect`));
+  const abortRequest = new AbortController();
+  const waitingResponse = fetch(`${base}/now/api/ai-wait`, { signal: abortRequest.signal });
+  await waitingRequest; abortRequest.abort(); await assert.rejects(waitingResponse);
+  await Promise.all([...pending]); assert.equal(disconnectedSignalObserved, true, "HTTP disconnect must reach the actual request context signal");
   await Promise.all([...pending]);
   assert.equal(requestContext.getStore(), undefined);
   for (const user of ["a", "b"]) {

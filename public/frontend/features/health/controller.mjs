@@ -261,6 +261,7 @@ export function createHealthFeatureController({
     activation = null;
     currentActivation.unlink();
     view.revokePreviews();
+    view.clearReasoning();
     await currentActivation.disposeDelegate();
     return true;
   };

@@ -3,6 +3,45 @@
   "inlineRuntimeBootstrapSha256": "8c036447b7a9fe176ae2e7ed47f39642206842d40771832df0f5a6f5aa4dc2ce",
   "modules": [
     {
+      "id": "frontend.feature.content-attachments",
+      "type": "feature",
+      "root": "public/frontend/features/content-attachments",
+      "publicEntry": "public/frontend/features/content-attachments/index.mjs",
+      "allowedDependencies": ["frontend.feature.ui"],
+      "owns": {
+        "data": ["image understanding and reasoning presentation"],
+        "routes": []
+      },
+      "tests": ["scripts/frontend-reasoning-visibility-regression.mts"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.ui",
+      "type": "feature",
+      "root": "public/frontend/features/ui",
+      "publicEntry": "public/frontend/features/ui/index.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": ["shared collapsed reasoning disclosure and disposable live buffer"],
+        "routes": []
+      },
+      "tests": ["scripts/frontend-reasoning-visibility-regression.mts"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.chats",
+      "type": "feature",
+      "root": "public/frontend/features/chats",
+      "publicEntry": "public/frontend/features/chats/index.mjs",
+      "allowedDependencies": ["frontend.feature.ui"],
+      "owns": {
+        "data": ["chat answer and reasoning presentation"],
+        "routes": []
+      },
+      "tests": ["scripts/frontend-reasoning-visibility-regression.mts"],
+      "status": "active"
+    },
+    {
       "id": "shared.opening",
       "type": "shared",
       "root": "public/frontend/shared/opening",
@@ -134,6 +173,7 @@
       "root": "src/modules/journals",
       "publicEntry": "src/modules/journals/index.mjs",
       "allowedDependencies": [
+        "domain.ai",
         "shared.prompts",
         "shared.time",
         "shared.validation"
@@ -284,6 +324,7 @@
       "root": "src/modules/chats",
       "publicEntry": "src/modules/chats/index.mjs",
       "allowedDependencies": [
+        "domain.ai",
         "shared.validation"
       ],
       "owns": {
@@ -312,6 +353,7 @@
       "root": "src/modules/reviews",
       "publicEntry": "src/modules/reviews/index.mjs",
       "allowedDependencies": [
+        "domain.ai",
         "shared.prompts",
         "shared.validation"
       ],
@@ -400,8 +442,10 @@
       "root": "src/modules/content-attachments",
       "publicEntry": "src/modules/content-attachments/index.mjs",
       "allowedDependencies": [
+        "domain.ai",
         "shared.validation",
-        "shared.core-model-gate"
+        "shared.core-model-gate",
+        "shared.task-targets"
       ],
       "owns": {
         "data": [
@@ -680,13 +724,15 @@
       "allowedDependencies": [],
       "owns": {
         "data": [
-          "FIFO rolling QPS and in-flight limits"
+          "FIFO rolling QPS and in-flight limits",
+          "account/storage-scoped best-effort commit hints and cancellable sync wait lifecycle"
         ],
         "routes": []
       },
       "tests": [
         "scripts/segmentation-regression.mjs",
-        "scripts/boundaries-regression.mjs"
+        "scripts/boundaries-regression.mjs",
+        "scripts/sync-coordinator-regression.mjs"
       ],
       "status": "active"
     },
@@ -719,7 +765,8 @@
       "publicEntry": "src/config/index.mjs",
       "allowedDependencies": [
         "domain.record-compressions",
-        "shared.ai-context"
+        "shared.ai-context",
+        "shared.thought-pagination"
       ],
       "owns": {
         "data": [
@@ -760,6 +807,7 @@
       "publicEntry": "src/app/index.mjs",
       "allowedDependencies": [
         "shared.opening",
+        "shared.task-targets",
         "config",
         "infrastructure.prompt-catalog",
         "application.owner-surfaces",
@@ -801,7 +849,8 @@
         "shared.persistence",
         "shared.observability",
         "frontend.pages",
-        "shared.ai-context"
+        "shared.ai-context",
+        "shared.thought-pagination"
       ],
       "owns": {
         "data": [
@@ -1013,6 +1062,7 @@
       "root": "src/modules/annotations",
       "publicEntry": "src/modules/annotations/index.mjs",
       "allowedDependencies": [
+        "domain.ai",
         "shared.attachments",
         "shared.content",
         "shared.validation",
@@ -1160,7 +1210,9 @@
       "publicEntry": "public/frontend/sync/index.mjs",
       "allowedDependencies": [
         "shared.business-identifiers",
-        "frontend.business-id-remap"
+        "frontend.business-id-remap",
+        "frontend.incremental-sync",
+        "frontend.workspace-sync-store"
       ],
       "owns": {
         "data": [
@@ -1371,7 +1423,10 @@
       "root": "public/frontend/features/annotations",
       "publicEntry": "public/frontend/features/annotations/index.mjs",
       "allowedDependencies": [
-        "frontend.ai-task-status"
+        "frontend.feature.ui",
+        "frontend.ai-task-status",
+        "frontend.annotation-counts",
+        "frontend.annotation-selection"
       ],
       "owns": {
         "data": [
@@ -1452,6 +1507,7 @@
       "root": "public/frontend/features/health",
       "publicEntry": "public/frontend/features/health/controller.mjs",
       "allowedDependencies": [
+        "frontend.feature.ui",
         "frontend.media",
         "frontend.time"
       ],
@@ -1510,6 +1566,7 @@
       "root": "public/frontend/features/capture-journal/presentation.mjs",
       "publicEntry": "public/frontend/features/capture-journal/presentation.mjs",
       "allowedDependencies": [
+        "frontend.feature.ui",
         "frontend.content",
         "frontend.media",
         "frontend.time"
@@ -1640,6 +1697,7 @@
       "root": "public/frontend/features/review-insights/review/presentation.mjs",
       "publicEntry": "public/frontend/features/review-insights/review/presentation.mjs",
       "allowedDependencies": [
+        "frontend.feature.ui",
         "frontend.feature.review-model"
       ],
       "owns": {
@@ -1796,7 +1854,7 @@
       "type": "feature",
       "root": "public/frontend/features/library/media.mjs",
       "publicEntry": "public/frontend/features/library/media.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": ["frontend.feature.ui"],
       "owns": {
         "data": [
           "book cover and recognition image state, Blob URL lifecycle, OCR input identity and upload compensation"
@@ -1857,7 +1915,8 @@
       "allowedDependencies": [
         "frontend.content",
         "frontend.time",
-        "frontend.ai-task-status"
+        "frontend.ai-task-status",
+        "frontend.thought-page-window"
       ],
       "owns": {
         "data": [
@@ -1876,11 +1935,13 @@
       "root": "public/frontend/features/thoughts/presentation.mjs",
       "publicEntry": "public/frontend/features/thoughts/presentation.mjs",
       "allowedDependencies": [
+        "frontend.feature.ui",
         "frontend.content",
         "frontend.media",
         "frontend.time",
         "frontend.feature.thoughts-model",
-        "frontend.ai-task-status"
+        "frontend.ai-task-status",
+        "frontend.annotation-counts"
       ],
       "owns": {
         "data": [
@@ -1906,7 +1967,8 @@
         "frontend.feature.thoughts-model",
         "frontend.feature.thoughts-presentation",
         "frontend.ai-task-status",
-        "frontend.personalized-ai-task"
+        "frontend.personalized-ai-task",
+        "frontend.thought-page-window"
       ],
       "owns": {
         "data": [
@@ -2480,6 +2542,29 @@
       "status": "active"
     },
     {
+      "id": "frontend.app.data-sync-runtime",
+      "type": "application",
+      "root": "public/frontend/app/runtime/data-sync-runtime.mjs",
+      "publicEntry": "public/frontend/app/runtime/data-sync-runtime.mjs",
+      "allowedDependencies": [
+        "frontend.session",
+        "frontend.state",
+        "frontend.feature.thoughts-model"
+      ],
+      "owns": {
+        "data": [
+          "v1 and v2 sync controller composition, scoped rebase and health projection"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/sync-coordinator-regression.mjs",
+        "scripts/frontend-notifications-feature-regression.mjs",
+        "scripts/frontend-runtime-composition-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
       "id": "frontend.app.data-runtime",
       "type": "application",
       "root": "public/frontend/app/runtime/data-runtime.mjs",
@@ -2489,7 +2574,9 @@
         "frontend.state",
         "frontend.time",
         "frontend.ai-task-status",
-        "frontend.app.personalized-task-runtime"
+        "frontend.app.personalized-task-runtime",
+        "frontend.app.data-sync-runtime",
+        "frontend.feature.thoughts-model"
       ],
       "owns": {
         "data": [
@@ -2527,7 +2614,7 @@
       "type": "application",
       "root": "public/frontend/app/runtime/answer-modal-runtime.mjs",
       "publicEntry": "public/frontend/app/runtime/answer-modal-runtime.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": ["frontend.feature.ui", "frontend.session"],
       "owns": {
         "data": [
           "answer modal task and session lifecycle"
@@ -2546,7 +2633,8 @@
       "publicEntry": "public/frontend/app/runtime/record-events.mjs",
       "allowedDependencies": [
         "frontend.state",
-        "frontend.app.chat-submission"
+        "frontend.app.chat-submission",
+        "frontend.feature.thoughts-model"
       ],
       "owns": {
         "data": [
@@ -2618,6 +2706,8 @@
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
       "allowedDependencies": [
+        "frontend.feature.content-attachments",
+        "frontend.feature.chats",
         "frontend.application",
         "frontend.ports",
         "frontend.api",
@@ -2691,7 +2781,8 @@
       "root": "src/modules/auth",
       "publicEntry": "src/modules/auth/index.mjs",
       "allowedDependencies": [
-        "shared.time"
+        "shared.time",
+        "config"
       ],
       "owns": {
         "data": [
@@ -2737,7 +2828,8 @@
         "shared.validation",
         "shared.observability",
         "shared.speech",
-        "shared.ai-context"
+        "shared.ai-context",
+        "shared.thought-pagination"
       ],
       "owns": {
         "data": [
@@ -2799,7 +2891,8 @@
       "root": "src/shared/persistence",
       "publicEntry": "src/shared/persistence/index.mjs",
       "allowedDependencies": [
-        "shared.business-identifiers"
+        "shared.business-identifiers",
+        "shared.task-targets"
       ],
       "owns": {
         "data": [
@@ -2903,10 +2996,12 @@
       "root": "src/modules/thoughts",
       "publicEntry": "src/modules/thoughts/index.mjs",
       "allowedDependencies": [
+        "domain.ai",
         "shared.attachments",
         "shared.persistence",
         "shared.validation",
-        "shared.prompts"
+        "shared.prompts",
+        "shared.thought-pagination"
       ],
       "owns": {
         "data": [
@@ -2978,6 +3073,24 @@
       "status": "active"
     },
     {
+      "id": "shared.task-targets",
+      "type": "shared",
+      "root": "src/shared/task-targets",
+      "publicEntry": "src/shared/task-targets/index.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "AI task target collection, complete identity and ordinary/drift subtarget candidate semantics"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/thought-task-transition-postgres-checks.mts",
+        "scripts/content-attachments-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
       "id": "shared.business-identifiers",
       "type": "shared",
       "root": "src/shared/business-identifiers",
@@ -3008,6 +3121,109 @@
       },
       "tests": [
         "scripts/business-identifiers-regression.mts"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "shared.thought-pagination",
+      "type": "shared",
+      "root": "src/shared/thought-pagination",
+      "publicEntry": "src/shared/thought-pagination/index.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "shared thought paging capacity and cursor limits"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/thought-service-regression.mjs",
+        "scripts/frontend-thoughts-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.thought-page-window",
+      "type": "shared",
+      "root": "public/frontend/shared/thought-page-window.mts",
+      "publicEntry": "public/frontend/shared/thought-page-window.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "bounded adjacent thought page windows, position-only checkpoints and selector-driven summary projection"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-thoughts-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.annotation-counts",
+      "type": "shared",
+      "root": "public/frontend/shared/annotation-counts.mts",
+      "publicEntry": "public/frontend/shared/annotation-counts.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "stateless confirmed annotation projection and loaded/unknown count labels"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-annotations-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.annotation-selection",
+      "type": "shared",
+      "root": "public/frontend/shared/annotation-selection.mts",
+      "publicEntry": "public/frontend/shared/annotation-selection.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "native annotation text/UTF16 range mapping, atomic formula boundary"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-annotations-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.incremental-sync",
+      "type": "shared",
+      "root": "public/frontend/shared/incremental-sync.mts",
+      "publicEntry": "public/frontend/shared/incremental-sync.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "当前账户/工作区增量读取取消、游标应用和有界前台续接"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/sync-coordinator-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.workspace-sync-store",
+      "type": "shared",
+      "root": "public/frontend/shared/workspace-sync-store.mts",
+      "publicEntry": "public/frontend/shared/workspace-sync-store.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "固定工作区的本机持久队列命名空间，公开账户身份保持不变"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/sync-coordinator-regression.mjs"
       ],
       "status": "active"
     }

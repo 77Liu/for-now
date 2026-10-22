@@ -3,6 +3,7 @@ import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
 import {
   DEFAULT_RECORD_TIMEZONE,
   emptyHistoricalUserSupplement,
+  createRecordCompressionInputProjection,
   estimateHistoricalUserSupplementOutputTokens,
   estimateHistoricalUserSupplementTokens,
   HISTORICAL_USER_SUPPLEMENT_INPUT_TOKEN_BUDGET,
@@ -28,6 +29,7 @@ import {
   validateHistoricalUserSupplement
 } from "../modules/record-compressions/index.mjs";
 import { taskInputMatches, WAITING_FOR_BUDGET_STATUS } from "../modules/tasks/index.mjs";
+import { taskContextSourcePermission } from "./task-context.mjs";
 import {
   COMPRESSION_SOURCE_COLLECTIONS,
   compressionTaskAccountMatches,
@@ -47,6 +49,8 @@ import {
   list,
   objectValue,
   permittedHistoricalTextDates,
+  sourceLocalDates,
+  trendReadRequirements,
   validLocalDate,
   validTimezone
 } from "./record-compression-context.mjs";
@@ -814,6 +818,40 @@ export function createRecordCompressionService({
       const validatedWaiting = await backgroundAi.promoteInternalBudgetWaiting(0);
       invalidatedBudgetWaitCount += validatedWaiting.invalidatedCount || 0;
 
+      // 等待者优先不能让当日失败修复拿不到槽位：本轮若需修复失败日报，先给它保留一个位置。
+      const primaryCandidate = primaryCandidates[0];
+      const primaryNeedsRepair = Boolean(primaryCandidate && list((await repository.read()).aiTasks).some(task => (
+        task?.kind === RECORD_COMPRESSION_TASK_KIND
+        && task.status === "failed"
+        && (task.payload?.operation || DAILY_OPERATION) === DAILY_OPERATION
+        && task.payload?.localDate === primaryCandidate.localDate
+        && (!primaryCandidate.windowKey || task.payload?.windowKey === primaryCandidate.windowKey)
+      )));
+      let supplementPromotedThisScan = false;
+      // 轮转机会：已跨日等待的历史补充先占本轮槽位，避免被当期日报长期挤到队尾；
+      // 同一自然日内仍先保证当期日报，不能因补充长期占位而延迟当日摘要。
+      const waitingHistorical = list((await repository.read()).aiTasks).some(task => (
+        task?.kind === RECORD_COMPRESSION_TASK_KIND
+        && task.status === WAITING_FOR_BUDGET_STATUS
+        && task.payload?.operation === HISTORICAL_SUPPLEMENT_OPERATION
+        && dateKeyInTimezone(task.createdAt, DEFAULT_RECORD_TIMEZONE) < today
+      ));
+      if (waitingHistorical) {
+        // 失败日报的预留必须同时覆盖队列位置和实际预算：只留位置会让补充用掉唯一一次调用，
+        // 修复任务被迫回到 waitingBudget。预算不足时优先保留修复机会。
+        const supplementSlotLimit = Math.max(0, queueLimit - queuedTaskIds.length - (primaryNeedsRepair ? 1 : 0));
+        const supplementBudgetLimit = Math.max(0, (await remainingBudgetQueueCapacity()) - (primaryNeedsRepair ? 1 : 0));
+        const promotions = await backgroundAi.promoteInternalBudgetWaiting(
+          Math.min(supplementSlotLimit, supplementBudgetLimit),
+          { operation: HISTORICAL_SUPPLEMENT_OPERATION }
+        );
+        queuedTaskIds.push(...list(promotions.taskIds));
+        promotedBudgetWaitCount += promotions.queuedCount || 0;
+        invalidatedBudgetWaitCount += promotions.invalidatedCount || 0;
+        historicalSupplementQueuedCount += promotions.queuedCount || 0;
+        supplementPromotedThisScan = true;
+      }
+
       for (const candidate of primaryCandidates) {
         const candidatePromotions = await backgroundAi.promoteInternalBudgetWaiting(
           Math.min(
@@ -872,17 +910,19 @@ export function createRecordCompressionService({
         await observeBudgetWait(result);
       }
 
-      const supplementPromotions = await backgroundAi.promoteInternalBudgetWaiting(
-        Math.min(
-          Math.max(0, queueLimit - queuedTaskIds.length),
-          await remainingBudgetQueueCapacity()
-        ),
-        { operation: HISTORICAL_SUPPLEMENT_OPERATION }
-      );
-      queuedTaskIds.push(...list(supplementPromotions.taskIds));
-      promotedBudgetWaitCount += supplementPromotions.queuedCount || 0;
-      invalidatedBudgetWaitCount += supplementPromotions.invalidatedCount || 0;
-      historicalSupplementQueuedCount += supplementPromotions.queuedCount || 0;
+      if (!supplementPromotedThisScan) {
+        const supplementPromotions = await backgroundAi.promoteInternalBudgetWaiting(
+          Math.min(
+            Math.max(0, queueLimit - queuedTaskIds.length),
+            await remainingBudgetQueueCapacity()
+          ),
+          { operation: HISTORICAL_SUPPLEMENT_OPERATION }
+        );
+        queuedTaskIds.push(...list(supplementPromotions.taskIds));
+        promotedBudgetWaitCount += supplementPromotions.queuedCount || 0;
+        invalidatedBudgetWaitCount += supplementPromotions.invalidatedCount || 0;
+        historicalSupplementQueuedCount += supplementPromotions.queuedCount || 0;
+      }
 
       if (queuedTaskIds.length < queueLimit
         || await waitingBudgetCount() < RECORD_COMPRESSION_MAX_BUDGET_WAITING_TASKS_PER_ACCOUNT) {
@@ -940,6 +980,68 @@ export function createRecordCompressionService({
       };
     },
     buildInput,
+    sourceMutationDates(store) {
+      const dates = [
+        ...sourceLocalDates(store, timezone(), now()),
+        ...sourceLocalDates(store, historicalTimezone(), now())
+      ];
+      return [...new Set([...dates, ...dates.map(date => dateKeyOffset(date, 1))])];
+    },
+    invalidateSourceClosure(store, beforeStore) {
+      const timestamp = now();
+      const dates = new Set([
+        ...sourceLocalDates(beforeStore, timezone(), timestamp),
+        ...sourceLocalDates(store, timezone(), timestamp),
+        ...sourceLocalDates(beforeStore, historicalTimezone(), timestamp),
+        ...sourceLocalDates(store, historicalTimezone(), timestamp)
+      ]);
+      const changedDates = new Set();
+      const changedSourceIds = new Set();
+      for (const localDate of dates) {
+        for (const requestedTimezone of new Set([timezone(), historicalTimezone()])) {
+          const previous = buildInput(beforeStore, localDate, requestedTimezone, timestamp);
+          const current = buildInput(store, localDate, requestedTimezone, timestamp);
+          for (const sourceId of changedManifestSourceIds(previous, current)) {
+            changedSourceIds.add(sourceId);
+            changedDates.add(localDate);
+          }
+        }
+      }
+      if (!changedSourceIds.size) return [];
+      const windowChanged = value => {
+        const previous = buildInput(beforeStore, value.localDate, value.timezone, timestamp, value.windowKey || "");
+        const current = buildInput(store, value.localDate, value.timezone, timestamp, value.windowKey || "");
+        return changedManifestSourceIds(previous, current).size > 0;
+      };
+      for (const summary of list(store.recordCompressions)) {
+        if (!["invalidated", "failed"].includes(summary.status) && windowChanged(summary)) {
+          invalidateCompressionSummary(summary, timestamp);
+        }
+      }
+      const supplement = store.historicalUserSupplement;
+      const retained = list(supplement?.records)
+        .filter(record => !changedSourceIds.has(record?.source?.sourceId));
+      if (supplement && retained.length !== list(supplement.records).length) {
+        store.historicalUserSupplement = {
+          ...supplement,
+          records: retained,
+          coverage: { ...supplement.coverage, complete: false },
+          tokenUsage: {
+            estimated: true,
+            scope: "model_output",
+            tokens: estimateHistoricalUserSupplementOutputTokens(retained)
+          }
+        };
+      }
+      return list(store.aiTasks).filter(task => (
+        task.kind === RECORD_COMPRESSION_TASK_KIND
+        && task.status === "running"
+        && taskBelongsToCurrentAccount(store, task)
+        && (task.payload?.operation === HISTORICAL_SUPPLEMENT_OPERATION
+          ? [...changedDates].some(date => date >= task.payload?.windowStart && date <= task.payload?.windowEnd)
+          : windowChanged(task.payload || {}))
+      )).map(task => task.id);
+    },
     invalidateChangedSources(store, beforeStore) {
       if (sourceStateFingerprint(store) === sourceStateFingerprint(beforeStore)) return [];
       const staleRunningTaskIds = list(store?.aiTasks)
@@ -999,7 +1101,43 @@ export function createRecordCompressionService({
       }
       return staleRunningTaskIds;
     },
-    getCurrentTrend(store, asOf = now()) {
+    /** 构建同次只读趋势输入；每页许可仍由实际来源与账户判定。 @since unreleased */
+    createTrendInputProjection(requestedAccountId, asOf, requirements = null) {
+      if (requestedAccountId !== accountId()) throw new TypeError("Trend account differs");
+      const projection = createRecordCompressionInputProjection({
+        accountId: requestedAccountId,
+        asOf,
+        timezones: [...new Set([
+          timezone(), historicalTimezone(),
+          ...(requirements?.dates || []).map(row => row.timezone)
+        ])],
+        hash,
+        maxTextChars,
+        localDates: requirements?.dates || null,
+        promptVersion: RECORD_COMPRESSION_PROMPT_VERSION
+      });
+      return {
+        ...projection,
+        add: store => projection.add(store, ({ sourceRef }) => (
+          taskContextSourcePermission(store, sourceRef, requestedAccountId)
+        )),
+        addUnknownSources: (store, ignoredRoots = []) => projection.addUnknownSources(store, ({ sourceRef }) => (
+          taskContextSourcePermission(store, sourceRef, requestedAccountId)
+        ), ignoredRoots)
+      };
+    },
+    trendReadRequirements(store, asOf) {
+      return trendReadRequirements(store, {
+        accountId: accountId(),
+        timezone: timezone(),
+        historicalTimezone: historicalTimezone(),
+        asOf,
+        hash,
+        startDate
+      });
+    },
+    trendTimezones: () => [timezone(), historicalTimezone()],
+    getCurrentTrend(store, asOf = now(), inputProjection = null) {
       const currentAccountId = accountId();
       const currentTimezone = timezone();
       const result = currentTrendFrom(store, {
@@ -1009,11 +1147,27 @@ export function createRecordCompressionService({
         asOf,
         hash,
         maxTextChars,
-        startDate
+        startDate,
+        inputProjection
       });
       return result;
     }
   };
+}
+
+function canonicalSourceState(source) {
+  if (!source) return "";
+  return JSON.stringify([
+    source.version, source.sourceHash, source.permissionRevision, source.origin
+  ]);
+}
+
+function changedManifestSourceIds(previous, current) {
+  const before = new Map(list(previous?.sourceManifest).map(source => [source.sourceId, source]));
+  const after = new Map(list(current?.sourceManifest).map(source => [source.sourceId, source]));
+  return new Set([...before.keys(), ...after.keys()].filter(sourceId => (
+    canonicalSourceState(before.get(sourceId)) !== canonicalSourceState(after.get(sourceId))
+  )));
 }
 
 function upsertCompression(store, value) {

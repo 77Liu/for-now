@@ -13,6 +13,7 @@ import {
   readPostgresStoreObjects, rebuildStoreObjects
 } from "../src/shared/persistence/index.mjs";
 import { migrationStore } from "./fixtures/migration-store.mjs";
+import { runAiMigrationPostgresChecks } from "./ai-audit-migration-postgres-checks.mjs";
 import { runBundleChecks } from "./postgres-bundle-checks.mjs";
 import { runRuntimeChecks } from "./postgres-runtime-checks.mjs";
 
@@ -296,13 +297,15 @@ try {
   await applyPostgresMigration(client, restorePlan);
   assert.deepEqual(await read(client, "restored-account"), restorePlan.snapshot);
   const bundleChecks = await runBundleChecks({ admin, client, connect, temporary });
+  const aiMigrationChecks = await runAiMigrationPostgresChecks({ admin, client });
   const runtimeChecks = await runRuntimeChecks({ admin, connect, temporary, password, port, freePort });
   console.log(JSON.stringify({
     status: "passed", postgres: version, role: "non-owner / NOSUPERUSER / NOBYPASSRLS",
     counts: imported.counts,
     checks: ["schema repeat", "legacy metadata position/payload upgrade", "all-domain round-trip", "RLS all tables", "cross-account FK rejection",
       "idempotent concurrent imports", "snapshot replacement and missing-evidence guards", "corrupt repeat rejection", "mid-write rollback",
-      "same-count corruption rollback", "legacy projections removed", "disconnect rollback", "export without snapshot and restore", ...bundleChecks, ...runtimeChecks]
+      "same-count corruption rollback", "legacy projections removed", "disconnect rollback", "export without snapshot and restore",
+      ...bundleChecks, aiMigrationChecks, ...runtimeChecks]
   }, null, 2));
 } finally {
   await Promise.all(clients.map(client => client.end().catch(() => {})));

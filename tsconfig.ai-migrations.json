@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": ".build/typescript/ai-migrations",
+    "noEmitOnError": true
+  },
+  "files": [
+    "scripts/ai-migration-support.mts",
+    "scripts/migrate-ai-audit.mts",
+    "scripts/migrate-ai-usage.mts",
+    "scripts/ai-audit-migration-regression.mts"
+  ]
+}

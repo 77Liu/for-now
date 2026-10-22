@@ -11,12 +11,12 @@
 → 去重与证据核验
 → 价值/风险/成本选择
 → 迭代契约冻结
-→ develop / feat 实现
+→ feat 实现
 → develop 集成与候选固定
-→ release / preview 验证
+→ develop 有状态全局门通过后冻结 release / preview
 → 策略授权与自动发布
 → canary 观察与回滚判断
-→ 正式关闭
+→ 正式节点回流 develop 后关闭
 → 用户反馈、事故和工程问题回流需求池
 ```
 
@@ -36,7 +36,7 @@
 | `SELECTED` | 进入本轮候选，明确目标和非目标 | 形成用户行为、验收、负责人、版本和风险等级 | 回 `INBOX` 重新选择 |
 | `READY` | 共享契约、依赖、失败恢复、影响测试和分支基线清楚 | 可在授权范围内开始实现 | 回 `SELECTED` 补范围，或标记 `BLOCKED` |
 | `BUILDING` | 从当前 `develop` 创建 `feat/*` 并开始实现 | 切片专项、审查和交接证据成立 | 代码/测试失败回本状态；契约变化回 `READY` |
-| `CANDIDATE` | 接入 develop，固定完整 SHA/tree/制品 | 影响矩阵和集成审查完成 | 回 `BUILDING` 修复，或回 `READY` 改范围 |
+| `CANDIDATE` | 接入 develop，固定提交/tree/制品 | 影响矩阵和集成审查完成 | 回 `BUILDING` 修复，或回 `READY` 改范围 |
 | `RELEASING` | release/preview 对象、授权策略和回滚目标齐全 | 发布、部署回执可核对 | 授权问题回 `READY`；部署问题留在本状态恢复 |
 | `OBSERVING` | 运行对象与候选一致，canary 和停止条件有效 | 观察退出条件成立或触发回滚 | 触发回滚回 `RELEASING`，产品不符回 `SELECTED` |
 | `CLOSED` | 正式身份、运行结果、产品验收和回流事项已记录 | 只允许追加复盘或新需求 | 新问题进入 `INBOX`，不重写关闭事实 |
@@ -61,9 +61,9 @@
 
 ## 4. 开发与集成契约
 
-- 普通代码只从当前 `develop` 创建 `feat/*`；main、release、preview、hotfix、docs 不是普通开发起点。
+- 实现及规则/文档修改的起点、原 feat 返修和各引用职责，仅按[Git 规则](remote-branch-policy.md)执行；develop 负责集成。
 - `READY` 前必须写清共享契约、账户隔离、持久化、权限、外部调用、失败恢复和测试影响域。
-- `BUILDING` 先复现问题或建立失败断言，再做最小纵向改动；不为通过测试而削弱断言。
+- `BUILDING` 先核对真实调用链及必要复现，再做最小纵向改动；编辑后自查，主控独立接入审查，验证确认结论，不用运行试错代替契约核对。
 - 共享契约和共享写集串行接入 develop；候选只接受已核对的切片，不接受未审查半成品。
 - `CANDIDATE` 绑定完整对象身份；候选变化即生成新候选，不移动已发布标签。
 
@@ -119,3 +119,5 @@ verify → freeze → authorize → publish → deploy → observe → close
 ## 9. 启动与维护
 
 改变状态模型、放权策略或分支职责时，先完成一次启动前整理：核对 Git 起点、工作树、未提交差分、远程保护、控制面初始化、测试矩阵、发布/回滚演练和授权策略；完成后再允许新一轮普通开发。历史报告不因新模型改写。
+
+项目记录的提交/tree 摘要按[控制面协议](coordination-control-plane.md)保存完整对象身份，简称仅用于展示。

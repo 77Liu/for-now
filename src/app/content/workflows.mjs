@@ -1,5 +1,13 @@
 import { errorMetadata } from "../../shared/observability/index.mjs";
-import { publicAiTask } from "../../modules/tasks/index.mjs";
+import {
+  createTaskLifecycle,
+  publicAiTask
+} from "../../modules/tasks/index.mjs";
+import { createNotificationService } from "../../modules/notifications/index.mjs";
+import {
+  createThoughtTaskTarget,
+  stripThoughtAnswerLead
+} from "../../modules/thoughts/index.mjs";
 import { createCaptureJournalWorkflows } from "../capture-journal-workflows.mjs";
 import {
   personalContextProjection,
@@ -8,6 +16,7 @@ import {
 import { withoutOwnerMetadata } from "../public-state.mjs";
 import { createReviewChatWorkflows } from "../review-chat-workflows.mjs";
 import { createThoughtWorkflows } from "../thought-workflows.mjs";
+import { createThoughtRecordCommands } from "../record-commands/thoughts.mjs";
 import {
   createUserModelExtractionService,
   USER_MODEL_DOMAIN_LABELS,
@@ -135,13 +144,47 @@ export function createContentWorkflows({
   workflowContextKey,
   getRecentTrend = () => null,
   getImportanceModelSnapshot = () => null,
+  periodicAnalysisEnabled = false,
+  readPeriodicPreferences = async () => ({}),
+  recordCommandConfig = null,
   now,
   today,
   currentTime,
   createId,
+  createBusinessId = createId,
   hash,
   logEvent
 }) {
+  const recordTaskService = createTaskLifecycle({
+    createId: createBusinessId,
+    now,
+    hash
+  });
+  const recordNotificationService = createNotificationService({
+    createId: createBusinessId,
+    now
+  });
+  const recordThoughtTarget = createThoughtTaskTarget({
+    createId: createBusinessId,
+    now,
+    stripThoughtAnswerLead
+  });
+  const thoughtRecordCommands = sourceRepository.accountUnitOfWork?.run
+    ? createThoughtRecordCommands({
+        unitOfWork: sourceRepository.accountUnitOfWork,
+        effects: sourceRepository.sourceMutationEffects,
+        thoughts: records.thoughtService,
+        removeChain: (store, id) => trashMutations.moveThoughtChainToTrash(store, id),
+        removeBlock: (store, id) => trashMutations.moveThoughtBlockToTrash(store, id),
+        createTaskInStore: (store, input, options) => (
+          backgroundAi.createInStore(store, input, options)
+        ),
+        tasks: recordTaskService,
+        notifications: recordNotificationService,
+        thoughtTarget: recordThoughtTarget,
+        now
+      })
+    : null;
   const thoughtWorkflows = createThoughtWorkflows({
     repository: sourceRepository,
     thoughts: records.thoughtService,
@@ -160,6 +203,10 @@ export function createContentWorkflows({
     getRecentTrend,
     getImportanceModelSnapshot,
     materializeAttachmentFiles,
+    recordCommands: {
+      enabled: name => recordCommandConfig?.enabled?.(name) === true,
+      thoughts: thoughtRecordCommands
+    },
     contextKey: workflowContextKey,
     now
   });
@@ -190,6 +237,8 @@ export function createContentWorkflows({
     getAccountId,
     getRecentTrend,
     getImportanceModelSnapshot,
+    periodicAnalysisEnabled,
+    readPeriodicPreferences,
     currentTime,
     createId
   });
@@ -199,8 +248,11 @@ export function createContentWorkflows({
   backgroundAi.registerHandler("journalReflection", captureJournalWorkflows.personalizedTaskHandler);
   backgroundAi.registerHandler("chat", reviewChatWorkflows.personalizedTaskHandler);
   backgroundAi.registerHandler("analysis", reviewChatWorkflows.personalizedTaskHandler);
+  backgroundAi.registerRecordCommand("thought.aiWriteback", thoughtRecordCommands);
+  backgroundAi.assertRecordCommandsReady();
 
   return {
+    thoughtRecordCommands,
     thoughtWorkflows,
     captureJournalWorkflows,
     reviewChatWorkflows,

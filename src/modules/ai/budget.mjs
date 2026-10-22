@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { readDispatchProof } from "../../../.build/typescript/backend/modules/ai/dispatch-proof.mjs";
 import { safeIso, safeText } from "../../shared/validation/index.mjs";
 
 export const AI_BUDGET_VERSION = 1;
@@ -119,9 +120,23 @@ function normalizeMonth(item) {
   };
 }
 
+/** 结合持久化未调用证明判断阶段是否可能计费；缺少新字段保守沿用startedAt。
+ * @since unreleased
+ */
+export const stageHasBillableDispatch = stage => Boolean(stage?.startedAt && stage.dispatchState !== "not_invoked");
+
 function normalizeStage(item) {
   const id = text(item?.id, 100);
   if (!id) return null;
+  let dispatch = {};
+  if (["dispatchAttemptId", "dispatchState", "noIoAt"].some(key => Object.hasOwn(item, key))) {
+    if (typeof item.dispatchAttemptId !== "string" || !item.dispatchAttemptId || item.dispatchAttemptId !== text(item.dispatchAttemptId, 100)
+      || !["may_have_started", "not_invoked"].includes(item.dispatchState) || !safeIso(item.startedAt)
+      || (item.dispatchState === "not_invoked" && !safeIso(item.noIoAt))
+      || (item.dispatchState === "may_have_started" && Object.hasOwn(item, "noIoAt"))) throw new Error("AI预算阶段派发证明无效，保留原账本");
+    dispatch = { dispatchAttemptId: item.dispatchAttemptId, dispatchState: item.dispatchState,
+      ...(item.dispatchState === "not_invoked" ? { noIoAt: safeIso(item.noIoAt) } : {}) };
+  }
   return {
     id,
     provider: text(item.provider, 80),
@@ -131,7 +146,8 @@ function normalizeStage(item) {
     costKnown: item.costKnown === true,
     estimatedCostMicros: item.costKnown === true ? integer(item.estimatedCostMicros) : 0,
     billingGap: item.costKnown === true ? "" : text(item.billingGap, 500),
-    startedAt: safeIso(item.startedAt)
+    startedAt: safeIso(item.startedAt),
+    ...dispatch
   };
 }
 
@@ -330,6 +346,11 @@ const effectiveDailyLimit = (day, policy) => costMicros(policy.siteDailyKnownCos
 const effectiveMonthlyLimit = (month, policy) => costMicros(policy.siteMonthlyKnownCostCny)
   + month.additionalKnownCostMicros;
 
+const stageDispatchHistory = stage => stage.dispatchAttemptId ? {
+  startedAt: stage.startedAt, dispatchAttemptId: stage.dispatchAttemptId, dispatchState: stage.dispatchState,
+  ...(stage.noIoAt ? { noIoAt: stage.noIoAt } : {})
+} : {};
+
 function publicReservation(reservation, duplicate = false) {
   return {
     id: reservation.id,
@@ -348,7 +369,8 @@ function publicReservation(reservation, duplicate = false) {
       costKnown: stage.costKnown,
       estimatedCostCny: cny(stage.estimatedCostMicros),
       billingGap: stage.billingGap,
-      startedAt: stage.startedAt
+      startedAt: stage.startedAt,
+      ...stageDispatchHistory(stage)
     }))
   };
 }
@@ -424,6 +446,7 @@ function releaseReservation(state, index, reservation, {
     reservationId: reservation.id,
     periodKey: reservation.day,
     reason,
+    ...(reservation.stages.some(stage => stage.dispatchAttemptId) ? { stages: reservation.stages.map(stage => ({ stageId: stage.id, ...stageDispatchHistory(stage) })) } : {}),
     ...details
   }, createId);
 }
@@ -865,7 +888,7 @@ export function createAiBudgetService({
       return result;
     },
 
-    async startStage({ reservationId, stageId }) {
+    async startStage({ reservationId, stageId, dispatchAttemptId }) {
       const timestamp = now();
       const keys = timestampKeys(timestamp);
       const result = await update(state => {
@@ -880,9 +903,12 @@ export function createAiBudgetService({
           statusCode: 404,
           code: "AI_BUDGET_STAGE_NOT_FOUND"
         });
-        if (stage.startedAt) return { reservation: publicReservation(reservation), event: null, duplicate: true };
+        if (stage.startedAt) {
+          if (dispatchAttemptId !== undefined && stage.dispatchAttemptId !== dispatchAttemptId) throw Object.assign(new Error("预算阶段派发attempt冲突"), { code: "AI_BUDGET_STAGE_ALREADY_STARTED", statusCode: 409 });
+          return { reservation: publicReservation(reservation), event: null, duplicate: true };
+        }
         if (reservation.day !== keys.day || reservation.month !== keys.month) {
-          const hasStartedStage = reservation.stages.some(item => item.startedAt);
+          const hasStartedStage = reservation.stages.some(stageHasBillableDispatch);
           const expiration = reservationExpiration(reservation, keys, hasStartedStage);
           if (!hasStartedStage) {
             const event = releaseReservation(state, index, reservation, {
@@ -900,6 +926,10 @@ export function createAiBudgetService({
           return { expiration };
         }
         stage.startedAt = timestamp;
+        if (dispatchAttemptId !== undefined) {
+          if (typeof dispatchAttemptId !== "string" || !dispatchAttemptId || dispatchAttemptId !== text(dispatchAttemptId, 100)) throw new TypeError("AI预算派发attempt无效");
+          stage.dispatchAttemptId = dispatchAttemptId; stage.dispatchState = "may_have_started";
+        }
         const event = stage.costKnown
           ? null
           : unknownWarning(state, reservation, stage, ensureDay(state, reservation.day), timestamp, createId);
@@ -907,6 +937,26 @@ export function createAiBudgetService({
       });
       if (result.expiration) throw expiredReservationError(result.expiration);
       return result;
+    },
+
+    /** 仅接收活的内部执行能力证明；阶段关闭且从未invoke后条件持久化，不能由HTTP正文声明免费。
+     * @since unreleased
+     */
+    async markStageNotInvoked({ reservationId, stageId, dispatchAttemptId }, capability) {
+      const proof = readDispatchProof(capability);
+      if (!proof || proof.reservationId !== reservationId || proof.stageId !== stageId || proof.dispatchAttemptId !== dispatchAttemptId) throw Object.assign(new Error("未调用证明能力无效"), { code: "AI_BUDGET_PROOF_INVALID", statusCode: 403 });
+      return update(state => {
+        const reservation = state.reservations.find(item => item.id === reservationId);
+        if (!reservation) return { marked: false, duplicate: true };
+        const stage = reservation.stages.find(item => item.id === stageId);
+        if (!stage?.startedAt || stage.dispatchAttemptId !== dispatchAttemptId || !["may_have_started", "not_invoked"].includes(stage.dispatchState)) throw Object.assign(new Error("预算阶段证明身份冲突"), { code: "AI_BUDGET_PROOF_CONFLICT", statusCode: 409 });
+        if (stage.dispatchState === "not_invoked") return { marked: true, duplicate: true };
+        stage.dispatchState = "not_invoked"; stage.noIoAt = now();
+        const event = appendEvent(state, { type: "ai.budget.stage_not_invoked", severity: "info", createdAt: stage.noIoAt,
+          accountId: reservation.accountId, taskId: reservation.taskId, reservationId, stageId,
+          dispatchAttemptId, startedAt: stage.startedAt, noIoAt: stage.noIoAt, reason: proof.reason }, createId);
+        return { marked: true, duplicate: false, event };
+      });
     },
 
     async settleTask({ reservationId, stages = [], outcome = "completed" }) {
@@ -931,7 +981,7 @@ export function createAiBudgetService({
         const crossedPeriod = reservation.day !== settlementKeys.day
           || reservation.month !== settlementKeys.month;
         if (crossedPeriod) {
-          const hasStartedStage = reservation.stages.some(stage => stage.startedAt);
+          const hasStartedStage = reservation.stages.some(stageHasBillableDispatch);
           const attemptsLateStart = reservation.stages.some(stage => (
             !stage.startedAt && supplied.get(stage.id)?.started === true
           ));
@@ -964,9 +1014,9 @@ export function createAiBudgetService({
         const settledStages = [];
         for (const stage of reservation.stages) {
           const stageResult = supplied.get(stage.id);
-          const started = Boolean(stage.startedAt || (!crossedPeriod && stageResult?.started === true));
+          const started = stage.dispatchState !== "not_invoked" && Boolean(stage.startedAt || (!crossedPeriod && stageResult?.started === true));
           if (!started) {
-            settledStages.push({ stageId: stage.id, started: false, costKnown: stage.costKnown, actualCostCny: 0 });
+            settledStages.push({ stageId: stage.id, started: false, costKnown: stage.costKnown, actualCostCny: 0, ...stageDispatchHistory(stage) });
             continue;
           }
           const costKnown = stage.costKnown && stageResult?.costKnown !== false;
@@ -982,10 +1032,10 @@ export function createAiBudgetService({
               ? costMicros(stageResult.actualCostCny)
               : stage.estimatedCostMicros;
             knownCostMicros += actual;
-            settledStages.push({ stageId: stage.id, started: true, costKnown: true, actualCostCny: cny(actual) });
+            settledStages.push({ stageId: stage.id, started: true, costKnown: true, actualCostCny: cny(actual), ...stageDispatchHistory(stage) });
           } else {
             unknownCalls += 1;
-            settledStages.push({ stageId: stage.id, started: true, costKnown: false, actualCostCny: 0 });
+            settledStages.push({ stageId: stage.id, started: true, costKnown: false, actualCostCny: 0, ...stageDispatchHistory(stage) });
           }
         }
         const compressionStageIds = new Set(reservation.stages
@@ -1090,7 +1140,7 @@ export function createAiBudgetService({
         const index = state.reservations.findIndex(item => item.id === text(reservationId, 100));
         if (index < 0) return { released: false, duplicate: true, event: null };
         const reservation = state.reservations[index];
-        if (reservation.stages.some(stage => stage.startedAt)) {
+        if (reservation.stages.some(stageHasBillableDispatch)) {
           throw Object.assign(new Error("Started AI budget stages must be settled, not released"), {
             statusCode: 409,
             code: "AI_BUDGET_STAGE_ALREADY_STARTED"
