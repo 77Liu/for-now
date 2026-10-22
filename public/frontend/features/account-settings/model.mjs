@@ -72,6 +72,9 @@ export function normalizeAccountSettings(value = {}) {
     automaticAnswers: {
       thoughtAnswer: settings.automaticAnswers?.thoughtAnswer === true
     },
+    periodicReviews: {
+      analysisEnabled: settings.periodicReviews?.analysisEnabled === true
+    },
     speech: {
       defaultVoice: String(settings.speech?.defaultVoice || ""),
       generationRate: normalizeTtsGenerationRate(settings.speech?.generationRate)
@@ -122,6 +125,9 @@ export function settingsPayload(root, {
       .map(select => [select.dataset.responseStyle, select.value])),
     automaticAnswers: {
       thoughtAnswer: root.querySelector("#automatic-thought-answer")?.checked === true
+    },
+    periodicReviews: {
+      analysisEnabled: root.querySelector("#periodic-analysis-enabled")?.checked === true
     },
     speech: {
       defaultVoice: voice,

@@ -25,13 +25,20 @@ export {
 } from "./runtime-http-wiring.mjs";
 export { createBackgroundAi } from "./background-ai.mjs";
 export { createContentBackground } from "./content/background.mjs";
+export { createNotificationRecordCommands } from "./record-commands/notifications.mjs";
+export { createTaskRecordCommands } from "../modules/tasks/index.mjs";
+export { createThoughtRecordCommands } from "./record-commands/thoughts.mjs";
+export { createContentAiRecordCommands } from "./record-commands/content-ai.mjs";
+export { createContentAttachmentRecordCommands } from "./record-commands/content-attachments.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";
 export { createAttachmentCleanup } from "./attachment-cleanup.mjs";
 export {
   SPEECH_CACHE_RETENTION_DAYS,
   createSpeechCache,
   normalizeSpeechCacheStore,
-  publicSpeechAssets
+  publicSpeechAssets,
+  thoughtSpeechProjection,
+  readThoughtSpeechAssets
 } from "./speech-cache.mjs";
 export {
   SPEECH_CACHE_SWEEP_INTERVAL_MS,

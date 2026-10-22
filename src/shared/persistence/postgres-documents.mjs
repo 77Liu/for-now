@@ -1,5 +1,11 @@
 import { canonicalJson } from "./store-mapping.mjs";
-import { mapAccountDocument, rebuildAccountDocument, mapAuthDocument, rebuildAuthDocument } from "./document-mapping.mjs";
+import {
+  AUTH_DOCUMENT_FIELDS_MARKER,
+  mapAccountDocument,
+  rebuildAccountDocument,
+  mapAuthDocument,
+  rebuildAuthDocument
+} from "./document-mapping.mjs";
 
 const DOCUMENT_TABLES = {
   fields: ["document_fields", { accountId: "account_id", document: "document", field: "field", shape: "shape", payload: "payload" }],
@@ -11,8 +17,17 @@ const DOCUMENT_TABLES = {
 };
 const AUTH_TABLES = {
   fields: ["document_fields", { field: "field", payload: "payload" }],
-  users: ["users", { id: "id", username: "username", usernameKey: "username_key", passwordHash: "password_hash", position: "position", payload: "payload" }],
-  sessions: ["sessions", { tokenHash: "token_hash", userId: "user_id", position: "position", payload: "payload" }]
+  users: ["users", {
+    id: "id", username: "username", usernameKey: "username_key",
+    passwordHash: "password_hash", role: "role", sessionVersion: "session_version",
+    recordTimezone: "record_timezone", createdAt: "created_at",
+    updatedAt: "updated_at", position: "position", payload: "payload"
+  }],
+  sessions: ["sessions", {
+    tokenHash: "token_hash", userId: "user_id",
+    sessionVersion: "session_version", createdAt: "created_at",
+    expiresAt: "expires_at", position: "position", payload: "payload"
+  }]
 };
 
 export const documentSqlMapping = mapping => ({
@@ -58,9 +73,15 @@ export async function readAccountDocument(client, accountId, document, fallback 
   const exists = (await client.query("SELECT 1 FROM for_now.account_documents WHERE account_id = $1 AND document = $2", [accountId, document])).rowCount;
   if (!exists) return structuredClone(fallback);
   const actual = await selectMapping(client, "for_now", DOCUMENT_TABLES, "WHERE account_id = $1 AND document = $2", [accountId, document]);
-  const value = rebuildAccountDocument(actual);
-  verifyMapping(actual, mapAccountDocument(accountId, document, value), Object.keys(DOCUMENT_TABLES));
-  return value;
+  try {
+    const value = rebuildAccountDocument(actual);
+    verifyMapping(actual, mapAccountDocument(accountId, document, value), Object.keys(DOCUMENT_TABLES));
+    return value;
+  } catch (cause) {
+    throw Object.assign(new Error("账户文档映射损坏，原数据已保留"), {
+      statusCode: 503, code: "ACCOUNT_DATA_INVALID", recoveryScope: "account", accountId, reasonCode: "ACCOUNT_DOCUMENT_MAPPING_INVALID", cause
+    });
+  }
 }
 
 export async function verifyAccountDocument(client, mapping) {
@@ -73,19 +94,60 @@ export async function verifyAccountDocument(client, mapping) {
 export async function writeAuthDocument(client, value) {
   const mapping = mapAuthDocument(value);
   for (const table of ["sessions", "users", "document_fields"]) await client.query(`DELETE FROM for_now_auth.${table}`);
-  await insertMapping(client, "for_now_auth", AUTH_TABLES, mapping);
+  await insertMapping(client, "for_now_auth", AUTH_TABLES, {
+    ...mapping,
+    users: mapping.users.map(row => ({
+      ...row,
+      position: null,
+      payload: {
+        ...row.payload,
+        [AUTH_DOCUMENT_FIELDS_MARKER]: row.promoted
+      }
+    })),
+    sessions: mapping.sessions.map(row => ({
+      ...row,
+      position: null,
+      payload: {
+        ...row.payload,
+        [AUTH_DOCUMENT_FIELDS_MARKER]: row.promoted
+      }
+    }))
+  });
 }
 
 export async function readAuthDocument(client) {
   const mapping = await selectMapping(client, "for_now_auth", AUTH_TABLES);
   if (!mapping.fields.length && !mapping.users.length && !mapping.sessions.length) return null;
-  const value = rebuildAuthDocument(mapping);
-  verifyMapping(mapping, mapAuthDocument(value), Object.keys(AUTH_TABLES));
-  return value;
+  return rebuildAuthDocument(mapping);
 }
 
 export async function verifyAuthDocument(client, mapping) {
-  verifyMapping(await selectMapping(client, "for_now_auth", AUTH_TABLES), mapping, Object.keys(AUTH_TABLES));
+  const expected = {
+    fields: mapping.fields,
+    users: mapping.users.map(({ promoted, ...row }) => ({
+      ...row,
+      position: null,
+      payload: { ...row.payload, [AUTH_DOCUMENT_FIELDS_MARKER]: promoted }
+    })),
+    sessions: mapping.sessions.map(({ promoted, ...row }) => ({
+      ...row,
+      position: null,
+      payload: { ...row.payload, [AUTH_DOCUMENT_FIELDS_MARKER]: promoted }
+    }))
+  };
+  const actual = await selectMapping(client, "for_now_auth", AUTH_TABLES);
+  for (const rows of [actual.users, actual.sessions]) {
+    for (const row of rows) {
+      for (const field of ["createdAt", "updatedAt", "expiresAt"]) {
+        if (row[field] instanceof Date) row[field] = row[field].toISOString();
+      }
+    }
+  }
+  verifyMapping(
+    actual,
+    expected,
+    Object.keys(AUTH_TABLES)
+  );
 }
 
 export async function writeAttachmentInventory(client, accountId, inventory) {

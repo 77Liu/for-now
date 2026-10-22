@@ -22,6 +22,11 @@ export function createHttpApplication({
   upstreamOrigin,
   localTestMode,
   postgresRuntime,
+  accountRuntime = null,
+  accountLifecycle = null,
+  readAuth = null,
+  findAuthUserById = null,
+  bodyJson = null,
   logEvent,
   sendJson,
   apiV1,
@@ -51,7 +56,7 @@ export function createHttpApplication({
     logEvent,
     sendJson,
     sendError: (res, status, value, context) => context.apiVersion === "v1"
-      ? apiV1.error(res, status, value.error, value.code, value.details)
+      ? apiV1.error(res, status, value.error, value.code, Number.isFinite(value.retryAfterMs) ? { ...(value.details || {}), retryAfterMs: value.retryAfterMs } : value.details)
       : sendJson(res, status, value),
     isStorageError: error => Boolean(
       postgresRuntime
@@ -69,6 +74,9 @@ export function createHttpApplication({
               ...(code ? { code } : {})
             })
       );
+      if (url.pathname === "/readyz" && accountRuntime?.enabled && !accountRuntime.health().ready) {
+        return sendJson(res, 503, { ok: false, code: "ACCOUNT_RECOVERY_NOT_READY", version, ...accountRuntime.health() });
+      }
       if (url.pathname === "/readyz" && postgresRuntime) {
         try {
           await postgresRuntime.ready();
@@ -80,7 +88,8 @@ export function createHttpApplication({
         }
       }
       if (url.pathname === "/healthz" || url.pathname === "/readyz") {
-        return sendJson(res, 200, { ok: true, version });
+        return sendJson(res, 200, { ok: true, version,
+          ...(url.pathname === "/readyz" && accountRuntime?.enabled ? accountRuntime.health() : {}) });
       }
       if (basePath === "/"
         && ["/now", "/now/"].includes(url.pathname)
@@ -145,6 +154,31 @@ export function createHttpApplication({
         });
       }
 
+      if (accountRuntime?.enabled && url.pathname === "/api/v1/account-runtime" && req.method === "GET") {
+        const state = accountRuntime.state(accountRuntime.currentAccountId());
+        return apiV1.success(res, 200, { status: state?.status || "unknown", reasonCode: state?.reasonCode || null, retryAfter: state?.retryAfter || null, dependenciesHealthy: accountRuntime.health().dependenciesHealthy });
+      }
+      const recoveryRoute = accountRuntime?.enabled && /^\/api\/v1\/owner\/accounts\/([^/]+)\/recovery(\/retry)?$/.exec(url.pathname);
+      if (recoveryRoute) {
+        if (!isOwner(user)) return sendRequestError(403, "当前账户没有 Owner 权限", "OWNER_REQUIRED");
+        const id = decodeURIComponent(recoveryRoute[1]);
+        const state = accountRuntime.state(id);
+        if (!state) return sendRequestError(404, "账户不存在", "ACCOUNT_RUNTIME_NOT_FOUND");
+        if (!recoveryRoute[2] && req.method === "GET") return apiV1.success(res, 200, state);
+        if (recoveryRoute[2] && req.method === "POST") {
+          const input = await bodyJson(req);
+          if (typeof input?.bootId !== "string" || !Number.isSafeInteger(input.expectedEpoch)) return sendRequestError(400, "恢复请求参数无效", "ACCOUNT_RECOVERY_INPUT_INVALID");
+          const target = findAuthUserById
+            ? await findAuthUserById(id)
+            : (await readAuth()).users.find(item => item.id === id);
+          if (!target) return sendRequestError(404, "账户不存在", "ACCOUNT_RUNTIME_NOT_FOUND");
+          const result = accountLifecycle.retryUser(target, input);
+          return apiV1.success(res, 202, { attemptId: result.attemptId, epoch: result.epoch, status: result.status });
+        }
+      }
+      if (user && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/attachments/"))) accountRuntime?.authorize();
+
+      const handleBusiness = async () => {
       const requiredCapability = ownerHttp.capabilityFor(url);
       if (requiredCapability && !isOwner(user)) {
         return sendRequestError(
@@ -154,7 +188,9 @@ export function createHttpApplication({
         );
       }
       if (await ownerHttp.handle(req, res, url)) return;
-      if (url.pathname.startsWith("/api/v1/")) {
+      if (url.pathname.startsWith("/api/v1/")
+        || url.pathname === "/api/v2/sync"
+        || url.pathname === "/api/v2/sync/rebase") {
         const handled = await apiV1.handle(req, res, url);
         return handled === false
           ? apiV1.error(res, 404, "Not found", "NOT_FOUND")
@@ -165,6 +201,9 @@ export function createHttpApplication({
       }
       if (await attachmentHttp.handle(req, res, url)) return;
       return staticHttp.handle(req, res, url, context);
+      };
+      return user && accountRuntime?.enabled && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/attachments/"))
+        ? accountRuntime.withOperation(handleBusiness) : handleBusiness();
     }
   });
 

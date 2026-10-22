@@ -3,6 +3,7 @@ import {
   experimentViewModel,
   hasReviewSource
 } from "./model.mjs";
+import { reasoningDisclosureMarkup } from "../../ui/index.mjs";
 
 export const REVIEW_OWNED_SELECTORS = Object.freeze([
   "#weekly-summary",
@@ -170,7 +171,7 @@ function analysisHistoryMarkup(root, snapshot, {
         item.providedReferences
       )}<div class="analysis-content markdown-content">${view.renderMarkdown(
         item.content
-      )}</div>${item.contentTruncated
+      )}</div>${reasoningDisclosureMarkup(item)}${item.contentTruncated
         ? '<p class="status" data-analysis-load-status>展开后载入完整复盘。</p>'
         : ""}<button class="subtle-action danger" type="button" data-analysis-delete="${id}">删除复盘</button></div></details>`;
     }).join("")

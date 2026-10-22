@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "skipLibCheck": true, "types": ["node"],
+    "rootDir": "scripts", "outDir": ".build/typescript/thought-corpus", "noEmitOnError": true
+  },
+  "files": ["scripts/collect-thought-search-corpus.mts"]
+}

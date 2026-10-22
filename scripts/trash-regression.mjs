@@ -125,6 +125,126 @@ const purge = async id => {
   return commands.purge([id], plan.planHash);
 };
 
+const collisionEntries = [
+  {
+    id: "trash-collision-book",
+    type: "book",
+    resourceId: "shared-id",
+    payload: { id: "shared-id" },
+    location: { kind: "collection", collection: "books" }
+  },
+  {
+    id: "trash-unrelated-thought-remark",
+    type: "thoughtRemark",
+    resourceId: "remark",
+    payload: { id: "remark" },
+    location: {
+      kind: "nested",
+      parentCollection: "thoughts",
+      parentId: "shared-id",
+      field: "remarks"
+    }
+  }
+];
+const collisionPlan = trash.expanded(collisionEntries, ["trash-collision-book"]);
+assert.deepEqual(collisionPlan.map(item => item.id), ["trash-collision-book"]);
+trash.purge(collisionPlan);
+assert.equal(collisionEntries[0].permanentlyPurged, true);
+assert.equal(collisionEntries[1].permanentlyPurged, undefined);
+
+// 旧记录缺少所属集合时，必须对全部候选身份核对唯一归属；同 ID 的未选思绪不能被忽略。
+const ambiguousLegacyEntries = [
+  {
+    id: "ambiguous-book",
+    type: "book",
+    resourceId: "ambiguous-id",
+    payload: { id: "ambiguous-id" },
+    location: { kind: "collection", collection: "books" }
+  },
+  {
+    id: "ambiguous-thought",
+    type: "thoughtChain",
+    resourceId: "ambiguous-id",
+    payload: { id: "ambiguous-id" },
+    location: { kind: "thoughtChain" }
+  },
+  {
+    id: "ambiguous-legacy-remark",
+    type: "thoughtRemark",
+    resourceId: "ambiguous-remark",
+    payload: { id: "ambiguous-remark" },
+    location: { kind: "nested", parentId: "ambiguous-id", field: "remarks" }
+  }
+];
+const ambiguousPlan = trash.expanded(ambiguousLegacyEntries, ["ambiguous-book"]);
+assert.deepEqual(ambiguousPlan.map(item => item.id), ["ambiguous-book"]);
+trash.purge(ambiguousPlan);
+assert.equal(ambiguousLegacyEntries[0].permanentlyPurged, true);
+assert.equal(ambiguousLegacyEntries[1].permanentlyPurged, undefined);
+assert.equal(ambiguousLegacyEntries[2].permanentlyPurged, undefined);
+
+// 单一候选身份时，旧记录仍按既有机制正常扩展；但类型与父集合不匹配的条目不得被串选。
+const uniqueLegacyEntries = [
+  {
+    id: "unique-book",
+    type: "book",
+    resourceId: "unique-id",
+    payload: { id: "unique-id" },
+    location: { kind: "collection", collection: "books" }
+  },
+  {
+    id: "unique-legacy-note",
+    type: "bookNote",
+    resourceId: "unique-note",
+    payload: { id: "unique-note" },
+    location: { kind: "nested", parentId: "unique-id", field: "notes" }
+  },
+  {
+    id: "unique-legacy-remark",
+    type: "thoughtRemark",
+    resourceId: "unique-remark",
+    payload: { id: "unique-remark" },
+    location: { kind: "nested", parentId: "unique-id", field: "remarks" }
+  }
+];
+assert.deepEqual(
+  trash.expanded(uniqueLegacyEntries, ["unique-book"]).map(item => item.id),
+  ["unique-book", "unique-legacy-note"]
+);
+
+// A1：批注可属于思绪、书籍等多个集合。回收站里只有同 ID 书籍时，旧记录缺少所属集合
+// 也不能凭唯一候选推断，否则原属在线思绪的批注会被一起永久清理。
+const ambiguousAnnotationEntries = [
+  {
+    id: "annotation-book",
+    type: "book",
+    resourceId: "annotation-parent",
+    payload: { id: "annotation-parent" },
+    location: { kind: "collection", collection: "books" }
+  },
+  {
+    id: "legacy-annotation",
+    type: "annotation",
+    resourceId: "annotation-mark",
+    payload: { id: "annotation-mark" },
+    location: { kind: "nested", parentId: "annotation-parent", field: "annotations" }
+  },
+  {
+    id: "legacy-annotation-drift",
+    type: "annotationDrift",
+    resourceId: "annotation-drift",
+    payload: { id: "annotation-drift" },
+    location: { kind: "nested", parentId: "annotation-parent", field: "annotationDrift" }
+  }
+];
+const ambiguousAnnotationPlan = trash.expanded(ambiguousAnnotationEntries, ["annotation-book"]);
+assert.deepEqual(ambiguousAnnotationPlan.map(item => item.id), ["annotation-book"]);
+trash.purge(ambiguousAnnotationPlan);
+assert.equal(ambiguousAnnotationEntries[0].permanentlyPurged, true);
+assert.equal(ambiguousAnnotationEntries[1].permanentlyPurged, undefined);
+assert.equal(ambiguousAnnotationEntries[2].permanentlyPurged, undefined);
+
+
 reset();
 const note = await repository.update(store => mutations.moveNestedItemToTrash(store, {
   parentCollection: "books", parentId: "book", field: "notes", type: "bookNote", id: "note", annotationTargetKeys: ["note:note"]
@@ -145,6 +265,24 @@ assert.equal(restoredBook.annotations[0].replies[0].text, "原回复");
 assert.equal(restoredBook.annotationDrift[0].originalContext.focus, "正文");
 assert.equal(restoredBook.version, 6);
 assert.equal((await commands.restore(note.id)).missing, true);
+
+// N4：漂移区批注随子项移入回收站时，相关任务同样必须取消。
+reset();
+await repository.update(store => {
+  store.aiTasks.push(
+    { id: "running-note-mark", kind: "annotationShenji", resourceType: "book", targetId: "book", subtargetId: "mark", status: "running" },
+    { id: "running-note-drift", kind: "annotationShenji", resourceType: "book", targetId: "book", subtargetId: "drift", status: "running" }
+  );
+});
+const driftNote = await repository.update(store => mutations.moveNestedItemToTrash(store, {
+  parentCollection: "books", parentId: "book", field: "notes", type: "bookNote", id: "note", annotationTargetKeys: ["note:note"]
+}));
+assert.deepEqual(driftNote.dependents.annotations.map(item => item.id), ["mark"]);
+assert.deepEqual(driftNote.dependents.annotationDrift.map(item => item.id), ["drift"]);
+const afterDriftDelete = await repository.read();
+assert.equal(afterDriftDelete.aiTasks.find(item => item.id === "running-note-mark").status, "cancelling");
+assert.equal(afterDriftDelete.aiTasks.find(item => item.id === "running-note-drift").status, "cancelling");
+assert.deepEqual(cancelledRunningTasks, ["running-note-mark", "running-note-drift"]);
 
 const block = await repository.update(store => mutations.moveThoughtBlockToTrash(store, "answer"));
 assert.equal((await repository.read()).thoughts[0].annotations.length, 0);
@@ -293,7 +431,7 @@ const keepsake = await move("keepsakes", "keepsake", "keepsake");
 assert.deepEqual(collectAttachmentPaths({ markdown: "before /attachments/not-a-ref.png", bad: "/attachments/../x", good: ["/attachments/shared.png"] }), new Set(["/attachments/shared.png"]));
 const firstPurge = await purge(keepsake.id);
 assert.deepEqual(firstPurge.attachments, ["/attachments/only.png"]);
-assert.ok(commits.some(store => !store.trash.length && store.attachmentCleanup.some(item => item.path === "/attachments/only.png")));
+assert.ok(commits.some(store => store.trash.every(item => item.permanentlyPurged === true) && store.attachmentCleanup.some(item => item.path === "/attachments/only.png")));
 assert.ok(!removals.some(item => item.path === "/attachments/shared.png"));
 const parent = await move("books", "book", "book");
 const preview = await commands.preview([parent.id]);

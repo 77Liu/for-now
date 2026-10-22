@@ -1,3 +1,6 @@
+import crypto from "node:crypto";
+import { readThoughtSpeechAssets } from "./speech-cache.mjs";
+import { readNotificationUnread } from "../modules/notifications/index.mjs";
 import { openingPreferences } from "../../public/frontend/shared/opening/index.mjs";
 import path from "node:path";
 import {
@@ -23,7 +26,10 @@ import {
   commercializationOwnerSurface
 } from "../modules/owner-surfaces/index.mjs";
 import { errorMetadata, pruneLogs } from "../shared/observability/index.mjs";
-import { eventTimeFields } from "../shared/time/index.mjs";
+import {
+  dateKeyInTimezone,
+  eventTimeFields
+} from "../shared/time/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 import {
   recordCompressionAccountQueueAllowance,
@@ -159,6 +165,8 @@ export function createRecordCompressionScanObserver({
 
 export function createRuntimeHttpWiring({
   appConfig,
+  accountRuntime,
+  syncNotifier,
   releaseVersion,
   paths,
   httpLimits,
@@ -175,6 +183,10 @@ export function createRuntimeHttpWiring({
   const { now, today } = clock;
   const { createId } = identifiers;
   const { requestStorage, logEvent } = observability;
+  const recordTimezone = () => (
+    requestStorage.getStore()?.user?.recordTimezone
+    || DEFAULT_RECORD_TIMEZONE
+  );
   const {
     storeRepository,
     storagePaths,
@@ -203,8 +215,48 @@ export function createRuntimeHttpWiring({
     sendJson,
     bodyJson,
     userDataDir,
-    readAuth
+    authService
   } = access;
+  const readUsers = async () => {
+    if (!appConfig.authRequired) return [{ id: "local" }];
+    const users = [];
+    let after = null;
+    do {
+      const page = await authService.scanUsersPage({ limit: 100, after });
+      users.push(...page.users);
+      after = page.next;
+    } while (after);
+    return users;
+  };
+  const runRecordSyncMaintenance = async () => {
+    const days = appConfig.syncV2.retentionDays;
+    const retainRows = appConfig.syncV2.retentionRowsPerAccount;
+    if (!Number.isSafeInteger(days) || !Number.isSafeInteger(retainRows)
+      || typeof storeRepository.pruneRecordChanges !== "function") {
+      return { disabled: true, accounts: 0, pruned: 0 };
+    }
+    const cutoff = new Date(new Date(now()).getTime() - days * 86_400_000).toISOString();
+    let accounts = 0, pruned = 0;
+    for (const user of await readUsers()) {
+      if (accountRuntime?.enabled && accountRuntime.state(user.id)?.status !== "ready") continue;
+      const operation = () => storeRepository.pruneRecordChanges({
+        before: cutoff,
+        retainRows
+      });
+      const count = await requestStorage.run({
+        user,
+        traceId: createId(),
+        dataDir: appConfig.authRequired ? userDataDir(user) : paths.dataDir,
+        secrets: [],
+        route: "background/record-sync-maintenance"
+      }, () => accountRuntime?.enabled
+        ? accountRuntime.withOperation(operation)
+        : operation());
+      accounts += 1;
+      pruned += Math.max(0, Number(count) || 0);
+    }
+    return { accounts, pruned, cutoff, retainRows };
+  };
   const platformHttp = createRuntimePlatformHttp({
     appConfig,
     httpLimits,
@@ -232,10 +284,11 @@ export function createRuntimeHttpWiring({
     ensureAiUsage,
     readAiUsage,
     logsDirectory: () => storagePaths().logsDir,
-    aiDashboard: (usage, from, to, cnyPerUsd) => (
-      aiCosts.dashboard(usage, from, to, cnyPerUsd)
+    aiDashboard: (usage, from, to, cnyPerUsd, timezone) => (
+      aiCosts.dashboard(usage, from, to, cnyPerUsd, timezone)
     ),
-    today
+    today: timezone => dateKeyInTimezone(now(), timezone || recordTimezone()),
+    getTimezone: recordTimezone
   });
   const ownerHttp = createOwnerHttp({
     architectureSurface: architectureOwnerSurface,
@@ -326,10 +379,8 @@ export function createRuntimeHttpWiring({
       || (parts.hour === "18" && parts.minute === "05");
     if (!due) return { skipped: "outside-slot" };
     return runRecordCompressionSlot(slotKey, () => observeRecordCompressionScan(async () => {
-      const users = appConfig.authRequired
-        ? (await readAuth()).users
-        : [{ id: "local" }];
-      const eligibleUsers = Array.isArray(users) ? users : [];
+      const users = await readUsers();
+      const eligibleUsers = (Array.isArray(users) ? users : []).filter(user => !accountRuntime?.enabled || accountRuntime.state(user.id)?.status === "ready");
       const globalDay = `${parts.year}-${parts.month}-${parts.day}`;
       const compressionBudgetState = typeof readRecordCompressionBudget === "function"
         ? await readRecordCompressionBudget()
@@ -373,8 +424,10 @@ export function createRuntimeHttpWiring({
         secrets: [],
         route: "background/record-compression"
       });
+      const runAccountScan = (user, operation) => requestStorage.run(contextFor(user), () =>
+        accountRuntime?.enabled ? accountRuntime.withOperation(operation) : operation());
       for (const user of eligibleUsers) {
-        const accountUsage = await requestStorage.run(contextFor(user), async () => {
+        const accountUsage = await runAccountScan(user, async () => {
           const [usage, store] = await Promise.all([readAiUsage(), readStore()]);
           const dailyEntries = (Array.isArray(usage?.entries) ? usage.entries : [])
             .filter(entry => entry?.scene === RECORD_COMPRESSION_TASK_KIND
@@ -455,7 +508,7 @@ export function createRuntimeHttpWiring({
         }
         const slot = parts.hour === "06" ? "morning" : "evening";
         const maxQueued = recordCompressionSlotQueueAllowance(slot, availableQueueAllowance);
-        const scanResult = await requestStorage.run(contextFor(user), () => (
+        const scanResult = await runAccountScan(user, () => (
           runRecordCompressionScan({ asOf: timestamp, slot, maxQueued })
         ));
         waitingBudgetCount += Number.isSafeInteger(scanResult?.waitingBudgetCount)
@@ -512,6 +565,42 @@ export function createRuntimeHttpWiring({
     try { return openingPreferences((await aiRuntime.readLlmSettings()).opening); }
     catch { return openingPreferences(); }
   };
+  const featuresFor = user => ({
+    ...appConfig.features,
+    recordSyncV2: appConfig.syncV2.accountEnabled(user?.id || "")
+  });
+  const readThoughtSpeech = async ids => {
+    const speech = publicStateFromStore({ speechCache: [] }, undefined, ["speechCache"]).speech;
+    const hash = value => crypto.createHash("sha256").update(String(value)).digest("hex");
+    const sourceReceipts = await contentRuntime.thoughtQueries.speechSources(ids);
+    speech.assets = await readThoughtSpeechAssets(storeRepository, sourceReceipts, {
+      ownerHash: hash(safeText(requestStorage.getStore()?.user?.id, 100) || "local"),
+      currentTime: now(), hash
+    });
+    return speech;
+  };
+  const readThoughtRoute = async route => {
+    const queries = contentRuntime.thoughtQueries;
+    const query = route.query || {};
+    const unread = await storeRepository.queryRecords(readNotificationUnread);
+    if (route.resourceId) {
+      const detail = await queries.detail(route.resourceId);
+      const { blocks = [], ...root } = detail || {};
+      return { notificationUnread: unread, speech: await readThoughtSpeech(detail ? [root.id] : []),
+        thoughts: detail ? [root, ...blocks] : [],
+        thoughtPage: { kind: "detail", found: Boolean(detail), nextId: "", query: query.q || "", page: 1 } };
+    }
+    const page = await queries.list({
+      afterId: query.thoughtAfterId || "", direction: query.direction || "next",
+      query: query.q || "", tag: query.tag || "", sort: query.sort,
+    });
+    return { notificationUnread: unread, speech: await readThoughtSpeech(page.items.map(item => item.id)),
+      thoughts: page.items, thoughtPage: {
+      kind: "list", nextId: page.nextId, prevId: page.prevId, tags: page.tags,
+      requestCursor: query.cursor || "", direction: query.direction || "next",
+      query: query.q || "", tag: query.tag || "", sort: query.sort === "created" ? "created" : "occurred", page: 1
+    } };
+  };
   const startupHttp = createStartupHttp({
     readStartup: async () => {
       const store = await readStore();
@@ -523,28 +612,54 @@ export function createRuntimeHttpWiring({
         releaseVersion,
         openingPreferences: await readOpeningPreferences(user),
         capabilities: capabilitiesFor(user),
-        features: appConfig.features,
+        features: featuresFor(user),
         governanceUrl: isOwner(user) && appConfig.platform.serviceTokenHash
           ? "/platform/"
           : "",
         unread: notificationUnread(store.notifications)
       });
     },
-    readRouteState: async route => ({
-      ...routeStateProjection(
-        publicStateFromStore(await readStore()),
-        {
-          ...route,
-          currentDate: today(),
-          cursorScope: safeText(requestStorage.getStore()?.user?.id, 100) || "local"
-        }
-      ),
-      _routeProjection: { view: route.view, complete: false }
-    })
+    readRouteState: async route => {
+      const user = requestStorage.getStore()?.user;
+      const recordOwned = featuresFor(user).recordSyncV2
+        && contentRuntime.thoughtQueries?.enabled;
+      const projection = route.view === "thoughts" && contentRuntime.thoughtQueries?.enabled
+        ? recordOwned
+          ? { notificationUnread: await storeRepository.queryRecords(readNotificationUnread) }
+          : await readThoughtRoute(route)
+        : routeStateProjection(publicStateFromStore(await readStore()), {
+            ...route, currentDate: today(),
+            cursorScope: safeText(requestStorage.getStore()?.user?.id, 100) || "local"
+          });
+      return { ...projection, _routeProjection: { view: route.view, complete: false } };
+    }
   });
   const syncHttp = createSyncHttp({
     repository: storeRepository,
-    publicState: publicStateFromStore
+    publicState: publicStateFromStore,
+    notifier: syncNotifier,
+    getAccountId: () => accountRuntime.currentAccountId(),
+    bodyJson,
+    recordSync: contentRuntime.thoughtQueries?.recordSync || null,
+    recordRebaseExtras: async rebased => {
+      const rootIds = [...new Set(rebased.scopes.flatMap(scope => (
+        scope.entities
+          .filter(entity => entity.key?.entityType === "thoughtChain")
+          .map(entity => entity.key.entityId)
+      )))];
+      return { speech: await readThoughtSpeech(rootIds) };
+    },
+    syncV2: appConfig.syncV2,
+    assertAccess: async req => {
+      const id = requestStorage.getStore()?.user?.id;
+      const auth = access.localTestRuntime.enabled
+        ? access.localTestHttp.authentication(req)
+        : await access.requestAuthentication(req);
+      if (!auth.user || auth.user.id !== id || auth.reauthRequired) throw Object.assign(new Error("会话已失效，请重新登录"), {
+        code: auth.reauthRequired ? "AUTH_REAUTH_REQUIRED" : "AUTH_REQUIRED", statusCode: 401
+      });
+      accountRuntime.authorize();
+    }
   });
   const personalContextHttp = createPersonalContextHttp({
     readStore,
@@ -574,20 +689,17 @@ export function createRuntimeHttpWiring({
   });
 
   async function runPeriodicAnalyses() {
-    const users = appConfig.authRequired
-      ? (await readAuth()).users
-      : [{ id: "local" }];
+    const users = await readUsers();
     for (const user of users) {
+      if (accountRuntime?.enabled && accountRuntime.state(user.id)?.status !== "ready") continue;
+      const run = async () => { await ensureAuditLogs(); await maybeRunPeriodicAnalysis(); };
       await requestStorage.run({
         user,
         traceId: createId(),
         dataDir: appConfig.authRequired ? userDataDir(user) : paths.dataDir,
         secrets: [],
         route: "background/analysis"
-      }, async () => {
-        await ensureAuditLogs();
-        await maybeRunPeriodicAnalysis();
-      });
+      }, () => accountRuntime?.enabled ? accountRuntime.withOperation(run) : run());
     }
     await pruneLogs(
       path.join(paths.dataDir, "logs"),
@@ -630,7 +742,7 @@ export function createRuntimeHttpWiring({
         user: publicUser(user),
         ...(isOwner(user) ? { openingPreferences: await readOpeningPreferences(user) } : {}),
         capabilities: capabilitiesFor(user),
-        features: appConfig.features,
+        features: featuresFor(user),
         governanceUrl: isOwner(user) && appConfig.platform.serviceTokenHash
           ? "/platform/"
           : ""
@@ -648,6 +760,7 @@ export function createRuntimeHttpWiring({
     attachmentHttp: platformHttp.attachmentHttp,
     runPeriodicAnalyses,
     runRecordCompressionScheduler,
+    runRecordSyncMaintenance,
     runSpeechCacheSweep
   };
 }

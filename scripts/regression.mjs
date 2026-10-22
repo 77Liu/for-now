@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { healthImageFixtures } from "./fixtures/health-images.mjs";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 import { normalizeHealthImage, describeHealthDetails } from "../src/modules/health/index.mjs";
 import { LLM_SCENARIOS, LLM_SETTINGS_VERSION } from "../src/modules/ai/index.mjs";
 
@@ -175,21 +176,30 @@ await fs.writeFile(path.join(dataDir, "llm-settings.json"), `${JSON.stringify({
   automaticAnswers: { thoughtAnswer: true },
   apiKey: "test-key"
 }, null, 2)}\n`);
+const authFixture = await installAuthenticatedJsonRuntime(dataDir);
 
 let appError = "";
 const startApp = () => {
   const child = spawn(process.execPath, ["server.mjs"], {
     cwd: ROOT,
-    env: { ...process.env, NODE_ENV: "test", TEST_CURRENT_DATE: "2026-10-02", TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions`, KEEPSAKE_SEGMENT_MOCK_RESULT: mockSegmentCutout, PERIODIC_ANALYSIS_ENABLED: "0" },
+    env: { ...process.env, ...authFixture.env, NODE_ENV: "test", TEST_CURRENT_DATE: "2026-10-02", TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions`, KEEPSAKE_SEGMENT_MOCK_RESULT: mockSegmentCutout, PERIODIC_ANALYSIS_ENABLED: "0" },
     stdio: ["ignore", "pipe", "pipe"]
   });
   child.stderr.on("data", chunk => { appError += chunk; });
   return child;
 };
 let app = startApp();
+const systemFetch = globalThis.fetch;
 
 try {
   const base = `http://127.0.0.1:${appPort}`;
+  globalThis.fetch = (input, init = {}) => {
+    const target = String(input instanceof Request ? input.url : input);
+    if (!target.startsWith(base)) return systemFetch(input, init);
+    const headers = new Headers(init.headers);
+    if (!headers.has("cookie")) headers.set("cookie", authFixture.cookie);
+    return systemFetch(input, { ...init, headers });
+  };
   const addHighlight = (type, id, targetKey, quote, start = 0) => fetch(`${base}/api/annotations/${type}/${id}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -277,7 +287,7 @@ try {
     ["mood", 1, 0], ["energy", 1, 0], ["stress", 1, 0], ["sleep", 1, 0]
   ]);
   assert.deepEqual(migrated.insights.associations.map(item => [item.factor, item.withCount, item.confidence]), [["冷启动因素", 1, "单日观察"]]);
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v18") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(authFixture.userDir)).some(name => name.includes("v3-pre-v18") && name.endsWith(".bak")), true);
   const migratedSettings = await (await fetch(`${base}/api/settings`)).json();
   assert.equal(migratedSettings.version, LLM_SETTINGS_VERSION);
   assert.deepEqual(Object.keys(migratedSettings.profiles), ["lite", "mid", "high", "ultra"]);
@@ -299,7 +309,7 @@ try {
   const storedSettings = JSON.parse(await fs.readFile(path.join(dataDir, "llm-settings.json"), "utf8"));
   assert.equal(storedSettings.version, LLM_SETTINGS_VERSION);
   assert.equal(storedSettings.apiKey, "test-key");
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes(`v2-pre-v${LLM_SETTINGS_VERSION}`) && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(authFixture.userDir)).some(name => name.includes(`v2-pre-v${LLM_SETTINGS_VERSION}`) && name.endsWith(".bak")), true);
   const initialStatistics = await (await fetch(`${base}/api/statistics`)).json();
   assert.equal(initialStatistics.ai.summary.calls, 0);
   assert.equal(initialStatistics.ai.daily.length, 7);
@@ -1371,12 +1381,13 @@ try {
   assert.equal(imageStatistics.summary.visionCalls, 6);
   assert.equal(imageStatistics.summary.imageCount, 7);
   assert.equal(imageStatistics.modalities.find(item => item.modality === "vision").calls, 6);
-  const auditFiles = (await fs.readdir(path.join(dataDir, "logs"))).filter(name => name.startsWith("ai-audit-"));
-  const auditEntries = (await Promise.all(auditFiles.map(async name => (await fs.readFile(path.join(dataDir, "logs", name), "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse)))).flat();
+  const auditLogs = path.join(authFixture.userDir, "logs");
+  const auditFiles = (await fs.readdir(auditLogs)).filter(name => name.startsWith("ai-audit-"));
+  const auditEntries = (await Promise.all(auditFiles.map(async name => (await fs.readFile(path.join(auditLogs, name), "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse)))).flat();
   const sleepAudit = auditEntries.find(item => item.traceId === sleepTraceId && item.status !== "started");
   assert.ok(auditEntries.some(item => item.callId === sleepAudit.callId && item.status === "started"));
-  assert.equal(sleepAudit.schemaVersion, 3);
-  assert.equal(sleepAudit.actor.userId, "local");
+  assert.equal(sleepAudit.schemaVersion, 4);
+  assert.equal(sleepAudit.actor.userId, authFixture.userId);
   assert.equal(sleepAudit.request.images.length, 2);
   assert.equal(sleepAudit.request.images[0].sha256.length, 64);
   assert.match(sleepAudit.request.userPrompt, /同一次睡眠记录/);
@@ -1836,6 +1847,7 @@ try {
   assert.equal(midnight, "00:56:18");
   console.log("Regression checks passed: v15 onboarding, trash recovery, retryable attachment cleanup, concurrent AI idempotency, target-version invalidation, thought blocks, image parsing, local dates, and reasoning isolation.");
 } finally {
+  globalThis.fetch = systemFetch;
   app.kill("SIGTERM");
   await new Promise(resolve => mock.close(resolve));
   await fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });

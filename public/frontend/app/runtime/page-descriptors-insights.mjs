@@ -31,7 +31,9 @@ export function installInsightsDescriptors(descriptors, ports) {
         getSnapshot:()=>state,
         getAccountId:()=>runtime.currentUser?.id||"",
         getSessionSerial:()=>sessionSerial,
-        isRouteDataReady:()=>runtime.routeDataReady,
+        getThoughtPaging:()=>runtime.featureFlags?.thoughtPaging,
+        isRouteDataReady:()=>runtime.routeDataReady && (runtime.fullRouteStateLoaded
+          || runtime.loadedRouteKey===routeDataKey(pageRouter.currentRoute())),
         isFullRouteStateLoaded:()=>runtime.fullRouteStateLoaded,
         request,
         requestV1:(url,options,coordination)=>featureRequestV1(view,url,options,coordination),
@@ -46,6 +48,7 @@ export function installInsightsDescriptors(descriptors, ports) {
         openDetail:id=>pageRouter.openDetail("thought-chain",id),
         backToList:(nextView,options)=>pageRouter.backToList(nextView,options),
         replaceQuery:(query,options)=>pageRouter.replaceQuery(query,options),
+        cancelScrollRestoration:()=>pageRouter.cancelScrollRestoration(),
         showUnavailable:(target,options)=>pageRouter.showUnavailable(createUnavailableRouteResult(target),options),
         clearResult:()=>pageRouter.clearResult()
       },
@@ -63,6 +66,7 @@ export function installInsightsDescriptors(descriptors, ports) {
         tagTargets:tagCommentableTargets,
         applyAnchors:applyCommentAnchors,
         scheduleLayout:scheduleAnnotationLineCounts,
+        hasActiveSelection:container=>runtime.annotationsController?.hasActiveSelection(container)||false,
         openPanel:openCommentPanel,
         rootKey:commentRootKey
       },

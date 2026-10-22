@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "public/frontend",
+    "outDir": "public/generated",
+    "noEmitOnError": true
+  },
+  "files": [
+    "public/frontend/shared/incremental-sync.mts",
+    "public/frontend/app/runtime/data-sync-runtime.mts"
+  ]
+}

@@ -65,7 +65,7 @@ const task = created.task;
 const work = service.target.prepare(store, task);
 assert.ok(work);
 assert.equal(work.modelOverride.model, choice.model);
-assert.equal(work.auditPrompt, false);
+assert.equal(work.triggerType, "system_internal");
 allowed = false;
 assert.equal(service.target.prepare(store, task), null);
 assert.throws(() => service.target.save(store, work, task, { content: '{"scores":[{"reference":"r1","score":80,"reason":"关注"}]}' }), /撤权/);

@@ -461,7 +461,7 @@ export function createActionsCoordinator(deps = {}) {
   const snapshot=()=>clone({...visible,today:actionsDateKey(currentDate()),loadState,loadError,revision});
   const publish=detail=>{revision+=1;const value=snapshot();for(const listener of subscribers)listener(value,detail)};
   const capture=extra=>({generation,session:captureSession(),...extra});
-  const isCurrent=ticket=>ticket?.generation === generation&&isCurrentSession(ticket.session);
+  const isCurrent=ticket=>ticket?.generation === generation&&isCurrentSession(ticket.session)&&(!ticket.consumerCurrent||ticket.consumerCurrent());
   const rebuild = () => {
     let next=clone(base);
     for(const entry of projections.values())next=projectActionCommand(next,entry.command,{status:entry.status,operationId:entry.operationId,createdAt:entry.createdAt}).value;
@@ -478,8 +478,9 @@ export function createActionsCoordinator(deps = {}) {
     rebuild();publish({type:"projection-removed",operationId:key});return true
   };
 
-  async function performLoad() {
-    const ticket=capture({serial:++loadSerial,domainRevisions:{...domainRevisions}}),options=ticket.session?.signal?{signal:ticket.session.signal}:{};
+  async function performLoad(consumerCurrent) {
+    if(consumerCurrent&&!consumerCurrent())return false;
+    const ticket=capture({serial:++loadSerial,domainRevisions:{...domainRevisions},consumerCurrent}),options=ticket.session?.signal?{signal:ticket.session.signal}:{};
     loadTicket=ticket;loadState="loading";loadError="";publish({type:"load",status:"loading"});
     try {
       const[actionsResult,habitsResult]=await Promise.all([listAllV1(ACTIONS_ENDPOINT,options),listAllV1(HABITS_ENDPOINT,options)]);
@@ -495,7 +496,8 @@ export function createActionsCoordinator(deps = {}) {
       loadState="failure";loadError=error?.message||"行动列表刷新失败";publish({type:"load",status:"failure",error});return false
     }
   }
-  const load=({ensure=false}={})=>ensure&&loadTicket&&isCurrent(loadTicket)&&["loading","ready"].includes(loadState)?loadState==="loading"?latestLoadPromise:Promise.resolve(true):latestLoadPromise=performLoad();
+  /** 可选isCurrent自unreleased起限定本次完整恢复；ensure只复用同一guard的有效load，不保存至业务快照。 */
+  const load=({ensure=false,isCurrent:consumerCurrent}={})=>consumerCurrent&&!consumerCurrent()?Promise.resolve(false):ensure&&loadTicket&&isCurrent(loadTicket)&&loadTicket.consumerCurrent===consumerCurrent&&["loading","ready"].includes(loadState)?loadState==="loading"?latestLoadPromise:Promise.resolve(true):latestLoadPromise=performLoad(consumerCurrent);
   const refreshData=ticket=>(refreshTail=refreshTail.then(async()=>{if(ticket&&!isCurrent(ticket))return false;let operation=load();for(;;){const result=await operation;if(ticket&&!isCurrent(ticket))return false;if(latestLoadPromise===operation)return result;operation=latestLoadPromise}}));
 
   const applyPendingRecord=(record={})=>record?.projection?.kind==="action.command"&&record.projection.command?setProjection(record.operationId,record.projection.command,record):false;

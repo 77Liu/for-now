@@ -1,4 +1,8 @@
-import { llmSettingsForScene } from "../modules/ai/index.mjs";
+import { createAccountCommitNotifier } from "../shared/concurrency/index.mjs";
+import { createAccountRuntimeState } from "../../.build/typescript/backend/app/account-runtime-state.mjs";
+import { assertThoughtPagingBuildContract } from "../../.build/typescript/backend/shared/thought-pagination/build-contract.mjs";
+import { normalizePersistedDocument } from "../shared/persistence/index.mjs";
+import { normalizeLlmSettings, normalizeAiUsage, llmSettingsForScene } from "../modules/ai/index.mjs";
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -57,6 +61,14 @@ export async function createRuntimeFoundation({
       || "development"
   );
   const appConfig = loadAppConfig({ rootDir });
+  if (!appConfig.authRequired && !appConfig.localTestMode) {
+    throw new Error(
+      "AUTH_REQUIRED=0 no longer starts a business application; use authenticated isolated PostgreSQL or LOCAL_TEST_MODE"
+    );
+  }
+  if (appConfig.features.thoughtPaging.enabled) {
+    await assertThoughtPagingBuildContract(rootDir);
+  }
   installPromptCatalog(await loadPromptCatalog({
     rootDir,
     requestedVersion: appConfig.promptCatalogVersion,
@@ -90,6 +102,27 @@ export async function createRuntimeFoundation({
     rootDir: dataDir,
     version: appConfig.version
   });
+  const syncNotifier = createAccountCommitNotifier();
+  let contentRuntime = null;
+  const accountRuntime = createAccountRuntimeState({
+    config: appConfig.accountRecovery,
+    getContext: () => requestStorage.getStore(),
+    defaultAccount: "local",
+    getAccountKey: () => appConfig.localTestMode ? "local" : requestStorage.getStore()?.user?.id || "local",
+    onUnavailable: () => { syncNotifier.stop(); contentRuntime?.backgroundAi?.abortAll?.(); },
+    onDispatchError: error => { void logEvent("system", "account.dispatch_failed", { level: "warn", error: errorMetadata(error) }).catch(() => {}); },
+    onTransition: state => {
+      if (state.status !== "ready") syncNotifier.invalidateAccount(state.accountId);
+      if (state.status === "quarantined") contentRuntime?.backgroundAi?.abortCurrentAccount?.();
+      void logEvent("system", "account.recovery_state", {
+      level: state.status === "quarantined" ? "warn" : "info",
+      accountId: state.accountId, status: state.status, phase: state.phase, epoch: state.epoch, reasonCode: state.reasonCode
+    }).catch(() => {}); }
+  });
+  const notifyStoreCommitted = ({ accountId, storageScope }) => {
+    if (!appConfig.syncAccountWakeEnabled) return;
+    try { syncNotifier.notifyAccountCommitted({ accountId: accountId || accountRuntime.currentAccountId(), storageScope }); } catch {}
+  };
   const runtimeMemorySampler = createRuntimeMemorySampler({
     logEvent,
     intervalMs: runtimeMemorySampleIntervalMs
@@ -130,25 +163,63 @@ export async function createRuntimeFoundation({
       : {};
   };
 
+  const isAccountFile = file => ["store.json", "llm-settings.json", "ai-usage.json", "ai-cost-plan.json"].includes(path.basename(file));
+  const accountDataError = (reasonCode, cause) => Object.assign(new Error("账户持久化数据校验失败，原数据已保留"), {
+    statusCode: 503, code: "ACCOUNT_DATA_INVALID", recoveryScope: "account", reasonCode,
+    accountId: accountRuntime.currentAccountId(), cause
+  });
+  const assertStorageAccess = file => { if (isAccountFile(file)) accountRuntime.authorize(); };
+  const validateShape = (name, value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw accountDataError("ACCOUNT_DOCUMENT_INVALID");
+    if (value.version != null && (!Number.isSafeInteger(Number(value.version)) || Number(value.version) < 1)) throw accountDataError("ACCOUNT_DOCUMENT_VERSION_INVALID");
+    if (name === "store.json") {
+      for (const [key, fallback] of Object.entries(emptyStore)) {
+        if (Array.isArray(fallback) && Object.hasOwn(value, key) && !Array.isArray(value[key])) throw accountDataError("ACCOUNT_COLLECTION_INVALID");
+      }
+    }
+    if (name === "ai-usage.json" && Object.hasOwn(value, "entries") && !Array.isArray(value.entries)) throw accountDataError("ACCOUNT_USAGE_INVALID");
+    if (name === "llm-settings.json") {
+      for (const key of ["profiles", "scenarios", "sceneEfforts"]) {
+        if (Object.hasOwn(value, key) && (!value[key] || typeof value[key] !== "object" || Array.isArray(value[key]))) throw accountDataError("ACCOUNT_SETTINGS_INVALID");
+      }
+    }
+    return value;
+  };
+
+  // OS文件系统故障不能仅包装为单次请求失败；无账户局部证据时停止准入并排空。
+  // 仅识别真实syscall错误，普通业务校验和4xx不会被升级。
+  const reportStorageIoFailure = error => {
+    const ioFailure = accountRuntime.enabled && /^E[A-Z0-9]+$/.test(error.code || "")
+      && typeof error.syscall === "string" && !(error.statusCode >= 400 && error.statusCode < 500);
+    if (ioFailure) accountRuntime.failGlobal(error);
+    return ioFailure;
+  };
+
   async function writeJsonAtomic(file, value) {
     if (persistenceBackend === "postgres") {
       throw new Error("JSON writes are disabled in PostgreSQL runtime");
     }
+    assertStorageAccess(file);
     const temp = `${file}.${crypto.randomUUID()}.tmp`;
     try {
       await fs.writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, {
         encoding: "utf8",
         mode: 0o600
       });
+      assertStorageAccess(file);
       await fs.rename(temp, file);
+      // 恢复与local-test也会直接写store；真实rename后提示，不能等后续仓储/审计步骤。
+      if (path.basename(file) === "store.json") { try { notifyStoreCommitted({ storageScope: file }); } catch {} }
     } catch (error) {
+      if (String(error.code || "").startsWith("ACCOUNT_")) throw error;
+      const sharedIoFailure = reportStorageIoFailure(error);
       await logEvent("system", "storage.write_failed", {
         level: "error",
         file: path.basename(file),
         error: errorMetadata(error)
       });
       throw Object.assign(new Error("数据保存失败，请稍后重试"), {
-        code: "STORAGE_WRITE_FAILED"
+        code: "STORAGE_WRITE_FAILED", ...(sharedIoFailure ? { statusCode: 503 } : {})
       });
     } finally {
       await fs.unlink(temp).catch(() => {});
@@ -159,21 +230,33 @@ export async function createRuntimeFoundation({
     if (persistenceBackend === "postgres") {
       throw new Error("JSON reads are disabled in PostgreSQL runtime");
     }
+    assertStorageAccess(file);
     try {
       const value = JSON.parse(await fs.readFile(file, "utf8"));
+      if (accountRuntime.enabled && isAccountFile(file)) validateShape(path.basename(file), value);
       if (!value || typeof value !== "object" || Array.isArray(value)) {
         throw new Error("Invalid document");
       }
       return value;
     } catch (error) {
-      if (error.code === "ENOENT") return clone(fallback);
+      if (error.code === "ENOENT") {
+        if (accountRuntime.enabled && isAccountFile(file) && path.basename(file) !== "ai-cost-plan.json" && !accountRuntime.canInitialize()) {
+          const failure = accountDataError("ACCOUNT_DOCUMENT_MISSING", error); accountRuntime.noteFailure(failure); throw failure;
+        }
+        return clone(fallback);
+      }
+      if (accountRuntime.enabled && isAccountFile(file) && (error instanceof SyntaxError || error.recoveryScope === "account")) {
+        const failure = error.recoveryScope === "account" ? error : accountDataError("ACCOUNT_JSON_INVALID", error);
+        accountRuntime.noteFailure(failure); throw failure;
+      }
+      const sharedIoFailure = reportStorageIoFailure(error);
       await logEvent("system", "storage.read_failed", {
         level: "error",
         file: path.basename(file),
         error: errorMetadata(error)
       });
       throw Object.assign(new Error("数据无法读取，已保留原文件，请联系管理员"), {
-        code: "STORAGE_READ_FAILED"
+        code: "STORAGE_READ_FAILED", ...(sharedIoFailure ? { statusCode: 503 } : {})
       });
     }
   }
@@ -184,20 +267,36 @@ export async function createRuntimeFoundation({
         authConnectionString: appConfig.authDatabaseUrl,
         budgetConnectionString: appConfig.aiBudgetDatabaseUrl,
         authRequired,
+        authorizeAccount: () => accountRuntime.authorize(),
+        assertAccountCommit: (before, after, document) => accountRuntime.assertCommit(before, after, document),
+        onAccountFailure: error => {
+          accountRuntime.noteFailure(error);
+          // 只升级共享连接/Schema/权限故障；唯一约束、业务检查与事务竞争保留原重试/冲突语义。
+          const sharedCodes = ["42P01", "42703", "42883", "42501", "57P01", "57P02", "57P03", "ECONNRESET", "ECONNREFUSED", "EPIPE", "ENOTFOUND"];
+          if (/^(08|28|3D|3F|53|58|XX)/.test(error.code || "") || sharedCodes.includes(error.code)) {
+            error.statusCode = 503;
+            accountRuntime.failGlobal(error);
+          }
+        },
         getAccountId: () => requestStorage.getStore()?.user?.id || (authRequired ? null : "local"),
         requireMigration: await hasJsonData(dataDir),
-        onPoolError: error => void logEvent("system", "storage.connection_failed", {
-          level: "error",
-          error: errorMetadata(error)
-        })
+        onPoolError: error => {
+          accountRuntime.failGlobal(error);
+          void logEvent("system", "storage.connection_failed", { level: "error", error: errorMetadata(error) });
+        }
       })
     : null;
+  try {
   if (postgresRuntime) {
-    await postgresRuntime.claimApplication(() => processRef.exit(1));
+    await postgresRuntime.claimApplication(() => {
+      if (accountRuntime.enabled) accountRuntime.failGlobal(Object.assign(new Error("数据库运行租约失效"), { code: "DATABASE_LEASE_LOST" }));
+      else processRef.exit(1);
+    });
     await markPostgresDirectory(dataDir);
   }
 
   const {
+    databaseEnabled: aiAuditDatabaseEnabled,
     retentionDays: aiAuditRetentionDays,
     textLimit: aiAuditTextLimit
   } = appConfig.audit;
@@ -220,6 +319,7 @@ export async function createRuntimeFoundation({
   const aiRuntime = await createAiRuntime({
     dataRoot: dataDir,
     postgresRuntime,
+    accountRuntime,
     storagePaths,
     requestStorage,
     readStoredJson,
@@ -227,6 +327,7 @@ export async function createRuntimeFoundation({
     auditChanges,
     logEvent,
     deepSeekApiUrl,
+    aiQueue: appConfig.aiQueue,
     aiQps,
     aiConcurrency,
     userDailyCallLimit: aiDailyCalls,
@@ -235,6 +336,7 @@ export async function createRuntimeFoundation({
     recordCompressionDailyInvocationLimit: appConfig.recordCompressionDailyInvocationLimit,
     recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,
     cnyPerUsd: usdCny,
+    auditDatabaseEnabled: aiAuditDatabaseEnabled,
     auditTextLimit: aiAuditTextLimit,
     auditRetentionDays: aiAuditRetentionDays,
     now
@@ -243,8 +345,10 @@ export async function createRuntimeFoundation({
   const storeRepository = postgresRuntime
     ? postgresRuntime.createStoreRepository({
         normalize: normalizeStore,
+        pgIo: appConfig.pgIo,
         emptyDocument: emptyStore,
         onCommit: auditChanges,
+        onCommitted: notifyStoreCommitted,
         now,
         getContext: () => requestStorage.getStore()
       })
@@ -256,12 +360,18 @@ export async function createRuntimeFoundation({
         emptyDocument: emptyStore,
         clone,
         onCommit: auditChanges,
+        onCommitted: notifyStoreCommitted,
         now,
-        getContext: () => requestStorage.getStore()
+        getContext: () => requestStorage.getStore(),
+        authorize: () => accountRuntime.authorize(),
+        assertCommit: (before, after) => accountRuntime.assertCommit(before, after)
       });
   const readStore = () => storeRepository.read();
   const updateStore = mutator => storeRepository.update(mutator);
-  const discoveryService = createThoughtDiscoveryService({ repository: storeRepository, now });
+  const discoveryService = createThoughtDiscoveryService({
+    repository: storeRepository, now,
+    thoughtQueries: () => contentRuntime?.thoughtQueries || null
+  });
   const actionsService = createActionsService({
     repository: storeRepository,
     now,
@@ -286,7 +396,7 @@ export async function createRuntimeFoundation({
     importanceSnapshots.set(scope, snapshot);
     return snapshot;
   };
-  const contentRuntime = createContentRuntime({
+  contentRuntime = createContentRuntime({
     createBusinessId,
     repository: storeRepository,
     trashRetentionDays: TRASH_RETENTION_DAYS,
@@ -295,11 +405,12 @@ export async function createRuntimeFoundation({
     getCursorScope: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
     backgroundContextKey: () => requestStorage.getStore()?.dataDir || dataDir,
     workflowContextKey: () => storagePaths().storeFile,
-    dispatchBackground: callback => {
+    accountRuntime,
+    dispatchBackground: callback => accountRuntime.dispatch(callback, callback => {
       if (startupGate) return startupGate.holdDispatch("background", callback);
       const context = { ...(requestStorage.getStore() || {}) };
       setImmediate(() => requestStorage.run(context, callback));
-    },
+    }),
     runDeepSeek: aiRuntime.runDeepSeek,
     getImportanceModelChoice: refreshImportanceModelChoice,
     getImportanceModelSnapshot: () => {
@@ -307,10 +418,14 @@ export async function createRuntimeFoundation({
       return snapshot?.accountId === (requestStorage.getStore()?.user?.id || "local") ? snapshot : null;
     },
     readAiUsage: aiRuntime.readAiUsage,
+    periodicAnalysisEnabled: appConfig.periodicAnalysisEnabled,
+    readPeriodicPreferences: aiRuntime.readLlmSettings,
     recordCompressionDailyBudgetCny: appConfig.recordCompressionDailyBudgetCny,
     recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,
     recordCompressionMaxBackfillDatesPerScan: appConfig.recordCompressionMaxBackfillDatesPerScan,
     recordCompressionStartDate: appConfig.recordCompressionStartDate,
+    recordCommandConfig: appConfig.recordCommands,
+    thoughtPagingConfig: appConfig.features.thoughtPaging,
     now,
     today,
     currentTime: () => Date.now(),
@@ -335,22 +450,39 @@ export async function createRuntimeFoundation({
       getOwnerId: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
       cleanupContextKey: () => storagePaths().storeFile,
       keepsakeContextKey: () => requestStorage.getStore()?.dataDir || dataDir,
-      dispatchCleanup: (callback, delay) => {
+      dispatchCleanup: (callback, delay) => accountRuntime.dispatch(callback, callback => {
         if (startupGate) return startupGate.holdDispatch("cleanup", callback);
         const context = { ...(requestStorage.getStore() || {}) };
         const timer = setTimeout(() => requestStorage.run(context, callback), delay);
         timer.unref();
         return timer;
-      },
-      dispatchKeepsake: callback => {
+      }),
+      dispatchKeepsake: callback => accountRuntime.dispatch(callback, callback => {
         if (startupGate) return startupGate.holdDispatch("keepsake", callback);
         const context = { ...(requestStorage.getStore() || {}) };
         setImmediate(() => requestStorage.run(context, callback));
+      }),
+      listAccountIds: async () => {
+        if (!authRequired) return ["local"];
+        const ids = [];
+        let after = null;
+        do {
+          const page = await accountAccess.authService.scanUsersPage({
+            limit: 100,
+            after
+          });
+          ids.push(...page.users
+            .filter(user => (
+              !accountRuntime.enabled
+              || accountRuntime.state(user.id)?.status === "ready"
+            ))
+            .map(user => user.id));
+          after = page.next;
+        } while (after);
+        return ids;
       },
-      listAccountIds: async () => authRequired
-        ? (await accountAccess.readAuth()).users.map(user => user.id)
-        : ["local"],
       runWithAccount: (accountId, operation) => {
+        accountRuntime.assertReady(accountId);
         const user = { id: accountId };
         return requestStorage.run({
           user,
@@ -358,7 +490,7 @@ export async function createRuntimeFoundation({
           dataDir: authRequired ? accountAccess.userDataDir(user) : dataDir,
           secrets: [],
           route: "background/speech-cache-sweep"
-        }, operation);
+        }, () => accountRuntime.enabled ? accountRuntime.withOperation(operation) : operation());
       },
       speechConfig: appConfig.speech,
       visionConfig: appConfig.vision,
@@ -388,6 +520,46 @@ export async function createRuntimeFoundation({
     today
   });
 
+  async function validateCurrentStorage({ allowCreate = false } = {}) {
+    if (!accountRuntime.enabled) return;
+    const { storeFile, llmSettingsFile, aiUsageFile, logsDir } = storagePaths();
+    if (allowCreate && !postgresRuntime && !appConfig.localTestMode) {
+      const present = await Promise.all([storeFile, llmSettingsFile, aiUsageFile].map(file => fs.stat(file).then(() => true, error => { if (error.code === "ENOENT") return false; throw error; })));
+      allowCreate = !present.some(Boolean);
+    }
+    const read = async (file, fallback, name) => {
+      let value;
+      if (postgresRuntime) {
+        try { value = name === "store" ? await storeRepository.validate({ allowCreate }) : await postgresRuntime.documents.read(name, null); }
+        catch (error) { if (allowCreate && error.reasonCode === "ACCOUNT_MIGRATION_MISSING") return null; throw error; }
+      } else {
+        try { value = JSON.parse(await fs.readFile(file, "utf8")); }
+        catch (error) {
+          if (error.code === "ENOENT" && allowCreate) return null;
+          if (error.code === "ENOENT" || error instanceof SyntaxError) throw accountDataError(error.code === "ENOENT" ? "ACCOUNT_DOCUMENT_MISSING" : "ACCOUNT_JSON_INVALID", error);
+          throw error;
+        }
+      }
+      if (value == null && allowCreate) return null;
+      validateShape(path.basename(file), value);
+      try { normalizePersistedDocument(value, fallback); }
+      catch (error) { throw accountDataError("ACCOUNT_NORMALIZATION_LOSS", error); }
+      return value;
+    };
+    await read(storeFile, normalizeStore, "store");
+    await read(llmSettingsFile, normalizeLlmSettings, "settings");
+    await read(aiUsageFile, normalizeAiUsage, "usage");
+    const names = await fs.readdir(logsDir).catch(error => { if (error.code === "ENOENT") return []; throw error; });
+    for (const name of names.filter(name => /^ai-audit-.*\.ndjson$/.test(name))) {
+      const content = await fs.readFile(path.join(logsDir, name), "utf8");
+      for (const line of content.split("\n").filter(line => line.trim())) {
+        try { const value = JSON.parse(line); if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(); }
+        catch (error) { throw accountDataError("ACCOUNT_AUDIT_INVALID", error); }
+      }
+    }
+    return { allowCreate };
+  }
+
   async function ensureStore() {
     const { dataDir: currentDataDir, storeFile } = storagePaths();
     await fs.mkdir(currentDataDir, { recursive: true, mode: 0o700 });
@@ -411,6 +583,8 @@ export async function createRuntimeFoundation({
 
   return {
     appConfig,
+    accountRuntime,
+    syncNotifier,
     releaseVersion,
     paths,
     httpLimits: Object.freeze({
@@ -430,11 +604,17 @@ export async function createRuntimeFoundation({
       writeJsonAtomic,
       readStore,
       updateStore,
-      ensureStore
+      ensureStore,
+      validateCurrentStorage
     },
     aiRuntime,
     contentRuntime,
     domainServices: { discoveryService, actionsService, feedbackService },
     publicStateFromStore
   };
+  } catch (error) {
+    accountRuntime.failGlobal();
+    await postgresRuntime?.close().catch(() => {});
+    throw error;
+  }
 }

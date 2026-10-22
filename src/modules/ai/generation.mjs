@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { createExecutionControl, createAiAdmission } from "../../../.build/typescript/backend/modules/ai/execution-control.mjs";
+import { resolveInvocationContract } from "../../../.build/typescript/backend/modules/ai/invocation-contracts.mjs";
 import { safeText, safeIso } from "../../shared/validation/index.mjs";
 import { redact } from "../../shared/observability/index.mjs";
 import { promptCatalogMetadata } from "../../shared/prompts/index.mjs";
@@ -8,6 +10,7 @@ import { systemPrompt, systemPromptForScene } from "./prompts.mjs";
 function aiErrorDetails(error, httpStatus = 0) {
   const message = safeText(error?.message || "AI 调用失败", 1000);
   if (error?.cancelled) return { category: "cancelled", code: "AI_TASK_CANCELLED", message };
+  if (["AI_QUEUE_TIMEOUT", "AI_REQUEST_TIMEOUT"].includes(error?.code)) return { category: "timeout", code: error.code, message };
   if (error?.name === "AbortError") return { category: "timeout", code: "TIMEOUT", message };
   if (error?.code === "EMPTY_DEEPSEEK_CONTENT") return { category: "empty_response", code: error.code, message };
   if (["LENGTH_LIMIT", "CONTENT_FILTER", "INCOMPLETE_STREAM", "INVALID_STREAM"].includes(error?.code)) return { category: error.code.toLowerCase(), code: error.code, message };
@@ -50,11 +53,14 @@ export function createAiGenerator({
   reserveAttempt,
   gate,
   sceneGates = {},
+  aiQueue = null,
+  assertAccountReady = () => {},
   audit,
   executeBudgetTask = withoutSiteBudget,
   now = () => new Date().toISOString(),
   createId = () => crypto.randomUUID()
 }) {
+  const admit = aiQueue ? createAiAdmission(aiQueue) : () => () => {};
   return async function generate(prompt, {
     imagePath = null,
     imagePaths = null,
@@ -72,64 +78,69 @@ export function createAiGenerator({
     timeoutMs = 300000,
     signal = null,
     isCurrent = async () => true,
-    auditPrompt = true,
+    triggerType = undefined,
     budgetExecution = null,
     budgetStageIds = null
   } = {}) {
-    const settings = llmSettingsForScene(settingsOverride || await readSettings(), scene);
-    if (modelOverride !== null) {
-      if (scene !== "importanceScoring" || !LLM_MODELS.includes(modelOverride.model)
-        || !LLM_EFFORTS.includes(modelOverride.effort)) {
-        throw Object.assign(new Error("重要性模型选择无效"), { code: "IMPORTANCE_MODEL_INVALID" });
-      }
-      if (settings.model !== modelOverride.model || settings.effort !== modelOverride.effort) {
-        throw Object.assign(new Error("有效重要性模型配置已变化"), { code: "AI_TASK_STALE" });
-      }
-    }
-    if (!settings.apiKey) throw new Error("尚未配置 DeepSeek API 密钥，请先到“设置”中填写并保存");
-    const effectiveSystemPrompt = systemPromptForScene(requestedSystemPrompt || systemPrompt(), scene, settings);
-    const promptCatalog = promptCatalogMetadata();
-    const visualPaths = [...(Array.isArray(imagePaths) ? imagePaths : []), ...(imagePath ? [imagePath] : [])];
-    const imageInputs = await Promise.all(visualPaths.map(provider.imageInput));
-    const imageAudit = imageInputs.map(item => item.audit);
-    const userContent = imageInputs.length ? [{ type: "text", text: prompt }, ...imageInputs.map(item => item.content)] : prompt;
-    const messages = [{ role: "system", content: effectiveSystemPrompt }, ...history, { role: "user", content: userContent }];
     const context = getContext() || {};
-    const receipt = contextReceipt && typeof contextReceipt === "object" && !Array.isArray(contextReceipt)
-      ? structuredClone(contextReceipt)
-      : null;
-    const auditText = value => auditPrompt
-      ? audit.text(value)
-      : { omitted: true, characters: String(value ?? "").length };
-    const auditMessage = value => auditPrompt
-      ? audit.message(value)
-      : { role: safeText(value?.role, 20) || "unknown", omitted: true };
-    if (context.secrets) context.secrets.push(settings.apiKey);
-    const traceId = safeText(context.traceId, 128) || createId(), callGroupId = createId();
-    const userId = safeText(context.user?.id, 100) || "local", endpointHost = provider.endpointHost;
-    const requestChars = effectiveSystemPrompt.length + String(prompt).length
-      + history.reduce((sum, message) => sum + (typeof message?.content === "string" ? message.content.length : 0), 0);
-    const controller = new AbortController();
-    let timedOut = false;
-    const abortFromCaller = () => controller.abort();
-    if (signal?.aborted) abortFromCaller();
-    else signal?.addEventListener("abort", abortFromCaller, { once: true });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, timeoutMs);
+    const control = createExecutionControl({ signal: signal || context.signal, timeoutMs });
+    const guard = () => { control.throwIfStopped(); assertAccountReady(); };
+    let releaseAdmission, settings;
+    let reasoningVisible = false;
     try {
+      guard();
+      const invocationContract = resolveInvocationContract(scene, triggerType);
+      reasoningVisible = invocationContract.reasoningVisibility === "user_viewable";
+      const productDelta = onDelta
+        ? event => {
+            if (event.type !== "reasoning" || reasoningVisible) onDelta(event);
+          }
+        : null;
+      releaseAdmission = admit(safeText(context.user?.id, 100) || "local");
+      settings = llmSettingsForScene(settingsOverride || await readSettings(), scene);
+      guard();
+      if (modelOverride !== null) {
+        if (scene !== "importanceScoring" || !LLM_MODELS.includes(modelOverride.model)
+          || !LLM_EFFORTS.includes(modelOverride.effort)) {
+          throw Object.assign(new Error("重要性模型选择无效"), { code: "IMPORTANCE_MODEL_INVALID" });
+        }
+        if (settings.model !== modelOverride.model || settings.effort !== modelOverride.effort) {
+          throw Object.assign(new Error("有效重要性模型配置已变化"), { code: "AI_TASK_STALE", statusCode: 409 });
+        }
+      }
+      if (!settings.apiKey) throw new Error("尚未配置 DeepSeek API 密钥，请先到“设置”中填写并保存");
+      const effectiveSystemPrompt = systemPromptForScene(requestedSystemPrompt || systemPrompt(), scene, settings);
+      const promptCatalog = promptCatalogMetadata();
+      const visualPaths = [...(Array.isArray(imagePaths) ? imagePaths : []), ...(imagePath ? [imagePath] : [])];
+      const imageInputs = await Promise.all(visualPaths.map(provider.imageInput));
+      guard();
+      const imageAudit = imageInputs.map(item => item.audit);
+      const userContent = imageInputs.length ? [{ type: "text", text: prompt }, ...imageInputs.map(item => item.content)] : prompt;
+      const messages = [{ role: "system", content: effectiveSystemPrompt }, ...history, { role: "user", content: userContent }];
+      const receipt = contextReceipt && typeof contextReceipt === "object" && !Array.isArray(contextReceipt)
+        ? structuredClone(contextReceipt)
+        : null;
+      const auditText = value => audit.text(value);
+      const auditMessage = value => audit.message(value);
+      if (context.secrets) context.secrets.push(settings.apiKey);
+      const traceId = safeText(context.traceId, 128) || createId(), callGroupId = createId();
+      const userId = safeText(context.user?.id, 100) || "local", endpointHost = provider.endpointHost;
+      const requestChars = effectiveSystemPrompt.length + String(prompt).length
+        + history.reduce((sum, message) => sum + (typeof message?.content === "string" ? message.content.length : 0), 0);
       const efforts = [settings.effort, ...(retryWithoutThinking && settings.effort !== "none" ? ["none"] : [])];
       const model = visualPaths.length ? "deepseek-flash" : settings.model;
       const stageIds = Array.isArray(budgetStageIds) && budgetStageIds.length === efforts.length
         ? budgetStageIds.map(value => safeText(value, 100))
         : efforts.map((_, index) => `deepseek-attempt-${index + 1}`);
       const executeAttempts = async execution => {
+        guard();
         if (!execution || typeof execution.runStage !== "function") {
           throw new TypeError("AI budget execution requires runStage()");
         }
         for (let attempt = 0; attempt < efforts.length; attempt += 1) {
+          guard();
           await audit.recoverPending?.();
+          guard();
           const reservation = await reserveAttempt();
           const releaseQuota = typeof reservation?.release === "function" ? reservation.release : reservation;
           const commitQuota = typeof reservation?.commit === "function" ? reservation.commit : reservation;
@@ -143,18 +154,33 @@ export function createAiGenerator({
           };
           let releaseSceneCapacity, releaseCapacity, providerStarted = false;
           try {
+            guard();
+            const queueDeadline = aiQueue?.enabled ? control.queueDeadline(aiQueue.maxQueueWaitMs) : Infinity;
+            const waitOptions = aiQueue?.enabled ? { signal: control.signal, deadline: queueDeadline } : undefined;
             const sceneGate = sceneGates?.[scene];
-            if (sceneGate?.acquire) releaseSceneCapacity = await sceneGate.acquire();
-            releaseCapacity = await gate.acquire();
-            if (typeof isCurrent === "function" && !(await isCurrent())) {
+            try {
+              if (sceneGate?.acquire) releaseSceneCapacity = await sceneGate.acquire(waitOptions);
+              guard();
+              releaseCapacity = await gate.acquire(waitOptions);
+            } catch (error) {
+              if (error.code === "AI_QUEUE_TIMEOUT") control.expireQueue(queueDeadline);
+              control.throwIfStopped();
+              if (error.code === "AI_QUEUE_FULL" && aiQueue) error.retryAfterMs = aiQueue.overloadRetryAfterMs;
+              throw error;
+            } finally { control.endQueue(); }
+            guard();
+            const inputsCurrent = typeof isCurrent !== "function" || await isCurrent();
+            guard();
+            if (!inputsCurrent) {
               throw Object.assign(new Error("AI task inputs changed while waiting for provider capacity"), {
-                code: "AI_TASK_STALE"
+                code: "AI_TASK_STALE", statusCode: 409
               });
             }
             if (modelOverride !== null) {
               const effective = llmSettingsForScene(await readSettings(), scene);
+              guard();
               if (effective.model !== modelOverride.model || effective.effort !== modelOverride.effort) {
-                throw Object.assign(new Error("等待容量期间有效重要性模型配置已变化"), { code: "AI_TASK_STALE" });
+                throw Object.assign(new Error("等待容量期间有效重要性模型配置已变化"), { code: "AI_TASK_STALE", statusCode: 409 });
               }
               settings.apiKey = effective.apiKey;
             }
@@ -166,8 +192,9 @@ export function createAiGenerator({
               ...(onDelta ? { stream_options: { include_usage: true } } : {}),
               ...(json ? { response_format: { type: "json_object" } } : {})
             };
-            await audit.start({
+            const startedAudit = await audit.start({
               id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
+              service: "chat-completions", action: "complete", invocationContract,
               scene, startedAt: createdAt, attempt: attempt + 1, maxAttempts: efforts.length,
               request: {
                 endpointHost,
@@ -202,11 +229,12 @@ export function createAiGenerator({
                 responseChars: String(content || "").length, reasoningChars: String(reasoningContent || "").length
               };
               await audit.recordDeepSeekAttempt({
+                invoked: providerStarted,
                 usage, usageMetadata: { ...common, model, createdAt },
                 reservation: usageReservation,
                 audit: {
-                  id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
-                  scene, tier: settings.tier, attempt: attempt + 1, maxAttempts: efforts.length,
+                  ...startedAudit,
+                  tier: settings.tier,
                   retryReason: common.retryReason, retryScheduled, startedAt: createdAt, completedAt, durationMs, status,
                   error: error ? { ...failure, message: audit.text(error.privateMessage || failure.message) } : null,
                   request: {
@@ -230,27 +258,60 @@ export function createAiGenerator({
               });
             };
             try {
-              return await execution.runStage(stageIds[attempt], async ({ recordUsage }) => {
+              guard();
+              return await execution.runStage(stageIds[attempt], async ({ recordUsage, dispatch }) => {
                 recordBudgetUsage = typeof recordUsage === "function" ? recordUsage : () => false;
-                providerStarted = true;
-                const { httpStatus, ...result } = await provider.complete({ apiKey: settings.apiKey, parameters, messages, signal: controller.signal, onDelta });
+                guard();
+                const stillCurrent = typeof isCurrent !== "function" || await isCurrent();
+                guard();
+                if (!stillCurrent) throw Object.assign(new Error("AI任务来源已变化"), { code: "AI_TASK_STALE", statusCode: 409 });
+                // 最后的同步检查、设置已调用与真实provider入口之间不允许await。
+                const invoke = () => {
+                  providerStarted = true;
+                  return provider.complete({
+                    apiKey: settings.apiKey,
+                    parameters,
+                    messages,
+                    signal: control.signal,
+                    onDelta: productDelta
+                  });
+                };
+                const { httpStatus, ...result } = await (dispatch ? dispatch(invoke) : (guard(), invoke()));
                 await finishAttempt({ status: "success", httpStatus, ...result });
-                return captureReasoning ? (onDelta ? result : { content: result.content, reasoningContent: result.reasoningContent }) : result.content;
-              });
-            } catch (error) {
-              const retryScheduled = error.code === "EMPTY_DEEPSEEK_CONTENT" && attempt + 1 < efforts.length;
-              const cancelledByCaller = error.name === "AbortError" && signal?.aborted && !timedOut;
+                control.throwIfStopped();
+                if (!captureReasoning) return result.content;
+                const projected = onDelta ? { ...result } : { content: result.content };
+                delete projected.reasoningContent;
+                if (reasoningVisible && result.reasoningContent) {
+                  projected.reasoningContent = result.reasoningContent;
+                  projected.reasoningVisibility = invocationContract.reasoningVisibility;
+                }
+                return projected;
+              }, { control, dispatchGuard: guard, canRetry: error => !control.reason && error.code === "EMPTY_DEEPSEEK_CONTENT" && attempt + 1 < efforts.length });
+            } catch (failure) {
+              const error = failure instanceof AggregateError ? failure : control.reason || failure;
+              if (error !== failure && !(failure instanceof AggregateError)) {
+                for (const key of ["usage", "httpStatus", "partialContent", "partialReasoningContent", "finishReason", "providerRequestId", "modelReturned", "providerCreatedAt", "systemFingerprint"]) {
+                  if (failure[key] !== undefined) error[key] = failure[key];
+                }
+              }
+              const retryScheduled = !control.reason && error.code === "EMPTY_DEEPSEEK_CONTENT" && attempt + 1 < efforts.length;
+              if (!retryScheduled) control.terminate(error);
+              const cancelledByCaller = error.code === "AI_TASK_CANCELLED";
               if (cancelledByCaller) error.cancelled = true;
               await finishAttempt({
-                status: error.name === "AbortError" ? (cancelledByCaller ? "cancelled" : "timeout") : "failed", httpStatus: error.httpStatus,
+                status: cancelledByCaller ? "cancelled" : (["AI_QUEUE_TIMEOUT", "AI_REQUEST_TIMEOUT"].includes(error.code) || error.name === "AbortError" ? "timeout" : "failed"), httpStatus: error.httpStatus,
                 usage: error.usage, content: error.partialContent, reasoningContent: error.partialReasoningContent,
                 finishReason: error.finishReason, error, providerRequestId: error.providerRequestId,
                 modelReturned: error.modelReturned, providerCreatedAt: error.providerCreatedAt,
                 systemFingerprint: error.systemFingerprint, retryScheduled
               });
-              if (retryScheduled) continue;
+              if (retryScheduled) { control.throwIfStopped(); continue; }
               throw error;
             }
+          } catch (error) {
+            control.terminate(error);
+            throw error;
           } finally {
             releaseCapacity?.();
             releaseSceneCapacity?.();
@@ -273,18 +334,20 @@ export function createAiGenerator({
       };
       return budgetExecution
         ? await executeAttempts(budgetExecution)
-        : await executeBudgetTask(budgetDetails, executeAttempts);
-    } catch (error) {
-      if (error.name === "AbortError") {
-        if (signal?.aborted && !timedOut) throw Object.assign(new Error("AI 任务已取消"), { code: "AI_TASK_CANCELLED" });
-        throw new Error(`DeepSeek 请求超过 ${Math.round(timeoutMs / 1000)} 秒，已停止`);
+        : await executeBudgetTask(budgetDetails, executeAttempts, { control });
+    } catch (failure) {
+      control.terminate(failure);
+      const error = failure instanceof AggregateError ? failure : control.reason || failure;
+      if (!reasoningVisible) {
+        delete error.partialReasoningContent;
+        delete error.reasoningContent;
       }
       if (/fetch failed|ENOTFOUND|ECONN/i.test(error.message)) throw new Error("无法连接 DeepSeek API，请检查网络后重试");
-      error.message = redact(error.message, [settings.apiKey]);
+      error.message = redact(error.message, [settings?.apiKey]);
       throw error;
     } finally {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abortFromCaller);
+      control.dispose();
+      releaseAdmission?.();
     }
   };
 }

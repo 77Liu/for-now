@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createAiRuntime } from "../src/app/index.mjs";
+import { createAiAudit } from "../src/modules/ai/index.mjs";
 
 const clone = value => structuredClone(value);
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -155,6 +156,29 @@ function createHarness({
 
   const createAudit = options => {
     captures.auditOptions = options;
+    const invokePrepared = async (details, invoke, summarize) => {
+      let result;
+      let response = {};
+      try {
+        result = await invoke();
+        response = summarize(result) || {};
+        return result;
+      } finally {
+        const usage = {
+          callId: `call-${++sequence}`,
+          costKnown: response.costKnown ?? details.costKnown ?? false,
+          costCny: response.costCny ?? details.costCny ?? 0
+        };
+        details.reservation?.retain?.(usage);
+        events.push("usage");
+        await options.updateUsage(document => {
+          if (!Array.isArray(document.entries)) document.entries = [];
+          document.entries.push(usage);
+        });
+        details.reservation?.commit?.();
+        events.push("audit");
+      }
+    };
     return {
       async recoverPending() {
         events.push("audit-recover-pending");
@@ -165,29 +189,18 @@ function createHarness({
           pendingAudit: 0
         };
       },
-      async providerCall(details, invoke, summarize = value => value || {}) {
+      async prepareProviderCall(details, summarize = value => value || {}) {
         events.push("audit-start");
-        let result;
-        let response = {};
-        try {
-          result = await invoke();
-          response = summarize(result) || {};
-          return result;
-        } finally {
-          const usage = {
-            callId: `call-${++sequence}`,
-            costKnown: response.costKnown ?? details.costKnown ?? false,
-            costCny: response.costCny ?? details.costCny ?? 0
-          };
-          details.reservation?.retain?.(usage);
-          events.push("usage");
-          await options.updateUsage(document => {
-            if (!Array.isArray(document.entries)) document.entries = [];
-            document.entries.push(usage);
-          });
-          details.reservation?.commit?.();
-          events.push("audit");
-        }
+        return {
+          invoke: operation => invokePrepared(details, operation, summarize),
+          async finishUninvoked() {
+            events.push("audit-not-invoked");
+            return true;
+          }
+        };
+      },
+      async providerCall(details, invoke, summarize = value => value || {}) {
+        return (await this.prepareProviderCall(details, summarize)).invoke(invoke);
       }
     };
   };
@@ -278,7 +291,8 @@ function createHarness({
     }
   };
 
-  const create = () => createAiRuntime({
+  const create = (runtimeOptions = {}) => createAiRuntime({
+    ...runtimeOptions,
     dataRoot: "/data",
     postgresRuntime: { kind: "postgres-double" },
     storagePaths: () => ({
@@ -540,6 +554,8 @@ const deepSeekGeneratorDouble = (options, { events }) => async () => (
     harness.events.push("provider");
   }), error => error === startError);
   assert.equal(harness.events.includes("provider"), false);
+  assert.ok(harness.events.includes("audit-not-invoked"));
+  assert.equal(harness.events.includes("usage"), false);
   assert.ok(harness.events.includes("account-release"));
   assert.ok(harness.events.includes("site-release"));
   assert.equal(harness.budget.calls.some(call => call.type === "site-settle"), false);
@@ -606,6 +622,52 @@ const deepSeekGeneratorDouble = (options, { events }) => async () => (
 }
 
 {
+  const lines = [];
+  const producer = createAiAudit({
+    textLimit: 10_000,
+    getContext: () => ({
+      user: { id: "member" },
+      traceId: "usage-restart-trace",
+      secrets: []
+    }),
+    append: async (_day, entry) => {
+      lines.push(JSON.stringify(entry));
+    },
+    updateUsage: async () => {
+      throw new Error("usage document unavailable");
+    },
+    logEvent: async () => {},
+    now: () => "2026-10-06T00:00:00.000Z",
+    createId: () => "provider-restart-recovery"
+  });
+  await producer.providerCall({
+    provider: "volcengine",
+    service: "vision",
+    scene: "visionOcr",
+    action: "OCRNormal",
+    costKnown: true,
+    costCny: 0.005
+  }, async () => ({ requestId: "provider-restart-request" }));
+  const terminal = lines.map(line => JSON.parse(line))
+    .find(entry => entry.callId === "provider-restart-recovery" && entry.status === "success");
+  assert.equal(terminal.persistence.usage, "pending");
+  assert.equal(terminal.usageRecovery.callId, "provider-restart-recovery");
+
+  const files = new Map([[
+    "/accounts/member/logs/ai-audit-2026-10-06.ndjson",
+    lines.join("\n")
+  ]]);
+  const restarted = createHarness({ files });
+  const runtime = await restarted.create();
+  await runtime.ensureAuditLogs();
+  await runtime.ensureAuditLogs();
+  assert.deepEqual(
+    restarted.documents.get("usage").entries.map(entry => entry.callId),
+    ["provider-restart-recovery"]
+  );
+}
+
+{
   const files = new Map([
     ["/accounts/member/logs/ai-audit-2026-10-05.ndjson", [
       JSON.stringify({
@@ -650,6 +712,25 @@ const deepSeekGeneratorDouble = (options, { events }) => async () => (
     directory: "/accounts/member/logs",
     retentionDays: 30
   });
+}
+
+// F2共享账本先只读核验已有语义；不得将非法金额归零、丢弃事件或改写引用后恢复。
+for (const raw of [
+  { days: [{ key: "2026-10-16", knownCostMicros: "invalid" }] },
+  { events: [{ id: "event", type: "charge", createdAt: "invalid" }] },
+  { days: [{ key: "2026-10-16", users: [{ accountId: "same", calls: 1 }, { accountId: "same", calls: 2 }] }] },
+  { reservations: [{ id: "reservation", accountId: "account", taskId: "task", day: "2026-10-16", month: "2026-09", stages: [{ id: "stage" }] }] }
+]) {
+  const harness = createHarness(); const original = clone(raw);
+  harness.budget.read = async () => clone(raw);
+  await assert.rejects(harness.create({ accountRuntime: { enabled: true } }), /全局预算/);
+  assert.deepEqual(raw, original);
+  assert.equal(harness.budget.calls.length, 0, "invalid ledger must be rejected before recovery writes");
+}
+{
+  const harness = createHarness();
+  harness.budget.read = async () => ({ days: [{ key: "2026-10-16", knownCostMicros: 12 }], reservations: [] });
+  await harness.create({ accountRuntime: { enabled: true } });
 }
 
 console.log("AI runtime regression passed: recovery, wiring, late-bound settings, budget ordering, unknown costs, release and audit usage recovery.");

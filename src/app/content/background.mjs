@@ -15,7 +15,21 @@ import {
 } from "../../modules/thoughts/index.mjs";
 import { createAiTaskTargets } from "../ai-task-targets.mjs";
 import { createBackgroundAi } from "../background-ai.mjs";
-import { userModelRequiresCoreReady } from "../user-model.mjs";
+import { createNotificationRecordCommands } from "../record-commands/notifications.mjs";
+import { createContentAiRecordCommands } from "../record-commands/content-ai.mjs";
+import { createTaskTransitionCommands } from "../../../.build/typescript/backend/app/record-commands/task-transitions.mjs";
+import { createTaskCreationCommands } from "../../../.build/typescript/backend/app/record-commands/task-creation.mjs";
+import { createTaskPreparationQueries } from "../../../.build/typescript/backend/app/record-commands/task-preparation.mjs";
+import { createTaskMaterialAssembly } from "../../../.build/typescript/backend/app/record-commands/task-materials.mjs";
+import { createTaskTrendAssembly } from "../../../.build/typescript/backend/app/record-commands/task-trend.mjs";
+import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../../shared/persistence/index.mjs";
+import { createTaskRecordCommands } from "../../modules/tasks/index.mjs";
+import { onboardingV2ContextEntries } from "../../modules/onboarding/index.mjs";
+import { evidenceSourceKey, parseEvidenceSourceKey } from "../../modules/user-model/index.mjs";
+import { importanceSourcePermissionKeys, legalImportanceSources } from "../task-context.mjs";
+import { sourceLocalDates } from "../record-compression-context.mjs";
+import { personalContextRecordSelection } from "../personal-context.mjs";
+import { prepareUserModelExtraction, userModelRequiresCoreReady } from "../user-model.mjs";
 import { prepareReferenceRequest, verifyReferenceAnswer } from "../answer-citations.mjs";
 
 const taskFailure = (message, statusCode, code) => Object.assign(
@@ -34,7 +48,8 @@ export async function enqueueContentImageUnderstanding(backgroundAi, work) {
     payload: {
       targetType: work.targetType,
       targetId: work.targetId,
-      attachmentPaths: work.attachmentPaths
+      attachmentPaths: work.attachmentPaths,
+      ...(work.owner ? { owner: work.owner } : {})
     },
     clientRequestId: work.clientRequestId
   });
@@ -70,6 +85,7 @@ export async function enqueueContentImageUnderstanding(backgroundAi, work) {
 
 export function createContentBackground({
   repository,
+  cleanupExistingTask = null,
   annotationService,
   contentAttachments,
   perception,
@@ -78,6 +94,9 @@ export function createContentBackground({
   getImportanceModelSnapshot = () => null,
   prepareImportanceContext = async () => null,
   getRecentTrend = () => null,
+  createTrendInputProjection = null,
+  trendTimezones = null,
+  trendReadRequirements = null,
   mediaRuntime,
   getAccountId,
   backgroundContextKey,
@@ -86,6 +105,7 @@ export function createContentBackground({
   now,
   createId,
   createBusinessId = createId,
+  recordCommandConfig = null,
   hash,
   logEvent,
   debugServerUrl,
@@ -110,10 +130,85 @@ export function createContentBackground({
     hash,
     now
   });
+  const notificationService = createNotificationService({
+    createId: createBusinessId,
+    now
+  });
+  const taskService = createTaskLifecycle({
+    createId: createBusinessId,
+    now,
+    hash
+  });
+  const notificationRecordCommands = repository.accountUnitOfWork?.run
+    ? createNotificationRecordCommands({
+        unitOfWork: repository.accountUnitOfWork,
+        notifications: notificationService
+      })
+    : null;
+  const taskRecordCommands = repository.accountUnitOfWork?.run
+    ? createTaskRecordCommands({
+        unitOfWork: repository.accountUnitOfWork,
+        tasks: taskService,
+        notifications: notificationService
+      })
+    : null;
+  const trendQueries = createTaskTrendAssembly({
+    mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+    permissionKeys: importanceSourcePermissionKeys,
+    project: getRecentTrend,
+    createInputProjection: createTrendInputProjection,
+    readRequirements: trendReadRequirements,
+    sourceDates: sourceLocalDates,
+    timezones: trendTimezones,
+    legacySelection: personalContextRecordSelection,
+    now
+  });
   const backgroundAi = createBackgroundAi({
     repository,
-    tasks: createTaskLifecycle({ createId: createBusinessId, now, hash }),
-    notifications: createNotificationService({ createId: createBusinessId, now }),
+    cleanupExistingTask,
+    tasks: taskService,
+    notifications: notificationService,
+    recordCommands: {
+      enabled: name => recordCommandConfig?.enabled?.(name) === true,
+      notifications: notificationRecordCommands,
+      tasks: taskRecordCommands,
+      preparation: typeof repository.queryRecords === "function"
+        ? createTaskPreparationQueries({
+            queryRecords: repository.queryRecords,
+            mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+            onboardingPermissionKeys: store => onboardingV2ContextEntries(store.onboardingV2)
+              .map(entry => evidenceSourceKey({
+                resourceType: "onboardingV2",
+                resourceId: entry.id,
+                rootId: "",
+                targetKey: `answer:${entry.id}`,
+                version: entry.version
+              })),
+            modelInputHash: store => prepareUserModelExtraction(store).value?.inputHash || "",
+            materialContext: createTaskMaterialAssembly({
+              mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+              legalSources: legalImportanceSources,
+              permissionKeys: importanceSourcePermissionKeys,
+              parseSourceKey: parseEvidenceSourceKey,
+              trendContext: trendQueries.trendContext,
+              legacyContext: trendQueries.legacyContext
+            })
+          })
+        : null,
+      transitions: repository.accountUnitOfWork?.run
+        ? createTaskTransitionCommands({
+            unitOfWork: repository.accountUnitOfWork,
+            mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects }
+          })
+        : null,
+      creation: repository.accountUnitOfWork?.run
+        ? createTaskCreationCommands({
+            unitOfWork: repository.accountUnitOfWork,
+            mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+            now
+          })
+        : null
+    },
     now,
     targets: taskTargets,
     beforePrepare: async input => {
@@ -174,7 +269,7 @@ export function createContentBackground({
           json: work.json === true,
           retryWithoutThinking: work.retryWithoutThinking,
           maxTokens: work.maxTokens || 16000,
-          auditPrompt: work.auditPrompt !== false,
+          triggerType: work.triggerType,
           contextReceipt: referenceRequest
             ? { ...work.contextReceipt, referenceRequest: referenceRequest.receipt }
             : work.contextReceipt || null,
@@ -210,6 +305,15 @@ export function createContentBackground({
       error: errorMetadata(error)
     })
   });
+  if (repository.accountUnitOfWork?.run) {
+    backgroundAi.registerRecordCommand("content.aiWriteback", createContentAiRecordCommands({
+      unitOfWork: repository.accountUnitOfWork,
+      effects: repository.sourceMutationEffects,
+      tasks: taskService,
+      notifications: notificationService,
+      targets: taskTargets
+    }));
+  }
 
   async function requestCaptureTranscription(capture, { force = false } = {}) {
     const { speechProvider } = mediaRuntime;

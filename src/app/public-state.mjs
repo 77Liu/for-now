@@ -1,7 +1,9 @@
+import { syncNeedsInsights, syncProjectionFields } from "../../.build/typescript/backend/app/sync-projection.mjs";
 import { publicCapture } from "../modules/captures/index.mjs";
 import { publicKeepsake } from "../modules/keepsakes/index.mjs";
 import { notificationUnread } from "../modules/notifications/index.mjs";
 import { publicAiTask } from "../modules/tasks/index.mjs";
+import { projectProductReasoning } from "../modules/ai/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 import { deriveStateInsights, deriveThoughtClusters } from "./derived-statistics.mjs";
 import { publicSpeechAssets } from "./speech-cache.mjs";
@@ -41,9 +43,15 @@ export function withoutOwnerMetadata(value, field = "") {
 
 export function storeForUser(store, user, isOwner) {
   const { commercialization: _commercialization, ...visible } = store;
-  return isOwner(user) ? visible : withoutOwnerMetadata(visible);
+  const result = isOwner(user) ? visible : withoutOwnerMetadata(visible);
+  return projectProductReasoning(result);
 }
 
+/**
+ * 创建完整或按域读取的公共状态投影，不修改传入仓库。
+ * 普通字段与原仓库派生结果分别裁剪Owner资料；派生计数仍基于原仓库，
+ * 按域调用须由调用方提供syncProjectionFields声明的完整依赖。
+ */
 export function createPublicStateProjection({
   getUser,
   isOwner,
@@ -65,8 +73,14 @@ export function createPublicStateProjection({
     );
   }
 
-  return function publicStateFromStore(store, user = getUser()) {
+  // 按域模式只执行声明依赖的投影；普通完整状态的调用契约保持不变。
+  const project = function publicStateFromStore(store, user = getUser(), syncDomains = null) {
+    const domains = syncDomains === null ? null : new Set(syncDomains);
+    const wants = domain => domains === null || domains.has(domain);
+    const insights = domains === null || syncNeedsInsights(domains);
+    const owner = isOwner(user);
     const {
+      commercialization: _commercialization,
       trash,
       attachmentCleanup: _attachmentCleanup,
       speechCache: _speechCache,
@@ -75,19 +89,26 @@ export function createPublicStateProjection({
       evidenceSources: _evidenceSources,
       evidencePermissions: _evidencePermissions,
       perceptionEvents: _perceptionEvents,
-      ...visible
-    } = storeForUser(store, user, isOwner);
+      ...publicFields
+    } = store;
+    // 不会输出的内部集合无需递归复制；原有可见字段只裁剪一次。
+    const visible = projectProductReasoning(
+      owner ? publicFields : withoutOwnerMetadata(publicFields)
+    );
     const ownerId = safeText(user?.id, 100) || "local";
-    const state = {
-      ...visible,
-      captures: visible.captures.map(publicCapture),
-      keepsakes: visible.keepsakes.map(publicKeepsake),
-      aiTasks: store.aiTasks.filter(task => task.internal !== true).slice(0, 100).map(publicAiTask),
-      notificationUnread: notificationUnread(store.notifications),
-      clusters: deriveThoughtClusters(store),
-      insights: deriveStateInsights(store, { currentDate: today() }),
-      trashCount: trash.length,
-      speech: {
+    const projected = {
+      ...(wants("captures") ? { captures: visible.captures.map(publicCapture) } : {}),
+      ...(wants("keepsakes") ? { keepsakes: visible.keepsakes.map(publicKeepsake) } : {}),
+      ...(wants("aiTasks") || wants("notifications") ? {
+        aiTasks: store.aiTasks.filter(task => task.internal !== true).slice(0, 100).map(publicAiTask),
+        notificationUnread: notificationUnread(store.notifications)
+      } : {}),
+      ...(insights ? { clusters: deriveThoughtClusters(store), insights: deriveStateInsights(store, { currentDate: today() }) } : {}),
+      ...(wants("trash") ? {
+        trashCount: (owner ? trash : withoutOwnerMetadata(trash))
+          .filter(entry => entry.permanentlyPurged !== true).length
+      } : {}),
+      ...(wants("speechCache") ? { speech: {
         configured: speechProvider.configured,
         defaultVoice: speechProvider.defaultVoice,
         voices: speechProvider.voices,
@@ -97,11 +118,17 @@ export function createPublicStateProjection({
           currentTime: now(),
           hash
         })
-      },
+      } } : {}),
       vision: { configured: visionProvider.configured }
     };
-    return isOwner(user) ? state : withoutOwnerMetadata(state);
+    // 原始仓库派生的统计、任务和语音仍走权限裁剪，不改变其计数来源。
+    return {
+      ...visible,
+      ...(owner ? projected : withoutOwnerMetadata(projected))
+    };
   };
+  project.syncProjectionFields = syncProjectionFields;
+  return project;
 }
 
 /**

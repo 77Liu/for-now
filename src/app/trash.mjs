@@ -2,6 +2,9 @@ import { recordVersion } from "../shared/validation/index.mjs";
 import { collectAttachmentPaths } from "../shared/attachments/index.mjs";
 import { revokeEvidencePermissionsForResource } from "../modules/user-model/index.mjs";
 import { WAITING_FOR_USER_MODEL_STATUS } from "../modules/tasks/index.mjs";
+import { createThoughtTrashCommands } from "../../.build/typescript/backend/modules/thoughts/trash-commands.mjs";
+import { createThoughtRecordRepository } from "../../.build/typescript/backend/shared/persistence/thought-record-repository.mjs";
+import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../shared/persistence/index.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
 const speechSourceKey = (sourceType, sourceId) => `${sourceType}\u0000${sourceId}`;
@@ -168,8 +171,9 @@ export function createTrashMutations({
     const entry = trash.add(store.trash, type, payload, { kind: "nested", parentCollection, parentId, field, index });
     entry.dependents = annotations.detachTargets(parent, annotationTargetKeys);
     const runningTaskIds = cancelSubtargetTasks(store, parentCollection, parentId, [
-      ...(field === "followUps" || field === "annotations" ? [id] : []),
-      ...(entry.dependents.annotations || []).map(item => item.id)
+      ...(field === "followUps" || field === "annotations" || field === "annotationDrift" ? [id] : []),
+      ...(entry.dependents.annotations || []).map(item => item.id),
+      ...(entry.dependents.annotationDrift || []).map(item => item.id)
     ]);
     advance(parent);
     return afterCommit(entry, runningTaskIds);
@@ -195,11 +199,19 @@ export function createTrashMutations({
     const dependents = root ? annotations.detachTargets(root, [`${item.type}:${item.id}`]) : { annotations: [], annotationDrift: [] };
     const runningTaskIds = [
       ...cancelTargetTasks(store, "thoughts", id),
-      ...cancelSubtargetTasks(store, "thoughts", item.relatedTo, (dependents.annotations || []).map(value => value.id))
+      ...cancelSubtargetTasks(store, "thoughts", item.relatedTo, [
+        ...(dependents.annotations || []).map(value => value.id),
+        ...(dependents.annotationDrift || []).map(value => value.id)
+      ])
     ];
     const entry = moveCollectionItemToTrash(store, "thoughts", "thoughtBlock", id);
     entry.location.parentId = item.relatedTo;
-    entry.dependents = dependents;
+    entry.dependents = {
+      ...dependents,
+      resourceKeys: ["annotations", "annotationDrift"].flatMap(field => (
+        (dependents[field] || []).map(value => `thoughtChain:${item.relatedTo}/annotation:${value.id}`)
+      ))
+    };
     if (root) advance(root);
     return afterCommit(entry, runningTaskIds);
   }
@@ -212,7 +224,11 @@ export function createTrashMutations({
       const items = store[location.collection];
       if (!Array.isArray(items)) return { invalid: true };
       if (items.some(item => item.id === entry.payload.id)) return { conflict: true };
-      if (entry.payload.clientRequestId && items.some(item => item.clientRequestId === entry.payload.clientRequestId)) {
+      if (entry.payload.clientRequestId && items.some(item => (
+        item.clientRequestId === entry.payload.clientRequestId
+        && (entry.type !== "thoughtBlock"
+          || (item.type === entry.payload.type && item.relatedTo === entry.payload.relatedTo))
+      ))) {
         return { conflict: true };
       }
       if (entry.type === "habitCheckin" && items.some(item => (
@@ -269,13 +285,36 @@ export function createTrashMutations({
   return { moveCollectionItemToTrash, moveNestedItemToTrash, moveThoughtChainToTrash, moveThoughtBlockToTrash, restoreTrashEntry };
 }
 
-export function createTrashCommands({ repository, trash, mutations, cleanup }) {
+export function createTrashCommands({ repository, trash, mutations, cleanup, now = () => new Date().toISOString() }) {
+  const thoughtCommands = repository.accountUnitOfWork?.run
+    ? createThoughtTrashCommands({
+        unitOfWork: repository.accountUnitOfWork,
+        repository: createThoughtRecordRepository({ canonicalJson, mapStoreObjects, rebuildStoreObjects }),
+        effects: repository.sourceMutationEffects,
+        trash,
+        mutations,
+        now
+      })
+    : null;
   return {
-    async list() { return { retentionDays: trash.retentionDays, items: (await repository.read()).trash }; },
-    restore(id) { return repository.update(store => mutations.restoreTrashEntry(store, id)); },
+    recordProducerCommands: thoughtCommands,
+    removeThoughtBlock: id => thoughtCommands
+      ? thoughtCommands.removeBlock(id)
+      : repository.update(store => mutations.moveThoughtBlockToTrash(store, id)),
+    removeThoughtNested: input => thoughtCommands
+      ? thoughtCommands.removeNested(input)
+      : repository.update(store => mutations.moveNestedItemToTrash(store, input)),
+    async list() { return { retentionDays: trash.retentionDays, items: trash.visible((await repository.read()).trash) }; },
+    async restore(id) {
+      if (thoughtCommands) {
+        const result = await thoughtCommands.restore(id);
+        if (!("unsupported" in result)) return result;
+      }
+      return repository.update(store => mutations.restoreTrashEntry(store, id));
+    },
     async preview(ids) {
       const store = await repository.read();
-      const entries = trash.expanded(store.trash, ids.length ? ids : store.trash.map(item => item.id));
+      const entries = trash.expanded(store.trash, ids.length ? ids : trash.visible(store.trash).map(item => item.id));
       return {
         ...trash.plan(entries),
         attachmentPaths: [...collectAttachmentPaths([
@@ -290,7 +329,7 @@ export function createTrashCommands({ repository, trash, mutations, cleanup }) {
         const entries = trash.expanded(store.trash, ids), plan = trash.plan(entries);
         if (!entries.length) return { missing: true };
         if (expectedPlanHash !== plan.planHash) return { changed: true, plan };
-        trash.remove(store.trash, entries.map(item => item.id));
+        trash.purge(entries);
         const speechEntries = speechCacheForTrash(store, entries);
         if (speechEntries.length) {
           const removed = new Set(speechEntries);

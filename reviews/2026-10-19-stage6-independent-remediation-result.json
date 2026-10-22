@@ -1,0 +1,339 @@
+{
+  "schema_version": 1,
+  "task_id": "v0516-stage6-independent-remediation",
+  "status": "PASS_LOCAL",
+  "candidate": { "kind": "git_tree", "tree": "e801f8" },
+  "checkpoint_interpretation": "Subsection candidates and limitations retain historical checkpoint facts. final_verification and current top-level limits describe the final reviewed source.",
+  "R1": {
+    "status": "PASS",
+    "nested_identity": {
+      "status": "PASS",
+      "candidate_tree": "392635",
+      "coverage": ["same child ID across roots", "top-level ID collision", "annotation drift", "reply source targetKey using parent annotation ID or reply ID"]
+    },
+    "coverage": ["content edit", "attachment replace/remove/restore", "root and answer restore mapping", "sourceTask outside closure", "retryOf outside closure", "cross-account target rejected", "missing source historical", "repeat conversion conflict via independent PG probe"]
+  },
+  "R2": {
+    "status": "PASS",
+    "pure_recovery": "PASS",
+    "readiness_and_waiting_assembly": {
+      "status": "PASS",
+      "candidate_tree": "e1d661",
+      "history_sizes": [100, 10000],
+      "pending": 100,
+      "interpretation": "Both history sizes have identical SQL/read/clone costs; UTF-8 JSON bytes are not PostgreSQL wire bytes",
+      "results": [
+        { "phase": "claimWaiting", "queries": 3500, "readRows": 1500, "clones": 1900, "cloneBytes": 766380, "wholeReads": 0 },
+        { "phase": "enqueueWaiting", "queries": 3400, "readRows": 900, "clones": 2000, "cloneBytes": 758766, "wholeReads": 0 },
+        { "phase": "retryWaiting", "queries": 3800, "readRows": 1100, "clones": 2900, "cloneBytes": 945866, "wholeReads": 0 },
+        { "phase": "releasePending", "queries": 1810, "readRows": 1202, "clones": 1702, "cloneBytes": 853173, "wholeReads": 0 }
+      ],
+      "query_plan": { "index": "store_objects_task_model_input_idx", "scanned": 1, "buffers": 2 },
+      "permission_revocation": "PASS",
+      "immutable_snapshot": "PASS"
+    },
+    "measurements": {
+      "candidate_tree": "7c3a91",
+      "interpretation": "UTF-8 JSON of driver-returned rows and clone inputs; not PostgreSQL wire bytes",
+      "results": [
+        { "pending": 10, "history": 100, "queries": 95, "readRows": 63, "bytes": 17752, "clones": 63, "cloneBytes": 19615, "seconds": 0.081715, "dispatched": 10, "wholeReads": 0 },
+        { "pending": 100, "history": 100, "queries": 815, "readRows": 603, "bytes": 176795, "clones": 603, "cloneBytes": 196375, "seconds": 0.159305, "dispatched": 100, "wholeReads": 0 },
+        { "pending": 100, "history": 10000, "queries": 815, "readRows": 603, "bytes": 177001, "clones": 603, "cloneBytes": 196375, "seconds": 0.173375, "dispatched": 100, "wholeReads": 0 },
+        { "pending": 501, "history": 10000, "queries": 4028, "readRows": 3010, "bytes": 887616, "clones": 3010, "cloneBytes": 985143, "seconds": 0.566164, "dispatched": 501, "wholeReads": 0 }
+      ]
+    },
+    "material_assembly": {
+      "status": "PASS",
+      "candidate_tree": "cb9bf5",
+      "legal_pool": 515,
+      "checks": ["multi-page complete pool", "nested identity", "permission denial", "current chain and prompt/input hash parity", "frozen selected sources without score reads", "selected source mutation rejected"],
+      "cost_limit": "Logged 22 rows / 11867 UTF-8 JSON bytes include frozen and mutation reads; not a single-read cost or PostgreSQL wire bytes",
+      "limitations": ["Trend draft still reads broad source collections", "Legacy projection assembly and full ready/run/writeback cost remain open"]
+    },
+    "paged_trend_projection": {
+      "status": "PASS",
+      "candidate_tree": "b0a368",
+      "checks": ["daily and slot input deep equality", "serialized input parity", "unknown occurrence counters including empty text", "nested dates and parent permissions", "New York historical timezone", "actual PostgreSQL trend result parity"],
+      "limitations": ["Complete history source scan remains", "Per-date candidate retention remains", "No independent full ready/run/writeback cost proof"]
+    },
+    "legacy_projection_parity": {
+      "status": "PASS",
+      "candidate_tree": "b0a368",
+      "checks": ["persisted ordering", "permission rows included", "context and learning prompt/receipt parity"],
+      "limitations": ["Projection source query range still broad"]
+    },
+    "legacy_prefix": {
+      "status": "PASS",
+      "candidate_tree": "0b4dce",
+      "scope": "Actual PostgreSQL subchecks and full stable suite passed",
+      "checks": ["denied prefix", "permission revocation", "legacy position", "recent ordering", "context and learning receipt parity", "80 nested learning sources", "40 action feedback sources"],
+      "unrelated_completed_tasks": 10000,
+      "capture_rows_returned": 100,
+      "capture_rows_selected": 30,
+      "query_plan": {
+        "source_index": "store_objects_context_position_idx",
+        "source_returned": 100,
+        "source_filtered": 131,
+        "permission_index": "store_objects_context_permission_idx",
+        "permission_loops": 231,
+        "permission_rows_per_loop": 1,
+        "permission_filtered_per_loop": 0
+      },
+      "limitations": ["learning thought candidate SQL range", "recursive legacy dependencies", "trend history scan", "complete ready/run/writeback cost"]
+    },
+    "frozen_single_read": {
+      "candidate_tree": "b0a368", "queries": 15, "rows": 11, "bytes": 5926,
+      "interpretation": "UTF-8 JSON of returned rows, not PostgreSQL wire bytes"
+    },
+    "learning_prefix": {
+      "status": "PASS",
+      "candidate_tree": "58b4f2",
+      "unrelated_thoughts": 10000,
+      "source_roots_returned": 2,
+      "source_roots_scanned": 2,
+      "checks": ["direct permitted original text", "nested follow-up learning", "mixed position ordering", "context and learning receipt parity"],
+      "query_plan": {
+        "permission_index": "store_objects_learning_permission_idx",
+        "root_index": "store_objects_account_id_object_key_collection_key"
+      },
+      "limitations": ["permitted root key metadata gathered before ordering", "recursive legacy dependencies", "trend history scan", "complete ready/run/writeback cost"]
+    },
+    "trend_calendar_candidates": {
+      "status": "PASS",
+      "candidate_tree": "696f99",
+      "scope": "isolated PostgreSQL directed domain parity and source calendar query cost",
+      "history": { "sources": 10000, "summaries": 10000, "daily_tasks": 10000 },
+      "before": { "queries": 24, "rows": 18, "bytes": 7357 },
+      "after": { "queries": 24, "rows": 18, "bytes": 7357 },
+      "candidate_rows_scanned": 11,
+      "index": "store_objects_source_calendar_bounds_idx",
+      "checks": ["slot summary", "unknown empty source", "nested recent dates", "New York history", "Honolulu old failure", "edited source parity"],
+      "limitations": ["unknown occurrence root reads", "historical success dependency range", "all ready/run/writeback cost", "conservative calendar hints"]
+    },
+    "historical_task_scope": {
+      "status": "PASS",
+      "candidate_tree": "36b590",
+      "history": { "sources": 10000, "summaries": 10000, "daily_tasks": 10000, "historical_tasks": 30000 },
+      "before": { "queries": 41, "rows": 19, "bytes": 9161 },
+      "after": { "queries": 41, "rows": 19, "bytes": 9161 },
+      "source_and_task_rows_scanned": 11,
+      "checks": ["historical range fallback", "old-version failure replacement candidates", "failed historical timezone coverage", "mixed task ordering", "domain deep parity", "source mutation parity"],
+      "limitations": ["unknown occurrence roots", "legacy receipt recursion", "complete ready/run/writeback cost"]
+    },
+    "unknown_source_metadata": {
+      "status": "PASS",
+      "candidate_tree": "d4299d",
+      "scope": "isolated PostgreSQL full stable suite and domain regressions",
+      "history": { "sources": 10000, "thoughts": 10000, "followups": 10000, "summaries": 10000, "daily_tasks": 10000, "historical_tasks": 30000 },
+      "before": { "queries": 40, "rows": 18, "bytes": 9511 },
+      "after": { "queries": 40, "rows": 18, "bytes": 9511 },
+      "source_and_task_rows_scanned": 8,
+      "unknown_metadata": { "pages": 3, "bytes": 420572 },
+      "checks": ["empty slot counts", "parent permission denial", "cross-page parent identity without synthetic dates", "separate follow-up times", "generated reflection time", "empty valid candidates", "Unicode whitespace", "no unknown historical body"],
+      "limitations": ["unknown candidate metadata still scales with truly unknown candidates", "non-ISO calendar hints are conservative fallback candidates", "legacy receipt recursion and complete ready/run/writeback cost remain"]
+    },
+    "producer_dependency_fields": {
+      "status": "PASS",
+      "candidate_tree": "1c0eff",
+      "extended_failure_candidate_tree": "8757a2",
+      "scope": "full stable PostgreSQL suite; extended failure paths in directed material suite",
+      "producer_audit_items": 6000,
+      "producer_bytes_upper_bound": 1000,
+      "first_read_queries": 15,
+      "checks": ["consumed receipt fields", "nested body ignored", "producer identity projection", "producer audit pool ignored", "prompt/input hash parity", "producer fingerprint rejected", "permission revocation rejected", "source mutation rejected"],
+      "limitations": ["legacy analysis recursion and ordering cost", "complete ready/run/writeback cost"]
+    },
+    "formal_execution_cost": {
+      "status": "PASS",
+      "candidate_tree": "a19a3e",
+      "history_sizes": [100, 10000],
+      "scope": "formal content runtime with thought paging presentation disabled; local provider invokes actual asynchronous isCurrent",
+      "interpretation": "UTF-8 JSON of driver-returned rows and clone inputs; not PostgreSQL wire bytes",
+      "whole_account_ports": "reject read/update/executeIdempotent",
+      "results": [
+        { "phase": "enqueue", "queries": 78, "rows": 79, "bytes": 24867, "clones": 160, "cloneBytes": 66900, "candidateScanned": 22 },
+        { "phase": "failedRun", "queries": 195, "rows": 252, "bytes": 98675, "clones": 691, "cloneBytes": 225433, "candidateScanned": 0 },
+        { "phase": "retry", "queries": 70, "rows": 68, "bytes": 28443, "clones": 182, "cloneBytes": 106560, "candidateScanned": 0 },
+        { "phase": "successfulRun", "queries": 272, "rows": 374, "bytes": 144387, "clones": 1019, "cloneBytes": 380875, "candidateScanned": 0 },
+        { "phase": "enqueueWaiting", "queries": 35, "rows": 10, "bytes": 3462, "clones": 20, "cloneBytes": 10174, "candidateScanned": 0 },
+        { "phase": "release", "queries": 85, "rows": 94, "bytes": 66664, "clones": 178, "cloneBytes": 129447, "candidateScanned": 23 },
+        { "phase": "releasedRun", "queries": 281, "rows": 395, "bytes": 256473, "clones": 1085, "cloneBytes": 600698, "candidateScanned": 0 }
+      ],
+      "checks": ["provider failure then frozen retry success", "model wait release success", "real current-work checks", "answer/task/notification/receipt persistence", "identical costs across unrelated histories", "candidate EXPLAIN scan bound"],
+      "limitations": ["full legal first pool remains linear", "other task kind execution cost matrices remain separate"]
+    },
+    "score_projection": {
+      "status": "PASS",
+      "candidate_tree": "a19a3e",
+      "noise_scores": 6000,
+      "returned_bytes_upper_bound": 1000,
+      "checks": ["source identity", "current version/hash", "stable score order", "prompt/input hash parity"],
+      "limitation": "legacy store_fields JSON still scanned inside PostgreSQL"
+    },
+    "legacy_analysis_consumer": {
+      "status": "PASS",
+      "candidate_tree": "db3426",
+      "unrelated_analyses": 10000,
+      "analysis_candidates": 5,
+      "first_read": { "queries": 40, "rows": 33, "bytes": 20943 },
+      "purposes": ["context", "learning"],
+      "checks": ["finite nonrecursive consumer", "prompt/input hash parity", "learning permission revocation", "source mutation", "cumulative closure failure preserves 5200 rows"]
+    },
+    "learning_metadata_order": {
+      "status": "PASS",
+      "candidate_tree": "db3426",
+      "permitted_roots": 10002,
+      "returned_bodies": 100,
+      "body_rows": 100,
+      "checks": ["metadata sorted before body load", "domain author/text selection", "full receipt parity"],
+      "limitation": "all permitted root metadata is sorted; legitimate pool ordering is not constant cost"
+    },
+    "score_index": {
+      "status": "PASS",
+      "candidate_tree": "db3426",
+      "noise_scores": 6000,
+      "returned_bytes_upper_bound": 1000,
+      "checks": ["exact source/version/hash index", "original order", "legacy component backfill", "idempotent component", "field correction/shrink", "transaction rollback", "RLS", "index failure preserves source", "field deletion cascade", "prompt/input hash parity"],
+      "conservative_plan": {
+        "status": "PASS",
+        "candidate_tree": "95fde3",
+        "requested_sources": 576,
+        "row_upper_bound": 576,
+        "index": "importance_score_source_idx",
+        "interpretation": "one extra row per EXPLAIN loop bounds rounded per-loop averages"
+      },
+      "limitations": ["legacy score producer field writes still traverse their own array"]
+    },
+    "calendar_boundaries": {
+      "status": "PASS",
+      "candidate_tree": "db3426",
+      "candidates": 17,
+      "accepted_instant_dates": 36,
+      "checks": ["four timezones", "ASCII/Unicode trim", "offset rollover", "non-ISO conservative fallback", "invalid instant", "date-only"]
+    },
+    "remaining": []
+  },
+  "R3": { "status": "PASS", "clean_tree": "d35a67", "clean_check_seconds": 12.8, "module_count": 129, "route_count": 243 },
+  "checks": [
+    { "command": "isolated PostgreSQL material assembly suite", "status": "PASS", "exit": 0, "candidate_tree": "95fde3", "scope": "conservative score row bound; unchanged business source from db3426; full suite not repeated" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 180.497559, "candidate_tree": "db3426" },
+    { "command": "npm run test:postgres:stable", "status": "FAIL", "exit": 1, "seconds": 103.357244, "candidate_tree": "f99178", "reason": "score migration fixture reran whole historical schema with lifecycle test rows lacking position" },
+    { "command": "npm run check:modules", "status": "PASS", "exit": 0, "seconds": 13.628338, "candidate_tree": "db3426" },
+    { "command": "node scripts/personal-context-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "db3426" },
+    { "command": "node scripts/system-test.mjs record-compressions", "status": "PASS", "exit": 0, "seconds": 13.317449, "candidate_tree": "db3426" },
+    { "command": "npm run test:personalized-ai-model-gate", "status": "PASS", "exit": 0, "candidate_tree": "db3426" },
+    { "command": "node scripts/thought-workflows-p00-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "db3426" },
+    { "command": "npm run test:boundaries", "status": "PASS", "exit": 0, "candidate_tree": "db3426" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 185.692107, "candidate_tree": "a19a3e" },
+    { "command": "isolated formal execution and material PostgreSQL probe", "status": "PASS", "exit": 0, "candidate_tree": "07ae14" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 186.658884, "candidate_tree": "1c0eff" },
+    { "command": "isolated calendar probe of runThoughtMaterialsPostgresChecks", "status": "PASS", "exit": 0, "candidate_tree": "8757a2" },
+    { "command": "isolated calendar probe of runThoughtMaterialsPostgresChecks", "status": "PASS", "exit": 0, "candidate_tree": "d982f0" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 172.408247, "candidate_tree": "d4299d" },
+    { "command": "node scripts/record-compression-input-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "d4299d" },
+    { "command": "node scripts/record-compression-trend-context-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "d4299d" },
+    { "command": "node scripts/record-compression-supplement-service-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "d4299d" },
+    { "command": "isolated unknown source probe", "status": "PASS", "candidate_tree": "28b754" },
+    { "command": "isolated calendar probe", "status": "PASS", "exit": 0, "candidate_tree": "42b9fe" },
+    { "command": "isolated calendar probe", "status": "FAIL", "exit": 1, "candidate_tree": "a2c1a4", "reason": "unknown-source fixture used a thought type rejected by mapper" },
+    { "command": "npm run test:postgres:stable", "status": "FAIL", "exit": 1, "candidate_tree": "021ced", "reason": "unknown-source fixture used a rootless non-question thought rejected by mapper" },
+    { "command": "isolated calendar probe of runThoughtMaterialsPostgresChecks", "status": "PASS", "exit": 0, "candidate_tree": "36b590" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 161.454994, "candidate_tree": "36b590" },
+    { "command": "node scripts/record-compression-input-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "36b590" },
+    { "command": "node scripts/record-compression-trend-context-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "36b590" },
+    { "command": "node scripts/record-compression-supplement-service-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "36b590" },
+    { "command": "directed calendar probe", "status": "FAIL", "exit": 1, "candidate_tree": "c8db37", "reason": "subset task position order differed after unpositioned historical tasks were added" },
+    { "command": "directed calendar probe", "status": "FAIL", "exit": 1, "candidate_tree": "8f282b", "reason": "fixture changed collection ordering metadata between measurements, one JSON byte difference" },
+    { "command": "directed calendar probe", "status": "FAIL", "exit": 1, "candidate_tree": "27d937", "reason": "historical task JSON timezone/version filters scanned 60014 rows" },
+    { "command": "directed calendar probe", "status": "FAIL", "exit": 1, "candidate_tree": "ac97e2", "reason": "materialized historical candidate still scanned 60014 rows" },
+    { "command": "directed calendar probe", "status": "FAIL", "exit": 1, "candidate_tree": "186f3b", "reason": "range index filtered 10000 obsolete prompt versions twice, 20011 scanned" },
+    { "command": "directed calendar probe", "status": "FAIL", "exit": 1, "candidate_tree": "8fe086", "reason": "removing redundant null tests did not change range index prompt filtering" },
+    { "command": "isolated calendar probe of runThoughtMaterialsPostgresChecks", "status": "PASS", "exit": 0, "candidate_tree": "696f99" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 157.732275, "candidate_tree": "696f99" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 134.237022, "candidate_tree": "323b1d" },
+    { "command": "npm run test:postgres:stable", "status": "FAIL", "exit": 1, "candidate_tree": "cae9d7", "reason": "calendar source lookup scanned 30033 rows despite result parity" },
+    { "command": "npm run test:postgres:stable", "status": "FAIL", "exit": 1, "candidate_tree": "f12129", "reason": "merged timezone dates not sorted before SQL bounds; historical source and fingerprint mismatch" },
+    { "command": "directed calendar probe", "status": "FAIL", "exit": 1, "candidate_tree": "38e12e", "reason": "fixture passed persisted v2 schema to provider v1 output parser" },
+    { "command": "node scripts/record-compression-input-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "696f99" },
+    { "command": "node scripts/record-compression-trend-context-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "696f99" },
+    { "command": "node scripts/record-compression-supplement-service-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "696f99" },
+    { "command": "npm run test:task-context", "status": "PASS", "exit": 0, "candidate_tree": "58b4f2" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 130.096695, "candidate_tree": "58b4f2" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 130.768444, "candidate_tree": "119509" },
+    { "command": "npm run test:postgres:stable", "status": "FAIL", "exit": 1, "candidate_tree": "f51130", "reason": "learning query returned one root but scanned 10004 unrelated source rows" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 123.826470, "candidate_tree": "0b4dce" },
+    { "command": "node scripts/personal-context-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "0b4dce" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 120.970564, "candidate_tree": "76962f", "limitation": "permission index cost subcheck not yet enforced" },
+    { "command": "npm run test:postgres:stable", "status": "FAIL", "exit": 1, "candidate_tree": "4ad751", "reason": "permission lookup filtered 171 rows per loop" },
+    { "command": "npm run test:postgres:stable", "status": "FAIL", "exit": 1, "candidate_tree": "551e1b", "reason": "permission lookup did not use exact source identity index" },
+    { "command": "npm run test:postgres:stable", "status": "FAIL", "exit": 1, "candidate_tree": "cb9db0", "reason": "permission anti join scanned unrelated account history" },
+    { "command": "npm run test:postgres:stable", "status": "FAIL", "exit": 1, "candidate_tree": "37ebd5", "reason": "prefix index not selected" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 122.987572, "candidate_tree": "b0a368" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 115.086565, "candidate_tree": "7fc8c8" },
+    { "command": "npm run test:task-context", "status": "PASS", "exit": 0, "candidate_tree": "7fc8c8" },
+    { "command": "node scripts/record-compression-input-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "b0a368" },
+    { "command": "node scripts/record-compression-trend-context-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "b0a368" },
+    { "command": "node scripts/record-compression-supplement-service-regression.mjs", "status": "PASS", "exit": 0, "candidate_tree": "b0a368" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 129.011698, "candidate_tree": "cb9bf5" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 126.824657, "candidate_tree": "392635" },
+    { "command": "npm run test:postgres:stable", "status": "PASS", "exit": 0, "seconds": 126.252037, "candidate_tree": "e1d661" },
+    { "command": "npm run typecheck:backend --silent", "status": "PASS", "exit": 0 },
+    { "command": "npm run check:modules", "status": "PASS", "exit": 0, "seconds": 12.709473, "candidate_tree": "e1d661" },
+    { "command": "node scripts/frontend-thoughts-feature-regression.mjs", "status": "PASS", "exit": 0 }
+  ],
+  "final_verification": {
+    "candidate_tree": "e801f8",
+    "status": "PASS",
+    "environment": "macOS, Node 24.19.0, PostgreSQL 16.14, synthetic accounts, isolated archive excluding five protected F9 files",
+    "checks": [
+      { "command": "npm run check:modules", "exit": 0, "seconds": 12.067135, "clean_generated_directory": true },
+      { "command": "npm run test:postgres:stable", "exit": 0, "seconds": 188.587798 },
+      { "command": "node scripts/system-test.mjs record-compressions", "exit": 0, "seconds": 14.204593 },
+      { "command": "node scripts/personal-context-regression.mjs", "exit": 0 },
+      { "command": "npm run test:personalized-ai-model-gate", "exit": 0 },
+      { "command": "node scripts/thought-workflows-p00-regression.mjs", "exit": 0 },
+      { "command": "npm run test:boundaries", "exit": 0 },
+      { "command": "node scripts/frontend-thoughts-feature-regression.mjs", "exit": 0 },
+      { "command": "node scripts/frontend-annotations-feature-regression.mjs", "exit": 0 },
+      { "command": "git diff --check", "exit": 0 }
+    ],
+    "recovery": {
+      "pending": 100,
+      "history_sizes": [100, 10000],
+      "queries": 815,
+      "rows": 603,
+      "clones": 603,
+      "clone_bytes": 198775,
+      "returned_bytes": [177995, 178201],
+      "whole_account_reads": 0,
+      "interpretation": "UTF-8 JSON; synthetic account identity lengths explain returned-byte difference"
+    },
+    "waiting_clone_bytes": {
+      "claimWaiting": 783180,
+      "enqueueWaiting": 775566,
+      "retryWaiting": 962666,
+      "releasePending": 869973
+    },
+    "formal_execution": "Seven phases retain identical query/row/byte/clone metrics from a19a3e across both history sizes",
+    "source_review": [
+      "precise relation ownership separate from attachment refresh",
+      "same-account complete nested identities",
+      "claim/material/revision consistency and immutable snapshots",
+      "unknown metadata without original history bodies",
+      "legacy consumed dependencies without audit recursion",
+      "score query uses source/version/hash index",
+      "closure overflow explicitly fails and preserves rows",
+      "trend tasks/input/prefix/related-source responsibilities split"
+    ],
+    "factory_line_goal_exception": "Input projection factory keeps builders, unknown counters, seal and finish in one scope; independent routing/add/read callbacks already separate responsibilities. Further splitting increases mutable state transfer.",
+    "protected_f9_files": {
+      "public/frontend/app/runtime/home-runtime.mjs": "f6e3bf",
+      "public/frontend/app/runtime/kernel.mjs": "3d52f4",
+      "public/frontend/state/index.mjs": "7a714f",
+      "scripts/sync-coordinator-regression.mjs": "c22c4a",
+      "src/http/sync.mjs": "7afb9c"
+    }
+  },
+  "limitations": ["Synthetic isolated PostgreSQL 16.14 only", "No production data audit/write", "94 sample evidence not rerun", "No paid provider call or deployment", "Legal source pools and permitted-root metadata sorting still scale with legitimate input", "Legacy score producer writes still traverse their own field", "Other task families retain separately documented compatibility paths", "Mobile real devices and release-level global state gate remain outside this local exit"],
+  "refs": ["reviews/2026-10-19-stage6-independent-remediation.md", "reviews/2026-10-19-commit-quality-review.md"]
+}

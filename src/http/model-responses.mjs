@@ -9,7 +9,8 @@ export function createModelResponseHttp({ getContext, logEvent, sendJson, projec
     formatError = error => ({
       type: "error",
       error: error.message,
-      code: error.code || "MODEL_RESPONSE_FAILED"
+      code: error.code || "MODEL_RESPONSE_FAILED",
+      ...(Number.isFinite(error.retryAfterMs) ? { retryAfterMs: error.retryAfterMs } : {})
     })
   }) {
     if (!wantsEventStream(req)) return sendJson(res, status, formatResult(await run()));
@@ -32,7 +33,8 @@ export function createModelResponseHttp({ getContext, logEvent, sendJson, projec
       sendStreamEvent(res, formatError({
         message: redact(error.message || "模型回答失败", context?.secrets || []),
         code: error.code || "MODEL_RESPONSE_FAILED",
-        details: error.details
+        details: error.details,
+        retryAfterMs: error.retryAfterMs
       }, context));
     } finally {
       if (!res.destroyed && !res.writableEnded) res.end();

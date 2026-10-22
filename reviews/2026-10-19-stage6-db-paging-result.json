@@ -1,0 +1,342 @@
+{
+  "schemaVersion": 1,
+  "status": "PARTIAL_STAGE_EXIT_NOT_PASSED",
+  "version": "v0.5.16",
+  "stage": 6,
+  "date": "2026-10-19",
+  "baseline": {
+    "git": "d9d79d",
+    "rules": "9c4916"
+  },
+  "sourceManifest": [
+    {
+      "path": "package.json",
+      "sha256_6": "60915e"
+    },
+    {
+      "path": "public/frontend/features/thoughts/operations.mjs",
+      "sha256_6": "964ce2"
+    },
+    {
+      "path": "scripts/collect-thought-search-corpus.mts",
+      "sha256_6": "07af53"
+    },
+    {
+      "path": "scripts/migrate-thought-index.mts",
+      "sha256_6": "5682e3"
+    },
+    {
+      "path": "scripts/postgres-runtime-checks.mjs",
+      "sha256_6": "e24d6a"
+    },
+    {
+      "path": "scripts/startup-projection-regression.mjs",
+      "sha256_6": "cd09ec"
+    },
+    {
+      "path": "scripts/thought-db-paging-regression.mts",
+      "sha256_6": "571d28"
+    },
+    {
+      "path": "scripts/thought-search-corpus-regression.mts",
+      "sha256_6": "156d0c"
+    },
+    {
+      "path": "src/app/content-runtime.mjs",
+      "sha256_6": "101371"
+    },
+    {
+      "path": "src/app/content/resources.mjs",
+      "sha256_6": "aae8e0"
+    },
+    {
+      "path": "src/app/index.mjs",
+      "sha256_6": "6c961a"
+    },
+    {
+      "path": "src/app/runtime-foundation.mjs",
+      "sha256_6": "d3cdff"
+    },
+    {
+      "path": "src/app/runtime-http-wiring.mjs",
+      "sha256_6": "1917b0"
+    },
+    {
+      "path": "src/app/speech-cache.mjs",
+      "sha256_6": "79af42"
+    },
+    {
+      "path": "src/app/startup-projections.mjs",
+      "sha256_6": "beb27d"
+    },
+    {
+      "path": "src/http/startup.mjs",
+      "sha256_6": "15988e"
+    },
+    {
+      "path": "src/http/thoughts.mjs",
+      "sha256_6": "ea1871"
+    },
+    {
+      "path": "src/modules/discovery/index.mjs",
+      "sha256_6": "df8b9e"
+    },
+    {
+      "path": "src/modules/notifications/index.mjs",
+      "sha256_6": "8e8f7a"
+    },
+    {
+      "path": "src/modules/notifications/query.mts",
+      "sha256_6": "6633f8"
+    },
+    {
+      "path": "src/modules/thoughts/discovery-query.mts",
+      "sha256_6": "7c89a0"
+    },
+    {
+      "path": "src/modules/thoughts/index.mjs",
+      "sha256_6": "549ed6"
+    },
+    {
+      "path": "src/modules/thoughts/projection.mts",
+      "sha256_6": "59e51d"
+    },
+    {
+      "path": "src/modules/thoughts/query-contracts.mts",
+      "sha256_6": "ea68ac"
+    },
+    {
+      "path": "src/modules/thoughts/query-runtime.mts",
+      "sha256_6": "199c5a"
+    },
+    {
+      "path": "src/modules/thoughts/query.mts",
+      "sha256_6": "a5301b"
+    },
+    {
+      "path": "src/shared/persistence/account-unit-of-work.mts",
+      "sha256_6": "9b0c86"
+    },
+    {
+      "path": "src/shared/persistence/migrations/registry.mts",
+      "sha256_6": "928b23"
+    },
+    {
+      "path": "src/shared/persistence/postgres-migration.mjs",
+      "sha256_6": "a94f42"
+    },
+    {
+      "path": "src/shared/persistence/postgres-runtime.mjs",
+      "sha256_6": "2d3b4b"
+    },
+    {
+      "path": "src/shared/persistence/postgres-schema.sql",
+      "sha256_6": "84d988"
+    },
+    {
+      "path": "tsconfig.backend.json",
+      "sha256_6": "7b4d6f"
+    },
+    {
+      "path": "tsconfig.thought-corpus.json",
+      "sha256_6": "1864bc"
+    },
+    {
+      "path": "tsconfig.thought-db-regression.json",
+      "sha256_6": "6a87a9"
+    },
+    {
+      "path": "tsconfig.thought-index-migration.json",
+      "sha256_6": "a6196c"
+    }
+  ],
+  "sourceManifestSha256_6": "53dbbd",
+  "protectedWorkingTreeInputs": [
+    {
+      "path": "public/frontend/app/runtime/home-runtime.mjs",
+      "sha256_6": "f6e3bf",
+      "staged": false
+    },
+    {
+      "path": "public/frontend/app/runtime/kernel.mjs",
+      "sha256_6": "3d52f4",
+      "staged": false
+    },
+    {
+      "path": "public/frontend/state/index.mjs",
+      "sha256_6": "7a714f",
+      "staged": false
+    },
+    {
+      "path": "scripts/sync-coordinator-regression.mjs",
+      "sha256_6": "c22c4a",
+      "staged": false
+    },
+    {
+      "path": "src/http/sync.mjs",
+      "sha256_6": "7afb9c",
+      "staged": false
+    }
+  ],
+  "validation": {
+    "postgresWorkspace": {
+      "status": "PASS",
+      "command": "THOUGHT_SEARCH_CORPUS=reports/stage6/search-corpus.json npm run test:postgres:stable"
+    },
+    "cleanCandidate": {
+      "status": "PASS",
+      "archiveTree_6": "2a5170",
+      "sourceFilesEqualToManifest": true,
+      "commands": [
+        "npm test",
+        "THOUGHT_SEARCH_CORPUS=<local ignored sanitized sample> npm run test:postgres:stable",
+        "npm run check"
+      ],
+      "limitations": [
+        "源码归档不含其他任务的五个脏文件差分。",
+        "归档无Git追踪集，project-path扫描计数为0；路径完整性使用主工作区1066个维护文本的通过证据。",
+        "首次归档check缺少ai-migrations生成物；按既有PG套件构建前置后通过。"
+      ]
+    },
+    "main": {
+      "status": "PASS",
+      "command": "npm test"
+    },
+    "startup": {
+      "status": "PASS",
+      "command": "npm run test:startup"
+    },
+    "frontendThoughts": {
+      "status": "PASS",
+      "command": "node scripts/frontend-thoughts-feature-regression.mjs"
+    },
+    "discovery": {
+      "status": "PASS",
+      "command": "node scripts/g2-discovery-regression.mjs"
+    },
+    "speech": {
+      "status": "PASS",
+      "command": "npm run test:speech-cache"
+    },
+    "migrationPlan": {
+      "status": "PASS",
+      "command": "npm run migrate:thought-index -- --account-id local-plan"
+    },
+    "checks": {
+      "status": "PASS",
+      "command": "npm run check"
+    },
+    "corpusBuild": {
+      "status": "PASS",
+      "command": "npm run build:thought-corpus"
+    }
+  },
+  "realCorpus": {
+    "sourceVersion": "a99c14",
+    "readOnly": true,
+    "sanitization": "ephemeral-character-substitution-v1",
+    "rawTextExported": false,
+    "roots": 94,
+    "accounts": 3,
+    "sha256_6": "de03ff",
+    "queries": 33,
+    "expectedMatches": 780,
+    "normalizedMatches": 780,
+    "simpleFullTextMatches": 9,
+    "unrelatedSyntheticRoots": 9306,
+    "limitation": "保持子串相等关系和字符分布，不代表自然语言分词质量、生产延迟或脱敏生产快照全局启动门。"
+  },
+  "openItems": [
+    "TC-10逐生产者command/ChangeDraft/成功故障矩阵尚未完整绑定；兼容全账户updater未迁为有界命令。",
+    "TC-06真实浏览器分页/详情/阅读状态与TC-09 scope消费者验收仍需绑定本候选。",
+    "生产放量验证尚未执行；未启用生产分页或进行发布。"
+  ],
+  "initialFailures": [
+    "canonicalJson(undefined)兼容差分错误，已修复。",
+    "递归SQL无类型的闲置参数、随机候选顺序、新注册账户就绪标记、朗读缓存存储表认知错误，均经相应用例修复。",
+    "GIN默认pending list配置在真实分布加无关数据时选择Seq Scan，改为fastupdate=off后计划通过。",
+    "直接Node测试遇sharp macOS签名限制，使用仓库test:postgres:stable解决；未修改产品实现绕过。"
+  ],
+  "searchMetrics": {
+    "status": "PASS",
+    "corpusSha256": "de03ff",
+    "roots": 94,
+    "unrelatedRoots": 9306,
+    "queries": 33,
+    "expectedMatches": 780,
+    "normalizedMatches": 780,
+    "fullTextMatches": 9,
+    "normalizedRecall": 1,
+    "fullTextRecall": 0.011538461538461539,
+    "limitation": "Character substitution preserves substring equality and shape; it does not validate linguistic segmentation or production latency."
+  },
+  "scaleMetrics": {
+    "roots": [
+      1001,
+      10010
+    ],
+    "baseline": {
+      "actualRows": 21,
+      "sharedHitBlocks": 8,
+      "actualTotalMs": 0.009
+    },
+    "scaled": {
+      "actualRows": 21,
+      "sharedHitBlocks": 9,
+      "actualTotalMs": 0.023
+    }
+  },
+  "localLogIdentities": [
+    {
+      "path": "reports/stage6/main.log",
+      "sha256_6": "9b2eba",
+      "tracked": false
+    },
+    {
+      "path": "reports/stage6/check.log",
+      "sha256_6": "02c342",
+      "tracked": false
+    },
+    {
+      "path": "reports/stage6/startup.log",
+      "sha256_6": "a6fec6",
+      "tracked": false
+    },
+    {
+      "path": "reports/stage6/frontend-thoughts.log",
+      "sha256_6": "989719",
+      "tracked": false
+    },
+    {
+      "path": "reports/stage6/discovery.log",
+      "sha256_6": "58124e",
+      "tracked": false
+    },
+    {
+      "path": "reports/stage6/speech.log",
+      "sha256_6": "35ed39",
+      "tracked": false
+    },
+    {
+      "path": "reports/stage6/migration-plan.log",
+      "sha256_6": "4128f3",
+      "tracked": false
+    },
+    {
+      "path": "reports/stage6/clean-main.log",
+      "sha256_6": "da734e",
+      "tracked": false
+    },
+    {
+      "path": "reports/stage6/clean-check.log",
+      "sha256_6": "bf9d58",
+      "tracked": false
+    },
+    {
+      "path": "reports/stage6/clean-postgres.log",
+      "sha256_6": "e7e41c",
+      "tracked": false
+    }
+  ],
+  "controlRevision": 450
+}

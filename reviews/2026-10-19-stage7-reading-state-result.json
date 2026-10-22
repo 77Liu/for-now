@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "task": "v0516-stage7-reading-state",
+  "status": "PASS_LOCAL",
+  "predecessor_resumption": {
+    "commit": "bd5f6b",
+    "verified_tree": "e801f8",
+    "status": "PASS",
+    "checks": [
+      { "command": "npm run test:postgres:stable", "exit": 0 },
+      { "command": "npm run check:modules", "exit": 0 },
+      { "command": "npm run typecheck:frontend", "exit": 0 },
+      { "command": "node scripts/frontend-thoughts-feature-regression.mjs", "exit": 0 },
+      { "command": "node scripts/frontend-annotations-feature-regression.mjs", "exit": 0 }
+    ],
+    "evidence_reuse": "Reading implementation, browser probe and response hold unchanged; desktop UI results reused, not new mouse execution",
+    "next_stage": "F6 annotation entry and counts",
+    "ref": "reviews/2026-10-19-stage6-independent-remediation-result.json"
+  },
+  "base": {
+    "commit": "64f2b4"
+  },
+  "candidate": {
+    "tree": "8a68c9",
+    "files": [
+      {
+        "path": "public/frontend/features/thoughts/view.mjs",
+        "sha256": "adaeda"
+      },
+      {
+        "path": "scripts/frontend-thoughts-feature-regression.mjs",
+        "sha256": "872305"
+      },
+      {
+        "path": "scripts/postgres-runtime-checks.mjs",
+        "sha256": "6b2888"
+      },
+      {
+        "path": "scripts/thought-browser-probe.mts",
+        "sha256": "ccd958"
+      },
+      {
+        "path": "scripts/thought-browser-response-hold.mts",
+        "sha256": "077e55"
+      },
+      {
+        "path": "tsconfig.thought-db-regression.json",
+        "sha256": "3abbce"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "command": "node scripts/frontend-thoughts-feature-regression.mjs",
+      "exit": 0,
+      "log": "/tmp/for-now-stage7-final-public-ack.log"
+    },
+    {
+      "command": "node scripts/frontend-annotations-feature-regression.mjs",
+      "exit": 0,
+      "log": "/tmp/for-now-stage7-isolated-frontend.log"
+    },
+    {
+      "command": "npm run typecheck:frontend",
+      "exit": 0,
+      "log": "/tmp/for-now-stage7-isolated-types.log"
+    },
+    {
+      "command": "node scripts/check-modules.mjs",
+      "exit": 0,
+      "log": "/tmp/for-now-stage7-final-modules.log"
+    },
+    {
+      "command": "npm run test:postgres:stable",
+      "exit": 0,
+      "log": "/tmp/for-now-stage7-final-pg.log",
+      "env": {
+        "THOUGHT_BROWSER_PROBE": "isolated explicit probe",
+        "PG_TEST_BIN": "PostgreSQL 16.14"
+      }
+    }
+  ],
+  "browser": {
+    "environment": "Chrome 1280x900, AUTH_REQUIRED=1, isolated PostgreSQL 16.14, mock provider",
+    "candidate_tree": "af5822",
+    "later_changes": "Test public-entry correction and fixture-disposal correction only; app reading-state implementation unchanged. Final candidate 8a68c9 verified public ACK/module and complete PG including actual delete/restore fixture.",
+    "TC01": {
+      "result": "PASS",
+      "actions": [
+        "real mouse selection",
+        "comment POST201",
+        "reply POST201",
+        "delete confirmation",
+        "PG readback"
+      ],
+      "counts": [
+        "1/0",
+        "1/1",
+        "0/0"
+      ],
+      "anchor_top_px": [
+        239.390625,
+        1063.21875
+      ],
+      "anchor_change_px": 0,
+      "draft_preserved": true
+    },
+    "TC02": {
+      "result": "PASS",
+      "hold_status": 201,
+      "hold_stage": "Response after real PG commit",
+      "explicit_close": true,
+      "all_existing_followups_closed": true,
+      "new_draft_preserved": true,
+      "focus": "SUMMARY",
+      "scrollY": 0
+    },
+    "TC03": {
+      "result": "PASS_PORT_AND_UI",
+      "paths": [
+        "ACK patch plus original refresh",
+        "public state merge and publish with real PG detail"
+      ],
+      "full_render": {
+        "focus_name": "question",
+        "selection": [
+          9,
+          9
+        ],
+        "expanded": [
+          true,
+          false
+        ],
+        "followup_anchor_unchanged": true,
+        "scrollY": 640
+      },
+      "limit": "Direct public state publication confirms reading consumer; background automatic sync not proven"
+    },
+    "TC04": {
+      "result": "PASS",
+      "deleted_followup_absent_dom_and_pg": true,
+      "fallback_next_top_px": 239.390625,
+      "draft_preserved": true,
+      "late_ack_negative": "public controller test",
+      "page_eviction": "Reuse unchanged stage6 bounded-window browser evidence"
+    },
+    "TC05": {
+      "result": "PASS_UI_AND_CONTRACT",
+      "route_late_ack_status": 201,
+      "after_route": {
+        "cards": 20,
+        "followups": 0,
+        "expanded": 0,
+        "scrollY": 0
+      },
+      "account_and_frame": "Current scope/ticket negative tests; unchanged late-frame logic and prior JSON browser evidence reused, not new PG account-switch frame UI"
+    },
+    "runtime_errors": 0
+  },
+  "prior_failures": [
+    {
+      "log": "/tmp/for-now-stage7-before.log",
+      "result": "FAIL",
+      "reason": "ACK writes followup body into list summary",
+      "resolution": "Complete loaded followUps required; public-controller negative now passes"
+    },
+    {
+      "log": "/tmp/for-now-stage7-pg-browser.log",
+      "exit": 1,
+      "reason": "Browser-created trash count3 instead of1",
+      "resolution": "Restore browser fixture deletions through formal HTTP"
+    },
+    {
+      "log": "/tmp/for-now-stage7-isolated-pg.log",
+      "exit": 1,
+      "reason": "Direct fixture removal rejected LIFECYCLE_TOMBSTONE_REQUIRED",
+      "resolution": "Lifecycle-preserving HTTP restore; complete final PG exit0"
+    },
+    {
+      "log": "/tmp/for-now-stage7-isolated-modules.log",
+      "exit": 1,
+      "reason": "New test deep-imports internal view",
+      "resolution": "Public controller path; final module exit0"
+    }
+  ],
+  "review_ref": "reviews/2026-10-19-stage7-reading-state.md",
+  "limits": [
+    "No iOS Safari/PWA real device, production writes or performance approval",
+    "94 real samples reused, no new corpus search run",
+    "Stage6 R1/R2/R3 repaired and locally verified; release-level gates remain separate"
+  ],
+  "predecessor_review": "reviews/2026-10-19-commit-quality-review.md",
+  "protected_f9_files": {
+    "public/frontend/app/runtime/home-runtime.mjs": "f6e3bf",
+    "public/frontend/app/runtime/kernel.mjs": "3d52f4",
+    "public/frontend/state/index.mjs": "7a714f",
+    "scripts/sync-coordinator-regression.mjs": "c22c4a",
+    "src/http/sync.mjs": "7afb9c"
+  }
+}

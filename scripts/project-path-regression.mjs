@@ -18,7 +18,8 @@ const MAPS = [
   "docs/technical-proposals/评审索引.md"
 ];
 const TEXT_FILE = /\.(?:command|css|html|js|json|jsonl|md|mjs|mts|sh|svg|ts|txt|xml|ya?ml)$/u;
-const IMMUTABLE_CONTROL_HISTORY = /^reports\/iterations\/[^/]+\/(?:events\.jsonl|terminal\.json)$/u;
+// 控制事件和terminal是追加式证据链；路径迁移只改current，不为整洁度重写历史及摘要。
+const IMMUTABLE_CONTROL_HISTORY = /^coordination\/versions\/[^/]+\/(?:events\.jsonl|terminal\.json)$/u;
 const ROOT_LINE = /^所在根目录：`[^`\n]+`。/mu;
 
 function listedFiles() {

@@ -5,14 +5,24 @@ import {
   SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS
 } from "./speech-cache-sweep.mjs";
 
+const RECORD_SYNC_MAINTENANCE_STARTUP_DELAY_MS = 10_000;
+const RECORD_SYNC_MAINTENANCE_INTERVAL_MS = 3_600_000;
+
 export function createServerLifecycle({
   appConfig,
   application,
   accountLifecycle,
+  accountRuntime = null,
+  probeDependencies = async () => {},
   localTestRuntime,
-  readAuth,
+  readAuth = null,
+  scanUsersPage = null,
+  verifyAuth = null,
   runPeriodicAnalyses,
   runRecordCompressionScheduler,
+  runRecordSyncMaintenance = async () => ({ disabled: true }),
+  recordSyncMaintenanceStartupDelayMs = RECORD_SYNC_MAINTENANCE_STARTUP_DELAY_MS,
+  recordSyncMaintenanceIntervalMs = RECORD_SYNC_MAINTENANCE_INTERVAL_MS,
   runSpeechCacheSweep,
   observability,
   postgresRuntime,
@@ -25,6 +35,21 @@ export function createServerLifecycle({
   let startPromise = null;
   let stopPromise = null;
   let listening = false;
+  let startedSuccessfully = false;
+  let fatalExitStarted = false;
+  let removeGlobalFailureListener = () => {};
+  const readUserPage = scanUsersPage || (async ({ limit, after }) => {
+    const users = (await readAuth()).users || [];
+    const start = after ? users.findIndex(user => user.id === after.id) + 1 : 0;
+    const selected = users.slice(start, start + limit);
+    const more = start + selected.length < users.length;
+    const tail = more ? selected.at(-1) : null;
+    return {
+      users: selected,
+      next: tail ? { createdAt: String(tail.createdAt || ""), id: tail.id } : null
+    };
+  });
+  const verifyIdentity = verifyAuth || readAuth || (async () => ({ valid: true }));
 
   const schedule = (callback, delay, repeat = false) => {
     const timer = repeat
@@ -39,6 +64,12 @@ export function createServerLifecycle({
     error: errorMetadata(error)
   });
   const startSchedulers = () => {
+    if (accountRuntime?.enabled) {
+      schedule(() => void (async () => {
+        await probeDependencies();
+        await verifyIdentity();
+      })().catch(error => { accountRuntime.failGlobal(error); periodicFailure(error); }), appConfig.accountRecovery.dependencyProbeMs, true);
+    }
     if (!appConfig.localTestMode && appConfig.periodicAnalysisEnabled) {
       schedule(() => void runPeriodicAnalyses().catch(periodicFailure), 5000);
       schedule(
@@ -55,6 +86,18 @@ export function createServerLifecycle({
       schedule(
         () => void runRecordCompressionScheduler().catch(periodicFailure),
         30_000,
+        true
+      );
+    }
+    if (Number.isSafeInteger(appConfig.syncV2?.retentionDays)
+      && Number.isSafeInteger(appConfig.syncV2?.retentionRowsPerAccount)) {
+      schedule(
+        () => void runRecordSyncMaintenance().catch(periodicFailure),
+        recordSyncMaintenanceStartupDelayMs
+      );
+      schedule(
+        () => void runRecordSyncMaintenance().catch(periodicFailure),
+        recordSyncMaintenanceIntervalMs,
         true
       );
     }
@@ -88,8 +131,10 @@ export function createServerLifecycle({
     if (stopPromise) return stopPromise;
     stopPromise = (async () => {
       clearSchedulers();
+      removeGlobalFailureListener();
       removeSignalHandlers();
       await runtimeMemorySampler.stop();
+      await accountRuntime?.stop();
       if (listening) {
         await new Promise((resolve, reject) => {
           server.close(error => error ? reject(error) : resolve());
@@ -122,6 +167,19 @@ export function createServerLifecycle({
       }
     );
   };
+  // 共享故障先停止准入并排空真实执行器；沿既有十秒强退边界关闭资源，以非零状态交给服务管理器恢复。
+  const handleGlobalFailure = error => {
+    if (!startedSuccessfully || fatalExitStarted) return;
+    fatalExitStarted = true;
+    void logEvent("system", "server.dependency_failed", { level: "error", error: errorMetadata(error) });
+    const forcedExit = setTimeout(() => processRef.exit(1), 10_000);
+    forcedExit.unref();
+    void stop({ signal: "dependency-failed" }).finally(() => {
+      clearTimeout(forcedExit);
+      processRef.exit(1);
+    }).catch(() => {});
+  };
+  removeGlobalFailureListener = accountRuntime?.onGlobalFailure(handleGlobalFailure) || (() => {});
   const installSignalHandlers = () => {
     for (const signal of ["SIGINT", "SIGTERM"]) {
       const handler = () => handleSignal(signal);
@@ -133,11 +191,12 @@ export function createServerLifecycle({
   async function start() {
     if (startPromise) return startPromise;
     startPromise = (async () => {
+      if (!accountRuntime?.enabled) {
       await accountLifecycle.recoverAtStartup({
         localTestRuntime,
-        readUsers: async () => (await readAuth()).users
+        readUsersPage: readUserPage
       });
-      startSchedulers();
+      }
       installSignalHandlers();
       await new Promise((resolve, reject) => {
         const onError = error => {
@@ -153,6 +212,15 @@ export function createServerLifecycle({
         server.once("listening", onListening);
         server.listen(appConfig.port, "127.0.0.1");
       });
+      if (accountRuntime?.enabled) {
+      await accountLifecycle.recoverAtStartup({
+        localTestRuntime,
+        readUsersPage: readUserPage
+      });
+      }
+      if (accountRuntime?.enabled && !accountRuntime.health().dependenciesHealthy) throw Object.assign(new Error("共享依赖在启动期间失效"), { code: "ACCOUNT_DEPENDENCIES_UNAVAILABLE" });
+      startedSuccessfully = true;
+      startSchedulers();
       void (async () => {
         await logEvent("system", "server.started", {
           level: "info",
@@ -167,9 +235,9 @@ export function createServerLifecycle({
         port: server.address().port,
         version: appConfig.version
       };
-    })().catch(error => {
-      clearSchedulers();
-      removeSignalHandlers();
+    })().catch(async error => {
+      accountRuntime?.failGlobal();
+      await stop({ signal: "startup-failed" }).catch(() => {});
       throw error;
     });
     return startPromise;
@@ -178,6 +246,7 @@ export function createServerLifecycle({
   async function ready() {
     await start();
     await postgresRuntime?.ready();
+    if (accountRuntime?.enabled && !accountRuntime.health().ready) throw Object.assign(new Error("账户恢复尚未就绪"), { code: "ACCOUNT_RECOVERY_NOT_READY" });
   }
 
   return { start, ready, stop };

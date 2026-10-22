@@ -1,0 +1,1325 @@
+{
+  "schema_version": 3,
+  "revision": 563,
+  "updated_at": "2026-10-22T05:01:54.684Z",
+  "canonical_path": "coordination/current.json",
+  "coordinator": {
+    "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
+    "role": "主控",
+    "write_authority": "唯一维护者；必须经coordination:update入口更新",
+    "execution_delegate": {
+      "thread_id": "01a14dc0-fb81-7a02-8759-320eaea63835",
+      "authority": "Owner 2026-10-22 explicitly authorizes this review thread to finalize, commit, push, tag, release and deploy v0.5.16; canonical coordinator identity retained; request actor denotes canonical role, execution delegate is actual operator."
+    }
+  },
+  "rule_baseline": {
+    "commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb",
+    "effective_date": "2026-10-21",
+    "source": "Owner 在本独立审查任务明确要求“更新，此刻起生效，做提交前必要改动，提交”。规则和工具已提交；按本次授权登记正式生效基线。"
+  },
+  "work_mode": "SERIAL_DEVELOPMENT",
+  "iteration": {
+    "id": "v0.5.16",
+    "status": "RELEASE_PREPARATION",
+    "phase": "Owner接受MVP已知P2延期；最终候选有状态门、正式门回执、部署和发布收尾。"
+  },
+  "scope": {
+    "description": "v0.5.16既定范围；MVP已知P2延期，保留事实和证据。发布前必须完成最终候选有状态与发布必需门。",
+    "baseline": {
+      "branch": "feat/v0.5.16-sync-latency",
+      "commit": "0b44a8241341ff95b1a7040d4d045924d0711564",
+      "source": "阶段10 AI推理可见性边界本地出口提交"
+    },
+    "inputs": [
+      "docs/technical-proposals/V0516-跨需求共用底座与串行开发-技术方案.md",
+      "docs/technical-proposals/reczz28ORRaxQJDJ-应新规重做F9记录级同步-技术方案.md",
+      "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md",
+      "knowledge/design-contracts.md",
+      "knowledge/test-impact-matrix.md",
+      "artifacts/local/2026-10-20-v0516-full-independent-review.json",
+      "artifacts/local/2026-10-20-v0516-full-review-evidence.zip"
+    ],
+    "exclusions": [
+      "不删除v1 endpoint，不实现未评审的PWA/Service Worker强制升级或v1退场",
+      "不把v2错误回退为整账户snapshot",
+      "不 push、tag、Release、Preview 或生产部署",
+      "不执行生产业务写入或真实付费调用",
+      "不修改或提交 .trae/skills/tell-me 既有未跟踪目录"
+    ],
+    "selected_requirement_ids": [
+      "reczz28ORRaxSCBn",
+      "reczz28ORRaxPAap",
+      "reczz28NLb1qzsCc",
+      "reczz28NLb1qxhIC",
+      "reczz28ORRaxPiK3",
+      "reczz28ORRaxSFnV",
+      "reczz28JmeyoL7D0",
+      "reczz28JmUJNsOl9",
+      "recvxlWptXiRfk",
+      "reczz28ORRaxQBcy",
+      "reczz28ORRaxQJDJ"
+    ],
+    "plan_ref": "docs/versions/v0.5.16/README.md"
+  },
+  "active_tasks": [],
+  "candidate": {
+    "id": "v0.5.16-final-0838119b",
+    "branch": "develop",
+    "sha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+    "tree": "8a2082861360c32051f9558a6fdea87f4e509063",
+    "version": "0.5.16",
+    "status": "RETURNED_FOR_PERFORMANCE_SAMPLE_ISOLATION",
+    "release_frozen": false,
+    "required_gates": [
+      "release_metadata_pwa",
+      "static_module_contracts",
+      "full_regression",
+      "release_journeys",
+      "release_protection",
+      "stateful_postgres_startup",
+      "control_plane_compatibility",
+      "proposal_checker_compatibility"
+    ],
+    "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
+    "quality_gate": {
+      "release_metadata_pwa": "PASS",
+      "static_module_contracts": "PASS",
+      "full_regression": "PASS",
+      "release_journeys": "FAIL",
+      "release_protection": "PASS",
+      "stateful_postgres_startup": "PASS",
+      "control_plane_compatibility": "PASS",
+      "proposal_checker_compatibility": "PASS",
+      "browser_p75_500ms": "PARTIAL",
+      "safari_installed_pwa_real_device": "PARTIAL",
+      "production_rollout": "NOT_RUN"
+    },
+    "base_sha": "0b44a8241341ff95b1a7040d4d045924d0711564",
+    "gate_policy_commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb",
+    "gate_inputs": {
+      "snapshot": "artifacts/local/v0516-final-production-snapshot-v5.json"
+    },
+    "gate_environment": {
+      "purpose": "v0.5.16 final release; local isolated PostgreSQL; production switches unchanged"
+    }
+  },
+  "authorization": {
+    "source": "Owner 2026-10-22：允许你做最后的收尾，然后commit、push、release、tag、切生产环境。承接此前MVP已知P2延期决定。 Owner 2026-10-22后续明确接受启动性能延期并继续tag、release、切生产。",
+    "allowed_actions": [
+      "当前及后继已评审需求的严格串行本地实现、自查、审查、受影响验证与本地提交",
+      "当前阶段必要schema、迁移、运行时、测试及技术方案回填",
+      "隔离本地PostgreSQL、mock provider、无生产副作用测试",
+      "控制面更新；唯一前驱出口通过后登记并接续下一阶段",
+      "Owner本轮明确授权线上真实数据访问；本轮仅通过SELECT-only备份角色只读采样，在来源进程内替换字符，不导出原始正文、账户身份或凭据。",
+      "本次v0.5.16最终收尾、控制面记录、commit/push/tag/Release、生产候选部署与必要失败回退、正式main晋级和develop回流",
+      "只读生产快照与隔离PG验证；生产备份及现有部署所需schema初始化；沿用现有灰度/预算配置"
+    ],
+    "excluded": [
+      "与本版无关的业务改动或数据清理",
+      "扩大SYNC_V2灰度或AI预算",
+      "额外真实付费provider测试",
+      "强推、重写已发布标签与历史"
+    ],
+    "execution_enabled": true,
+    "expires_at": null,
+    "expiry_mode": "until_changed",
+    "revoked": false,
+    "account_authorization": {
+      "account": "for_now_backup",
+      "status": "GRANTED",
+      "source": "Owner本聊天request_user_input_async call_538615e753bf4f12bfc167ab384258c0问题0的明确回复",
+      "scope": "该账户全部现有权限；无需逐次审批",
+      "effective_date": "2026-10-13"
+    }
+  },
+  "blockers": [
+    {
+      "id": "v0516-rereview-stateful-gate-unrebuilt",
+      "priority": "P1",
+      "status": "OPEN",
+      "reason": "四账户default/v0516-combined有状态启动门未在54f3b05重建：脱敏快照绑定6dace45/92b96c，verify以候选SHA/tree不一致拒绝新候选；重新采集需只读生产源URL，本轮未访问生产环境。",
+      "refs": [
+        "scripts/release-state-startup-gate.mts",
+        "artifacts/local/v0516-startup-snapshot-6dace45.json",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json"
+      ]
+    },
+    {
+      "id": "v0516-independent-G1",
+      "priority": "P1",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 重复批次不再回退游标，恢复失败保留调度并由定时器重试；本地专项通过，待独立复审复核。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#G1",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "public/frontend/shared/incremental-sync.mts",
+        "scripts/sync-coordinator-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-independent-G2",
+      "priority": "P2",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 持久用量与本地已记录增量相加并取上界，非零基数不再掩盖待入账新调用；本地专项通过，待独立复审复核。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#G2",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/modules/ai/usage.mjs",
+        "scripts/ai-domain-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-independent-G3",
+      "priority": "P1",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 旧嵌套记录仅在自身类型的父集合白名单内解析归属，同ID跨集合父项不再参与清理；本地专项通过，待独立复审复核。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#G3",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/modules/trash/index.mjs",
+        "scripts/trash-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-independent-N1",
+      "priority": "P1",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 列表与详情只有携带真实装载标记（requestCursor/found）的投影才可跳过恢复，保存游标不再产生空列表；前端专项通过，待独立复审复核。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#N1",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "public/frontend/app/runtime/data-sync-runtime.mts",
+        "scripts/frontend-app-ports-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-independent-N2",
+      "priority": "P2",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 子块删除或舍弃使列表摘要失效，不再保留旧预览；同步专项新增反例通过，待独立复审复核。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#N2",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "public/frontend/state/record-sync.mts",
+        "scripts/record-sync-v2-regression.mts",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-independent-N3",
+      "priority": "P2",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 无关根的子块新增不再失效当前详情，同根新增仍重读；同步专项正反例通过，待独立复审复核。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#N3",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "public/frontend/state/record-sync.mts",
+        "scripts/record-sync-v2-regression.mts",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-independent-N4",
+      "priority": "P2",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 漂移区批注随子项移入回收站时一并取消任务，与标记取消一致；回收站专项通过，待独立复审复核。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#N4",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/app/trash.mjs",
+        "scripts/trash-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-independent-S1",
+      "priority": "P1",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 趋势正文与引用按新到旧分配预算，裁剪先丢旧日期并保留最新一天；趋势上下文专项新增超预算反例通过，待独立复审复核。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#S1",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/app/record-compression-context.mjs",
+        "scripts/record-compression-trend-context-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-independent-S2",
+      "priority": "P2",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 已跨日等待的历史补充优先占用本轮槽位，同日日报与失败修复仍优先，补充可前进且不饿死当期摘要；预算等待专项通过，待独立复审复核。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#S2",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "src/app/record-compressions.mjs",
+        "scripts/record-compression-budget-wait-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-independent-M1",
+      "priority": "P2",
+      "status": "FIXED_PENDING_DEPLOYMENT",
+      "reason": "采集单元的不存在路径改为可选禁入，226/NAMESPACE启动失败已消除；代码已改，未部署，生产采集单元仍为failed。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#M1",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "deploy/for-now-monitor-journal-context.service",
+        "scripts/monitor-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-independent-M2",
+      "priority": "P2",
+      "status": "FIXED_PENDING_DEPLOYMENT",
+      "reason": "采集器与告警格式器读取中台顶层message错误类名，TimeoutError可进入告警正文；代码已改，未部署，线上仍按旧字段。",
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json#M2",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json",
+        "scripts/monitor-journal-context.mts",
+        "scripts/monitor-health.mjs",
+        "scripts/monitor-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A1",
+      "priority": "P1",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 逻辑永久清理不再从单一同ID父项推断多集合批注的归属：缺少parentCollection的annotation/annotationDrift一律不扩展，只有类型到唯一顶层集合的类型保持旧扩展；预览与永久清理共用同一归属校验。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A1",
+        "src/modules/trash/index.mjs",
+        "scripts/trash-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A2",
+      "priority": "P2",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 筛选页把tags与检索正文视为成员资格字段：页外子块改标签进入标签筛选、或正文变化进入检索筛选时，列表范围失效并按有界筛选页恢复。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A2",
+        "public/frontend/state/record-sync.mts",
+        "scripts/record-sync-v2-regression.mts",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A3",
+      "priority": "P2",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 恢复前核对页面身份：列表比较query/tag/sort/requestCursor/direction，详情比较found、根装载与query；不一致返回false走既有rebase，旧查询投影不再被新查询页面接收。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A3",
+        "public/frontend/app/runtime/data-sync-runtime.mts",
+        "scripts/sync-coordinator-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A4",
+      "priority": "P2",
+      "status": "RESOLVED",
+      "reason": "原反例经独立复核通过；相邻B1/B2另列未修复延期，不视为全部行为无缺陷。 历史补充优先分支同时预留队列位置与实际预算，并为失败日报各预留1个名额后取较小值；预算余1时日报修复入队、补充继续等待。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A4",
+        "src/app/record-compressions.mjs",
+        "scripts/record-compression-budget-wait-regression.mjs",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-A6",
+      "priority": "P2",
+      "status": "FIXED_PENDING_GATE_RECEIPTS",
+      "reason": "候选必需门补齐为策略派生的8项并新增两项质量门登记，但两项新增门尚未通过run-gate绑定候选回执，后续放行仍被阻止；本轮未发布。",
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json#A6",
+        "coordination/current.json",
+        "scripts/control-plane-gates.mts"
+      ]
+    },
+    {
+      "id": "v0516-release-queue-race",
+      "priority": "P1",
+      "status": "FIXED_PENDING_GATES",
+      "reason": "发布旅程暴露首次提交与后台恢复重叠：已成功或明确失败的请求可能被旧快照重发；共享发送任务和发送前终态检查已修改，旧代码受控反例失败，新专项通过，待新候选完整发布门。",
+      "refs": [
+        "public/frontend/sync/index.mjs",
+        "scripts/sync-coordinator-regression.mjs",
+        "artifacts/local/queue-race-old-code-probe.log",
+        "artifacts/local/v0516-queue-race-fix-test-v3.log"
+      ]
+    }
+  ],
+  "next_action": "补充冷启动22.4ms超标的Owner决定；保留7项PASS和PostgreSQL专项/依赖审计，通过最终适用门后再执行授权发布。",
+  "runtime": {
+    "version": "v0.5.15",
+    "sha": "a99c14",
+    "active": true,
+    "main_pid": 1033732,
+    "restarts": 0,
+    "readyz": "PASS",
+    "deployed_at": "2026-10-15T22:37:21+08:00",
+    "attempt_id": "c85325b8a32f66ddad7826633d797e7e",
+    "rollback_sha": "a4d2ec",
+    "evidence": "artifacts/local/v0515-deploy-current.json",
+    "limitations": [
+      "长期98%需持续真实观测，不能由本次限定窗口外推",
+      "完整设备验收未完成",
+      "本次不重复付费真实模型调用，复用41d866证据",
+      "以上健康/PID为v0.5.15部署观察回执中的历史结果，本轮未刷新生产观测。"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "production-v0515-observation",
+      "object": {
+        "kind": "production",
+        "version": "v0.5.15",
+        "commit": "a99c14"
+      },
+      "conclusion": "限定历史观察窗口11/11样本通过；健康、PID及错误统计仅代表该窗口，不是当前实时观测。",
+      "limitations": [
+        "现有生产浏览器会话已过期，未重复认证后页面读取",
+        "未新增付费provider调用或生产业务写入",
+        "限定窗口不代表长期98%或完整设备验收"
+      ],
+      "refs": [
+        "artifacts/local/v0515-production-observation-current.json",
+        "artifacts/local/v0515-deploy-current.json"
+      ]
+    },
+    {
+      "id": "formal-v0515-publication",
+      "object": {
+        "kind": "git_refs",
+        "tag": "v0.5.15",
+        "release_branch": "release/v0.5.15",
+        "application_commit": "a99c14",
+        "main_commit": "f12fd1"
+      },
+      "conclusion": "v0.5.15正式发布及远程引用证据；生产/tag与平台合并提交不同，详见object和限制。",
+      "limitations": [
+        "生产运行提交与tag保持a99c14；main为平台合并提交f12fd1",
+        "现有生产浏览器会话已过期，认证后页面读取未重复执行"
+      ],
+      "refs": [
+        "https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.15",
+        "https://gitee.com/Liu_772021/for-now/pulls/5",
+        "git:f12fd1",
+        "github:refs/tags/v0.5.15"
+      ]
+    },
+    {
+      "id": "v0516-technical-plans",
+      "object": {
+        "kind": "technical_design",
+        "path": "docs/technical-proposals/评审索引.md",
+        "review_base": "55c4df"
+      },
+      "conclusion": "九项设计已获Owner批准；当前范围与活动任务以scope/active_tasks为准。",
+      "limitations": [
+        "F3仅A，B/C不纳入；设备与性能结论按各切片回执保留边界。"
+      ],
+      "refs": [
+        "docs/technical-proposals/版本级集成设计与协同执行说明.md",
+        "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md",
+        "artifacts/local/requirements-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F1-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f1-acceptance-current.json",
+        "commit": "677ea9",
+        "integration_commit": "c470c2"
+      },
+      "conclusion": "F1本地认证、真实Chrome改密及限定scrypt负载验证通过，适用对象见object；生产性能未验。",
+      "limitations": [
+        "本地功能、桌面Chrome及限定本地负载通过；iOS、生产同规格PG负载/共享NAT校准和生产观测未验。",
+        "F2/F5组合有状态启动已通过；生产看板/写锁指标及生产负载仍未验，不声称整版可发布。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F1-认证跨账户阻塞治理-技术方案.md",
+        "artifacts/local/v0516-auth-baseline-current.json",
+        "artifacts/local/v0516-auth-after-current.json",
+        "artifacts/local/v0516-sync-baseline-current.json",
+        "artifacts/local/v0516-f1-acceptance-current.json",
+        "artifacts/local/v0516-f1-browser-current.json",
+        "artifacts/local/v0516-f1-load-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F2-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f2-acceptance-current.json",
+        "commit": "80d7df",
+        "integration_commit": "cdcba5",
+        "followup": {
+          "base_commit": "853610",
+          "receipt": "artifacts/local/v0516-f2-auth-missing-current.json",
+          "commit": "1b307a",
+          "integration_commit": "1ad74f"
+        }
+      },
+      "conclusion": "F2本地恢复及JSON认证缺失返修通过，原失败保留；不扩大PG结论。",
+      "limitations": [
+        "默认ACCOUNT_RECOVERY_ENABLED=0，验收显式开启；没有生产开启或发布授权。",
+        "设备/生产负载/观测尚未完成；F1生产负载与指标限制仍保留。",
+        "认证缺失返修结论针对JSON，PG端口未改；关闭恢复时不扩大readiness/退出机制，仍拒绝再建Owner。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F2-账户恢复故障隔离-技术方案.md",
+        "artifacts/local/v0516-f2-acceptance-current.json",
+        "artifacts/local/v0516-f2-independent-current.json",
+        "artifacts/local/v0516-f2-auth-missing-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F5-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f5-acceptance-current.json",
+        "commit": "77a039",
+        "integration_commit": "d3a30d"
+      },
+      "conclusion": "F5本地队列/预算集成验证通过；生产启用和媒体取消能力不由此证明。",
+      "limitations": [
+        "AI_QUEUE_ENABLED默认0，验收显式开启，生产未启用；其他媒体仅无参兼容。",
+        "生产容量与设备分位未验。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F5-AI排队取消与超时-技术方案.md",
+        "artifacts/local/v0516-f5-acceptance-current.json",
+        "artifacts/local/v0516-f5-baseline-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F3A-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f3a-acceptance-current.json",
+        "commit": "f8cdfd",
+        "integration_commit": "4ec189",
+        "followup": {
+          "commit": "bec958",
+          "integration_commit": "40d52b",
+          "receipt": "artifacts/local/v0516-f3a-provision-current.json"
+        }
+      },
+      "conclusion": "F3-A与新账户初始化/重启投影验证通过；仅窄读收益，不证明整账户写或SLO。",
+      "limitations": [
+        "默认legacy/空白名单；生产未启用。未知域及旧格式仍可全读；JSON仍全文件。",
+        "查询返回量有改善，不代表物理扫描/WAL/全站P75；代表性性能仍partial。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F3-PostgreSQL增量读写演进-技术方案.md",
+        "artifacts/local/v0516-f3a-acceptance-current.json",
+        "artifacts/local/v0516-f3a-provision-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F9-server-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "commit": "ee44fe",
+        "integration_commit": "208149"
+      },
+      "conclusion": "F9服务端同步及会话生命周期本地验证通过；局部样本不证明端到端目标。",
+      "limitations": [
+        "默认SYNC_ACCOUNT_WAKE_ENABLED=0；生产未启用。",
+        "局部8样本仓储+handler及单样本HTTP对照不代表全站500ms；客户端功能已接入，设备与完整性能仍partial。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md",
+        "artifacts/local/v0516-f9-server-acceptance-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F4-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f4-acceptance-current.json",
+        "commit": "1f70ee",
+        "integration_commit": "391f97"
+      },
+      "conclusion": "F4分页、有界DOM、详情/离线/ACK本地验证通过；适用对象见object。",
+      "limitations": [
+        "THOUGHT_PAGING_ENABLED默认0，生产未启用。",
+        "iOS/真机、全站性能及3.7完整观测未验。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f4-acceptance-current.json",
+        "docs/technical-proposals/F4-思绪完整游标分页-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-F7-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f7-acceptance-current.json",
+        "commit": "21bac8",
+        "integration_commit": "bcdcd7"
+      },
+      "conclusion": "F7桌面阅读恢复、深页及旧链接验证通过；旧帧竞态原失败未归因。",
+      "limitations": [
+        "旧帧用例早期一次断言差异未归因，原FAIL/UNKNOWN保留；当前固定指纹独立同路径通过，但组合启动门不证明该旧帧竞态根因。",
+        "iOS、全站分位与生产观察未验；不是整版发布GO。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f7-acceptance-current.json",
+        "docs/technical-proposals/F7-追问批注阅读状态保持-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-F6-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f6-acceptance-current.json",
+        "commit": "59a1a1",
+        "integration_commit": "e79d06"
+      },
+      "conclusion": "F6本地批注计数及Chrome验证通过；裁切analysis仍unknown。",
+      "limitations": [
+        "原生iOS、计数切片真实鉴权多账户及全站P75未验；非整版发布GO。",
+        "裁切analysis保持unknown，未新增后端完整读取协议。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F6-批注入口与计数一致-技术方案.md",
+        "artifacts/local/v0516-f6-acceptance-current.json"
+      ]
+    },
+    {
+      "id": "v0516-F8-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f8-acceptance-current.json",
+        "commit": "12479d",
+        "integration_commit": "817ede"
+      },
+      "conclusion": "F8两账户Chrome与WK模拟器跨段锚点通过；公式Range不支持。",
+      "limitations": [
+        "Safari、安装PWA、真机及全站分位未验。",
+        "公式内部及跨公式视觉Range明确不支持，不伪造quote。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f8-acceptance-current.json",
+        "docs/technical-proposals/F8-iOS-PWA选字与批注-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-F9-client-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "commit": "d1979f",
+        "integration_commit": "c215f7"
+      },
+      "conclusion": "F9客户端本地集成专项通过；完整分位与设备验证未完成。",
+      "limitations": [
+        "每族每设备完整P75及真实移动设备未验；小样本不证明500ms目标，日记对端屏外渲染不等于可见。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "docs/technical-proposals/F9-同步与交互延迟治理-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-stateful-global-gate",
+      "object": {
+        "kind": "Git_commit_and_snapshot",
+        "commit": "5cec49",
+        "tree": "6156a0",
+        "snapshot": "bc12ff"
+      },
+      "conclusion": "旧候选四账户default/combined有状态门通过；仅支持object所绑定候选，不能满足106fc416发布门。",
+      "limitations": [
+        "仅本机PostgreSQL16.14，真实provider/通知/媒体副作用封闭；不证明真实provider鉴权。",
+        "真实保存/同步SLO仍FAIL，Safari/PWA/真机仍partial；不是整版发布GO。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-global-acceptance-current.json",
+        "/tmp/v0516-context-startup-default.log",
+        "/tmp/v0516-context-startup-v0516-combined.log"
+      ]
+    },
+    {
+      "id": "v0516-F9-production-shape-performance",
+      "object": {
+        "kind": "Git_commit_with_fixture_snapshot",
+        "commit": "5cec49",
+        "tree": "6156a0",
+        "fixture_snapshot": "be35d1"
+      },
+      "conclusion": "历史生产形态24次保存成功；跨端渲染P75约447–1537ms，多组FAIL未关闭。",
+      "limitations": [
+        "每组3样本校准，尚非正式完整分位验收；旧失败原始回执保留。",
+        "部分日记/思绪对端DOM屏外；Chrome移动仿真不等于iOS/真机。",
+        "禁止provider/outbound/media尝试0、本地音频校验6；该运行fixture基线c46225，不是新快照门。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "/tmp/v0516-f9-context-prefilter-performance-original.json",
+        "/tmp/v0516-f9-context-prefilter-performance.log"
+      ]
+    },
+    {
+      "id": "v0516-F3A-internal-domain-repair",
+      "object": {
+        "kind": "source_manifest",
+        "commit": "854c55",
+        "integration_commit": "c46225",
+        "receipt": "artifacts/local/v0516-f3a-acceptance-current.json"
+      },
+      "conclusion": "F3-A内部域只读闭包、PG及公共投影验证通过；写入体积与旧SLO失败未解决。",
+      "limitations": [
+        "仅只读A；整账户写与HTTP全域体积不变，旧真实生产形态SLOFAIL待新候选复验。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f3a-acceptance-current.json",
+        "/tmp/v0516-f3a-internal-domains-pg.log"
+      ]
+    },
+    {
+      "id": "v0516-F9-toast-projection-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "commit": "329d66",
+        "integration_commit": "c48e39"
+      },
+      "conclusion": "旧候选toast遮挡局部修复通过；整体性能失败仍保留。",
+      "limitations": [
+        "仅局部实现GO；完整新候选启动门及整体P75尚未通过。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "/tmp/v0516-f9-toast-repair-browser.log",
+        "/tmp/v0516-f9-projection-equivalence-final.log"
+      ]
+    },
+    {
+      "id": "v0516-F9-trend-prefilter-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "commit": "5d6d59",
+        "integration_commit": "5cec49"
+      },
+      "conclusion": "旧候选趋势预筛等价专项通过；局部收益不代表当前摘要进入回答上下文。",
+      "limitations": [
+        "局部实现GO；HTTP/SLO及最终候选完整快照门待实际复验。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-f9-server-acceptance-current.json",
+        "/tmp/v0516-f9-trend-prefilter-equivalence.log"
+      ]
+    },
+    {
+      "id": "v0516-rules-review-remediation",
+      "object": {
+        "kind": "git_commit",
+        "commit": "f7bd64"
+      },
+      "conclusion": "旧规则接入回执；当时SP/UP与展示未实施的状态由阶段1/10后续回执承接，不是当前暂停指令。",
+      "limitations": [
+        "部署回归使用网络/特权命令替身；未安装服务器guard、未实际部署，不证明生产环境或真实npm依赖安装/服务启动。",
+        "命令/文件检查不等于执行所有命令；链接检查未请求外网。原四个业务差分及历史事件前缀保留。"
+      ],
+      "refs": [
+        "PROJECT_RULES.md",
+        "knowledge/design-contracts.md",
+        "knowledge/commit-and-release-rules.md",
+        "SOP/README.md",
+        "scripts/commit-gate.mjs",
+        "scripts/commit-gate-regression.mjs",
+        "knowledge/observability.md",
+        "SOP/release-and-observation.md",
+        "deploy/README.md",
+        "deploy/README-preview.md",
+        "deploy/docs/production-release.md",
+        "deploy/docs/preview-release.md",
+        "deploy/deploy-with-media.sh",
+        "deploy/deploy.sh",
+        "deploy/deploy-preview.sh",
+        "scripts/deploy-regression.mjs",
+        "scripts/media-transfer-regression.mjs",
+        "scripts/preview-deploy-regression.mjs",
+        "knowledge/user-journey-testing.md",
+        "knowledge/prompt-architecture.md",
+        "knowledge/metrics.md"
+      ]
+    },
+    {
+      "id": "v0516-stage1-ai-atomic-audit-verification",
+      "object": {
+        "kind": "source_manifest",
+        "requirement_id": "reczz28ORRaxSCBn",
+        "commit": "1bf34d",
+        "tree": "ca53f4",
+        "remediation_commit": "533053"
+      },
+      "conclusion": "阶段1/5数据库审计补账在新OS进程恢复及重复恢复验证通过；当前额度准入G2另列未修复。",
+      "limitations": [
+        "AI_AUDIT_DB_ENABLED 默认仍为0；未部署、未写生产、未执行真实付费 provider 调用。",
+        "本结论是阶段研发出口 GO，不是版本发布 GO；v0.5.x NDJSON 兼容保留至 v0.6.0 正式上线。",
+        "部署测试使用隔离替身；生产角色授权、灰度观测、容量和真实外部账单仍属发布阶段。"
+      ],
+      "refs": [
+        "docs/technical-proposals/reczz28ORRaxSCBn-应新规修订AI请求原子行审计-技术方案.md#41-开发明细必填评审时留空开发结束后填写",
+        "scripts/ai-audit-migration-regression.mts",
+        "scripts/ai-audit-migration-postgres-checks.mjs",
+        "npm run test:postgres:stable",
+        "npm test",
+        "npm run test:deploy",
+        "npm run test:deploy:preview",
+        "reviews/2026-10-18-f25154-remediation-result.json"
+      ]
+    },
+    {
+      "id": "v0516-stage2-auth-precise-verification",
+      "object": {
+        "kind": "source_manifest",
+        "requirement_id": "reczz28ORRaxPAap",
+        "commit": "675408",
+        "tree": "689b8e"
+      },
+      "conclusion": "阶段2身份端口及阶段5改密竞态/死锁返修本地验证通过；原提交不独立覆盖后续失败路径。",
+      "limitations": [
+        "AUTH_QUERY_MODE 默认仍为 document；未部署、未生产放量或写入生产。",
+        "生产同规格 PostgreSQL 延迟、共享 NAT、移动端与正式观察未执行，性能结论仅限本机隔离 PostgreSQL 16.14。",
+        "Volcengine 服务专项被当前 macOS sharp 原生模块 Team ID 签名错误阻断于业务断言前；不影响本地替身认证/PG结论，也未改写为通过。"
+      ],
+      "refs": [
+        "docs/technical-proposals/reczz28ORRaxPAap-应新规修订F1认证精准查询-技术方案.md#41-开发明细必填评审时留空开发结束后填写",
+        "npm run test:postgres:stable",
+        "npm test",
+        "npm run check",
+        "npm run test:deploy",
+        "npm run test:deploy:preview",
+        "npm run test:observability",
+        "npm run test:boundaries",
+        "npm run test:url-history",
+        "npm run test:server-runtime",
+        "npm run test:local-mode",
+        "npm run test:auth-evaluation"
+      ]
+    },
+    {
+      "id": "v0516-stage3-account-recovery-verification",
+      "object": {
+        "kind": "source_manifest",
+        "requirement_id": "reczz28NLb1qzsCc",
+        "commit": "422cdd",
+        "tree": "51f7e3"
+      },
+      "conclusion": "阶段3恢复状态机及PG row组合验证通过；损坏数据恢复仅由JSON专项覆盖。",
+      "limitations": [
+        "ACCOUNT_RECOVERY_ENABLED 默认仍为 0；未部署、未生产开启或写入生产。",
+        "PostgreSQL 组合验证使用正常账户；账户局部坏数据保留与重试由 JSON 全应用及状态机专项覆盖，未在生产形态数据库注入损坏。",
+        "结论是阶段研发出口 GO，不是版本发布 GO；生产容量、启动时延、部署探针切换和 24 小时自然调度观测仍属发布阶段。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F2-账户恢复故障隔离-技术方案.md#41-开发明细必填评审时留空开发结束后填写",
+        "scripts/account-lifecycle-regression.mjs",
+        "scripts/postgres-runtime-checks.mjs",
+        "npm run test:postgres:stable",
+        "npm run test:server-runtime",
+        "npm run test:local-runtime",
+        "npm test",
+        "npm run check",
+        "npm run test:deploy",
+        "npm run test:deploy:preview",
+        "npm run test:observability",
+        "npm run test:boundaries"
+      ]
+    },
+    {
+      "id": "v0516-stage4-ai-queue-verification",
+      "object": {
+        "kind": "source_manifest",
+        "requirement_id": "reczz28NLb1qxhIC",
+        "commit": "b1a62a",
+        "tree": "68247d"
+      },
+      "conclusion": "阶段4复用队列实现，新增组合回归与媒体审计门通过；仅证明回执限定范围。",
+      "limitations": [
+        "AI_QUEUE_ENABLED默认仍为0；未部署、未生产开启或写入生产。",
+        "未执行真实付费provider调用；媒体仅验证旧无参gate兼容和审计硬门，不宣称全部媒体支持取消。",
+        "结论是阶段研发出口GO，不是版本发布GO；生产容量、真实设备、24小时及至少100请求观测仍属发布阶段。"
+      ],
+      "refs": [
+        "docs/technical-proposals/F5-AI排队取消与超时-技术方案.md#41-开发明细必填评审时留空开发结束后填写",
+        "scripts/ai-provider-regression.mjs",
+        "scripts/segmentation-regression.mjs",
+        "npm run test:postgres:stable",
+        "npm run test:server-runtime",
+        "npm run test:ai-budget",
+        "npm run test:ai-migrations",
+        "npm test",
+        "npm run check",
+        "npm run test:deploy",
+        "npm run test:deploy:preview",
+        "npm run test:observability",
+        "npm run test:boundaries"
+      ]
+    },
+    {
+      "id": "v0516-stage5-review-remediation-verification",
+      "object": {
+        "kind": "source_manifest",
+        "commit": "533053",
+        "tree": "f9c50c",
+        "requirement_id": "reczz28ORRaxPiK3"
+      },
+      "conclusion": "阶段5首批删除/恢复及typed命令验证回执；同类遗漏G3/N4仍未修复，旧阶段放行不代表当前完整验收。",
+      "limitations": [
+        "仅首批命令；producer coverage仍有legacy/partial，F9 v2保持关闭",
+        "完整门基于本轮源码指纹；既有F9和首页未提交差分未纳入该提交或UI验收",
+        "该阶段回执未发布、部署、生产写入、付费provider调用或真机验收。"
+      ],
+      "refs": [
+        "reviews/2026-10-18-f25154-remediation-result.json",
+        "git:533053"
+      ]
+    },
+    {
+      "id": "v0516-stage7-local-reading-checkpoint",
+      "object": {
+        "kind": "source_tree",
+        "tree": "8a68c9"
+      },
+      "conclusion": "阶段7阅读实现未变，复用桌面证据并通过集成门；本轮当时未重做鼠标操作。",
+      "limitations": [
+        "iOS Safari/PWA真机与生产性能未验",
+        "整页消费用公开状态发布验证，自动同步接入另属阶段11",
+        "本轮复用未变桌面UI证据，未重做鼠标操作"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage7-reading-state.md",
+        "reviews/2026-10-19-stage7-reading-state-result.json"
+      ]
+    },
+    {
+      "id": "v0516-stage6-independent-final-exit",
+      "object": {
+        "kind": "git_tree",
+        "tree": "e801f8",
+        "commit": "bd5f6b"
+      },
+      "conclusion": "阶段6本地记录级链路出口通过；真实语料与其他任务族范围仍受限制。",
+      "limitations": [
+        "合成隔离PostgreSQL16.14；94真实样本复用未重跑",
+        "合法输入池/许可元数据仍随自身增长；兼容评分生产者及其他任务族成本不声称全部记录级",
+        "移动真机、生产负载、真实付费和发布级全局门未执行"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage6-independent-remediation.md",
+        "reviews/2026-10-19-stage6-independent-remediation-result.json"
+      ]
+    },
+    {
+      "id": "v0516-stage8-annotation-counts-final-exit",
+      "object": {
+        "kind": "source_manifest",
+        "tree": "e3deda",
+        "receipt": "reviews/2026-10-19-stage8-annotation-counts-result.json",
+        "commit": "2119f6"
+      },
+      "conclusion": "阶段8批注回复/转换/删除及真实Chrome+PG回读通过；标准PG父进程退出码缺失仍保留。",
+      "limitations": [
+        "最终标准PG后台父进程未保存退出码；日志四段通过且进程退出，不补造exit0",
+        "直接Node首轮整套媒体生成失败已保留；标准测试Node入口复验通过",
+        "iOS Safari/PWA真机与原生长按、生产负载未验",
+        "本地提交2119f6a；未push/tag/deploy"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage8-annotation-counts.md",
+        "reviews/2026-10-19-stage8-annotation-counts-result.json",
+        "artifacts/local/v0516-f6-acceptance-current.json"
+      ]
+    },
+    {
+      "id": "v0516-stage9-mobile-annotations-exit",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "reviews/2026-10-19-stage9-mobile-annotations-result.json"
+      },
+      "conclusion": "阶段9草稿、选区及Chrome移动批注本地验证通过；PG成功路径复用阶段8，设备证据未补齐。",
+      "limitations": [
+        "Safari/安装PWA/真机partial；旧native仅模拟器WKWebView，未重跑",
+        "真实DOM探针采用隔离数据媒体端口；PG成功路径复用阶段8",
+        "阶段8最终PG父退出码限制保持；未执行整版发布门"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage9-mobile-annotations.md",
+        "reviews/2026-10-19-stage9-mobile-annotations-result.json",
+        "artifacts/local/v0516-f8-acceptance-current.json"
+      ]
+    },
+    {
+      "id": "v0516-stage10-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "reviews/2026-10-19-stage10-reasoning-visibility-result.json"
+      },
+      "conclusion": "阶段10推理可见性、持久化和隔离本地验证通过；历史未知记录继续隐藏。",
+      "limitations": [
+        "AI_REASONING_UI_ENABLED默认关闭；未执行生产放量。",
+        "历史缺少reasoningVisibility的记录保持隐藏，不做批量升级。",
+        "Safari、安装PWA、真机、真实付费provider及生产写均未验。"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage10-reasoning-visibility.md",
+        "reviews/2026-10-19-stage10-reasoning-visibility-result.json",
+        "docs/technical-proposals/reczz28ORRaxQBcy-应新规修订AI推理可见性边界-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-stage11-local-review",
+      "object": {
+        "kind": "source_manifest",
+        "receipt": "reviews/2026-10-19-stage11-record-sync-v2-result.json"
+      },
+      "conclusion": "阶段11 v2本地回归与PG通过；G1/N1–N3独立反例仍成立，不以集合门关闭。",
+      "limitations": [
+        "真实Chrome单样本响应到可观察paint上界约1.1s，P75≤500ms保持partial。",
+        "Safari、安装PWA、移动真机和生产放量未验。",
+        "通知、通用任务及其他实体继续使用既有消费者；v1退场等待v0.6专项。"
+      ],
+      "refs": [
+        "reviews/2026-10-19-stage11-record-sync-v2.md",
+        "reviews/2026-10-19-stage11-record-sync-v2-result.json",
+        "docs/technical-proposals/reczz28ORRaxQJDJ-应新规重做F9记录级同步-技术方案.md"
+      ]
+    },
+    {
+      "id": "v0516-combination-acceptance",
+      "object": {
+        "kind": "release_candidate",
+        "version": "v0.5.16",
+        "commit": "2d97b5",
+        "tree": "6527ca",
+        "snapshot": "2d0f7999"
+      },
+      "conclusion": "旧候选组合门通过记录；READY已撤销，不是当前冻结或发布依据。",
+      "limitations": [
+        "浏览器P75 500ms仍PARTIAL",
+        "Safari/安装PWA/移动真机仍PARTIAL",
+        "生产负载与放量NOT_RUN",
+        "无真实付费provider调用，94条真实样本未重跑"
+      ],
+      "refs": [
+        "reviews/2026-10-19-v0516-combination-acceptance.md",
+        "reviews/2026-10-19-v0516-combination-acceptance-result.json",
+        "artifacts/local/v0516-startup-snapshot-2d97b58.json",
+        "git:2d97b5"
+      ]
+    },
+    {
+      "id": "v0516-full-independent-review-20261020",
+      "object": {
+        "kind": "independent_code_review",
+        "candidate": "2d97b585",
+        "tree": "6527ca",
+        "findings": {
+          "P1": 4,
+          "P2": 8,
+          "executed": 10,
+          "static": 2
+        }
+      },
+      "conclusion": "首轮独立审查12项及撤销READY的来源；当前未解决项以blockers和最新独立证据为准。",
+      "limitations": [
+        "v2 相关缺陷在开关开启的账户成立；默认关闭不等于功能已修复，不据此声称线上已发生。",
+        "十项反例均使用真实导出函数与合成数据/可控异步端口；未冒称真实浏览器或真实 PostgreSQL 的逐项复现。完整 PG 套件另行执行通过。",
+        "R11 依赖跨集合同 ID 的旧/导入数据；逻辑永久清理后用户无法恢复，但数据库记录保留。",
+        "未访问生产业务数据、未执行生产写入、外部发布或真实付费模型调用。",
+        "真机 Safari/安装 PWA、生产负载与 P75≤500ms 的缺口继续保留，不计入 12 项已确认代码问题。"
+      ],
+      "refs": [
+        "artifacts/local/2026-10-20-v0516-full-independent-review.json",
+        "artifacts/local/2026-10-20-v0516-full-review-evidence.zip"
+      ]
+    },
+    {
+      "id": "v0516-independent-remediation-verified",
+      "object": {
+        "kind": "remediation_candidate",
+        "candidate": "6dace45",
+        "tree": "92b96c",
+        "snapshot": "50839a6e"
+      },
+      "conclusion": "旧返修自评中R1/R6/R9/R11的PASS已被独立复审推翻，不作关闭依据。",
+      "limitations": [
+        "R1/R6/R9/R11自评被独立复审推翻，见v0516-full-independent-rereview-20261020与v0516-rereview-remediation-verified",
+        "浏览器P75 500ms仍PARTIAL",
+        "Safari/安装PWA/移动真机仍PARTIAL",
+        "生产负载与放量NOT_RUN",
+        "真实付费provider与94条真实语料均未运行"
+      ],
+      "refs": [
+        "reviews/2026-10-20-v0516-independent-remediation.md",
+        "reviews/2026-10-20-v0516-independent-remediation-result.json",
+        "artifacts/local/v0516-startup-snapshot-6dace45.json",
+        "git:6dace4"
+      ]
+    },
+    {
+      "id": "v0516-full-independent-rereview-20261020",
+      "object": {
+        "kind": "independent_code_review",
+        "candidate": "6dace45a",
+        "tree": "92b96c",
+        "closedFromTwelve": 8,
+        "partial": 4,
+        "reproducedDefects": 5
+      },
+      "conclusion": "6dace45独立复审仅关闭8项，4项部分修复并发现F1–F5/Q1；106fc416最新复现见新增独立证据。",
+      "limitations": [
+        "两项集合门同时成立：主回归、静态检查、完整PG16.14、记录同步、AI/回收站/PWA专项及四账户default/combined有状态门通过，反例也独立复现，因此不能恢复READY_WAIT_OWNER。",
+        "R9相关缺陷在v2/额度开关开启路径成立；默认关闭不等于已修复。",
+        "本轮复审未修改业务代码或控制面，未访问生产环境。",
+        "真机Safari/安装PWA、生产负载与P75≤500ms缺口继续保留，不计入上述代码问题。"
+      ],
+      "refs": [
+        "artifacts/local/2026-10-20-v0516-remediation-independent-rereview.md",
+        "artifacts/local/2026-10-20-v0516-remediation-independent-rereview.json",
+        "artifacts/local/2026-10-20-v0516-remediation-rereview-evidence.zip"
+      ]
+    },
+    {
+      "id": "v0516-rereview-remediation-verified",
+      "object": {
+        "kind": "remediation_candidate",
+        "candidate": "106fc41",
+        "tree": "e36344",
+        "snapshot": "50839a6e"
+      },
+      "conclusion": "106fc416开发返修自评及技术门证据；最新独立审查仍有12项未修复，不能按自报修复数关闭。",
+      "limitations": [
+        "四账户default/v0516-combined有状态门未在新候选重建（快照绑定旧候选SHA/tree）",
+        "浏览器P75 500ms仍PARTIAL",
+        "Safari/安装PWA/移动真机仍PARTIAL",
+        "生产负载与放量NOT_RUN",
+        "真实付费provider与94条真实语料均未运行",
+        "PG稳定套件第2/3次失败按观察抖动如实保留，未改写为通过"
+      ],
+      "refs": [
+        "reviews/2026-10-20-v0516-rereview-remediation.md",
+        "reviews/2026-10-20-v0516-rereview-remediation-result.json",
+        "artifacts/local/v0516-startup-snapshot-6dace45.json",
+        "git:106fc4",
+        "tree:e36344"
+      ]
+    },
+    {
+      "id": "v0516-expanded-independent-review-106fc416",
+      "object": {
+        "kind": "independent_code_review",
+        "candidate": "106fc4168eb4ab06411644b03a2c4fd5027b3e74",
+        "tree": "e36344",
+        "observed_at": "2026-10-20T15:00:45.055571+00:00"
+      },
+      "conclusion": "独立复现12项已发现但尚未修复（4 P1、8 P2），详见blockers；已有技术门通过不能替代关闭反例。",
+      "limitations": [
+        "复用原候选独立证据；本轮只核对来源文件未变，未重新运行业务测试或生产探测。",
+        "v2缺陷仅相应开启路径；不冒称线上已发生。生产观察限原取证时间。",
+        "完整浏览器、逐项PG故障矩阵、真实模型回答均未全量复验；最小摘要原型未部署。"
+      ],
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-review-import.json",
+        "artifacts/local/2026-10-20-expanded-independent-review-106fc416-evidence.zip"
+      ]
+    },
+    {
+      "id": "v0516-expanded-independent-remediation-54f3b05",
+      "object": {
+        "kind": "remediation_receipt",
+        "version": "0.5.16",
+        "candidate": "54f3b05b69309f7d7edee0c592983421d170e742",
+        "tree": "df94412c290faf9d12ff6e8958bb7e63289d1a28"
+      },
+      "conclusion": "扩大独立审查12项均已在代码与专项回归中修复，本轮本地必需验证通过；M1/M2/M3仅完成仓库修复未部署，待独立复审。",
+      "limitations": [
+        "本轮为返修自评，未执行独立复审，不能替代独立结论。",
+        "四账户default/v0516-combined有状态启动门未在新候选重建，现有快照绑定6dace45/92b96c。",
+        "M1/M2/M3未部署，生产采集单元仍failed，中台readyz聚合未改。",
+        "未push/tag/Release/Preview/部署，未写生产业务数据，未调用真实付费provider。"
+      ],
+      "refs": [
+        "reviews/2026-10-21-expanded-independent-remediation.md",
+        "reviews/2026-10-21-expanded-independent-remediation-result.json"
+      ]
+    },
+    {
+      "id": "v0516-rereview2-remediation-5f85f4f",
+      "object": {
+        "kind": "remediation_receipt",
+        "version": "0.5.16",
+        "candidate": "5f85f4fed3227a5e7efe2ce371155324f8b3a433",
+        "tree": "a6f7536417f0ad71c056486797c176abc156feba"
+      },
+      "conclusion": "01:00后独立复审6项中A1-A4已在代码与可区分修复前后的回归中处理，A6补齐8项必需门，A5保持OPEN；本地定向与主回归通过，未做独立复审、未生成新增门回执、未部署。",
+      "limitations": [
+        "本轮为返修自评，不能替代独立结论；页面身份与监控复现按审查边界保留为运行时接口与本地组合复现。",
+        "A5根因在中台5s取消，本仓库无法修复；M3保持OPEN。",
+        "A6两项新增门未通过run-gate绑定回执，放行仍被工具阻止。",
+        "四账户default/v0516-combined有状态启动门未在新候选重建。",
+        "未push/tag/Release/Preview/部署，未写生产业务数据，未调用真实付费provider。"
+      ],
+      "refs": [
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation.md",
+        "reviews/2026-10-21-after-0100-independent-rereview-remediation-result.json"
+      ]
+    },
+    {
+      "id": "v0516-owner-mvp-risk-acceptance",
+      "object": {
+        "kind": "Owner_release_decision",
+        "date": "2026-10-22"
+      },
+      "conclusion": "B1/B2/A5(M3)、完整性能及真机覆盖已发现但尚未修复/完成，Owner接受延期；不再阻断本版，未标为修复。",
+      "limitations": [
+        "详情子块根身份误判",
+        "已完成日报修复仍预留预算，历史补充延后",
+        "中台内层5秒超时",
+        "完整P75与Safari/PWA/真机未验收"
+      ],
+      "refs": [
+        "docs/versions/v0.5.16/README.md#2026-10-22-mvp-发布决定",
+        "reviews/2026-10-21-developer-receipt-independent-check.md"
+      ]
+    },
+    {
+      "id": "v0516-final-a23-gates",
+      "object": {
+        "kind": "candidate",
+        "sha": "a23a46e65efe0f1300021c879bc810c5801f4e8a",
+        "tree": "fe98f78711bd22107db4b132f4864a2722ff8b99"
+      },
+      "conclusion": "8项正式门中7项PASS，release_journeys在完整后端/浏览器通过后因性能静态依赖预算FAIL；不宣称整体通过。",
+      "limitations": [
+        "后续未提交依赖清理不是本批回执的候选；需固定新候选后重新绑定证据。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-release-fixed-gates/release_metadata_pwa.json",
+        "artifacts/local/v0516-release-fixed-gates/static_module_contracts.json",
+        "artifacts/local/v0516-release-fixed-gates/full_regression.json",
+        "artifacts/local/v0516-release-fixed-gates/release_journeys.json",
+        "artifacts/local/v0516-release-fixed-gates/release_protection.json",
+        "artifacts/local/v0516-release-fixed-gates/stateful_postgres_startup.json",
+        "artifacts/local/v0516-release-fixed-gates/control_plane_compatibility.json",
+        "artifacts/local/v0516-release-fixed-gates/proposal_checker_compatibility.json"
+      ]
+    },
+    {
+      "id": "v0516-owner-startup-performance-deferral",
+      "object": {
+        "kind": "owner_decision",
+        "version": "0.5.16",
+        "source": "Owner 2026-10-22回复：接受tag、release、切生产。承接上条明确启动性能延期问题。"
+      },
+      "conclusion": "已发现但尚未修复，Owner接受作为0.5.16 MVP限制；只在本版release旅程接受已记录启动请求数、思绪模型提前加载、热启动P75偏差，原performance报告保留failed。",
+      "limitations": [
+        "不扩大其他失败豁免；不继承到下一版本；普通performance专项保持严格。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-performance-final-report.json",
+        "docs/versions/v0.5.16/README.md",
+        "scripts/web-first-screen-budget-regression.mjs",
+        "scripts/user-journey-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-maintenance-test-order-fix",
+      "object": {
+        "kind": "test_fix",
+        "previous_candidate": "7265cd155b9925923c87081ada70ed9705a9a861"
+      },
+      "conclusion": "原正式门在server-runtime-regression.mjs:258偶发断言0!=1；测试只等待setImmediate就停止服务，早于setTimeout(0)时会取消尚未运行的任务。改为等待实际回调且2秒未启动则失败；专项通过，业务代码未修改。",
+      "limitations": [
+        "不将原失败覆写为通过，新候选重建正式门。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-owner-final-gates/release_journeys.json",
+        "artifacts/local/v0516-maintenance-test-order-fix.log",
+        "scripts/server-runtime-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-url-history-readiness",
+      "object": {
+        "kind": "test_correction",
+        "candidate": "b2dadd83192d5881f4b123fc5a3e483ee74a1520"
+      },
+      "conclusion": "浏览器删除回退提示先于异步列表完成；原断言即时读取22条，最终分页20条。补充有界等待路由非busy且20条；即时旧正文移除断言及最终原断言保留。专项通过，业务代码未改。",
+      "limitations": [
+        "原发布旅程失败保留；新候选须取得门回执。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-final-v4-gates/release_journeys.json",
+        "artifacts/local/v0516-url-history-diagnostic.log",
+        "artifacts/local/v0516-url-history-readiness-fix.log",
+        "scripts/url-history-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-performance-sample-isolation",
+      "object": {
+        "kind": "measurement_correction",
+        "candidate": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f"
+      },
+      "conclusion": "原测试先换请求标识再卸载旧页，迟到批注模块串入下一样本。原100启动样本4次106，先卸载再标识后100启动样本均99。保持浏览器/HTTP缓存/网络条件，预算92和接受上界105不变；修正后10冷/10热专项仅冷P75 1022.4ms仍阻断，已请求Owner明确是否延期。",
+      "limitations": [
+        "原106失败与全部原始证据保留。",
+        "扩大50循环的诊断在两种实现均于第50次路由切换超时，只用于启动计数对照，不是全旅程通过，也未认定产品根因。",
+        "源码修正尚未提交为新候选；未执行生产迁移、tag或正式Release。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-final-v5-gates/release_journeys.json",
+        "artifacts/local/v0516-sample-isolation-comparison.json",
+        "artifacts/local/v0516-isolated-performance-final.json",
+        "artifacts/local/v0516-postgres-stable-supplement.log",
+        "artifacts/local/v0516-dependency-audit-supplement.log"
+      ]
+    }
+  ],
+  "records": {
+    "events": "coordination/versions/v0.5.16/events.jsonl",
+    "terminal": "coordination/versions/v0.5.16/terminal.json",
+    "evidence_scope": "evidence中的object绑定各自候选及当时验证边界，不将旧阶段GO、暂停或生产观测继承为当前指令；当前限制未获关闭证据前保留。当前未解决问题见blockers，历史原文见本次变更事件前值。",
+    "unavailable_evidence": {
+      "count": 8,
+      "note": "原临时引用仍保留；未找到可证明等价的原始替代件，不据此补写通过。",
+      "evidence_ids": [
+        "v0516-F3A-internal-domain-repair",
+        "v0516-F9-production-shape-performance",
+        "v0516-F9-toast-projection-review",
+        "v0516-F9-trend-prefilter-review",
+        "v0516-stateful-global-gate"
+      ]
+    }
+  },
+  "held_iterations": [
+    {
+      "iteration_id": "v0.5.13",
+      "events": "coordination/versions/v0.5.13/events.jsonl",
+      "event_id": "v0.5.13-8ab22aa2-71a2-4303-a142-fbfc7486c7e1",
+      "state_after_hash": "ce0441",
+      "status": "PUBLISHED_MAIN_PENDING",
+      "candidate_sha": "a901c8",
+      "authorization_sha256": "e9287a"
+    }
+  ]
+}

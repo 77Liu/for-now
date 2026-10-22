@@ -9,6 +9,11 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
 fi
 
 cd "$PROJECT_DIR"
+if [ "${AUTH_REQUIRED:-0}" != "1" ] && [ "${LOCAL_TEST_MODE:-0}" != "1" ]; then
+  echo "普通无认证业务模式已退役。"
+  echo "账户模式请先配置 AUTH_REQUIRED=1、INVITE_CODE_HASH 和持久化环境；隔离功能验收请运行 npm run start:local-test。"
+  exit 2
+fi
 npm run build:runtime
 node server.mjs &
 SERVER_PID=$!

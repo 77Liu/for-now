@@ -1711,3 +1711,21 @@ console.log(
   + "session ABA, command outcomes, headless pending/incremental state, root lifecycle, "
   + "delegation, drafts/idempotency, reset scrub and stale activation isolation."
 );
+
+// F9完整恢复的同账户生命周期：ensure不得复用其他guard的旧load ticket。
+{
+  const oldRead = deferred(), newRead = deferred();
+  let reads = 0, oldCurrent = true;
+  const coordinator = coordinatorWith({ listAllV1: path => path === ACTIONS_ENDPOINT
+    ? (++reads === 1 ? oldRead.promise : newRead.promise) : Promise.resolve([]) });
+  const oldLoad = coordinator.load({ isCurrent: () => oldCurrent });
+  oldCurrent = false;
+  const newLoad = coordinator.load({ ensure: true, isCurrent: () => true });
+  assert.equal(reads, 2);
+  oldRead.resolve([{ id: 'old-action', title: '旧恢复结果' }]);
+  assert.equal(await oldLoad, false);
+  assert.equal(coordinator.snapshot().actions.some(item => item.id === 'old-action'), false);
+  newRead.resolve([{ id: 'new-action', title: '新恢复结果' }]);
+  assert.equal(await newLoad, true);
+  assert.equal(coordinator.snapshot().actions[0].id, 'new-action');
+}

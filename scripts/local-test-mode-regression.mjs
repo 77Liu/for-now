@@ -211,6 +211,7 @@ const child = spawn(process.execPath, ["server.mjs"], {
     INVITE_CODE_HASH: "",
     COOKIE_SECURE: "0",
     LOCAL_TEST_MODE: "1",
+    SYNC_ACCOUNT_WAKE_ENABLED: "1",
     LOCAL_TEST_RESET_ON_START: "1",
     LOCAL_TEST_MAIN_USER_ID: "main-user",
     UPSTREAM_ORIGIN: `http://127.0.0.1:${upstream.address().port}`,
@@ -251,8 +252,18 @@ try {
   })).response.status, 201);
   assert.equal((await jsonRequest(`${base}/api/state`)).body.captures.length, 1);
 
+  const beforeColdReset = await jsonRequest(`${base}/api/v1/sync?waitMs=0`);
+  assert.equal(beforeColdReset.response.status, 200, JSON.stringify(beforeColdReset.body));
+  assert.ok(beforeColdReset.body.data.cursor > 0);
+  const coldWaitStarted = performance.now();
+  const coldWait = jsonRequest(`${base}/api/v1/sync?cursor=${beforeColdReset.body.data.cursor}&waitMs=1500`);
+  await sleep(50);
   const resetCold = await jsonRequest(`${base}/api/local-test-mode`, { method: "POST", body: JSON.stringify({ mode: "cold" }) });
   assert.equal(resetCold.response.status, 200, `${JSON.stringify(resetCold.body)}\n${stderr}`);
+  const replacedSync = await coldWait;
+  assert.equal(replacedSync.response.status, 409, JSON.stringify(replacedSync.body));
+  assert.equal(replacedSync.body.error.code, "SYNC_CURSOR_AHEAD");
+  assert.ok(performance.now() - coldWaitStarted < 1200, "activated target must wake existing wait before its deadline");
   assert.equal((await jsonRequest(`${base}/api/state`)).body.captures.length, 0);
   assert.equal((await jsonRequest(`${base}/api/settings`)).body.assistantName, "神鸡");
 

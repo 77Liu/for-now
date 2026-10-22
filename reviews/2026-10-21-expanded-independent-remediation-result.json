@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-21",
+  "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+  "reviewSource": "reviews/2026-10-21-expanded-independent-review-import.json",
+  "implementationCandidate": {
+    "version": "0.5.16",
+    "sha": "54f3b05b69309f7d7edee0c592983421d170e742",
+    "tree": "df94412c290faf9d12ff6e8958bb7e63289d1a28",
+    "branch": "feat/v0.5.16-sync-latency"
+  },
+  "findings": [
+    {
+      "id": "G1",
+      "priority": "P1",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Deduplicated pull batches only move the cursor forward; a failed recovery stays scheduled and is retried by the timer instead of being lost.",
+      "regression": "scripts/sync-coordinator-regression.mjs"
+    },
+    {
+      "id": "G2",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Persisted usage is added to the locally recorded delta with an upper bound so a newer persisted value is not double counted; pending calls can no longer be hidden by a non-zero persisted baseline.",
+      "regression": "scripts/ai-domain-regression.mjs"
+    },
+    {
+      "id": "G3",
+      "priority": "P1",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Legacy nested entries resolve their parent only within the collection whitelist for their own type, excluding same-ID parents from other collections.",
+      "regression": "scripts/trash-regression.mjs"
+    },
+    {
+      "id": "N1",
+      "priority": "P1",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "A saved cursor no longer skips recovery when the list/detail page was never actually loaded; only projections carrying real load markers may be reused.",
+      "regression": "scripts/frontend-app-ports-regression.mjs and npm run test:frontend"
+    },
+    {
+      "id": "N2",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Sub-block removal or discard invalidates the list summary scope so a stale preview is not retained.",
+      "regression": "scripts/record-sync-v2-regression.mts"
+    },
+    {
+      "id": "N3",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "A sub-block added to an unrelated root no longer invalidates the open detail scope; a sub-block of the same root still does.",
+      "regression": "scripts/record-sync-v2-regression.mts"
+    },
+    {
+      "id": "N4",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Moving a nested item from the annotation drift area to trash also cancels tasks bound to drift entries, matching mark cancellation.",
+      "regression": "scripts/trash-regression.mjs"
+    },
+    {
+      "id": "S1",
+      "priority": "P1",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "Trend narrative rows and citation sources are allocated newest-first, so budget trimming drops the oldest dates and always retains the newest day.",
+      "regression": "scripts/record-compression-trend-context-regression.mjs"
+    },
+    {
+      "id": "S2",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_INDEPENDENT_REREVIEW",
+      "closure": "A historical supplement that has waited across a local day receives the next available slot; same-day daily work and a failed daily repair stay ahead, so the supplement advances without starving current summaries.",
+      "regression": "scripts/record-compression-budget-wait-regression.mjs"
+    },
+    {
+      "id": "M1",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_DEPLOYMENT",
+      "closure": "The optional-prefixed /var/lib/for-now path no longer blocks the journal collector unit with 226/NAMESPACE at start.",
+      "limitation": "Not deployed; production collector state remains failed until a deployment and recheck."
+    },
+    {
+      "id": "M2",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_DEPLOYMENT",
+      "closure": "The collector and alert formatter read the real platform top-level message error class (e.g. TimeoutError), matching the production journal shape.",
+      "limitation": "Not deployed; alert output verified locally only."
+    },
+    {
+      "id": "M3",
+      "priority": "P2",
+      "status": "FIXED_IN_CODE_PENDING_DEPLOYMENT",
+      "closure": "Outer readyz probing waits up to MONITOR_READY_TIMEOUT_MS (default 15000ms, floor 5000ms), preventing a slow full aggregation from being reported as unavailable.",
+      "limitation": "Only the outer monitor timeout changed; the platform's own readyz aggregation was not modified and production was not accessed."
+    }
+  ],
+  "validation": {
+    "implementationCommit": "54f3b05b69309f7d7edee0c592983421d170e742",
+    "buildRuntime": "PASS",
+    "fullRegression": "PASS",
+    "staticCheck": "PASS",
+    "frontendJourney": "PASS",
+    "recordSync": "PASS",
+    "recordCompressions": "PASS",
+    "monitor": "PASS",
+    "deploy": "PASS",
+    "postgresStable": {
+      "status": "PASS",
+      "postgres": "16.14"
+    },
+    "targeted": {
+      "trash": "PASS",
+      "aiDomain": "PASS",
+      "trendContext": "PASS"
+    }
+  },
+  "notCompleted": [
+    "Independent re-review was not performed; this receipt is a remediation self-assessment.",
+    "The four-account default/v0516-combined stateful startup gate was not rebuilt; the existing snapshot is bound to 6dace45/92b96c and the blocker v0516-rereview-stateful-gate-unrebuilt stays OPEN.",
+    "M1/M2/M3 are not deployed; production journal collection and alerting are unchanged until deployment.",
+    "No production access, production writes, real paid provider calls, push, tag, Release, Preview or deployment.",
+    "Browser P75<=500ms, Safari/installed PWA/real-device, production load and rollout gaps remain open."
+  ]
+}

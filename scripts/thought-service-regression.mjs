@@ -485,3 +485,35 @@ assert.equal(projectionDetail.blocks[1].reasoningContent, undefined);
 assert.equal(projectionDetail.blocks[1].modelDraft, undefined);
 
 console.log("Thought service checks passed: chains, summary projection, search cursors, version conflicts, annotations, remarks, follow-ups and disposition.");
+
+// F4：相同时间下1001条双向遍历，以及边界删除后的空页反向恢复。
+{
+  const { thoughtChainListPage } = await import("../src/modules/thoughts/index.mjs");
+  for (const count of [0, 1, 20, 21, 100, 101, 121, 1001]) {
+    const rows = Array.from({ length: count }, (_, index) => ({ id: `f4-${String(index).padStart(4, "0")}`, type: "question", content: "test", occurredAt: "2026-10-01T00:00:00.000Z", createdAt: "2026-10-01T00:00:00.000Z" }));
+    const seen = [], pages = []; let afterId = "";
+    do {
+      const page = thoughtChainListPage(rows, { afterId, cursorScope: "owner-a" });
+      seen.push(...page.items.map(item => item.id)); pages.push(page); afterId = page.nextId;
+    } while (afterId);
+    assert.equal(seen.length, count); assert.equal(new Set(seen).size, count);
+    for (let index = pages.length - 1; index > 0; index -= 1) {
+      const previous = thoughtChainListPage(rows, { afterId: pages[index].prevId, direction: "prev", cursorScope: "owner-a" });
+      assert.deepEqual(previous.items.map(item => item.id), pages[index - 1].items.map(item => item.id));
+    }
+    if (count > 20) {
+      const first = pages[0], removed = rows.filter(row => !first.items.some(item => item.id === row.id));
+      const surviving = first.items.slice(0, -1);
+      const empty = thoughtChainListPage(surviving, { afterId: first.nextId, cursorScope: "owner-a" });
+      const reverse = thoughtChainListPage(surviving, { afterId: empty.prevId, direction: "prev", cursorScope: "owner-a" });
+      assert.deepEqual(reverse.items.map(item => item.id), surviving.map(item => item.id));
+      assert.ok(removed.length);
+      const olderOnly = pages[1].items.slice(1);
+      const emptyNewer = thoughtChainListPage(olderOnly, { afterId: pages[1].prevId, direction: "prev", cursorScope: "owner-a" });
+      const forward = thoughtChainListPage(olderOnly, { afterId: emptyNewer.nextId, cursorScope: "owner-a" });
+      assert.deepEqual(forward.items.map(item => item.id), olderOnly.map(item => item.id));
+      assert.equal(thoughtChainListPage(rows, { afterId: first.nextId, cursorScope: "owner-b" }).invalidCursor, true);
+    }
+  }
+  assert.equal(thoughtChainListPage([], { direction: "prev" }).invalidQuery, true);
+}

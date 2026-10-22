@@ -62,7 +62,7 @@ export function createImportanceService(ports: Ports) {
       if (inputHash !== task.payload.fingerprint) return null;
       return {
         kind: "importanceScoring", scene: "importanceScoring", inputVersion: 1, subtargetVersion: 0, inputHash,
-        json: true, captureReasoning: false, retryWithoutThinking: false, auditPrompt: false, maxTokens: 1500,
+        json: true, captureReasoning: false, retryWithoutThinking: false, triggerType: "system_internal", maxTokens: 1500,
         modelOverride: { model: task.payload.model, effort: task.payload.effort },
         systemPrompt: ports.promptText("importance.system.score"),
         prompt: ports.renderPrompt("importance.task.score", {

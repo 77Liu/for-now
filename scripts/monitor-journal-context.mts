@@ -12,6 +12,8 @@ const JOURNAL_UNIT = "for-now-platform.service";
 const OUTPUT_DIR = "/var/lib/for-now-monitor-journal";
 const OUTPUT_FILE = `${OUTPUT_DIR}/platform-context.json`;
 const SAFE_FIELD = /^[A-Za-z0-9_.:-]{1,80}$/;
+// 中台真实错误记录把异常类名放在顶层 message（例如 TimeoutError），而不是嵌套 error.name。
+const ERROR_NAME = /^[A-Za-z][A-Za-z0-9]{0,60}(Error|Exception|Timeout)$/;
 type JournalRecord = Record<string, unknown>;
 type JournalEvent = Record<string, unknown>;
 type JournalSummary = {
@@ -89,7 +91,9 @@ function summarizeJournalRecord(record: JournalRecord, sinceMs: number, untilMs:
   };
   const level = safeField(event.level) || PRIORITY_LEVEL.get(String(record.PRIORITY || "")) || "";
   const errorCode = safeField(error.code || event.errorCode);
-  const errorName = safeField(error.name);
+  const errorName = safeField(error.name)
+    || (typeof event.message === "string" && ERROR_NAME.test(event.message) ? event.message : "")
+    || safeField(event.errorName);
   if (level) summary.level = level;
   if (Number.isFinite(status) && status > 0) summary.status = status;
   if (Number.isFinite(duration) && duration >= 0) summary.durationMs = Math.round(duration);

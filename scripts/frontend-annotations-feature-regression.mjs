@@ -7,9 +7,12 @@ import {
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
-  let resolve;
-  const promise = new Promise(done => { resolve = done; });
-  return { promise, resolve };
+  let resolve, reject;
+  const promise = new Promise((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
 }
 
 class FakeClassList {
@@ -50,6 +53,7 @@ class FakeElement {
     this._textContent = String(value);
     this.document.writes += 1;
   }
+  setAttribute(name, value) { this[name] = String(value); }
   querySelector(selector) {
     if (this.name === "panel" && selector === "header h2") {
       return this.document.heading;
@@ -138,11 +142,12 @@ class FakeWindow extends FakeEventTarget {
 }
 
 class FakeAction {
-  constructor(dataset) {
+  constructor(dataset, selector = "[data-annotation-menu]") {
     this.dataset = dataset;
+    this.selector = selector;
   }
   closest(selector) {
-    return selector === "[data-annotation-menu]" ? this : null;
+    return selector === this.selector ? this : null;
   }
 }
 
@@ -178,26 +183,34 @@ let snapshot = {
   }]
 };
 const requestGate = deferred();
+let requestHandler = () => requestGate.promise;
+let refreshHandler = async () => false;
+let rootComplete = true;
 const toasts = [];
 let frame = 0;
 const cancelledFrames = [];
+let persistentDraftClears = 0;
+let persistDraftHandler = async () => {};
+let submitDraftHandler = async () => ({ uploadedPaths: [], attachmentPaths: [] });
 const controller = createAnnotationsFeatureController({
   data: {
     getSnapshot: () => snapshot,
     getAccountId: () => accountId,
-    request: () => requestGate.promise,
+    request: (...args) => requestHandler(...args),
+    refreshRoot: (...args) => refreshHandler(...args),
+    isRootComplete: () => rootComplete,
     refreshNotifications: async () => {},
     scheduleNotificationPoll() {},
     clearThoughtTracePending() {},
     openSelectionQuote() {}
   },
   media: {
-    resetDraft() {},
+    resetDraft() { persistentDraftClears += 1; },
     startDraft() {},
-    persistDraft: async () => {},
-    submitDraft: async () => ({ uploadedPaths: [], attachmentPaths: [] }),
+    persistDraft: () => persistDraftHandler(),
+    submitDraft: () => submitDraftHandler(),
     buildPayload: value => value,
-    clearDraft: async () => {},
+    clearDraft: async () => { persistentDraftClears += 1; },
     discardUploads: async () => {},
     uncertainSubmission: () => false,
     contentImagesMarkup: () => ""
@@ -257,7 +270,22 @@ document.dispatch("click", new FakeAction({
 }));
 await flush();
 
+document.elements["comment-text"].value = "账户A未提交的私密评论";
+document.elements["comment-status"].textContent = "账户A的提交提示";
+document.elements["comment-quote"].textContent = "账户A的选区";
+Object.assign(document.elements["comment-composer"].dataset, {
+  requestId: "account-a-request", assistantClientRequestId: "account-a-assistant",
+  annotationSubmission: "account-a-submission"
+});
+const oldSubmit = { disabled: true };
+document.elements["comment-composer"].querySelector = selector => selector === 'button[type="submit"]' ? oldSubmit : null;
 controller.resetSession();
+assert.equal(document.elements["comment-text"].value, "", "session reset clears private aside composer text");
+assert.equal(document.elements["comment-status"].textContent, "");
+assert.equal(document.elements["comment-quote"].textContent, "");
+assert.deepEqual(document.elements["comment-composer"].dataset, {}, "old account request ownership must not survive reset");
+assert.equal(document.elements["comment-composer"].hidden, true);
+assert.equal(oldSubmit.disabled, false, "old submission must not disable the next account composer");
 accountId = "account-b";
 snapshot = {
   thoughts: [{
@@ -285,5 +313,395 @@ assert.equal(document.count("click"), 0);
 assert.equal(window.count("scroll"), 0);
 assert.ok(cancelledFrames.length > 0, "session reset must cancel pending layout frames");
 assert.equal(secondDispose(), false);
+controller.mount({ root: document });
+controller.openPanel("thought:root");
+assert.equal(document.elements["comment-text"].value, "", "account B opening a panel must not inherit account A text");
+assert.equal(persistentDraftClears, 0, "session DOM reset must preserve owner-scoped persistent drafts");
+controller.unmount();
 
 console.log("Frontend annotations feature checks passed: repeat mount cleanup, session reset and late-account response isolation.");
+
+// 公开事件入口验证真实ACK竞态；补读结果由数据端口提供，不深导入内部模型。
+{
+  const { projectAnnotationCounts } = await import("../public/frontend/features/annotations/index.mjs");
+  const annotation = () => ({
+    id: "annotation-1",
+    kind: "comment",
+    version: 1,
+    quote: "原文",
+    text: "评论",
+    replies: [],
+    createdAt: "2026-10-19T08:00:00.000Z"
+  });
+  const root = () => ({
+    id: "root",
+    type: "question",
+    content: "原文",
+    annotations: [annotation()],
+    annotationDrift: []
+  });
+  function prepare() {
+    controller.resetSession();
+    rootComplete = true;
+    snapshot = { thoughts: [root()], aiTasks: [] };
+    toasts.length = 0;
+    controller.mount({ root: document });
+    controller.openPanel("thought:root", "annotation-1");
+  }
+  function submitReply() {
+    const input = { value: "已提交回复" };
+    const button = { disabled: false, isConnected: true };
+    const form = new FakeAction(
+      { commentReply: "annotation-1" },
+      "[data-comment-reply]"
+    );
+    form.querySelector = selector => selector === "input" ? input : button;
+    document.dispatch("submit", form);
+    return { input, button };
+  }
+  const saved = { id: "reply-1", text: "已提交回复", version: 1 };
+
+  prepare();
+  let gate = deferred();
+  requestHandler = () => gate.promise;
+  submitReply();
+  snapshot.thoughts = [root()];
+  snapshot.thoughts[0].annotations[0].replies.push(saved);
+  gate.resolve(saved);
+  await flush();
+  assert.equal(snapshot.thoughts[0].annotations[0].replies.length, 1,
+    "sync before reply ACK must not duplicate the confirmed reply");
+  assert.equal(projectAnnotationCounts(snapshot.thoughts[0]).replyCount, 1);
+  assert.match(document.heading.textContent, /1条批注 · 1条回复/);
+
+  prepare();
+  gate = deferred();
+  requestHandler = () => gate.promise;
+  let rereads = 0;
+  refreshHandler = async rootKey => {
+    assert.equal(rootKey, "thought:root");
+    rereads += 1;
+    snapshot.thoughts = [root()];
+    snapshot.thoughts[0].annotations[0].replies.push(saved);
+    rootComplete = true;
+    return true;
+  };
+  submitReply();
+  snapshot.thoughts = [{ ...root(), annotations: [], blockCount: 1 }];
+  rootComplete = false;
+  gate.resolve(saved);
+  await flush();
+  assert.equal(rereads, 1, "saved reply with evicted target requires precise authoritative reread");
+  assert.match(document.heading.textContent, /1条批注 · 1条回复/);
+
+  prepare();
+  gate = deferred();
+  requestHandler = () => gate.promise;
+  refreshHandler = async () => {
+    throw new Error("详情读取失败");
+  };
+  const failedReadForm = submitReply();
+  snapshot.thoughts = [{ ...root(), annotations: [] }];
+  gate.resolve(saved);
+  await flush();
+  assert.match(document.heading.textContent, /批注未完整加载/);
+  assert.match(document.elements["comment-panel-list"].innerHTML, /data-annotation-refresh/);
+  assert.equal(failedReadForm.button.disabled, false, "presentation failure must release reply form");
+  assert.equal(failedReadForm.input.value, "", "confirmed reply is not resubmitted after read failure");
+  refreshHandler = async () => {
+    snapshot.thoughts = [root()];
+    snapshot.thoughts[0].annotations[0].replies.push(saved);
+    return true;
+  };
+  document.dispatch("click", new FakeAction({}, "[data-annotation-refresh]"));
+  await flush();
+  assert.match(document.heading.textContent, /1条批注 · 1条回复/);
+  assert.doesNotMatch(document.elements["comment-panel-list"].innerHTML, /data-annotation-refresh/);
+
+  prepare();
+  requestHandler = async () => saved;
+  rootComplete = false;
+  refreshHandler = async () => {
+    throw new Error("详情读取失败");
+  };
+  submitReply();
+  await flush();
+  assert.match(document.elements["comment-panel-list"].innerHTML, /data-annotation-refresh/,
+    "existing annotation in incomplete root still exposes recovery when reread fails");
+  assert.match(document.heading.textContent, /批注未完整加载/);
+
+  prepare();
+  requestHandler = async () => {
+    throw new Error("回复提交失败");
+  };
+  const rejectedReply = submitReply();
+  await flush();
+  assert.equal(rejectedReply.input.value, "已提交回复");
+  assert.equal(rejectedReply.button.disabled, false);
+  assert.equal(projectAnnotationCounts(snapshot.thoughts[0]).replyCount, 0);
+
+  prepare();
+  gate = deferred();
+  requestHandler = () => gate.promise;
+  const editing = submitReply();
+  editing.input.value = "等待期间的新回复";
+  gate.resolve(saved);
+  await flush();
+  assert.equal(editing.input.value, "等待期间的新回复");
+  assert.equal(editing.button.disabled, false, "new reply input remains usable after earlier ACK");
+  assert.equal(projectAnnotationCounts(snapshot.thoughts[0]).replyCount, 1);
+
+  prepare();
+  requestHandler = async () => {
+    throw new Error("删除失败");
+  };
+  document.dispatch("click", new FakeAction(
+    { commentDelete: "annotation-1" }, "[data-comment-delete]"
+  ));
+  await flush();
+  assert.equal(projectAnnotationCounts(snapshot.thoughts[0]).threadCount, 1);
+  assert.match(document.heading.textContent, /1条批注 · 0条回复/);
+  assert.match(toasts.at(-1)[0], /删除失败/);
+
+  prepare();
+  gate = deferred();
+  requestHandler = () => gate.promise;
+  document.dispatch("click", new FakeAction(
+    { commentDelete: "annotation-1" }, "[data-comment-delete]"
+  ));
+  snapshot.thoughts = [root()];
+  gate.resolve({});
+  await flush();
+  assert.equal(projectAnnotationCounts(snapshot.thoughts[0]).threadCount, 0,
+    "delete ACK applies to current confirmed root after sync replacement");
+
+  prepare();
+  gate = deferred();
+  requestHandler = () => gate.promise;
+  document.dispatch("click", new FakeAction({
+    annotationMenu: "to-highlight", annotationId: "annotation-1"
+  }));
+  snapshot.thoughts[0].annotations[0].version = 3;
+  gate.resolve({ ...annotation(), kind: "highlight", version: 2 });
+  await flush();
+  assert.equal(snapshot.thoughts[0].annotations[0].kind, "comment",
+    "older conversion response must not overwrite newer confirmed version");
+
+  prepare();
+  gate = deferred();
+  requestHandler = () => gate.promise;
+  rereads = 0;
+  refreshHandler = async () => {
+    rereads += 1;
+    snapshot.thoughts = [root()];
+    snapshot.thoughts[0].annotations[0].kind = "highlight";
+    snapshot.thoughts[0].annotations[0].version = 2;
+    return true;
+  };
+  document.dispatch("click", new FakeAction({
+    annotationMenu: "to-highlight", annotationId: "annotation-1"
+  }));
+  snapshot.thoughts = [{ ...root(), annotations: [] }];
+  gate.resolve({ ...annotation(), kind: "highlight", version: 2 });
+  await flush();
+  assert.equal(rereads, 1, "missing conversion target requires authoritative reread");
+  assert.match(document.heading.textContent, /0条批注 · 0条回复 · 1条标记/);
+
+  prepare();
+  gate = deferred();
+  requestHandler = () => gate.promise;
+  refreshHandler = async () => {
+    snapshot.thoughts = [{ ...root(), annotations: [] }];
+    return true;
+  };
+  submitReply();
+  snapshot.thoughts = [{ ...root(), annotations: [] }];
+  gate.resolve(saved);
+  await flush();
+  assert.equal(snapshot.thoughts[0].annotations.length, 0,
+    "successful reread after deletion must not resurrect a thread from reply ACK");
+  assert.match(document.heading.textContent, /0条批注 · 0条回复/);
+
+  prepare();
+  gate = deferred();
+  const readGate = deferred();
+  requestHandler = () => gate.promise;
+  refreshHandler = () => readGate.promise;
+  submitReply();
+  snapshot.thoughts = [{ ...root(), annotations: [] }];
+  gate.resolve(saved);
+  await flush();
+  snapshot.thoughts.push({ ...root(), id: "other" });
+  controller.openPanel("thought:other");
+  const otherHeading = document.heading.textContent;
+  readGate.resolve(true);
+  await flush();
+  assert.equal(controller.activeRootKey(), "thought:other");
+  assert.equal(document.heading.textContent, otherHeading,
+    "late reread must not overwrite another root panel");
+  assert.doesNotMatch(document.elements["comment-panel-list"].innerHTML, /data-annotation-refresh/);
+
+  prepare();
+  gate = deferred();
+  requestHandler = () => gate.promise;
+  submitReply();
+  const oldRoot = snapshot.thoughts[0];
+  controller.resetSession();
+  snapshot = { thoughts: [root()], aiTasks: [] };
+  const writes = document.writes, feedback = toasts.length;
+  gate.resolve(saved);
+  await flush();
+  assert.equal(oldRoot.annotations[0].replies.length, 0);
+  assert.equal(snapshot.thoughts[0].annotations[0].replies.length, 0);
+  assert.equal(document.writes, writes);
+  assert.equal(toasts.length, feedback);
+  console.log("F6 public ACK checks passed: deduplication, reread recovery, edit retention, delete failure and session isolation.");
+}
+
+// F6确认集合统一投影：回复、AI对话、标记与漂流分开，摘要和缺失数组不冒称0。
+{
+  const { projectAnnotationCounts, annotationCountLabel } = await import("../public/frontend/features/annotations/index.mjs");
+  const root = {
+    annotations: [
+      { id: "thread", kind: "comment", version: 1, targetKey: "question:r", replies: [{ id: "reply" }, { id: "reply" }, { id: "reply2" }], shenji: [{ id: "ai" }] },
+      { id: "thread", kind: "comment", version: 1, targetKey: "question:r", replies: [{ id: "reply" }, { id: "reply2" }], shenji: [{ id: "ai" }] },
+      { id: "mark1", kind: "highlight" }, { id: "mark2", kind: "emphasis" }
+    ],
+    annotationDrift: [{ id: "drift", kind: "comment", replies: [{ id: "old-reply" }] }]
+  };
+  const counts = projectAnnotationCounts(root);
+  assert.equal(counts.threadCount, 1);
+  assert.equal(counts.replyCount, 2);
+  assert.equal(counts.assistantCount, 1);
+  assert.equal(counts.markCount, 2);
+  assert.equal(counts.driftCount, 1);
+  assert.equal(root.annotations.length, 4, "纯投影不代替ACK接入修改事实数组");
+  assert.match(annotationCountLabel(counts), /1条批注 · 2条回复 · 1条AI回复 · 2条标记 · 1条漂流/);
+  for (const value of [null, {}, { annotations: [] }, { ...root, blockCount: 0 }]) {
+    const unknown = projectAnnotationCounts(value);
+    assert.equal(unknown.loaded, false); assert.equal(unknown.threadCount, null);
+    assert.equal(annotationCountLabel(unknown), "批注未完整加载");
+  }
+  assert.equal(projectAnnotationCounts(root, { complete: false }).replyCount, null);
+  assert.equal(projectAnnotationCounts({ annotations: [], annotationDrift: [] }).threadCount, 0);
+  assert.equal(projectAnnotationCounts(root, { targetKey: "another" }).threadCount, 0);
+}
+
+// F8规范锚点优先真实rawStart；重复原文没有唯一可信位置时不猜第一处。
+{
+  const { annotationAnchorOffset } = await import("../public/frontend/features/annotations/index.mjs");
+  const source = "前重复中😀重复尾";
+  assert.equal(annotationAnchorOffset(source, { quote: "重复", start: 1, rawStart: 6 }), 6);
+  assert.equal(annotationAnchorOffset(source, { quote: "重复", start: 100 }), null);
+  assert.equal(annotationAnchorOffset(source, { quote: "重复", contextBefore: "😀", contextAfter: "尾" }), 6);
+  assert.equal(annotationAnchorOffset(source, { quote: "😀", start: 0 }), 4);
+}
+
+// F8锚点过期不等于废弃整份草稿：实际消费者只会对invalid调用abandon。
+{
+  const context = { selection: { rootKey: "thought:root", targetKey: "question:root", start: 0, end: 2, quote: "旧文", sourceValue: "旧文", sourceVersion: 1 }, text: "需要恢复的评论" };
+  const restored = controller.restoreCommentDraft(context);
+  assert.equal(restored, "reselect");
+  assert.notEqual(restored, "invalid", "source失效不能触发content-media-runtime的整份abandon");
+  assert.equal(document.elements["comment-text"].value, context.text);
+  assert.match(document.elements["comment-status"].textContent, /文字和图片草稿已保留/);
+  const restoredContext = controller.commentDraftContext();
+  assert.equal(restoredContext.selection.phase, "invalid");
+  assert.equal(restoredContext.text, context.text);
+  assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(restoredContext)).selection, "host"), false);
+  const feedback = toasts.length;
+  assert.equal(controller.restoreCommentDraft(context), true);
+  assert.equal(toasts.length, feedback, "同一失效草稿重复恢复不反复弹提示");
+}
+
+// 分页摘要接替完整来源后，已打开的评论快照也必须停止提交；短正文不能绕过完整性校验。
+{
+  controller.resetSession();
+  snapshot = {
+    thoughts: [{
+      id: "root",
+      type: "question",
+      content: "原文",
+      version: 1,
+      annotations: [],
+      annotationDrift: []
+    }],
+    aiTasks: []
+  };
+  const host = {
+    nodeType: 1,
+    isConnected: true,
+    dataset: { commentRoot: "thought:root", commentTarget: "question:root" },
+    childNodes: [{ nodeType: 3, nodeValue: "原文" }],
+    matches: () => false,
+    hasAttribute: () => false,
+    getClientRects: () => [{ top: 0 }],
+    getBoundingClientRect: () => ({ top: 0, right: 100 }),
+    querySelectorAll: () => []
+  };
+  const originalQueryAll = document.querySelectorAll;
+  document.querySelectorAll = selector => selector.startsWith(".commentable[") ? [host] : [];
+  const form = document.elements["comment-composer"];
+  const submit = { disabled: false, isConnected: true };
+  form.closest = selector => selector === "#comment-composer" ? form : null;
+  form.querySelector = selector => selector === 'button[type="submit"]' ? submit : null;
+  controller.mount({ root: document });
+  const context = {
+    selection: {
+      rootKey: "thought:root",
+      targetKey: "question:root",
+      start: 0,
+      end: 2,
+      quote: "原文",
+      sourceValue: "原文",
+      sourceVersion: 1
+    },
+    text: "完整详情期间写下的评论"
+  };
+  assert.equal(controller.restoreCommentDraft(context), true);
+  let posts = 0;
+  requestHandler = async () => {
+    posts += 1;
+    return { id: "unexpected", targetKey: "question:root", quote: "原文" };
+  };
+  snapshot.thoughts = [{ ...snapshot.thoughts[0], blockCount: 1 }];
+  document.dispatch("submit", form);
+  await flush();
+  assert.equal(posts, 0, "summary replacement must invalidate a previously composable selection before any POST");
+  assert.equal(document.elements["comment-text"].value, context.text);
+  assert.match(document.elements["comment-status"].textContent, /重新选择/);
+  assert.equal(controller.commentDraftContext().selection.phase, "invalid");
+  assert.equal(submit.disabled, false);
+  for (const boundary of ["persist", "upload"]) {
+    controller.resetSession();
+    snapshot.thoughts = [{
+      id: "root",
+      type: "question",
+      content: "原文",
+      version: 1,
+      annotations: [],
+      annotationDrift: []
+    }];
+    controller.mount({ root: document });
+    assert.equal(controller.restoreCommentDraft(context), true);
+    const gate = deferred();
+    persistDraftHandler = boundary === "persist" ? () => gate.promise : async () => {};
+    submitDraftHandler = boundary === "upload"
+      ? () => gate.promise
+      : async () => ({ uploadedPaths: [], attachmentPaths: [] });
+    document.dispatch("submit", form);
+    await flush();
+    snapshot.thoughts = [{ ...snapshot.thoughts[0], blockCount: 1 }];
+    gate.resolve({ uploadedPaths: [], attachmentPaths: [] });
+    await flush();
+    assert.equal(posts, 0, `${boundary} await must recheck summary replacement before POST`);
+    assert.equal(document.elements["comment-text"].value, context.text);
+    assert.equal(controller.commentDraftContext().selection.phase, "invalid");
+    assert.equal(submit.disabled, false);
+  }
+  persistDraftHandler = async () => {};
+  submitDraftHandler = async () => ({ uploadedPaths: [], attachmentPaths: [] });
+  controller.resetSession();
+  document.querySelectorAll = originalQueryAll;
+  console.log("F8 summary replacement checks passed: zero writes, retained input and explicit reselection.");
+}

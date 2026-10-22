@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { businessReasoning } from "../ai/index.mjs";
 import { eventTimeFields } from "../../shared/time/index.mjs";
 import { recordVersion, safeText } from "../../shared/validation/index.mjs";
 
@@ -129,7 +130,7 @@ export function createJournalRecords({
       ...(Array.isArray(input.providedReferences) ? { providedReferences: structuredClone(input.providedReferences) } : {}),
       ...(Array.isArray(input.rejectedReferences) ? { rejectedReferences: structuredClone(input.rejectedReferences) } : {}),
       ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
-      ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
+      ...businessReasoning("diaryReflection", input.reasoningContent, 50000),
       ...(input.contextReceipt ? { contextReceipt: structuredClone(input.contextReceipt) } : {}),
       ...(clientRequestId ? { version: 1, clientRequestId, requestHash } : {})
     };

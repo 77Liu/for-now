@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 import { fileURLToPath } from "node:url";
 import {
   collectRuntimeMemorySample,
@@ -68,7 +69,7 @@ const mock = http.createServer(async (req, res) => {
   for await (const chunk of req) { void chunk; }
   providerCalls += 1;
   if (mode === "usage_write_failure") {
-    const ledger = path.join(dataDir, "ai-usage.json");
+    const ledger = path.join(authFixture.userDir, "ai-usage.json");
     await fs.rename(ledger, `${ledger}.saved`);
     await fs.mkdir(ledger);
   }
@@ -97,6 +98,14 @@ await new Promise(resolve => free.listen(0, "127.0.0.1", resolve));
 const port = free.address().port;
 await new Promise(resolve => free.close(resolve));
 const base = `http://127.0.0.1:${port}`;
+const systemFetch = globalThis.fetch;
+globalThis.fetch = (input, init = {}) => {
+  const target = String(input instanceof Request ? input.url : input);
+  if (!target.startsWith(base)) return systemFetch(input, init);
+  const headers = new Headers(init.headers);
+  if (!headers.has("cookie")) headers.set("cookie", authFixture.cookie);
+  return systemFetch(input, { ...init, headers });
+};
 await fs.writeFile(path.join(dataDir, "llm-settings.json"), JSON.stringify({ version: 4, apiKey: "private-test-key" }));
 await fs.writeFile(path.join(dataDir, "ai-usage.json"), JSON.stringify({
   version: 1, trackingStartedAt: new Date().toISOString(),
@@ -107,9 +116,10 @@ await fs.writeFile(path.join(dataDir, "ai-usage.json"), JSON.stringify({
     { id: "segmentation", createdAt: new Date().toISOString(), provider: "aliyun", service: "segmentation", model: "aliyun-segmentation", scene: "keepsakeSegmentation", modality: "vision", status: "failed", imageCount: 1, imageBytes: 256, unitType: "image", units: 1, costKnown: false }
   ]
 }));
+const authFixture = await installAuthenticatedJsonRuntime(dataDir);
 const child = spawn(process.execPath, ["server.mjs"], {
   cwd: root,
-  env: { ...process.env, NODE_ENV: "test", TZ: "UTC", DATA_DIR: dataDir, PORT: String(port), AUTH_REQUIRED: "0", INVITE_CODE_HASH: "", UPSTREAM_ORIGIN: "", APP_BASE_PATH: "", DEEPSEEK_API_URL: `http://127.0.0.1:${mock.address().port}`, RUNTIME_MEMORY_SAMPLE_INTERVAL_MS: "60000" },
+  env: { ...process.env, ...authFixture.env, NODE_ENV: "test", TZ: "UTC", DATA_DIR: dataDir, PORT: String(port), UPSTREAM_ORIGIN: "", APP_BASE_PATH: "", DEEPSEEK_API_URL: `http://127.0.0.1:${mock.address().port}`, RUNTIME_MEMORY_SAMPLE_INTERVAL_MS: "60000" },
   stdio: ["ignore", "ignore", "pipe"]
 });
 let childStopped = false;
@@ -118,8 +128,16 @@ const request = (route, payload, method = "POST", headers = {}) => fetch(`${base
   method, headers: { "content-type": "application/json", ...headers }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) })
 });
 const logEntries = async prefix => {
-  const names = (await fs.readdir(path.join(dataDir, "logs"))).filter(name => name.startsWith(prefix));
-  return (await Promise.all(names.map(async name => (await fs.readFile(path.join(dataDir, "logs", name), "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse)))).flat();
+  const directories = [
+    path.join(dataDir, "logs"),
+    path.join(authFixture.userDir, "logs")
+  ];
+  return (await Promise.all(directories.map(async directory => {
+    const names = (await fs.readdir(directory)).filter(name => name.startsWith(prefix));
+    return (await Promise.all(names.map(async name => (
+      await fs.readFile(path.join(directory, name), "utf8")
+    ).trim().split("\n").filter(Boolean).map(JSON.parse)))).flat();
+  }))).flat();
 };
 try {
   let ready = false;
@@ -180,7 +198,7 @@ try {
   assert.equal(entries.at(-1).usageKnown, false);
   assert.equal(entries.at(-1).status, "success");
   assert.equal(entries.at(-1).costsUsd.total, 0);
-  assert.ok((await fs.readdir(dataDir)).some(name => /ai-usage.json.v1-pre-v5.*\.bak$/.test(name)));
+  assert.ok((await fs.readdir(authFixture.userDir)).some(name => /ai-usage.json.v1-pre-v5.*\.bak$/.test(name)));
   mode = "partial_usage";
   assert.equal((await request("/api/settings/test", {})).status, 200);
   entries = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries;
@@ -215,28 +233,31 @@ try {
   assert.match(lengthStream, /"type":"error"/);
   assert.doesNotMatch(lengthStream, /"type":"done"/);
   mode = "timeout";
-  assert.equal((await request("/api/thought-prompts", {})).status, 500);
+  assert.equal((await request("/api/thought-prompts", {})).status, 504);
   entries = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries;
   assert.equal(entries.at(-1).status, "timeout");
-  assert.equal(entries.at(-1).errorCode, "TIMEOUT");
+  assert.equal(entries.at(-1).errorCode, "AI_REQUEST_TIMEOUT");
 
   mode = "usage_write_failure";
   const callsBeforeLedgerFailure = providerCalls;
   assert.equal((await request("/api/settings/test", {})).status, 200);
   assert.equal(providerCalls - callsBeforeLedgerFailure, 1);
-  await fs.rmdir(path.join(dataDir, "ai-usage.json"));
-  await fs.rename(path.join(dataDir, "ai-usage.json.saved"), path.join(dataDir, "ai-usage.json"));
+  await fs.rmdir(path.join(authFixture.userDir, "ai-usage.json"));
+  await fs.rename(
+    path.join(authFixture.userDir, "ai-usage.json.saved"),
+    path.join(authFixture.userDir, "ai-usage.json")
+  );
   assert.ok((await logEntries("system-")).some(entry => entry.event === "ai.log_failed" && entry.target === "usage"));
   mode = "success";
   assert.equal((await request("/api/settings/test", {})).status, 200);
   const ledgerBeforeLogFailure = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries.length;
-  const logDir = path.join(dataDir, "logs");
+  const logDir = path.join(authFixture.userDir, "logs");
   await fs.rename(logDir, `${logDir}.ai-saved`);
   await fs.writeFile(logDir, "blocked log directory");
   const callsBeforeAuditFailure = providerCalls;
-  assert.equal((await request("/api/settings/test", {})).status, 200);
-  assert.equal(providerCalls - callsBeforeAuditFailure, 1);
-  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries.length, ledgerBeforeLogFailure + 1);
+  assert.equal((await request("/api/settings/test", {})).status, 503);
+  assert.equal(providerCalls - callsBeforeAuditFailure, 0);
+  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries.length, ledgerBeforeLogFailure);
   await delay(50);
   await fs.unlink(logDir);
   await fs.rename(`${logDir}.ai-saved`, logDir);
@@ -276,8 +297,15 @@ try {
   for (const terminal of audits.filter(entry => entry.status !== "started")) {
     assert.ok(audits.some(entry => entry.callId === terminal.callId && entry.status === "started"));
   }
-  for (const name of await fs.readdir(path.join(dataDir, "logs"))) assert.equal((await fs.stat(path.join(dataDir, "logs", name))).mode & 0o777, 0o600);
-  assert.equal((await fs.stat(path.join(dataDir, "logs"))).mode & 0o777, 0o700);
+  for (const directory of [
+    path.join(dataDir, "logs"),
+    path.join(authFixture.userDir, "logs")
+  ]) {
+    for (const name of await fs.readdir(directory)) {
+      assert.equal((await fs.stat(path.join(directory, name))).mode & 0o777, 0o600);
+    }
+    assert.equal((await fs.stat(directory)).mode & 0o777, 0o700);
+  }
   assert.equal(redact({ apiKey: "secret", text: "Bearer secret" }).apiKey, "[REDACTED]");
   const injected = new Error("Provider failed\n    at PRIVATE_STACK_BODY");
   assert.doesNotMatch(JSON.stringify(errorMetadata(injected)), /PRIVATE_STACK_BODY|Provider failed/);
@@ -285,12 +313,14 @@ try {
   await fs.writeFile(oldLog, "{}\n");
   await pruneLogs(path.join(dataDir, "logs"), 30);
   await assert.rejects(fs.access(oldLog));
-  const ledger = path.join(dataDir, "ai-usage.json"), corrupt = "{CORRUPT_KEEP_ME";
+  const ledger = path.join(authFixture.userDir, "ai-usage.json");
+  const corrupt = "{CORRUPT_KEEP_ME";
   await fs.writeFile(ledger, corrupt);
   assert.equal((await fetch(`${base}/api/statistics`)).status, 500);
   assert.equal(await fs.readFile(ledger, "utf8"), corrupt);
   assert.doesNotMatch(stderr, /CORRUPT_KEEP_ME/);
-  const storeFile = path.join(dataDir, "store.json"), savedStore = await fs.readFile(storeFile);
+  const storeFile = path.join(authFixture.userDir, "store.json");
+  const savedStore = await fs.readFile(storeFile);
   await fs.rename(storeFile, `${storeFile}.saved`);
   await fs.mkdir(storeFile);
   assert.equal((await request("/api/captures", { content: "MUST_NOT_OVERWRITE" })).status, 500);
@@ -321,6 +351,7 @@ try {
   assert.ok((await logEntries("system-")).some(entry => entry.event === "server.stopped" && entry.signal === "SIGTERM"));
   console.log("Observability checks passed: low-sensitivity runtime memory, lifecycle logging, legacy migration, null/partial usage, empty/filtered/length/EOF failures, daily averages, linked logs, redaction, retention, permissions, corruption/I/O preservation and committed writes during logging failure/recovery.");
 } finally {
+  globalThis.fetch = systemFetch;
   if (!childStopped) {
     child.kill("SIGTERM");
     if (child.exitCode == null) await new Promise(resolve => child.once("exit", resolve));

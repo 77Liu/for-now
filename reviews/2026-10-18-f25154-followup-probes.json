@@ -1,0 +1,116 @@
+{
+  "candidate": {
+    "commit": "f25154d91b8f6629776eacdb5c2576ab7f4e5a43",
+    "tree": "6df22a48bcbb92d3fed609db5ffba44449241bd7"
+  },
+  "reviewed_at": "2026-10-18T13:58:48.282090+08:00",
+  "environment": {
+    "node": "24.19.0",
+    "postgres": "16.14",
+    "data": "synthetic isolated database",
+    "dependencies": "workspace node_modules reused"
+  },
+  "source_sha256": {
+    "src/app/record-commands/thoughts.mjs": "e69eeeed6daa2b4da5a9c091ae45cacc660ad4a9cdedc4e1b18151a0e257c6f0",
+    "src/app/record-commands/thought-graph.mjs": "bbb8d7a612abf2232e2fe80b9af5ce3fd458daa1fb8d614b75e8bc66ecc4e4f9",
+    "src/modules/ai/audit.mjs": "3ca59dc07be2490466b092801f1d149ff6b6fda53d6076875c5bd529c30c8511",
+    "src/app/ai-runtime.mjs": "25a38049dcdcd852566bf632c897c15477ecce081e1b0884344cbb25fdaa1f9e"
+  },
+  "baseline_postgres_suite": "PASS (unmodified archive)",
+  "followup_probe_runner": "PASS (only test harness changed; original runtime checks after probe intentionally skipped)",
+  "followup_probes": {
+    "FOLLOWUP_DB_RECOVERY_PROBE": {
+      "recovery": {
+        "recoveredUsage": 0,
+        "recoveredAudit": 0,
+        "pendingUsage": 0,
+        "pendingAudit": 0
+      },
+      "auditRows": [
+        {
+          "status": "success",
+          "usage_payload": {
+            "known": true,
+            "units": 1,
+            "costCny": 0.005,
+            "unitType": "call",
+            "costKnown": true,
+            "costSource": ""
+          }
+        }
+      ],
+      "usageCount": 0,
+      "compatibilityHasRecovery": true
+    },
+    "FOLLOWUP_BLOCK_PROBE": {
+      "version": 2,
+      "remainingAnnotations": [],
+      "taskStatus": "cancelled",
+      "notificationStatus": "cancelled",
+      "lifecycle": [
+        {
+          "resource_key": "thoughtChain:thought-root/annotation:annotation-1",
+          "state": "active",
+          "tombstone": false,
+          "trash_id": ""
+        },
+        {
+          "resource_key": "thoughtChain:thought-sibling/annotation:annotation-1",
+          "state": "active",
+          "tombstone": false,
+          "trash_id": ""
+        }
+      ],
+      "changes": [
+        {
+          "command_id": "thought.update",
+          "entity_type": "thoughtChain",
+          "entity_id": "thought-root",
+          "operation": "update"
+        }
+      ],
+      "trash": [
+        {
+          "id": "thought-trash-1",
+          "dependents": {
+            "annotations": [
+              {
+                "id": "annotation-1",
+                "end": 3,
+                "kind": "comment",
+                "text": "保留批注",
+                "quote": "原想法",
+                "start": 0,
+                "shenji": [],
+                "replies": [],
+                "version": 1,
+                "createdAt": "2026-10-18T03:01:00.000Z",
+                "targetKey": "idea:thought-idea"
+              }
+            ],
+            "annotationDrift": []
+          }
+        }
+      ]
+    }
+  },
+  "other_checks": [
+    "ai-domain PASS",
+    "ai-runtime PASS",
+    "auth-role PASS",
+    "persistence PASS",
+    "reviews-chat PASS",
+    "module boundaries PASS",
+    "current workspace sync-coordinator PASS"
+  ],
+  "harness_iterations": [
+    "initial fixture lacked trash collection metadata; added store.trash before exercising command",
+    "second run produced both probe results then wrapper rejected undefined result; returned [] for intentionally abbreviated runtime checks",
+    "final runner exited 0"
+  ],
+  "limitations": [
+    "DB recovery resets the audit instance, not a full OS process",
+    "no production, paid provider, native device or release snapshot gate",
+    "new review findings are not repaired in application code"
+  ]
+}

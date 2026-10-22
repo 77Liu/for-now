@@ -1,0 +1,527 @@
+{
+  "schema": "independent-expanded-review.v1",
+  "generatedAt": "2026-10-20T15:00:45.055571+00:00",
+  "candidateSha": "106fc4168eb4ab06411644b03a2c4fd5027b3e74",
+  "candidateTree": "e363448ecd0a6acbc5f0665235dd418ad9e8b6e6",
+  "workspaceHead": "96b1c367e7951c7b5649c3258095e6a6d0e722f9",
+  "productionSha": "a99c146264858496637646eec71c1360a7e19957",
+  "productionVersion": "0.5.15",
+  "producerChatsRead": false,
+  "sourceModified": false,
+  "productionMutations": false,
+  "paidProviderCalls": 0,
+  "decision": "NOT_READY",
+  "counts": {
+    "confirmed": 12,
+    "previousUnfixed": 3,
+    "newlyConfirmed": 9,
+    "P1": 4,
+    "P2": 8
+  },
+  "findings": [
+    {
+      "id": "G1",
+      "priority": "P1",
+      "title": "重复批次丢失尚未完成的恢复责任",
+      "scope": "v2 sync",
+      "status": "confirmed_unfixed",
+      "source": "public/frontend/state/record-sync.mts",
+      "line": 304,
+      "evidence": "now106-probes.json",
+      "result": "首次rebase失败后再次拉取两次仍未恢复；旧视图与stale并存",
+      "recommended_action": "返回现有stale范围直至rebase成功，不另建队列"
+    },
+    {
+      "id": "G2",
+      "priority": "P2",
+      "title": "非零历史用量加待入账新调用仍越限",
+      "scope": "AI admission",
+      "status": "confirmed_unfixed",
+      "source": "src/modules/ai/usage.mjs",
+      "line": 400,
+      "evidence": "now106-probes.json",
+      "result": "已有5＋待入账1＋活动1可超过限额6；费用9＋0.6＋0.5超过10",
+      "recommended_action": "对齐持久基数与本地新增的覆盖范围，交接不漏计不重计"
+    },
+    {
+      "id": "G3",
+      "priority": "P1",
+      "title": "旧thoughtRemark被错误归于同ID书籍并逻辑清理",
+      "scope": "trash",
+      "status": "confirmed_unfixed",
+      "source": "src/modules/trash/index.mjs",
+      "line": 40,
+      "evidence": "now106-probes.json",
+      "result": "思绪父项不在可见回收列表时，被误选随书籍永久逻辑清理；数据仍保留",
+      "recommended_action": "按条目类型约束父集合，身份不明不扩大清理；纠正测试预期"
+    },
+    {
+      "id": "N1",
+      "priority": "P1",
+      "title": "保存游标但无页面数据时刷新空列表",
+      "scope": "v2 cold startup",
+      "status": "confirmed_unfixed",
+      "source": "public/frontend/app/runtime/data-sync-runtime.mts",
+      "line": 318,
+      "evidence": "scope-startup-probe.json",
+      "result": "游标7、默认空页面被当已装载；rebase0，渲染0",
+      "recommended_action": "冷启动缺有效范围快照时先执行现有rebase"
+    },
+    {
+      "id": "N2",
+      "priority": "P2",
+      "title": "公开API舍弃子块后列表预览仍保留",
+      "scope": "v2 derived list / public disposition API",
+      "status": "confirmed_unfixed",
+      "source": "src/modules/thoughts/local-mutations.mts",
+      "line": 150,
+      "evidence": "producer-scope-probe.json",
+      "result": "实际变化仅子块；正确preview=null，列表仍before，失效清单空；当前UI按钮仅根记录",
+      "recommended_action": "按所属根失效派生摘要；保留现有摘要/详情分离"
+    },
+    {
+      "id": "N3",
+      "priority": "P2",
+      "title": "无关新增仍使当前详情失效重读",
+      "scope": "v2 scope invalidation",
+      "status": "confirmed_unfixed",
+      "source": "public/frontend/state/record-sync.mts",
+      "line": 332,
+      "evidence": "scope-startup-probe.json",
+      "result": "创建other-root仍返回detail:root失效",
+      "recommended_action": "详情失效先核对实体及所属根"
+    },
+    {
+      "id": "N4",
+      "priority": "P2",
+      "title": "漂移区批注删除未同步取消任务通知",
+      "scope": "deletion/task lifecycle",
+      "status": "confirmed_unfixed",
+      "source": "src/app/trash.mjs",
+      "line": 194,
+      "evidence": "drift-deletion-matrix.json",
+      "result": "删块、追问、漂移批注三入口两状态共6反例；整条删除两个对照通过",
+      "recommended_action": "从实际移走的annotations与annotationDrift统一收集子目标，并包含直接删除自身"
+    },
+    {
+      "id": "S1",
+      "priority": "P1",
+      "title": "趋势裁剪优先移除最新日期",
+      "scope": "production 0.5.15 and candidate",
+      "status": "confirmed_unfixed",
+      "source": "src/app/record-compression-context.mjs",
+      "line": 873,
+      "evidence": "live-summary-audit-stages.jsonl; trend-recency-probe.json",
+      "result": "生产10月20日有效摘要正文被裁空，最终仅保留14—16日；同预算原型可保最新",
+      "recommended_action": "正文及引用新日优先、超限先裁旧；预算保持2000"
+    },
+    {
+      "id": "S2",
+      "priority": "P2",
+      "title": "历史补充可能持续等待而无执行机会",
+      "scope": "production compression scheduling and candidate",
+      "status": "confirmed_unfixed",
+      "source": "src/app/record-compressions.mjs",
+      "line": 879,
+      "evidence": "historical-starvation-probe.json; live-summary-audit-focus.jsonl",
+      "result": "合成20个槽daily成功20次，历史始终waitingBudget；生产历史结果为空且旧任务等待",
+      "recommended_action": "在现有每日限额中轮转分配一次历史执行机会"
+    },
+    {
+      "id": "M1",
+      "priority": "P2",
+      "title": "采集单元因不存在禁入路径持续NAMESPACE失败",
+      "scope": "production systemd / deploy unit",
+      "status": "confirmed_unfixed",
+      "source": "deploy/for-now-monitor-journal-context.service",
+      "line": 17,
+      "evidence": "live-alert-audit.jsonl; live-alert-detail.jsonl",
+      "result": "缺/var/lib/for-now；226/NAMESPACE；快照不存在，当前仍failed",
+      "recommended_action": "可选缺失路径加忽略缺失前缀，隔离Linux真实启动验收后再部署"
+    },
+    {
+      "id": "M2",
+      "priority": "P2",
+      "title": "中台真实错误字段与采集器及测试不一致",
+      "scope": "production cross-process log contract",
+      "status": "confirmed_unfixed",
+      "source": "scripts/monitor-journal-context.mts",
+      "line": 79,
+      "evidence": "monitor-contract-probe.json; live-alert-request-detail.jsonl",
+      "result": "真实message=TimeoutError，采集器只取error.name；测试虚构嵌套结构",
+      "recommended_action": "生产者消费者对齐白名单错误字段，测试真实格式"
+    },
+    {
+      "id": "M3",
+      "priority": "P2",
+      "title": "生产数据就绪依赖完整全账户聚合并发生超时",
+      "scope": "production platform readiness / admin snapshot",
+      "status": "confirmed_unfixed",
+      "source": "artifacts/local/2026-10-20-expanded-independent-review-106fc416-evidence.zip#work/platform-production-server.mjs",
+      "line": 589,
+      "evidence": "live-alert-request-detail.jsonl",
+      "result": "主应用snapshot最终200/6331ms，中台等待5000ms超时；外层同5000ms",
+      "recommended_action": "就绪使用受服务凭证保护的轻量生产可读探测；完整聚合留给统计，外层大于内层时限"
+    }
+  ],
+  "excludedPreliminaryFindings": [
+    {
+      "title": "普通子块编辑导致列表不更新",
+      "reason": "真实updateBlock同时touch根并收集根变化，列表会失效；孤立子块事件不足以证明入口可达",
+      "evidence": "producer-scope-probe.json"
+    },
+    {
+      "title": "独立子块tags更新导致筛选不更新",
+      "reason": "尚未找到当前正常写入口会独立产出该事件；不计已确认问题"
+    }
+  ],
+  "validation": {
+    "priorSameCandidate": {
+      "record-sync": {
+        "exit_code": 0,
+        "seconds": 4.77
+      },
+      "postgres": {
+        "exit_code": 0,
+        "seconds": 171.38
+      },
+      "regression": {
+        "exit_code": 0,
+        "seconds": 12.33
+      },
+      "check": {
+        "exit_code": 0,
+        "seconds": 14.61
+      }
+    },
+    "newMonitorFormalTest": "PASS",
+    "runtimeProbes": "PASS (assertions confirm reported counterexamples)",
+    "browserJourneyRerun": false,
+    "perFindingPostgresFailureMatrixRun": false,
+    "realModelAnswerExecuted": false,
+    "minimalRecencyVariantDeployed": false
+  },
+  "summaryConsumption": {
+    "oct20StoredAndCurrentHashMatches": true,
+    "oct20BodyInFinalPrompt": false,
+    "retainedNarrativeDates": [
+      "2026-10-14",
+      "2026-10-15",
+      "2026-10-16"
+    ],
+    "oct05InCurrentSevenDays": false,
+    "historicalSupplementRowsForRelevantAccounts": 0,
+    "actualProviderBoundaryReached": true,
+    "noRecentSavedAnswerReceiptProvingActualConsumption": true,
+    "minimalVariant": {
+      "dates": [
+        "2026-10-14",
+        "2026-10-15",
+        "2026-10-16",
+        "2026-10-17",
+        "2026-10-18",
+        "2026-10-19",
+        "2026-10-20"
+      ],
+      "before": {
+        "retainedDates": [
+          "2026-10-14"
+        ],
+        "newestRetained": false,
+        "contextTruncated": true,
+        "estimatedTokens": 1911
+      },
+      "minimalLocalVariant": {
+        "retainedDates": [
+          "2026-10-20"
+        ],
+        "newestRetained": true,
+        "estimatedTokens": 1911,
+        "unchangedHardBudget": 2000
+      },
+      "note": "Only a disposable module in the isolated review copy was changed; no original source or production data was modified."
+    }
+  },
+  "alerts": [
+    {
+      "atUTC": "2026-10-15T14:34:39.451Z",
+      "conclusion": "SIGTERM受控停服/重启；触发者未证实",
+      "appReadyAtUTC": "2026-10-15T14:34:50.415Z"
+    },
+    {
+      "atUTC": "2026-10-17T19:26:49.184Z",
+      "conclusion": "定时备份主动停服",
+      "appReadyAtUTC": "2026-10-17T19:27:25.326Z"
+    },
+    {
+      "atUTC": "2026-10-19T10:07:44.719Z",
+      "conclusion": "中台全聚合等待5秒超时；主应用最终200/6331ms，不能推断DB不可用"
+    }
+  ],
+  "otherItems": [
+    {
+      "id": "O1",
+      "classification": "operational_policy",
+      "recommendation": "在现有监控识别有期限的备份维护窗口，超期照常告警"
+    },
+    {
+      "id": "gate",
+      "classification": "verification_gap",
+      "status": "NOT_REBUILT_FOR_THIS_CANDIDATE"
+    },
+    {
+      "id": "diagnostic_cutoff",
+      "classification": "documented_boundary_not_additional_bug",
+      "finding": "检查开始后发生的本轮超时不在检查前日志快照；需额外保留本次探测结果"
+    }
+  ],
+  "evidenceManifest": [
+    {
+      "path": "work/now106-probes.mjs",
+      "sha256": "ca5b6832a644448019472700705328ee6351273760cd15377591c1856d548351"
+    },
+    {
+      "path": "work/now106-probes.json",
+      "sha256": "b1b7cc4c9c90d39fff5ffbbdb7b73319e8d8aecc23cdbb9da850b59bdc9c9c3e"
+    },
+    {
+      "path": "work/now106-test-status.json",
+      "sha256": "29774f6c09376acdd6d516bfb35613f27d458f725bd1224454ac8af39aae81d5"
+    },
+    {
+      "path": "work/now106-domain-status.json",
+      "sha256": "52d5594baa6157f3cc87b1ec4e2d9a4481cf32167c89c8edb94ebe6fc765f428"
+    },
+    {
+      "path": "work/now106-closure-probes.json",
+      "sha256": "70f1a5a51e9703d64c1238c91570cb97b2e739ec408c7d994bc56a5e52763ec0"
+    },
+    {
+      "path": "work/now106-filter-probe.json",
+      "sha256": "ecc20dc5c7daf61e25164e8161bd5ce4c9ec0ca529db481ea9e39fccee6c67e2"
+    },
+    {
+      "path": "work/now106-type-probe.json",
+      "sha256": "98ddd6084bab83d81ae886681f2966b4d61a7529fbe08a8f0863cfea02b27072"
+    },
+    {
+      "path": "work/scope-startup-probe.mjs",
+      "sha256": "02e03677367231bfb4ae8bf9b1a0e7594742f21866275bf59cb6c6717efadac7"
+    },
+    {
+      "path": "work/scope-startup-probe.json",
+      "sha256": "9d454dcf4da722c0bb7572cbd78d47334d70b8141e5128fd149c3f39fc103579"
+    },
+    {
+      "path": "work/producer-scope-probe.mjs",
+      "sha256": "0524c5d39b2e86e57ec26c52b1a2fc4f52da4bd33c2cc9b2f6d40c235433909a"
+    },
+    {
+      "path": "work/producer-scope-probe.json",
+      "sha256": "9bcbfa4ad7de81681e5681077d946f69754b11e95a7601b4ba64ab643b38a752"
+    },
+    {
+      "path": "work/drift-deletion-matrix.mjs",
+      "sha256": "8a487c1f4aed0bd2d232d2ddb2741172131d6fce5401a57033551c6b6cd3adca"
+    },
+    {
+      "path": "work/drift-deletion-matrix.json",
+      "sha256": "975e5b490b4f79cc56d03c6a89a9bc08623062c86b871d663138fd0ade4ab83c"
+    },
+    {
+      "path": "work/trend-recency-probe.mjs",
+      "sha256": "1fb5e224c960e504bb6c1b4b5736fc8b6a734ade174ef83b075a4e5e5d1769aa"
+    },
+    {
+      "path": "work/trend-recency-probe.json",
+      "sha256": "2a763a6849baf6b5e71e305e19f051b0bc7b13cfe8d5dda2e967e90e2ef14cde"
+    },
+    {
+      "path": "work/historical-starvation-probe.mjs",
+      "sha256": "81102f327ed78e196b93e1ef739c86bc16cd9c634295792ce191b3ff1ec0fe30"
+    },
+    {
+      "path": "work/historical-starvation-probe.json",
+      "sha256": "ba3e6c7cb5332e7b63241a1ba1123d4df089bf186489d681ffbfc0ad61fbe9a4"
+    },
+    {
+      "path": "work/monitor-contract-probe.mjs",
+      "sha256": "6e180b8e7025d1b7509d777506f342a0c1025d38a45361089d5625f7690b106c"
+    },
+    {
+      "path": "work/monitor-contract-probe.json",
+      "sha256": "68c83d7ed029797ed8a7cb4d93cedaceea32ac6d543fe987822a88d6c5a3e539"
+    },
+    {
+      "path": "work/live-summary-audit.mjs",
+      "sha256": "7528bfbcb0b75c94af4b69e155facfa02a4f390c5579f8d31b9c5d152ae45ce8"
+    },
+    {
+      "path": "work/live-summary-audit.jsonl",
+      "sha256": "6e0e3df5ddf51cf8ec789954bb2ae4d9c53f3cbdac052713cdb1c478d9466535"
+    },
+    {
+      "path": "work/live-summary-audit-focus.jsonl",
+      "sha256": "0c09c759542620cbcc1663a1430e3cf1b440be9f72938c47fdfec3467181bb16"
+    },
+    {
+      "path": "work/live-summary-audit-stages.jsonl",
+      "sha256": "67307de3d81e7cb5d8197e3aed05d02e50da0cfb35dac1deb7c12280eaae6444"
+    },
+    {
+      "path": "work/live-alert-audit.mjs",
+      "sha256": "fb6a86373d3b1f57b0980ef2c990d07c37bb3e5580959e850e4dbff52b3781a0"
+    },
+    {
+      "path": "work/live-alert-audit.jsonl",
+      "sha256": "0c1dd66b10fc6c3fe9c5e64fc1ca2a568924748cc1b53d2bc27899c7439d8f4f"
+    },
+    {
+      "path": "work/live-alert-detail.mjs",
+      "sha256": "11ebbd0ac658966d768fc69a2da6f20862760f2b55efa040cfb293922a4c48fb"
+    },
+    {
+      "path": "work/live-alert-detail.jsonl",
+      "sha256": "c946cd7f9b3c95cf6ddbcee716c9d816ac8839591310017ce23e0ae15e271308"
+    },
+    {
+      "path": "work/live-alert-request-detail.mjs",
+      "sha256": "27cb996f78e4b697f7a761767eeb0e90cd81040aee495e6d77b4b593d64f511c"
+    },
+    {
+      "path": "work/live-alert-request-detail.jsonl",
+      "sha256": "72562938e4b8af192528da443b23af56c2117b94b6d532bf22a034ba0f66468a"
+    },
+    {
+      "path": "work/platform-production-server.mjs",
+      "sha256": "c3c60c2398d3718b956beed484c6d49e3ef2e40bd1f921d7b2538c1cdb34d3fc"
+    },
+    {
+      "path": "work/expanded-monitor-test.log",
+      "sha256": "4bf93559a681e3c9bd35e38271632a115c8bbee3fa861133d387d2fcf9947c61"
+    },
+    {
+      "path": "work/now106-record-sync.log",
+      "sha256": "4a21ab835969adcddaab15ebd43199b314a721ed24b6ab2f3a87a804c3ed7e3e"
+    },
+    {
+      "path": "work/now106-postgres.log",
+      "sha256": "8aa0994c1c22fd3755903065131d30896f2a1e47d7f69ffbdeafa5d94b49b6a8"
+    },
+    {
+      "path": "work/now106-regression.log",
+      "sha256": "e7165a2af0c870498776dd0caccd60ce654cd63e528e5dba1392177f5ebf356f"
+    },
+    {
+      "path": "work/now106-check.log",
+      "sha256": "fcbc0647801db9d611813e9aee2e27a55cf5d86f737c2ff95ea5d5ae1bf92d7d"
+    }
+  ],
+  "sourceManifest": [
+    {
+      "path": "public/frontend/state/record-sync.mts",
+      "sha256": "2cad2612f304e965138361f4915bd8ef6a19408088ec24c5867992bb108c9d75"
+    },
+    {
+      "path": "public/frontend/shared/incremental-sync.mts",
+      "sha256": "39f7ae0bb21c846d76c1864a78d486aa4c3baa119a8a170cfc828a84f06d3985"
+    },
+    {
+      "path": "public/frontend/app/runtime/data-sync-runtime.mts",
+      "sha256": "fbb9ff5fef9bbbdc0688474c9e7ced340bc721ef730af159fa20c4c9c03b326b"
+    },
+    {
+      "path": "public/frontend/app/runtime/session-runtime.mjs",
+      "sha256": "fd9a050949e14e5cfbe3cdf0968b260e199cbb0167823e739439eb2c49b56519"
+    },
+    {
+      "path": "src/modules/ai/usage.mjs",
+      "sha256": "bc717bea5013feb3df1879993572aec08c759f22ad07224583a974b2357ae689"
+    },
+    {
+      "path": "src/modules/trash/index.mjs",
+      "sha256": "b9ca12ac68b544d54734e306298ebee75fbe60672116e46e27d3b5f3b9078133"
+    },
+    {
+      "path": "scripts/trash-regression.mjs",
+      "sha256": "d39ee01275b57efaf01bb9ce1763992aa89e7049ee9b12e0e751eb4d48bafdf1"
+    },
+    {
+      "path": "src/app/trash.mjs",
+      "sha256": "c9b550dfc7e2fb0b8860701df80d6f0229eefef9780b69e5e3da3d395aaecaaf"
+    },
+    {
+      "path": "src/modules/annotations/index.mjs",
+      "sha256": "4cda24a722da1c992fecad875b7401e492ccdd8337e50eaa4370ce0434ad79ba"
+    },
+    {
+      "path": "src/modules/thoughts/local-mutations.mts",
+      "sha256": "33c701dad4224341bc19448d2c7f9f1b02ae9dace164a61cbfff986810f9f420"
+    },
+    {
+      "path": "src/modules/thoughts/local-changes.mts",
+      "sha256": "3d702e469d22c236d337cc5360eb505c93c6e9c487d9386d70bbe29855e5dda6"
+    },
+    {
+      "path": "src/app/sync-projection.mts",
+      "sha256": "416d7729de73b0f5b8f9994e9350eb10c684071c6ebece7865d95e747c082509"
+    },
+    {
+      "path": "src/app/runtime-http-wiring.mjs",
+      "sha256": "57a640fe4420fc87d3efe3171962efd69981df650bdc3f2483655b121afe6736"
+    },
+    {
+      "path": "src/app/record-compression-context.mjs",
+      "sha256": "07f894300463c920221cd4fd9d0d4ebbdb3ee405ce085e64dc52fb5f427e3726"
+    },
+    {
+      "path": "src/app/record-compressions.mjs",
+      "sha256": "83311c428a2a7b28c1440e7e894e2fa149c62f38fc9b1534a54f2c7aeea754bb"
+    },
+    {
+      "path": "src/config/index.mjs",
+      "sha256": "83bfd777bf60c826826a814c6ec9bea16058c0764f720677166d2a970f9a9b84"
+    },
+    {
+      "path": "deploy/for-now-monitor-journal-context.service",
+      "sha256": "4b7c7b2d4d1928efb658361e42973fdb63bd3cdd9fde6ae846eec1cc05bf11db"
+    },
+    {
+      "path": "scripts/monitor-journal-context.mts",
+      "sha256": "129bf421370da442799d0d796e7dc2e043eabfc53cf5f2d044485c04da8e60b3"
+    },
+    {
+      "path": "scripts/monitor-regression.mjs",
+      "sha256": "d450a9cc6cf01d66274a351e6ed27b47f6ec7619e285012b4c407a326ece8811"
+    },
+    {
+      "path": "scripts/monitor-health.mjs",
+      "sha256": "2c6510cc9ec992232dd64bfde039b13761c05a80ff5e2a8d535cbbe80b0cb1d1"
+    },
+    {
+      "path": "deploy/backup-to-oss.sh",
+      "sha256": "bdecec129abbea120a99bfe90ffa6fe61de707c74e485f63f577183b66fc797c"
+    },
+    {
+      "path": "deploy/for-now-backup.timer",
+      "sha256": "01ab01d0954e249cf4b510780efd7e4aef1f7c32dce7d4870bd4b568ea154704"
+    },
+    {
+      "path": "admin-snapshot.mjs",
+      "sha256": "c183c7da48f6fb6c7bac18c71354be677f653748688511ec61caeefa689cbe51"
+    },
+    {
+      "path": "src/app/runtime-access.mjs",
+      "sha256": "235ca44c2e5353309fa50485d09fb13909a0769780ad0d12971b6a2744fd7454"
+    }
+  ],
+  "importProvenance": {
+    "sourceReport": "artifacts/local/2026-10-20-expanded-independent-review-106fc416-evidence.zip#2026-10-20-expanded-independent-review-106fc416.json",
+    "sourceReportSha256": "de3674a3a96893a81ab53385cce97095e0f772ea52edfa78e080d25690d351c4",
+    "evidenceBundle": "artifacts/local/2026-10-20-expanded-independent-review-106fc416-evidence.zip",
+    "evidenceBundleSha256": "846f92c3bcf6a7547f6f7334761ad238a2e461ae98c78f3a8734fdad1983bf45",
+    "importedOn": "2026-10-21",
+    "verification": "复用2026-10-20独立复现，逐项核对仓库内现存sourceManifest文件未变；本轮未重跑业务或访问生产。生产观察只代表原取证时间。",
+    "pathNormalization": "导入副本中的仓库源码使用项目根相对路径；外部取证文件和原报告使用 evidenceBundle#成员路径。原始报告与文件完整哈希保留，压缩包中的原件未修改。"
+  }
+}

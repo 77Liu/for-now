@@ -1,8 +1,20 @@
+/**
+ * 账户凭据、会话签发与账户权限管理。
+ * 建立时间：未知
+ * 状态：active
+ * 边界：密码计算不占持久化写锁；凭据快照必须在提交时复验；改密撤销全部旧会话。
+ */
 import crypto from "node:crypto";
+import { createAuthAdmission, assertAuthRequestActive } from "../../../.build/typescript/backend/modules/auth/admission.mjs";
+import { loadAuthAdmissionConfig } from "../../config/index.mjs";
 import { DEFAULT_RECORD_TIMEZONE } from "../../shared/time/index.mjs";
 
 export const AUTH_DOCUMENT_VERSION = 3;
 export const SESSION_TTL_MS = 30 * 86400000;
+/** Owner 账户列表默认页大小。 @since unreleased */
+export const AUTH_USER_PAGE_DEFAULT = 50;
+/** Owner 账户列表单页硬上限。 @since unreleased */
+export const AUTH_USER_PAGE_MAX = 100;
 export const AUTH_ROLES = Object.freeze(["user", "owner"]);
 export { DEFAULT_RECORD_TIMEZONE };
 export const OWNER_CAPABILITIES = Object.freeze([
@@ -48,6 +60,9 @@ const fail = (statusCode, message, code) => { throw Object.assign(new Error(mess
 const reauth = () => fail(401, "账户权限已变更，请重新登录", "AUTH_REAUTH_REQUIRED");
 const ownerRequired = () => fail(403, "当前账户没有 Owner 权限", "OWNER_REQUIRED");
 const usernameValue = value => String(value ?? "").trim().slice(0, 32);
+/** 生成用户名唯一键，供文档与 PostgreSQL 适配器共同使用。 @since unreleased */
+export const normalizeUsernameKey = value => String(value || "")
+  .toLocaleLowerCase();
 const validateUsername = username => {
   if (!/^[\p{L}\p{N}_.-]{3,32}$/u.test(username)) fail(400, "用户名需为 3–32 位文字、数字、点、横线或下划线");
 };
@@ -72,6 +87,7 @@ export function normalizeAuthDocument(value = {}) {
   auth.version = AUTH_DOCUMENT_VERSION;
   auth.users = (Array.isArray(auth.users) ? auth.users : []).map((user, index) => ({
     ...user,
+    usernameKey: normalizeUsernameKey(user?.username),
     role: AUTH_ROLES.includes(user?.role) ? user.role : index === 0 ? "owner" : "user",
     sessionVersion: versionOf(user?.sessionVersion),
     recordTimezone: normalizeRecordTimezone(user?.recordTimezone)
@@ -84,205 +100,331 @@ export function normalizeAuthDocument(value = {}) {
   return auth;
 }
 
-export function createAuthService({ repository, initializeUserStorage, authRequired, inviteCodeHash }) {
-  const loginAttempts = new Map();
-  const loginQueues = new Map();
-  const replaceDocument = (target, value) => {
-    for (const key of Object.keys(target)) delete target[key];
-    Object.assign(target, value);
-    return target;
-  };
-  const withLoginLock = (key, operation) => {
-    const previous = loginQueues.get(key) || Promise.resolve();
-    const current = previous.catch(() => {}).then(operation);
-    loginQueues.set(key, current);
-    return current.finally(() => {
-      if (loginQueues.get(key) === current) loginQueues.delete(key);
-    });
-  };
-  const update = mutator => repository.update(auth => {
-    replaceDocument(auth, normalizeAuthDocument(auth));
-    auth.sessions = auth.sessions.filter(session => new Date(session.expiresAt).getTime() > Date.now());
-    return mutator(auth);
-  });
-  const issueSession = (auth, user) => {
-    const token = crypto.randomBytes(32).toString("base64url");
-    auth.sessions.push({
+const invalidCredentials = () => fail(
+  401,
+  "用户名或密码错误",
+  "AUTH_INVALID_CREDENTIALS"
+);
+const credentialSnapshot = user => user ? Object.freeze({
+  id: user.id,
+  usernameKey: normalizeUsernameKey(user.username),
+  passwordHash: user.passwordHash,
+  sessionVersion: versionOf(user.sessionVersion)
+}) : null;
+const createSession = user => {
+  const token = crypto.randomBytes(32).toString("base64url");
+  return {
+    token,
+    session: {
       tokenHash: sha256(token),
       userId: user.id,
       sessionVersion: versionOf(user.sessionVersion),
       createdAt: now(),
       expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString()
-    });
-    return { user, token };
+    }
   };
-  const accountMode = () => { if (!authRequired) fail(400, "本机模式无需账户管理"); };
+};
+const authenticationFromPair = pair => {
+  if (!pair || Date.parse(pair.session?.expiresAt || "") <= Date.now()) {
+    return { user: null, reauthRequired: false };
+  }
+  if (versionOf(pair.session.sessionVersion) !== versionOf(pair.user?.sessionVersion)) {
+    return { user: null, reauthRequired: true };
+  }
+  return { user: pair.user, reauthRequired: false };
+};
+const encodeUserCursor = boundary => boundary
+  ? Buffer.from(JSON.stringify({ version: 1, ...boundary })).toString("base64url")
+  : null;
+const decodeUserCursor = cursor => {
+  if (!cursor) return null;
+  try {
+    const value = JSON.parse(Buffer.from(String(cursor), "base64url").toString("utf8"));
+    if (value?.version !== 1
+      || typeof value.createdAt !== "string"
+      || !Number.isFinite(Date.parse(value.createdAt))
+      || typeof value.id !== "string"
+      || !value.id) throw new Error("invalid");
+    return { createdAt: new Date(value.createdAt).toISOString(), id: value.id };
+  } catch {
+    fail(400, "账户分页游标无效", "AUTH_CURSOR_INVALID");
+  }
+};
+const pageLimit = value => {
+  if (value === undefined || value === null || value === "") {
+    return AUTH_USER_PAGE_DEFAULT;
+  }
+  const limit = Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > AUTH_USER_PAGE_MAX) {
+    fail(400, `账户页大小必须是 1–${AUTH_USER_PAGE_MAX}`, "AUTH_LIMIT_INVALID");
+  }
+  return limit;
+};
+
+function createSessionAccess({ repository, authRequired }) {
+  async function authenticate(token) {
+    if (!authRequired) {
+      return {
+        user: { id: "local", username: "本机用户", role: "owner", createdAt: "" },
+        reauthRequired: false
+      };
+    }
+    if (!token) return { user: null, reauthRequired: false };
+    return authenticationFromPair(
+      await repository.findAuthenticationByTokenHash(sha256(token))
+    );
+  }
   const requireUser = async token => {
     const authentication = await authenticate(token);
     if (authentication.reauthRequired) reauth();
     if (!authentication.user) fail(401, "请先登录", "AUTH_REQUIRED");
     return authentication.user;
   };
-  const authenticationFromDocument = (auth, tokenHash) => {
-    const session = auth.sessions.find(item => item.tokenHash === tokenHash && new Date(item.expiresAt).getTime() > Date.now());
-    if (!session) return { user: null, reauthRequired: false };
-    const user = auth.users.find(item => item.id === session.userId) || null;
-    if (!user) return { user: null, reauthRequired: false };
-    if (versionOf(session.sessionVersion) !== versionOf(user.sessionVersion)) return { user: null, reauthRequired: true };
-    return { user, reauthRequired: false };
-  };
-  async function authenticate(token) {
-    if (!authRequired) return { user: { id: "local", username: "本机用户", role: "owner", createdAt: "" }, reauthRequired: false };
-    if (!token) return { user: null, reauthRequired: false };
-    return authenticationFromDocument(normalizeAuthDocument(await repository.read()), sha256(token));
-  }
-  async function resolveUser(token) {
-    return (await authenticate(token)).user;
-  }
   return {
     authenticate,
-    resolveUser,
-    migrate: () => update(auth => auth),
+    requireUser,
+    resolveUser: async token => (await authenticate(token)).user
+  };
+}
+
+function createRegistration({ repository, initializeUserStorage, authRequired, inviteCodeHash }) {
+  return async input => {
+    if (!authRequired) fail(400, "本机模式无需注册");
+    const username = usernameValue(input.username);
+    const password = String(input.password || "");
+    validateUsername(username);
+    validatePassword(password);
+    const expected = Buffer.from(inviteCodeHash, "hex");
+    const supplied = Buffer.from(sha256(String(input.invitation || "")), "hex");
+    if (expected.length !== supplied.length
+      || !crypto.timingSafeEqual(expected, supplied)) fail(403, "内测码无效");
+    const user = {
+      id: crypto.randomUUID(),
+      username,
+      usernameKey: normalizeUsernameKey(username),
+      passwordHash: await passwordHash(password),
+      role: "user",
+      sessionVersion: 1,
+      recordTimezone: DEFAULT_RECORD_TIMEZONE,
+      createdAt: now()
+    };
+    const { token, session } = createSession(user);
+    let rollbackStorage = null;
+    try {
+      const result = await repository.register({
+        user,
+        session,
+        initialize: async (persistedUser, first) => {
+          rollbackStorage = await initializeUserStorage(persistedUser, first);
+          return rollbackStorage;
+        }
+      });
+      return { user: result.user, token };
+    } catch (error) {
+      if (typeof rollbackStorage === "function") {
+        let persisted = true;
+        try { persisted = Boolean(await repository.findUserById(user.id)); } catch {}
+        if (!persisted) await rollbackStorage().catch(() => {});
+      }
+      throw error;
+    }
+  };
+}
+
+function createLogin({ repository, admission, authRequired, dummyHash }) {
+  return async (input, remoteAddress, { signal } = {}) => {
+    if (!authRequired) fail(400, "本机模式无需登录");
+    if (typeof input?.username !== "string" || typeof input?.password !== "string") {
+      fail(400, "请输入用户名和密码");
+    }
+    const username = usernameValue(input.username);
+    const password = input.password;
+    validateUsername(username);
+    if (password.length > 128 || !password.length) fail(400, "请输入有效密码");
+    const key = normalizeUsernameKey(username);
+    const attempt = admission.reserve(remoteAddress, key, signal);
+    try {
+      const snapshot = credentialSnapshot(
+        await repository.findCredentialByUsernameKey(key)
+      );
+      const release = await admission.acquireKdf(attempt);
+      let matched;
+      try {
+        assertAuthRequestActive(attempt);
+        matched = await passwordMatches(password, snapshot?.passwordHash || dummyHash);
+      } finally { release(); }
+      assertAuthRequestActive(attempt);
+      if (!snapshot || !matched) {
+        attempt.confirmFailure();
+        await admission.delayFailure(attempt);
+        invalidCredentials();
+      }
+      const seed = { id: snapshot.id, sessionVersion: snapshot.sessionVersion };
+      const { token, session } = createSession(seed);
+      const result = await repository.issueSessionIfCredentialCurrent({
+        snapshot, session
+      });
+      assertAuthRequestActive(attempt);
+      if (!result) invalidCredentials();
+      return { user: result.user, token };
+    } finally { attempt.settle(); }
+  };
+}
+
+function createAccountManagement({ repository, authRequired }) {
+  const accountMode = () => {
+    if (!authRequired) fail(400, "本机模式无需账户管理");
+  };
+  return {
+    async listUsers(token, query = {}) {
+      accountMode();
+      const page = await repository.listUsersPage({
+        tokenHash: sha256(token || ""),
+        limit: pageLimit(query.limit),
+        after: decodeUserCursor(query.cursor),
+        nowMs: Date.now()
+      });
+      return {
+        users: page.users.map(publicUser),
+        nextCursor: encodeUserCursor(page.next)
+      };
+    },
+    async setRole(token, userId, role) {
+      accountMode();
+      if (!AUTH_ROLES.includes(role)) {
+        fail(400, "角色只能是 user 或 owner", "AUTH_ROLE_INVALID");
+      }
+      return repository.setRole({
+        tokenHash: sha256(token || ""),
+        userId,
+        role,
+        updatedAt: now(),
+        nowMs: Date.now()
+      });
+    },
+    async rename(token, input) {
+      accountMode();
+      const username = usernameValue(input.username);
+      validateUsername(username);
+      return repository.rename({
+        tokenHash: sha256(token || ""),
+        username,
+        usernameKey: normalizeUsernameKey(username),
+        updatedAt: now(),
+        nowMs: Date.now()
+      });
+    },
+    async setRecordTimezone(token, input) {
+      accountMode();
+      return repository.setRecordTimezone({
+        tokenHash: sha256(token || ""),
+        recordTimezone: requestedRecordTimezone(input?.timezone),
+        updatedAt: now(),
+        nowMs: Date.now()
+      });
+    }
+  };
+}
+
+function createPasswordChange({ repository, admission, requireUser, authRequired }) {
+  return async (token, input, { source, signal } = {}) => {
+    if (!authRequired) fail(400, "本机模式无需账户管理");
+    const requester = await requireUser(token);
+    const currentPassword = String(input.currentPassword || "");
+    const newPassword = String(input.newPassword || "");
+    validatePassword(newPassword);
+    if (!currentPassword.length || currentPassword.length > 128) invalidCredentials();
+    const snapshot = credentialSnapshot(
+      await repository.findCredentialByUserId(requester.id)
+    );
+    if (!snapshot) invalidCredentials();
+    const attempt = admission.reserve(source, snapshot.usernameKey, signal);
+    try {
+      const release = await admission.acquireKdf(attempt);
+      let matched, hashed;
+      try {
+        assertAuthRequestActive(attempt);
+        matched = await passwordMatches(currentPassword, snapshot.passwordHash);
+        assertAuthRequestActive(attempt);
+        if (matched) hashed = await passwordHash(newPassword);
+      } finally { release(); }
+      assertAuthRequestActive(attempt);
+      if (!matched) {
+        attempt.confirmFailure();
+        await admission.delayFailure(attempt);
+        invalidCredentials();
+      }
+      const result = await repository.changePasswordAndRevokeSessions({
+        tokenHash: sha256(token || ""),
+        snapshot,
+        passwordHash: hashed,
+        updatedAt: now(),
+        nowMs: Date.now()
+      });
+      assertAuthRequestActive(attempt);
+      if (!result) invalidCredentials();
+      return { authenticated: false, reauthRequired: true };
+    } finally { attempt.settle(); }
+  };
+}
+
+/**
+ * Provides credential, session, and account management over an explicit identity port.
+ * @since unreleased
+ */
+export function createAuthService({
+  repository,
+  initializeUserStorage,
+  authRequired,
+  inviteCodeHash,
+  authAdmission = loadAuthAdmissionConfig({})
+}) {
+  const requiredMethods = [
+    "findCredentialByUsernameKey", "findCredentialByUserId",
+    "findAuthenticationByTokenHash", "findUserById",
+    "findFirstOwner", "countUsers", "scanUsersPage", "listUsersPage", "register",
+    "issueSessionIfCredentialCurrent", "setRole", "rename", "setRecordTimezone",
+    "changePasswordAndRevokeSessions", "deleteSession", "migrate", "verify"
+  ];
+  for (const method of requiredMethods) {
+    if (typeof repository?.[method] !== "function") {
+      throw new TypeError(`Authentication identity port requires ${method}`);
+    }
+  }
+  const admission = createAuthAdmission(authAdmission);
+  const dummyHash = `scrypt$${Buffer.alloc(16).toString("base64")}$${Buffer.alloc(64).toString("base64")}`;
+  const access = createSessionAccess({ repository, authRequired });
+  const management = createAccountManagement({ repository, authRequired });
+  return {
+    ...access,
+    ...management,
+    migrate: () => repository.migrate(),
+    verify: () => repository.verify(),
+    findUserById: id => repository.findUserById(id),
+    findFirstOwner: () => repository.findFirstOwner(),
+    scanUsersPage: query => repository.scanUsersPage(query),
     async me(token) {
-      const authentication = await authenticate(token);
+      const authentication = await access.authenticate(token);
       if (authentication.reauthRequired) reauth();
-      const user = authentication.user, auth = authRequired ? normalizeAuthDocument(await repository.read()) : null;
+      const user = authentication.user;
       return {
         authenticated: Boolean(user),
         authRequired,
         registrationAvailable: !authRequired || Boolean(inviteCodeHash),
         user: user ? publicUser(user) : null,
         capabilities: capabilitiesFor(user),
-        userCount: auth?.users.length || 0
+        userCount: authRequired ? await repository.countUsers() : 0
       };
     },
-    async register(input) {
-      if (!authRequired) fail(400, "本机模式无需注册");
-      const username = usernameValue(input.username), password = String(input.password || "");
-      validateUsername(username);
-      validatePassword(password);
-      const expected = Buffer.from(inviteCodeHash, "hex"), supplied = Buffer.from(sha256(String(input.invitation || "")), "hex");
-      if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) fail(403, "内测码无效");
-      const hashed = await passwordHash(password);
-      let rollbackStorage = null, initializedUserId = "";
-      try {
-        return await update(async auth => {
-          if (auth.users.some(user => user.username.toLocaleLowerCase() === username.toLocaleLowerCase())) fail(409, "用户名已存在");
-          const user = {
-            id: crypto.randomUUID(),
-            username,
-            passwordHash: hashed,
-            role: auth.users.length === 0 ? "owner" : "user",
-            sessionVersion: 1,
-            recordTimezone: DEFAULT_RECORD_TIMEZONE,
-            createdAt: now()
-          };
-          rollbackStorage = await initializeUserStorage(user, auth.users.length === 0);
-          initializedUserId = user.id;
-          auth.users.push(user);
-          return issueSession(auth, user);
-        });
-      } catch (error) {
-        if (typeof rollbackStorage === "function" && initializedUserId) {
-          let persisted = true;
-          try {
-            persisted = normalizeAuthDocument(await repository.read()).users
-              .some(user => user.id === initializedUserId);
-          } catch {}
-          if (!persisted) await rollbackStorage().catch(() => {});
-        }
-        throw error;
-      }
-    },
-    async login(input, remoteAddress) {
-      if (!authRequired) fail(400, "本机模式无需登录");
-      const username = usernameValue(input.username), password = String(input.password || ""), key = `${remoteAddress}:${username.toLocaleLowerCase()}`;
-      return withLoginLock(key, async () => {
-        const recent = (loginAttempts.get(key) || []).filter(value => Date.now() - value < 15 * 60000);
-        loginAttempts.set(key, recent);
-        if (recent.length >= 8) fail(429, "登录尝试过多，请 15 分钟后再试");
-        const result = await update(async auth => {
-          const user = auth.users.find(item => item.username.toLocaleLowerCase() === username.toLocaleLowerCase());
-          if (!user || !await passwordMatches(password, user.passwordHash)) {
-            recent.push(Date.now());
-            await new Promise(resolve => setTimeout(resolve, 250));
-            fail(401, "用户名或密码错误");
-          }
-          return issueSession(auth, user);
-        });
-        loginAttempts.delete(key);
-        return result;
-      });
-    },
-    async listUsers(token) {
-      accountMode();
-      const requester = await requireUser(token);
-      if (!isOwner(requester)) ownerRequired();
-      return normalizeAuthDocument(await repository.read()).users.map(publicUser);
-    },
-    async setRole(token, userId, role) {
-      accountMode();
-      if (!AUTH_ROLES.includes(role)) fail(400, "角色只能是 user 或 owner", "AUTH_ROLE_INVALID");
-      const tokenHash = sha256(token || "");
-      return update(auth => {
-        const authentication = authenticationFromDocument(auth, tokenHash);
-        if (authentication.reauthRequired) reauth();
-        if (!authentication.user) fail(401, "请先登录", "AUTH_REQUIRED");
-        if (!isOwner(authentication.user)) ownerRequired();
-        const user = auth.users.find(item => item.id === userId);
-        if (!user) fail(404, "账户不存在", "AUTH_USER_NOT_FOUND");
-        if (user.role === role) return user;
-        if (user.role === "owner" && role === "user" && auth.users.filter(isOwner).length <= 1) {
-          fail(409, "至少需要保留一个 Owner", "LAST_OWNER_REQUIRED");
-        }
-        user.role = role;
-        user.sessionVersion = versionOf(user.sessionVersion) + 1;
-        user.updatedAt = now();
-        return user;
-      });
-    },
-    async rename(token, input) {
-      accountMode();
-      const requester = await requireUser(token), username = usernameValue(input.username);
-      validateUsername(username);
-      return update(auth => {
-        const user = auth.users.find(item => item.id === requester.id);
-        if (!user) fail(404, "账户不存在");
-        if (auth.users.some(item => item.id !== user.id && item.username.toLocaleLowerCase() === username.toLocaleLowerCase())) fail(409, "用户名已存在");
-        user.username = username;
-        user.updatedAt = now();
-        return user;
-      });
-    },
-    async setRecordTimezone(token, input) {
-      accountMode();
-      const requester = await requireUser(token);
-      const recordTimezone = requestedRecordTimezone(input?.timezone);
-      return update(auth => {
-        const user = auth.users.find(item => item.id === requester.id);
-        if (!user) fail(404, "账户不存在", "AUTH_USER_NOT_FOUND");
-        user.recordTimezone = recordTimezone;
-        user.updatedAt = now();
-        return user;
-      });
-    },
-    async changePassword(token, input) {
-      accountMode();
-      const requester = await requireUser(token), currentPassword = String(input.currentPassword || ""), newPassword = String(input.newPassword || "");
-      validatePassword(newPassword);
-      const tokenHash = sha256(token || "");
-      return update(async auth => {
-        const user = auth.users.find(item => item.id === requester.id);
-        if (!user) fail(404, "账户不存在");
-        if (!await passwordMatches(currentPassword, user.passwordHash)) fail(403, "当前密码不正确");
-        user.passwordHash = await passwordHash(newPassword);
-        user.updatedAt = now();
-        auth.sessions = auth.sessions.filter(session => session.userId !== user.id || session.tokenHash === tokenHash);
-        return user;
-      });
-    },
+    register: createRegistration({
+      repository, initializeUserStorage, authRequired, inviteCodeHash
+    }),
+    login: createLogin({ repository, admission, authRequired, dummyHash }),
+    changePassword: createPasswordChange({
+      repository, admission, requireUser: access.requireUser, authRequired
+    }),
     async logout(token) {
-      if (token && authRequired) await update(auth => { auth.sessions = auth.sessions.filter(item => item.tokenHash !== sha256(token)); });
+      if (token && authRequired) await repository.deleteSession(sha256(token));
     }
   };
 }

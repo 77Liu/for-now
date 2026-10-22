@@ -1,3 +1,7 @@
+import { createRateGate } from "../src/shared/concurrency/index.mjs";
+import { createAiBudgetRuntime } from "../src/app/index.mjs";
+import { createAiBudgetService } from "../src/modules/ai/index.mjs";
+import { createAtomicRepository } from "./fixtures/atomic-json-repository.mjs";
 import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { promises as fs } from "node:fs";
@@ -405,7 +409,7 @@ for (const id of ["a", "b"]) {
   assert.equal(accounts.get(id).entries.length, 1);
   const terminalAudit = auditRecords.find(entry => entry.actor.userId === id && entry.status === "success");
   const startedAudit = auditRecords.find(entry => entry.actor.userId === id && entry.status === "started");
-  assert.equal(terminalAudit.schemaVersion, 3);
+  assert.equal(terminalAudit.schemaVersion, 4);
   assert.equal(terminalAudit.traceId, `trace-${id}`);
   assert.equal(terminalAudit.request.userPrompt, `account-${id}`);
   assert.equal(terminalAudit.request.promptCatalog.version, promptManifest.activeVersion);
@@ -416,13 +420,17 @@ for (const id of ["a", "b"]) {
 }
 await run("private-prompt", () => generate("PRIVATE_ONBOARDING_SOURCE", {
   scene: "onboardingClaimExtraction",
-  json: true,
-  auditPrompt: false
+  json: true
 }));
 const privateAudits = auditRecords.filter(entry => entry.actor.userId === "private-prompt");
 assert.ok(privateAudits.length >= 2);
-assert.ok(privateAudits.every(entry => entry.request.userPrompt.omitted === true));
-assert.equal(JSON.stringify(privateAudits).includes("PRIVATE_ONBOARDING_SOURCE"), false);
+assert.ok(privateAudits.every(entry => entry.request.userPrompt === "PRIVATE_ONBOARDING_SOURCE"));
+assert.ok(privateAudits.every(entry => (
+  entry.invocationContract.triggerType === "system_internal"
+  && entry.invocationContract.resultAudience === "internal"
+  && entry.invocationContract.reasoningVisibility === "privileged_only"
+  && entry.invocationContract.persistenceMode === "audit_only"
+)));
 
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), "growth-provider-"));
 try {
@@ -437,4 +445,174 @@ try {
   assert.equal(entry.modality, "vision");
   assert.doesNotMatch(JSON.stringify(auditRecords), /iVBORw0KGgo|private-test-key/);
 } finally { await fs.rm(directory, { recursive: true, force: true }); }
+// F5真实generator/usage/audit/gate链：等待终止不得依赖占用者，且不产生外部调用或收费记录。
+{
+  const queue = { enabled: true, maxOutstanding: 2, maxOutstandingPerAccount: 1, maxPendingPerGate: 2, maxQueueWaitMs: 40, overloadRetryAfterMs: 5000 };
+  const held = createRateGate(10000, 1, { maxPending: 2 }); const release = await held.acquire();
+  let entered;
+  const acquired = new Promise(resolve => { entered = resolve; });
+  const cancellable = createAiGenerator({ provider, readSettings: async () => settings, getContext: () => context.getStore(), reserveAttempt: quota.reserveAttempt, gate: { acquire: options => { entered(); return held.acquire(options); } }, audit, aiQueue: queue });
+  const controller = new AbortController(); const calls = transportCalls.length;
+  const waiting = run("f5-cancelled-queue", () => cancellable("排队取消", { signal: controller.signal, retryWithoutThinking: false }));
+  await acquired; controller.abort();
+  await assert.rejects(waiting, { code: "AI_TASK_CANCELLED", statusCode: 409 });
+  await assert.rejects(run("f5-expired-queue", () => cancellable("排队到期", { retryWithoutThinking: false })), { code: "AI_QUEUE_TIMEOUT", statusCode: 504 });
+  assert.equal(transportCalls.length, calls); assert.equal(accounts.get("f5-cancelled-queue").entries.length, 0);
+  assert.equal(auditRecords.some(entry => entry.actor?.userId === "f5-cancelled-queue"), false);
+  release(); responseFactory = () => jsonResponse();
+  assert.equal(await run("f5-cancelled-queue", () => cancellable("取消后额度已释放", { retryWithoutThinking: false })), "回答");
+  const scene = createRateGate(10000, 1), global = createRateGate(10000, 1);
+  const releaseScene = await scene.acquire(), releaseGlobal = await global.acquire(); const deadlines = [];
+  const shared = createAiGenerator({ provider, readSettings: async () => settings, getContext: () => context.getStore(), reserveAttempt: quota.reserveAttempt, audit, aiQueue: queue,
+    sceneGates: { recordCompression: { acquire: options => { deadlines.push(options.deadline); return scene.acquire(options); } } },
+    gate: { acquire: options => { deadlines.push(options.deadline); return global.acquire(options); } } });
+  const sharedWaiting = run("f5-shared-deadline", () => shared("两层同一截止", { scene: "recordCompression", retryWithoutThinking: false }));
+  setTimeout(releaseScene, 10);
+  await assert.rejects(sharedWaiting, { code: "AI_QUEUE_TIMEOUT" }); assert.equal(deadlines.length, 2); assert.equal(deadlines[0], deadlines[1]); releaseGlobal();
+  let releasePreparation; const preparing = new Promise(resolve => { releasePreparation = resolve; }); let reads = 0;
+  const bounded = createAiGenerator({ provider, readSettings: async () => { reads++; await preparing; return settings; }, getContext: () => context.getStore(), reserveAttempt: quota.reserveAttempt, gate, audit, aiQueue: queue });
+  const a = new AbortController(), b = new AbortController();
+  const first = run("f5-limit-a", () => bounded("准备中", { signal: a.signal })); await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(run("f5-limit-a", () => bounded("账户超载")), { code: "AI_QUEUE_FULL", retryAfterMs: 5000 });
+  const second = run("f5-limit-b", () => bounded("准备中", { signal: b.signal })); await new Promise(resolve => setImmediate(resolve));
+  a.abort(); b.abort();
+  await assert.rejects(run("f5-limit-c", () => bounded("清理未结束仍占名额")), { code: "AI_QUEUE_FULL" }); assert.equal(reads, 2);
+  releasePreparation(); await Promise.all([assert.rejects(first, { code: "AI_TASK_CANCELLED" }), assert.rejects(second, { code: "AI_TASK_CANCELLED" })]);
+  assert.equal(await run("f5-limit-c", () => bounded("名额已回收", { retryWithoutThinking: false })), "回答");
+  // 子生成器只能证明/清理自己的stage，不能释放父execution其余阶段。
+  const repository = createAtomicRepository({}); let sequence = 0;
+  const budget = createAiBudgetService({ repository, createId: () => `f5-parent-${++sequence}`, now: () => "2026-10-16T01:00:00.000Z" });
+  const runtime = createAiBudgetRuntime({ budget }); const abort = new AbortController(); let currentChecks = 0;
+  const child = createAiGenerator({ provider, readSettings: async () => settings, getContext: () => context.getStore(), reserveAttempt: quota.reserveAttempt, gate, audit, aiQueue: queue });
+  const parentStages = ["other", "text"].map(id => ({ id, provider: "deepseek", service: "chat-completions", scene: "thoughtAnswer", costKnown: true, estimatedCostCny: 0.1 }));
+  await run("f5-parent", () => runtime.executeTask({ accountId: "f5-parent", taskId: "parent", stages: parentStages }, async execution => {
+    await execution.runStage("other", ({ recordUsage }) => { recordUsage({ costKnown: true, costCny: 0.02 }); });
+    const before = transportCalls.length;
+    await assert.rejects(child("阶段已进入但provider未发", { budgetExecution: execution, budgetStageIds: ["text"], retryWithoutThinking: false, signal: abort.signal, isCurrent: async () => { if (++currentChecks === 2) abort.abort(); return true; } }), { code: "AI_TASK_CANCELLED" });
+    assert.equal(transportCalls.length, before); assert.equal(accounts.get("f5-parent").entries.length, 0);
+    const pending = await budget.read(); assert.equal(pending.reservations.length, 1); assert.equal(pending.reservations[0].stages.find(stage => stage.id === "text").dispatchState, "not_invoked");
+  }));
+  const settled = await budget.read(); assert.equal(settled.reservations.length, 0); assert.equal(settled.days[0].knownCostMicros, 20000);
+  assert.ok(auditRecords.some(entry => entry.actor?.userId === "f5-parent" && entry.dispatchState === "not_invoked" && entry.persistence.usage === "not_applicable"));
+
+  // 原子审计begin是派发硬门；失败后账户额度、站点预算、gate和admission都必须可复用。
+  {
+    const siteRepository = createAtomicRepository({}); let sequence = 0, auditBegins = 0;
+    const siteBudget = createAiBudgetService({ repository: siteRepository, createId: () => `f5-audit-gate-${++sequence}` });
+    const siteRuntime = createAiBudgetRuntime({ budget: siteBudget });
+    const activeAuditCalls = new Set();
+    const hardGateAudit = createAiAudit({
+      textLimit: 10000,
+      getContext: () => context.getStore(),
+      repository: {
+        async beginAttempt() { auditBegins += 1; throw new Error("audit begin unavailable"); },
+        async finishAttempt() { throw new Error("unreachable audit finish"); }
+      },
+      append: async () => {},
+      updateUsage: quota.update,
+      beginCall: callId => activeAuditCalls.add(callId),
+      endUninvokedCall: callId => activeAuditCalls.delete(callId),
+      logEvent: async () => {}
+    });
+    const hardGate = createAiGenerator({
+      provider, readSettings: async () => settings, getContext: () => context.getStore(),
+      reserveAttempt: quota.reserveAttempt, gate: createRateGate(10000, 1),
+      audit: hardGateAudit, aiQueue: { ...queue, maxOutstanding: 1, maxOutstandingPerAccount: 1 },
+      executeBudgetTask: (details, execute, options) => siteRuntime.executeTask({
+        accountId: details.accountId,
+        taskId: details.taskId,
+        stages: [{ id: "deepseek-attempt-1", provider: "deepseek", service: "chat-completions",
+          scene: details.scene, costKnown: true, estimatedCostCny: 0.01 }]
+      }, execute, options)
+    });
+    const callsBeforeAuditFailure = transportCalls.length;
+    for (let index = 0; index < 2; index += 1) {
+      await assert.rejects(run("f5-audit-hard-gate", () => hardGate("审计失败禁止派发", {
+        retryWithoutThinking: false
+      })), { code: "AI_AUDIT_UNAVAILABLE", statusCode: 503 });
+    }
+    assert.equal(auditBegins, 2, "released admission and gate capacity must allow a fresh attempt");
+    assert.equal(transportCalls.length, callsBeforeAuditFailure);
+    assert.equal(accounts.get("f5-audit-hard-gate").entries.length, 0);
+    assert.equal((await siteBudget.read()).reservations.length, 0);
+    assert.equal(activeAuditCalls.size, 0);
+  }
+
+  // 审计已开始且预算stage已落库后失去账户资格：双账本证明未调用，不写usage。
+  {
+    const siteRepository = createAtomicRepository({}); let sequence = 0, ready = true;
+    const rows = new Map(), activeAuditCalls = new Set();
+    const siteBudget = createAiBudgetService({ repository: siteRepository, createId: () => `f5-account-gate-${++sequence}` });
+    const guardedBudget = {
+      ...siteBudget,
+      async startStage(input) {
+        const result = await siteBudget.startStage(input);
+        ready = false;
+        return result;
+      }
+    };
+    const assertReady = () => {
+      if (!ready) throw Object.assign(new Error("账户数据暂不可用，请稍后重试"), {
+        code: "ACCOUNT_QUARANTINED", statusCode: 503
+      });
+    };
+    const siteRuntime = createAiBudgetRuntime({ budget: guardedBudget, assertAccountReady: assertReady });
+    const atomicAudit = createAiAudit({
+      textLimit: 10000,
+      getContext: () => context.getStore(),
+      repository: {
+        async beginAttempt(row) { rows.set(row.callId, { ...structuredClone(row), status: "started", dispatchState: "pending" }); },
+        async finishAttempt(callId, terminal) { Object.assign(rows.get(callId), structuredClone(terminal)); }
+      },
+      append: async () => {},
+      updateUsage: quota.update,
+      beginCall: callId => activeAuditCalls.add(callId),
+      endUninvokedCall: callId => activeAuditCalls.delete(callId),
+      logEvent: async () => {}
+    });
+    const accountGuarded = createAiGenerator({
+      provider, readSettings: async () => settings, getContext: () => context.getStore(),
+      reserveAttempt: quota.reserveAttempt, gate, audit: atomicAudit, aiQueue: queue,
+      assertAccountReady: assertReady,
+      executeBudgetTask: (details, execute, options) => siteRuntime.executeTask({
+        accountId: details.accountId,
+        taskId: details.taskId,
+        stages: [{ id: "deepseek-attempt-1", provider: "deepseek", service: "chat-completions",
+          scene: details.scene, costKnown: true, estimatedCostCny: 0.01 }]
+      }, execute, options)
+    });
+    const callsBeforeQuarantine = transportCalls.length;
+    await assert.rejects(run("f5-account-gate", () => accountGuarded("派发前隔离", {
+      retryWithoutThinking: false
+    })), { code: "ACCOUNT_QUARANTINED", statusCode: 503 });
+    assert.equal(transportCalls.length, callsBeforeQuarantine);
+    assert.equal(accounts.get("f5-account-gate").entries.length, 0);
+    assert.equal((await siteBudget.read()).reservations.length, 0);
+    assert.equal((await siteBudget.read()).days[0].knownCostMicros, 0);
+    assert.equal(rows.size, 1);
+    assert.equal([...rows.values()][0].dispatchState, "not_invoked");
+    assert.equal([...rows.values()][0].usagePayload, null);
+    assert.equal(activeAuditCalls.size, 0);
+  }
+}
+
+// 首个full/stale发生后，必要预算清理仍等待真实完成；后到timeout/cancel不能改写原429/409。
+for (const code of ["AI_QUEUE_FULL", "AI_TASK_STALE"]) {
+  let releaseCleanup, enteredCleanup;
+  const cleanupStarted = new Promise(resolve => { enteredCleanup = resolve; });
+  const cleanupDone = new Promise(resolve => { releaseCleanup = resolve; });
+  const repository = createAtomicRepository({}); let sequence = 0;
+  const budget = createAiBudgetService({ repository, createId: () => `first-${code}-${++sequence}` });
+  const delayed = { ...budget, releaseTask: async input => { enteredCleanup(); await cleanupDone; return budget.releaseTask(input); } };
+  const runtime = createAiBudgetRuntime({ budget: delayed }); const abort = new AbortController();
+  const first = createAiGenerator({ provider, readSettings: async () => settings, getContext: () => context.getStore(), reserveAttempt: quota.reserveAttempt, audit,
+    gate: code === "AI_QUEUE_FULL" ? { acquire: async () => { throw Object.assign(new Error("队列繁忙"), { code, statusCode: 429 }); } } : gate,
+    executeBudgetTask: (details, execute, options) => runtime.executeTask({ accountId: details.accountId, taskId: details.taskId, stages: [{ id: "deepseek-attempt-1", provider: "deepseek", service: "chat-completions", scene: "thoughtAnswer", costKnown: true, estimatedCostCny: 0.01 }] }, execute, options) });
+  const pending = run(`f5-first-${code}`, () => first("首因保持", { timeoutMs: code === "AI_QUEUE_FULL" ? 20 : 1000, signal: abort.signal, retryWithoutThinking: false, isCurrent: async () => code !== "AI_TASK_STALE" }));
+  await cleanupStarted;
+  if (code === "AI_QUEUE_FULL") await new Promise(resolve => setTimeout(resolve, 30)); else abort.abort();
+  releaseCleanup(); await assert.rejects(pending, { code, statusCode: code === "AI_QUEUE_FULL" ? 429 : 409 });
+  assert.equal((await budget.read()).reservations.length, 0);
+}
+
 console.log("AI provider checks passed: JSON/SSE contracts, byte fragmentation, partial failures, retry accounting/limits, capacity release, timeout, account context and image audit isolation.");

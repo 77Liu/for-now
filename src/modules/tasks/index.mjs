@@ -35,7 +35,12 @@ const PUBLIC_RESOURCE_TYPES = Object.freeze({
 });
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running"]);
 const REUSABLE_EXTRACTION_STATUSES = new Set(["queued", "running", "succeeded"]);
+const INTERNAL_TASK_KINDS = new Set(["perceptionExtraction", "recordCompression"]);
 export const WAITING_FOR_BUDGET_STATUS = "waitingBudget";
+
+export const isInternalAiTask = task => (
+  task?.internal === true || INTERNAL_TASK_KINDS.has(task?.kind)
+);
 
 export function publicAiTask(task) {
   return {
@@ -249,9 +254,11 @@ export function createTaskLifecycle({ createId, now, hash }) {
 
   function create(tasks, input, inspectTarget, {
     deferTargetInspection = false,
+    deferInputBinding = false,
     requestedIntent = null,
     waitingBudget = false,
-    allocateIdentity = null
+    allocateIdentity = null,
+    preparedAt = ""
   } = {}) {
     const normalized = normalizeRequest(input);
     let { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
@@ -278,13 +285,21 @@ export function createTaskLifecycle({ createId, now, hash }) {
       || (kind === "followUpAnswer" && !subtargetId)
       || (kind === "annotationShenji" && !subtargetId)
     )) return { missing: true };
-    const createdAt = now();
+    const createdAt = preparedAt || now();
     const inspectionInput = { ...normalized, createdAt };
-    const work = deferTargetInspection ? null : inspectTarget(inspectionInput);
-    if (!deferTargetInspection && !work) return { missing: true };
+    const work = deferTargetInspection || deferInputBinding
+      ? null
+      : inspectTarget(inspectionInput);
+    if (!deferTargetInspection && !deferInputBinding && !work) return { missing: true };
     if (work?.alreadyAnswered) return { alreadyAnswered: true };
-    if (!deferTargetInspection && requestedInputVersion && requestedInputVersion !== work.inputVersion) return { versionConflict: true, currentVersion: work.inputVersion };
-    if (!deferTargetInspection && requestedSubtargetVersion && requestedSubtargetVersion !== work.subtargetVersion) return { subtargetVersionConflict: true, currentVersion: work.subtargetVersion };
+    if (!deferTargetInspection && !deferInputBinding
+      && requestedInputVersion && requestedInputVersion !== work.inputVersion) {
+      return { versionConflict: true, currentVersion: work.inputVersion };
+    }
+    if (!deferTargetInspection && !deferInputBinding
+      && requestedSubtargetVersion && requestedSubtargetVersion !== work.subtargetVersion) {
+      return { subtargetVersionConflict: true, currentVersion: work.subtargetVersion };
+    }
     const intentInputVersion = Math.max(0, Number(requestedIntent?.inputVersion) || 0);
     const intentSubtargetVersion = Math.max(0, Number(requestedIntent?.subtargetVersion) || 0);
     if (deferTargetInspection && requestedIntent) {
@@ -330,26 +345,29 @@ export function createTaskLifecycle({ createId, now, hash }) {
     }
     const task = {
       id: createId(), kind, resourceType, targetId, subtargetId,
-      inputVersion: deferTargetInspection
+      inputVersion: deferTargetInspection || deferInputBinding
         ? (intentInputVersion || requestedInputVersion)
         : work.inputVersion || 0,
-      subtargetVersion: deferTargetInspection
+      subtargetVersion: deferTargetInspection || deferInputBinding
         ? (intentSubtargetVersion || requestedSubtargetVersion)
         : work.subtargetVersion || 0,
-      inputHash: deferTargetInspection ? "" : work.inputHash,
-      requestedInputVersion: deferTargetInspection
+      inputHash: deferTargetInspection || deferInputBinding ? "" : work.inputHash,
+      requestedInputVersion: deferTargetInspection || deferInputBinding
         ? (intentInputVersion || requestedInputVersion)
         : work.inputVersion || 0,
-      requestedSubtargetVersion: deferTargetInspection
+      requestedSubtargetVersion: deferTargetInspection || deferInputBinding
         ? (intentSubtargetVersion || requestedSubtargetVersion)
         : work.subtargetVersion || 0,
-      ...(!deferTargetInspection ? { requestedInputHash: work.inputHash || "" } : {}),
+      ...(!deferTargetInspection && !deferInputBinding
+        ? { requestedInputHash: work.inputHash || "" }
+        : {}),
       ...(deferTargetInspection && requestedIntent ? {
         requestedIntentInputVersion: intentInputVersion,
         requestedIntentSubtargetVersion: intentSubtargetVersion,
         requestedIntentInputHash: String(requestedIntent.inputHash ?? "")
       } : {}),
       payload, clientRequestId, requestHash: inputRequestHash,
+      ...(deferInputBinding ? { deferredInputBinding: true } : {}),
       ...((work?.contextReceipt?.importanceSelectionPlan || work?.contextReceipt?.importanceReferences?.plan)
         ? { importanceSelectionPlan: structuredClone(work.contextReceipt.importanceSelectionPlan || work.contextReceipt.importanceReferences?.plan) } : {}),
       status: deferTargetInspection
@@ -359,7 +377,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
       ...(["perceptionExtraction", "recordCompression", "importanceScoring"].includes(kind) ? { internal: true } : {})
     };
     tasks.unshift(task);
-    if (!waitingBudget) work?.markQueued?.(task);
+    if (!waitingBudget && !deferInputBinding) work?.markQueued?.(task);
     return { task, duplicate: false };
   }
 
@@ -394,6 +412,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
     task.inputVersion = work.inputVersion || 0;
     task.subtargetVersion = work.subtargetVersion || 0;
     task.inputHash = work.inputHash || "";
+    delete task.deferredInputBinding;
     task.status = "queued";
     task.updatedAt = now();
     task.error = "";
@@ -452,6 +471,8 @@ export function createTaskLifecycle({ createId, now, hash }) {
 
   return {
     create,
+    /** 事务外准备使用与任务入库完全相同的规范化意图。 @since unreleased */
+    normalizeRequest,
     idempotency(input) {
       const normalized = normalizeRequest(input);
       if (!TASK_KINDS.has(normalized.kind) || !normalized.clientRequestId) return null;
@@ -470,7 +491,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
       if (!Object.hasOwn(task, "requestedSubtargetVersion")) {
         task.requestedSubtargetVersion = task.subtargetVersion || 0;
       }
-      if (!Object.hasOwn(task, "requestedInputHash")) {
+      if (!Object.hasOwn(task, "requestedInputHash") && task.deferredInputBinding !== true) {
         task.requestedInputHash = task.inputHash || "";
       }
       task.status = WAITING_FOR_USER_MODEL_STATUS;
@@ -518,3 +539,22 @@ export function createTaskLifecycle({ createId, now, hash }) {
     }
   };
 }
+
+/**
+ * 终结已核验的同一任务尝试；账户隔离收尾不改变业务内容或创建新任务。
+ * 已终态、身份或尝试不匹配时保持原状，供恢复和重试幂等复用。
+ * @since unreleased
+ */
+export function cancelExistingTaskForAccountRecovery(tasks, id, attempt, now) {
+  const task = tasks.find(item => item.id === id);
+  if (!task || task.attempt !== attempt || !["queued", "running", "cancelling"].includes(task.status)) return false;
+  task.status = "cancelled";
+  task.error = "账户数据暂不可用，当前任务已停止；修复后可重新提交";
+  task.errorCode = "ACCOUNT_QUARANTINED";
+  task.updatedAt = task.completedAt = now();
+  return true;
+}
+
+import { createTaskRecordCommands as create } from "../../../.build/typescript/backend/modules/tasks/record-commands.mjs";
+/** Wires the task domain command and waiting status contract. @since unreleased */
+export const createTaskRecordCommands = options => create({ ...options, waitingStatus: WAITING_FOR_USER_MODEL_STATUS });

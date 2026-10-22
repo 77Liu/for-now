@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "public/frontend/state",
+    "outDir": "public/generated/state",
+    "noEmitOnError": true
+  },
+  "files": [
+    "public/frontend/state/record-sync.mts"
+  ]
+}

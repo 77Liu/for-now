@@ -359,9 +359,11 @@ assert.ok(currentStore.aiTasks.filter(task => task.status === WAITING_FOR_BUDGET
   .every(task => task.payload.windowStart >= "2026-09-25"));
 for (const task of currentStore.aiTasks.filter(task => task.status === WAITING_FOR_BUDGET_STATUS)) await scopedRuntime.backgroundAi.run(task.id);
 assert.equal(providerCalls.length, callsAfterRepair, "waiting tasks never dispatch themselves");
-const promotedFloor = await scopedRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 4, maxQueued: 4 });
-assert.deepEqual(promotedFloor.taskIds.map(id => currentStore.aiTasks.find(task => task.id === id)?.payload.localDate),
-  ["2026-09-29", "2026-09-28", "2026-09-27", "2026-09-26"]);
+const promotedFloor = await scopedRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 4, maxQueued: 5 });
+assert.deepEqual(promotedFloor.taskIds.map(id => currentStore.aiTasks.find(task => task.id === id))
+  .filter(task => task.payload.operation === "daily").map(task => task.payload.localDate),
+  ["2026-09-29", "2026-09-28", "2026-09-27", "2026-09-26"],
+  "the historical supplement shares the bounded budget slots with the newest daily work");
 for (const id of promotedFloor.taskIds) await scopedRuntime.backgroundAi.run(id);
 const includeBirthday = await scopedRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 1 });
 assert.ok(includeBirthday.taskIds.some(id => currentStore.aiTasks.find(task => task.id === id)?.payload.localDate === "2026-09-25"));
@@ -388,8 +390,9 @@ assert.equal(admissionTask.errorCode, "AI_DAILY_CALL_LIMIT");
 assert.equal(providerCalls.length, beforeAdmissionCalls);
 assert.equal(currentStore.recordCompressions.find(summary => summary.id === admissionTask.payload.recordId).status, "queued");
 denyQuota = false;
-const resumedAdmission = await admissionRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 1 });
-assert.equal(resumedAdmission.taskIds[0], admissionTask.id);
+const resumedAdmission = await admissionRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 2 });
+assert.ok(resumedAdmission.taskIds.includes(admissionTask.id),
+  "recovery must revalidate and promote the task that hit admission instead of only creating new work");
 let failedNotifications = 0;
 admissionRuntime.observeRecordCompressionTasks(async () => { failedNotifications += 1; throw new Error("notify unavailable"); });
 await admissionRuntime.backgroundAi.run(admissionTask.id);
@@ -419,5 +422,83 @@ Object.assign(currentStore.thoughts[0], { origin: "ai_generated", authorType: "a
 const aiOnlyScan = await createRuntime().runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 4, maxQueued: 4 });
 assert.equal(aiOnlyScan.queuedCount, 0);
 assert.equal(aiOnlyScan.waitingBudgetCount, 0);
+
+// S2：连续多日新内容下，已等待的历史补充必须先拿到本轮唯一槽位，不能被最新日报长期挤到队尾。
+currentStore = createEmptyStore();
+idempotencyLedger.clear();
+addSource(currentStore, "supplement-priority-source", "2026-10-10");
+const priorityRuntime = createRuntime();
+const priorityWaitScan = await priorityRuntime.runRecordCompressionScan({ asOf, slot: "evening", maxQueued: 0 });
+assert.equal(priorityWaitScan.waitingBudgetCount, 2);
+
+const nextDayAsOf = "2026-10-11T10:05:00.000Z";
+addSource(currentStore, "supplement-priority-next", "2026-10-11");
+const nextDayRuntime = createRuntime({ clockAsOf: nextDayAsOf });
+const nextDayWaitScan = await nextDayRuntime.runRecordCompressionScan({
+  asOf: nextDayAsOf, slot: "evening", maxQueued: 0
+});
+assert.ok(nextDayWaitScan.waitingBudgetCount >= 3,
+  "new daily work joins the wait queue alongside the historical supplement");
+
+const callsBeforePromotion = providerCalls.length;
+const priorityPromotion = await nextDayRuntime.runRecordCompressionScan({
+  asOf: nextDayAsOf, slot: "evening", maxQueued: 1
+});
+assert.equal(priorityPromotion.queuedCount, 1);
+const promotedSupplement = currentStore.aiTasks.find(task => task.id === priorityPromotion.taskIds[0]);
+assert.equal(promotedSupplement.payload.operation, "historicalSupplement",
+  "an already-waiting historical supplement must be promoted before newer daily work");
+assert.equal(promotedSupplement.status, "queued");
+assert.equal(currentStore.aiTasks.filter(task => task.status === WAITING_FOR_BUDGET_STATUS
+  && task.payload?.operation === "daily").length >= 2, true,
+  "daily work stays durably waiting instead of being dropped");
+await nextDayRuntime.backgroundAi.run(promotedSupplement.id);
+assert.notEqual(promotedSupplement.status, WAITING_FOR_BUDGET_STATUS,
+  "the promoted supplement must move forward instead of falling back to the wait queue");
+assert.notEqual(promotedSupplement.status, "queued",
+  "the promoted supplement must reach a terminal state");
+assert.equal(providerCalls.length, callsBeforePromotion + 1, "promotion executes exactly one bounded call");
+
+// A4：队列上限 4、预算仅剩 1 次时，跨日历史补充不得抢走失败日报的修复额度；
+// 预留必须同时覆盖队列位置与实际预算，否则修复任务会重新落回预算等待。
+currentStore = createEmptyStore();
+idempotencyLedger.clear();
+addSource(currentStore, "repair-reservation-prior", "2026-10-09");
+const priorRuntime = createRuntime({ clockAsOf: "2026-10-09T10:05:00.000Z" });
+const priorScan = await priorRuntime.runRecordCompressionScan({
+  asOf: "2026-10-09T10:05:00.000Z", slot: "evening", maxQueued: 0
+});
+assert.equal(priorScan.waitingBudgetCount, 2);
+const crossDaySupplement = currentStore.aiTasks.find(task => task.status === WAITING_FOR_BUDGET_STATUS
+  && task.payload.operation === "historicalSupplement");
+assert.ok(crossDaySupplement, "day one must leave a cross-day historical supplement waiting");
+addSource(currentStore, "repair-reservation-current", "2026-10-10");
+const reservationRuntime = createRuntime({ failProvider: true, measuredCost: 0.75 });
+const reserveWaitScan = await reservationRuntime.runRecordCompressionScan({
+  asOf, slot: "evening", maxQueued: 0
+});
+assert.equal(reserveWaitScan.waitingBudgetCount, 3);
+const todayDaily = currentStore.aiTasks.find(task => task.status === WAITING_FOR_BUDGET_STATUS
+  && task.payload.operation === "daily" && task.payload.localDate === "2026-10-10");
+assert.ok(todayDaily);
+await reservationRuntime.backgroundAi.promoteInternalBudgetWaiting(1, {
+  operation: "daily", localDate: "2026-10-10"
+});
+await reservationRuntime.backgroundAi.run(todayDaily.id);
+assert.equal(todayDaily.status, "failed");
+
+const callsBeforeReservation = providerCalls.length;
+const reservationScan = await reservationRuntime.runRecordCompressionScan({
+  asOf, slot: "evening", maxQueued: 4
+});
+const queuedForReservation = reservationScan.taskIds.map(id => currentStore.aiTasks.find(task => task.id === id));
+const repairTask = queuedForReservation.find(task => task?.payload.operation === "daily");
+assert.ok(repairTask, "the failed daily report must receive the only remaining budget slot");
+assert.equal(repairTask.status, "queued");
+assert.equal(crossDaySupplement.status, WAITING_FOR_BUDGET_STATUS,
+  "the supplement must keep waiting when its promotion would consume the repair reservation");
+assert.equal(reservationScan.queuedCount, 1);
+assert.equal(providerCalls.length, callsBeforeReservation, "reservation scheduling must not call the provider");
+assertDiagnosticsMatchStore(reservationScan);
 
 console.log("Record-compression durable budget-wait, recovery, bounds and diagnostics regression passed.");

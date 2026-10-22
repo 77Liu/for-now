@@ -447,6 +447,7 @@
           </label>
           <div class="health-image-previews" id="health-image-previews"></div>
           <div class="health-parse-row"><button class="quiet-button" id="parse-health-images" type="button" disabled>识别并回填</button><p class="status" id="health-parse-status" role="status" aria-live="polite"></p></div>
+          <div id="health-recognition-reasoning"></div>
         </div>
 
         <div class="daily-form-panels">
@@ -761,6 +762,7 @@
             </div>
           </div>
           <p class="status" id="book-parse-status" role="status" aria-live="polite"></p>
+          <div id="book-recognition-reasoning"></div>
         </div>
         <form class="book-form" id="book-form">
           <div class="book-form-heading"><h2 id="book-form-title">创建书目</h2><button class="text-button" id="book-edit-cancel" type="button" hidden>取消编辑</button></div>
@@ -1370,6 +1372,7 @@
         <section class="settings-section">
           <div class="settings-section-heading"><h3>助手与回答风格</h3><p>风格和模型档位相互独立。</p><button class="subtle-action" id="reset-response-styles" type="button">恢复默认</button></div>
           <label class="settings-toggle"><input id="automatic-thought-answer" type="checkbox"><span><b>保存思绪后自动回答</b><small>默认关闭；关闭时只保存你的原文，仍可随时点“给我回答”。</small></span></label>
+          <label class="settings-toggle"><input id="periodic-analysis-enabled" type="checkbox"><span><b>自动周期认知复盘</b><small>开启后定期根据获准记录生成复盘；关闭后停止新复盘，已生成的结果保留。</small></span></label>
           <label class="field"><span>助手称呼</span><input id="assistant-name" maxlength="24" placeholder="神鸡"></label>
           <label class="field" data-exclusive-agent-comment><span>专属智能体评论</span><select data-response-style="annotationShenji" aria-label="专属智能体评论风格"></select><small>用于划线或评论后向专属智能体提问时的回复风格。</small></label>
           <div class="scenario-grid response-style-grid">

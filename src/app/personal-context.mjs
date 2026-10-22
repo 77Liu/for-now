@@ -390,24 +390,7 @@ export function learningThoughtSelection(store) {
   return selected;
 }
 
-function learningReceiptSources(store) {
-  const sources = list(store?.thoughts).flatMap(item => {
-    const ref = item?._learningSourceRef || sourceRef("thought", item, {
-      rootId: item.type === "question" ? item.id : item.relatedTo,
-      targetKey: `${item.type}:${item.id}`
-    });
-    return item?.content ? [contextSource(item, {
-      id: ref.resourceId,
-      resourceType: "thought",
-      recordType: item._learningRecordType
-        || (item.type === "question" ? "思绪问题" : "思绪记录"),
-      informationType: "user_viewpoint",
-      text: item.content,
-      view: "thoughts",
-      rootId: ref.rootId,
-      targetKey: ref.targetKey
-    })] : [];
-  });
+function learningActionFeedbackSources(store) {
   const feedbackSources = [];
   for (const action of list(store?.actions)) {
     const validFeedback = feedback => (
@@ -454,9 +437,84 @@ function learningReceiptSources(store) {
         targetKey: entry.key
       }));
     }
+    if (feedbackSources.length >= 40) break;
   }
-  sources.push(...feedbackSources.slice(0, 40));
+  return feedbackSources.slice(0, 40);
+}
+
+function learningReceiptSources(store) {
+  const sources = list(store?.thoughts).flatMap(item => {
+    const ref = item?._learningSourceRef || sourceRef("thought", item, {
+      rootId: item.type === "question" ? item.id : item.relatedTo,
+      targetKey: `${item.type}:${item.id}`
+    });
+    return item?.content ? [contextSource(item, {
+      id: ref.resourceId,
+      resourceType: "thought",
+      recordType: item._learningRecordType
+        || (item.type === "question" ? "思绪问题" : "思绪记录"),
+      informationType: "user_viewpoint",
+      text: item.content,
+      view: "thoughts",
+      rootId: ref.rootId,
+      targetKey: ref.targetKey
+    })] : [];
+  });
+  sources.push(...learningActionFeedbackSources(store));
   return sources;
+}
+
+/**
+ * 旧回执的读取装配复用实际投影限额；只在原顺序中的必要前缀齐备后停止。
+ * 思绪返回所属根，调用方另读所选问题的关联内容。
+ * @since unreleased
+ */
+export function personalContextRecordSelection(store, collection, purposes = ["context", "learning"]) {
+  if (collection === "actions") {
+    const sources = learningActionFeedbackSources(store);
+    return {
+      complete: sources.length >= 40,
+      ids: [...new Set(sources.map(source => source.resourceId))]
+    };
+  }
+  if (collection === "analyses") {
+    const selected = list(store?.analyses).filter(item => (
+      ["manual", "weekly-background"].includes(item?.reason)
+      && item?.reviewStatus === "confirmed"
+      && item?.contextReceipt?.permissionPurpose === "learning"
+      && safeText(item?.content, 3000)
+    )).slice(0, 5);
+    return { complete: selected.length >= 5, ids: selected.map(item => item.id) };
+  }
+  const resourceType = {
+    checkins: "checkin",
+    dailyRecords: "dailyRecord",
+    captures: "capture",
+    journals: "journal",
+    thoughts: "thought"
+  }[collection];
+  const limit = CONTEXT_SECTION_LIMITS[collection];
+  if (!resourceType || !limit) throw new TypeError("Unknown personal context collection");
+  const permitted = purpose => list(store?.[collection]).filter(item => (
+    (collection !== "thoughts" || (item.type === "question" && item.authorType !== "ai"))
+    && contextAllowed(store, item, sourceRef(resourceType, item, collection === "thoughts"
+      ? { rootId: item.id, targetKey: `question:${item.id}` } : {}), purpose)
+  )).slice(0, limit);
+  const context = purposes.includes("context") ? permitted("context") : [];
+  const learning = purposes.includes("learning")
+    ? collection === "thoughts" ? learningThoughtSelection(store) : permitted("learning")
+    : [];
+  return {
+    complete: (!purposes.includes("context") || context.length >= limit)
+      && (!purposes.includes("learning")
+        || learning.length >= (collection === "thoughts" ? 80 : limit)),
+    ids: [...new Set([
+      ...context.map(item => item.id),
+      ...learning.map(item => item._learningSourceRef?.rootId
+        && item._learningSourceRef.targetKey.startsWith("followup-")
+        ? item._learningSourceRef.rootId : item.id)
+    ])]
+  };
 }
 
 function contextEntries(store, purpose = "context") {

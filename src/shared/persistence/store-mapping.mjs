@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { locateTaskSubtarget, taskTargetDescriptor } from "../task-targets/index.mjs";
 
 // Domain entities share an identity/ownership table. Nested content is extracted;
 // unrecognized fields and archived trash payloads remain lossless JSON values.
@@ -114,13 +115,9 @@ export function aiTaskTargetReference(store, task) {
     };
   }
 
-  const collection = own(RESOURCE_COLLECTIONS, task?.resourceType)
-    ? RESOURCE_COLLECTIONS[task.resourceType]
-    : (["thoughtAnswer", "followUpAnswer"].includes(taskKind) ? "thoughts" : "");
-  if (!collection) return null;
-
-  const id = String(task.targetId ?? sourceTask?.targetId ?? "");
-  const targetKey = keyOf([collection, id]);
+  const descriptor = taskTargetDescriptor(task, sourceTask);
+  if (!descriptor) return null;
+  const { collection, targetId: id, targetKey } = descriptor;
   const optionalHistoricalCompression = taskKind === "recordCompression"
     && taskPayload?.operation === "historicalSupplement";
   const targetOptional = OPTIONAL_AI_TASK_TARGET_KINDS.has(taskKind) || optionalHistoricalCompression;
@@ -129,14 +126,11 @@ export function aiTaskTargetReference(store, task) {
     collection === "attachmentCleanup" ? item?.path === id : item?.id === id
   ));
   const targetExists = Boolean(targetItem);
-  const subtargetField = taskKind === "followUpAnswer" ? "followUps" : "annotations";
-  const requiresExistingSubtarget = ["followUpAnswer", "annotationShenji"].includes(taskKind)
-    || (taskKind === "contentImageUnderstanding" && taskPayload?.targetType === "comment");
-  const subtargetId = String(task.subtargetId ?? sourceTask?.subtargetId ?? "");
-  const subtargetExists = !requiresExistingSubtarget || (
-    Array.isArray(targetItem?.[subtargetField])
-    && targetItem[subtargetField].some(item => item?.id === subtargetId)
-  );
+  const locatedSubtarget = locateTaskSubtarget(targetItem, descriptor);
+  const subtargetField = locatedSubtarget?.field || descriptor.subtargetFields[0] || "";
+  const requiresExistingSubtarget = descriptor.requiresSubtarget;
+  const subtargetId = descriptor.subtargetId;
+  const subtargetExists = !requiresExistingSubtarget || Boolean(locatedSubtarget);
 
   return {
     collection,
@@ -154,7 +148,11 @@ export function aiTaskTargetReference(store, task) {
   };
 }
 
-export function mapStoreObjects(accountId, store) {
+/**
+ * 映射待保存闭包。references 仅接受同账户仓库已核验的外部身份，不输出其对象或附件。
+ * referenceKeys 收集关系的完整目标键，供调用方精准解析闭包外目标。
+ */
+export function mapStoreObjects(accountId, store, { references = [], referenceKeys = null } = {}) {
   // Reject values that JSON/JSONB would silently change.
   if (canonicalJson(store) !== canonicalJson(JSON.parse(JSON.stringify(store)))) throw new Error("Lossy JSON migration value");
   const fields = [], objects = [], relations = [], attachmentRefs = [], lifecycles = [], idempotency = [];
@@ -243,7 +241,10 @@ export function mapStoreObjects(accountId, store) {
         position: index, parts: [...parts, id, childField], inheritedLifecycle: objectLifecycle
       }));
     }
-    attachments(payload, objectKey, collection);
+    // Retained purge payloads are history, not live binary references.
+    if (!(kind === "trash" && item.permanentlyPurged === true)) {
+      attachments(payload, objectKey, collection);
+    }
   };
 
   for (const [field, value] of Object.entries(store)) {
@@ -303,12 +304,19 @@ export function mapStoreObjects(accountId, store) {
     }
   }
 
+  // External identities are supplied by an account-scoped query, never written as part of this store.
+  for (const reference of references) {
+    if (identities.has(reference.objectKey)) continue;
+    identities.set(reference.objectKey, reference);
+    originals.set(reference.objectKey, reference.payload);
+  }
   const link = (row, relation, collection, id, required = false, targetKey = keyOf([collection, id])) => {
     if (!id) {
       if (required) throw new Error(`Missing ${relation} reference in ${row.objectKey}`);
       return;
     }
     const target = identities.get(targetKey);
+    referenceKeys?.set(keyOf([row.objectKey, relation]), targetKey);
     if (required && (!target || (relation === "thoughtRoot" && originals.get(target.objectKey).type !== "question"))) {
       throw new Error(`Unresolved ${relation} reference in ${row.objectKey}`);
     }
@@ -322,19 +330,41 @@ export function mapStoreObjects(accountId, store) {
     const collection = RESOURCE_COLLECTIONS[sourceRef.resourceType];
     if (!collection || !sourceRef.resourceId) return;
     const directKey = keyOf([collection, sourceRef.resourceId]);
-    let targetKey = identities.has(directKey) ? directKey : null;
-    if (!targetKey && sourceRef.rootId) {
-      const candidates = objects.filter(candidate => {
-        if (candidate.collection !== collection || candidate.id !== sourceRef.resourceId) return false;
-        try {
-          return JSON.parse(candidate.objectKey).includes(sourceRef.rootId);
-        } catch {
-          return false;
-        }
-      });
-      if (candidates.length === 1) targetKey = candidates[0].objectKey;
+    const match = /^(remark|followup-question|followup-answer|reflection|note|annotation|annotation-reply):(.+)$/
+      .exec(String(sourceRef.targetKey || ""));
+    const field = match?.[1] === "remark" ? "remarks"
+      : match?.[1].startsWith("followup-") ? "followUps"
+        : match?.[1] === "reflection" ? "reflections"
+          : match?.[1] === "note" ? "notes"
+            : match?.[1] === "annotation" ? "annotations"
+              : match?.[1] === "annotation-reply" ? "replies" : "";
+    if (!field || !sourceRef.rootId
+      || (field !== "replies" && match[2] !== sourceRef.resourceId)) {
+      link(row, relation, collection, sourceRef.resourceId, false, directKey);
+      return;
     }
-    link(row, relation, collection, sourceRef.resourceId, false, targetKey || directKey);
+    const replyParentId = field === "replies" && match[2] !== sourceRef.resourceId
+      ? match[2] : "";
+    const nestedKey = replyParentId
+      ? keyOf([collection, sourceRef.rootId, "annotations", replyParentId, "replies", sourceRef.resourceId])
+      : keyOf([collection, sourceRef.rootId, field, sourceRef.resourceId]);
+    const driftKey = field === "annotations"
+      ? keyOf([collection, sourceRef.rootId, "annotationDrift", sourceRef.resourceId])
+      : "";
+    const candidates = field === "replies"
+      ? [...identities.values()].filter(candidate => {
+          const parts = JSON.parse(candidate.objectKey);
+          return candidate.collection === collection
+            && candidate.id === sourceRef.resourceId
+            && parts[1] === sourceRef.rootId
+            && parts.length === 6
+            && ["annotations", "annotationDrift"].includes(parts[2])
+            && (!replyParentId || parts[3] === replyParentId)
+            && parts[4] === "replies";
+        }).map(candidate => candidate.objectKey)
+      : [nestedKey, driftKey].filter(key => key && identities.has(key));
+    const targetKey = candidates.length === 1 ? candidates[0] : nestedKey;
+    link(row, relation, collection, sourceRef.resourceId, false, targetKey);
   };
   for (const row of objects) {
     const item = originals.get(row.objectKey);
@@ -435,18 +465,39 @@ export function rebuildStoreObjects({ fields, objects, lifecycles = [], idempote
     children.get(group).push(row);
   }
   const visited = new Set();
+  const stableTuple = row => [
+    String(row.payload?.occurredAt || row.payload?.occurredOn || row.payload?.createdAt || row.payload?.updatedAt || ""),
+    String(row.id || row.resourceKey || row.key || "")
+  ];
+  const stableCompare = (left, right, descending = false) => {
+    const a = stableTuple(left), b = stableTuple(right);
+    const comparison = a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]);
+    return descending ? -comparison : comparison;
+  };
+  const positionCompare = (left, right) => (
+    left.position - right.position || stableCompare(left, right)
+  );
+  const assertUniquePositions = (rows, field) => {
+    for (let index = 1; index < rows.length; index += 1) {
+      if (rows[index - 1].position === rows[index].position) {
+        throw new Error(`Duplicate positions: ${field}`);
+      }
+    }
+  };
   const ordered = (parentKey, field) => {
-    const rows = (children.get(keyOf([parentKey, field])) || []).sort((a, b) => a.position - b.position);
-    rows.forEach((row, index) => {
-      if (row.position !== index) throw new Error(`Non-contiguous positions: ${field}`);
-    });
+    const rows = children.get(keyOf([parentKey, field])) || [];
+    const positioned = rows.every(row => Number.isInteger(row.position));
+    rows.sort(positioned
+      ? positionCompare
+      : (a, b) => stableCompare(a, b, parentKey === null));
+    if (positioned) assertUniquePositions(rows, field);
     return rows;
   };
   const orderedMetadata = (rows, field) => {
-    const result = [...rows].sort((a, b) => a.position - b.position);
-    result.forEach((row, index) => {
-      if (row.position !== index) throw new Error(`Non-contiguous positions: ${field}`);
-    });
+    const result = [...rows];
+    const positioned = result.every(row => Number.isInteger(row.position));
+    result.sort(positioned ? positionCompare : stableCompare);
+    if (positioned) assertUniquePositions(result, field);
     return result;
   };
   const rebuild = row => {

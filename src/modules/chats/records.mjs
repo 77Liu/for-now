@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { businessReasoning } from "../ai/index.mjs";
 import { recordVersion, safeText } from "../../shared/validation/index.mjs";
 
 const clone = value => structuredClone(value);
@@ -90,7 +91,7 @@ export function createChatRecords({
       ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
       annotations: [],
       annotationDrift: [],
-      ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
+      ...businessReasoning("chat", input.reasoningContent, 12000),
       ...(input.contextReceipt ? { contextReceipt: structuredClone(input.contextReceipt) } : {}),
       ...(clientRequestId ? {
         version: 1,

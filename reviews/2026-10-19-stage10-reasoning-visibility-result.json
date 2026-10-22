@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "stage": 10,
+  "requirementId": "reczz28ORRaxQBcy",
+  "baseline": "546d2b",
+  "candidate": "stage10-working-tree",
+  "status": "PASS",
+  "reviewedAt": "2026-10-19",
+  "environment": {
+    "node": "local",
+    "postgres": "16.14 fresh isolated cluster",
+    "browser": "real Chrome via isolated agent-browser session",
+    "browserViewports": [
+      "1280x632",
+      "390x844"
+    ],
+    "provider": "isolated fixture; no network or paid call"
+  },
+  "acceptance": {
+    "userResultReasoning": "PASS",
+    "internalAndUnknownHidden": "PASS",
+    "privateAuditComplete": "PASS",
+    "domainPersistenceAndReload": "PASS",
+    "periodicConsentDoubleGate": "PASS",
+    "defaultCollapsedUi": "PASS",
+    "emptyReasoningOmitted": "PASS",
+    "lateSessionEventsRejected": "PASS",
+    "contextAndDefaultExportExcluded": "PASS",
+    "sceneOwnerMatrix": "PASS",
+    "domainTextPolicies": "PASS"
+  },
+  "checks": [
+    {
+      "command": "npm run build:runtime --silent",
+      "status": "PASS"
+    },
+    {
+      "command": "npm test --silent",
+      "status": "PASS",
+      "result": "full local regression passed on the final source candidate"
+    },
+    {
+      "command": "npm run test:reasoning-visibility --silent",
+      "status": "PASS",
+      "result": "AI visibility, periodic consent and shared frontend disclosure"
+    },
+    {
+      "command": "node --experimental-strip-types scripts/reasoning-postgres-regression.mts",
+      "status": "PASS"
+    },
+    {
+      "command": "node scripts/ai-provider-regression.mjs",
+      "status": "PASS"
+    },
+    {
+      "command": "node scripts/check-modules.mjs",
+      "status": "PASS",
+      "result": "132 active modules, 243 routes, no deep imports or cycles"
+    },
+    {
+      "command": "node scripts/api-v1-contract-regression.mjs && node scripts/api-v1-openapi-fragment-regression.mjs",
+      "status": "PASS"
+    },
+    {
+      "command": "node scripts/reviews-chat-regression.mjs && node scripts/capture-journal-regression.mjs && node scripts/collaboration-regression.mjs",
+      "status": "PASS"
+    },
+    {
+      "command": "node scripts/content-attachments-regression.mjs && node scripts/capture-transcription-regression.mjs && node scripts/media-runtime-regression.mjs",
+      "status": "PASS"
+    },
+    {
+      "command": "frontend thoughts, annotations, review, capture-journal, library, health, settings and personalized task regressions",
+      "status": "PASS"
+    },
+    {
+      "command": "node scripts/public-state-regression.mjs",
+      "status": "PASS"
+    },
+    {
+      "command": "real Chrome isolated fixture",
+      "status": "PASS",
+      "result": "collapsed/expanded, escaped text, no empty control, close/session invalidation, late event rejection and draft retention"
+    },
+    {
+      "command": "node scripts/check-document-links.mjs",
+      "status": "PASS",
+      "result": "209 documents, 68 external links, zero loopback runtime entry links"
+    },
+    {
+      "command": "npm run check --silent",
+      "status": "PASS",
+      "result": "links, build, modules, entrypoints, project paths, prompts and syntax checks"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS"
+    }
+  ],
+  "observedFailures": [
+    {
+      "id": "internal-reasoning-baseline",
+      "status": "EXPECTED_FAIL",
+      "result": "perceptionExtraction forwarded a product reasoning event before the fix"
+    },
+    {
+      "id": "periodic-consent-baseline",
+      "status": "EXPECTED_FAIL",
+      "result": "a closed account gate still read business history before the fix"
+    },
+    {
+      "id": "postgres-fixture-corrections",
+      "status": "FIXTURE_FAIL_THEN_PASS",
+      "result": "missing constructor dependencies and incomplete synthetic fields were corrected before acceptance"
+    }
+  ],
+  "limitations": [
+    "AI_REASONING_UI_ENABLED remains false by default",
+    "historical records without reasoningVisibility remain hidden; no bulk visibility upgrade was performed",
+    "no production database, production write, paid provider, deployment or release action",
+    "Safari, installed PWA and physical mobile devices were not tested",
+    "the 94-record real sample was not rebuilt or resampled"
+  ],
+  "ownerDecisionRequired": false
+}

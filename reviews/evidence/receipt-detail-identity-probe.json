@@ -1,0 +1,18 @@
+{
+  "routeRoot": "child-b",
+  "actualRoot": "root-a",
+  "serverDetail": null,
+  "reused": true,
+  "projected": [
+    {
+      "key": {
+        "entityType": "thoughtChain",
+        "entityId": "child-b",
+        "parentType": null,
+        "parentId": null
+      },
+      "type": "idea",
+      "relatedTo": "root-a"
+    }
+  ]
+}

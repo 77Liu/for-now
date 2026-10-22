@@ -169,8 +169,12 @@ try {
 
   logsFail = true;
   const unlogged = transport();
-  assert.equal((await run("audit-fail", () => workflow(unlogged.provider)({ image: pixel }))).cutout, pixel);
-  assert.deepEqual(unlogged.calls.map(call => call.action), ["submit", "download"]);
+  await assert.rejects(
+    run("audit-fail", () => workflow(unlogged.provider)({ image: pixel })),
+    /主体识别服务暂时不可用/
+  );
+  assert.deepEqual(unlogged.calls, [], "audit begin failure must block provider dispatch");
+  await noTemporaryFiles("audit-fail");
   logsFail = false;
   const mock = transport({ provider: { mockResult: pixel, mockDelayMs: 25 } });
   assert.equal((await run("mock", () => workflow(mock.provider)({ image: pixel }))).cutout, pixel);
@@ -280,7 +284,26 @@ try {
   await run("http", () => http.handle({ method: "POST", input: {} }, {}, new URL("http://local/api/keepsakes/segment")));
   assert.equal(response.status, 400);
   assert.equal(await http.handle({ method: "GET" }, {}, new URL("http://local/api/keepsakes/segment")), false);
-  console.log("Keepsake vision contracts passed: segmentation, editable metadata candidates, account context, HTTP binding and temporary cleanup.");
+  // F5：占用者不归还时，等待者也必须独立取消/到期；取消项不能消费QPS或泄漏许可。
+{
+  const gate = createRateGate(10000, 1, { maxPending: 1 });
+  const release = await gate.acquire();
+  const controller = new AbortController();
+  const cancelled = gate.acquire({ signal: controller.signal });
+  const cancelledAssertion = assert.rejects(cancelled, { code: "AI_TASK_CANCELLED" });
+  await assert.rejects(gate.acquire(), { code: "AI_QUEUE_FULL" });
+  controller.abort(); await cancelledAssertion;
+  await assert.rejects(gate.acquire({ deadline: performance.now() + 10 }), { code: "AI_QUEUE_TIMEOUT" });
+  release(); release(); (await gate.acquire())();
+  for (let index = 0; index < 1000; index++) {
+    const owner = await gate.acquire(); const abort = new AbortController();
+    const waiting = gate.acquire({ signal: abort.signal });
+    const check = assert.rejects(waiting, { code: "AI_TASK_CANCELLED" }); abort.abort(); await check; owner();
+  }
+  (await gate.acquire())();
+}
+
+console.log("Keepsake vision contracts passed: segmentation, editable metadata candidates, account context, HTTP binding and temporary cleanup.");
 } finally {
   await fs.rm(root, { recursive: true, force: true });
 }

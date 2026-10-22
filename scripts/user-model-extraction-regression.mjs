@@ -126,7 +126,7 @@ const backgroundAi = createBackgroundAi({
   generate: async work => {
     assert.equal(work.scene, "onboardingClaimExtraction");
     assert.equal(work.json, true);
-    assert.equal(work.auditPrompt, false);
+    assert.equal(work.triggerType, "system_internal");
     modelCalls += 1;
     budgetReservations += 1;
     generationStarted?.();

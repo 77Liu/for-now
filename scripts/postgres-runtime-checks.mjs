@@ -1,4 +1,18 @@
+import { holdThoughtBrowserProbe } from "../.build/typescript/thought-db-regression/scripts/thought-browser-probe.mjs";
+import { holdRecordSyncBrowserProbe } from "../.build/typescript/thought-db-regression/scripts/record-sync-browser-probe.mjs";
+import {
+  attachmentProducerFixtures, runAttachmentProducerPostgresChecks, runAttachmentProducerHttpChecks
+} from "./thought-attachment-postgres-checks.mjs";
+import { runThoughtAiPostgresChecks, runThoughtAiHttpChecks } from "./thought-ai-postgres-checks.mjs";
+import {
+  runThoughtDiscoveryPostgresChecks, runThoughtDiscoveryHttpChecks
+} from "../.build/typescript/thought-db-regression/scripts/thought-discovery-postgres-checks.mjs";
+import { createContentAttachmentService } from "../src/modules/content-attachments/index.mjs";
+import { runThoughtSearchCorpusChecks } from "../.build/typescript/thought-db-regression/scripts/thought-search-corpus-regression.mjs";
+import { thoughtDiscoveryProjection, createThoughtDiscoveryService } from "../src/modules/discovery/index.mjs";
+import { thoughtSpeechProjection, readThoughtSpeechAssets } from "../src/app/index.mjs";
 import assert from "node:assert/strict";
+import pg from "pg";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -9,16 +23,53 @@ import path from "node:path";
 import { deflateSync } from "node:zlib";
 import {
   createPostgresRuntime, initializePostgresSchema, buildPostgresMigrationPlan, applyPostgresMigration,
-  canonicalJson, discoverJsonBundle, applyPostgresBundle,
+  canonicalJson, mapStoreObjects, rebuildStoreObjects, discoverJsonBundle, applyPostgresBundle,
   exportPostgresDirectory, readPostgresBundle, storeContentSha256
 } from "../src/shared/persistence/index.mjs";
-import { createAttachmentCleanup, createSpeechCacheSweep, userModelCoreReadiness } from "../src/app/index.mjs";
+import {
+  createBackgroundAi, createContentRuntime, createEmptyStore, createStoreNormalizer,
+  createPublicStateProjection, createAttachmentCleanup, createSpeechCacheSweep,
+  userModelCoreReadiness, createPerceptionAwareRepository, createPerceptionRuntime,
+  createNotificationRecordCommands, createTaskRecordCommands,
+  createThoughtRecordCommands, createTrashMutations, createTrashCommands, createContentAttachmentRecordCommands,
+  createContentAiRecordCommands, createAiTaskTargets, prepareUserModelExtraction
+} from "../src/app/index.mjs";
+import { createCaptureRecords } from "../src/modules/captures/index.mjs";
+import { createAnnotationService } from "../src/modules/annotations/index.mjs";
+import { createNotificationService } from "../src/modules/notifications/index.mjs";
+import { createTaskLifecycle } from "../src/modules/tasks/index.mjs";
+import {
+  createThoughtService,
+  createThoughtTaskTarget,
+  createThoughtQueries,
+  thoughtChainListPage,
+  stripThoughtAnswerLead
+} from "../src/modules/thoughts/index.mjs";
 import { evidenceSourceKey } from "../src/modules/user-model/index.mjs";
-import { onboardingV2Schema } from "../src/modules/onboarding/index.mjs";
+import { onboardingV2Schema, normalizeOnboardingV2 } from "../src/modules/onboarding/index.mjs";
+import { eventTimeFields } from "../src/shared/time/index.mjs";
+import { recordVersion } from "../src/shared/validation/index.mjs";
+import { createTrashService } from "../src/modules/trash/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
+import { createAccountCommitNotifier } from "../src/shared/concurrency/index.mjs";
+import { createSyncHttp } from "../src/http/index.mjs";
 import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
 import "./prompt-test-setup.mjs";
+import { runThoughtDbPagingChecks } from "../.build/typescript/thought-db-regression/scripts/thought-db-paging-regression.mjs";
+import { runThoughtProducerPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-postgres-checks.mjs";
+import { runThoughtClosurePostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-closure-postgres-checks.mjs";
+import { runThoughtSourceRelationPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-source-relations-postgres-checks.mjs";
+import { runThoughtRecoveryCostPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-recovery-cost-postgres-checks.mjs";
+import { runThoughtMaterialsPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-materials-postgres-checks.mjs";
+import { runThoughtTrashHttpChecks } from "../.build/typescript/thought-db-regression/scripts/thought-trash-http-checks.mjs";
+import { createRecordCompressionService, createAnnotationCommands } from "../src/app/index.mjs";
+import { createThoughtRuntimeFixture } from "../.build/typescript/thought-db-regression/scripts/thought-runtime-fixture.mjs";
+import { runThoughtProducerGateChecks } from "../.build/typescript/thought-db-regression/scripts/thought-producer-gate-regression.mjs";
+import { runThoughtTaskTransitionPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-transition-postgres-checks.mjs";
+import { runThoughtTaskCreationPostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-creation-postgres-checks.mjs";
+import { runThoughtTaskLifecyclePostgresChecks } from "../.build/typescript/thought-db-regression/scripts/thought-task-lifecycle-postgres-checks.mjs";
+import { runThoughtPagingBuildChecks } from "../.build/typescript/thought-db-regression/scripts/thought-paging-build-regression.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -60,6 +111,852 @@ const syntheticPng = (width = 128, height = 96) => {
     pngChunk("IEND", Buffer.alloc(0))
   ]);
 };
+
+async function runAuthRowChecks({ database, runtime, peer, app, request, ownerCookie }) {
+  const scale = 100_000;
+  const ownerToken = decodeURIComponent(ownerCookie.split("=").slice(1).join("="));
+  const ownerTokenHash = crypto.createHash("sha256").update(ownerToken).digest("hex");
+  const passwordHash = (await database.query(
+    "SELECT password_hash FROM for_now_auth.users WHERE role = 'owner' ORDER BY created_at,id LIMIT 1"
+  )).rows[0].password_hash;
+  await database.query(`
+    INSERT INTO for_now_auth.users (
+      id, username, username_key, password_hash, role, session_version,
+      record_timezone, created_at, payload, position
+    )
+    SELECT
+      'f1-scale-' || lpad(value::text, 6, '0'),
+      'scale-' || lpad(value::text, 6, '0'),
+      'scale-' || lpad(value::text, 6, '0'),
+      $1, 'user', 1, 'Asia/Shanghai',
+      '2026-10-18T00:00:00.000Z'::timestamptz,
+      '{}'::jsonb, NULL
+    FROM generate_series(1, $2::int) value
+  `, [passwordHash, scale]);
+  await database.query("ANALYZE for_now_auth.users");
+  const originalQuery = pg.Client.prototype.query;
+  const trace = [];
+  pg.Client.prototype.query = function (...args) {
+    const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+    if (String(sql || "").includes("for_now_auth.")) trace.push(String(sql));
+    return originalQuery.apply(this, args);
+  };
+  try {
+    assert.equal(
+      (await runtime.auth.row.findCredentialByUsernameKey("scale-099999")).id,
+      "f1-scale-099999"
+    );
+    assert.equal(
+      (await runtime.auth.row.findAuthenticationByTokenHash(ownerTokenHash)).user.role,
+      "owner"
+    );
+    assert.equal((await runtime.auth.row.listUsersPage({
+      tokenHash: ownerTokenHash,
+      limit: 2,
+      after: null,
+      nowMs: Date.now()
+    })).users.length, 2);
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  assert.ok(trace.some(sql => /WHERE username_key = \$1/.test(sql)));
+  assert.ok(trace.some(sql => /WHERE s\.token_hash = \$1/.test(sql)));
+  assert.ok(trace
+    .filter(sql => /WHERE s\.token_hash = \$1|ORDER BY users\.created_at/.test(sql))
+    .every(sql => !/password_hash/.test(sql)));
+  assert.ok(trace.every(sql => !/SELECT[\\s\\S]+FROM for_now_auth\.users\\s*$/m.test(sql)));
+  const first = await request(app.base, "/api/auth/users?limit=100", {
+    cookie: ownerCookie
+  });
+  const second = await request(
+    app.base,
+    `/api/auth/users?limit=100&cursor=${encodeURIComponent(first.body.nextCursor)}`,
+    { cookie: ownerCookie }
+  );
+  assert.equal(first.status, 200);
+  assert.equal(first.body.users.length, 100);
+  assert.equal(second.body.users.length, 100);
+  assert.ok(first.body.nextCursor && second.body.nextCursor);
+  assert.equal(new Set([
+    ...first.body.users.map(user => user.id),
+    ...second.body.users.map(user => user.id)
+  ]).size, 200);
+  const plans = await Promise.all([
+    database.query(`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+      SELECT id FROM for_now_auth.users WHERE username_key = 'scale-099999'
+    `),
+    database.query(`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+      SELECT user_id FROM for_now_auth.sessions WHERE token_hash = $1
+    `, [ownerTokenHash])
+  ]);
+  assert.ok(plans.every(result => /Index Scan/.test(JSON.stringify(result.rows[0]))));
+  assert.equal((await database.query(`
+    SELECT count(*)::int AS count
+    FROM for_now_auth.users
+    WHERE position IS NOT NULL
+  `)).rows[0].count, 0);
+  await database.query("DELETE FROM for_now_auth.users WHERE id LIKE 'f1-scale-%'");
+  const raceUserId = "auth-password-race";
+  const raceTokens = ["auth-password-race-a", "auth-password-race-b"]
+    .map(value => crypto.createHash("sha256").update(value).digest("hex"));
+  await database.query(`
+    INSERT INTO for_now_auth.users(
+      id, username, username_key, password_hash, role, session_version,
+      record_timezone, created_at, payload, position
+    ) VALUES ($1,$1,$1,$2,'user',1,'Asia/Shanghai',now(),'{}'::jsonb,NULL)
+  `, [raceUserId, passwordHash]);
+  for (const tokenHash of raceTokens) {
+    await database.query(`
+      INSERT INTO for_now_auth.sessions(
+        token_hash, user_id, session_version, created_at, expires_at, payload, position
+      ) VALUES ($1,$2,1,now(),now() + interval '1 day','{}'::jsonb,NULL)
+    `, [tokenHash, raceUserId]);
+  }
+  const raceSnapshot = await runtime.auth.row.findCredentialByUserId(raceUserId);
+  const raceCommand = tokenHash => ({
+    tokenHash,
+    snapshot: raceSnapshot,
+    passwordHash,
+    updatedAt: "2026-10-18T06:00:00.000Z",
+    nowMs: Date.parse("2026-10-18T06:00:00.000Z")
+  });
+  const raced = await Promise.race([
+    Promise.all([
+      runtime.auth.row.changePasswordAndRevokeSessions(raceCommand(raceTokens[0])),
+      peer.auth.row.changePasswordAndRevokeSessions(raceCommand(raceTokens[1]))
+    ]),
+    pause(5000).then(() => {
+      throw new Error("Concurrent password changes deadlocked");
+    })
+  ]);
+  assert.equal(raced.filter(Boolean).length, 1);
+  assert.equal((await database.query(
+    "SELECT count(*)::int AS count FROM for_now_auth.sessions WHERE user_id = $1",
+    [raceUserId]
+  )).rows[0].count, 0);
+  await database.query("DELETE FROM for_now_auth.users WHERE id = $1", [raceUserId]);
+
+  const staleUserId = "auth-password-stale-session";
+  const staleTokenHash = crypto.createHash("sha256")
+    .update("auth-password-stale-session")
+    .digest("hex");
+  await database.query(`
+    INSERT INTO for_now_auth.users(
+      id, username, username_key, password_hash, role, session_version,
+      record_timezone, created_at, payload, position
+    ) VALUES ($1,$1,$1,$2,'user',2,'Asia/Shanghai',now(),'{}'::jsonb,NULL);
+  `, [staleUserId, passwordHash]);
+  await database.query(`
+    INSERT INTO for_now_auth.sessions(
+      token_hash, user_id, session_version, created_at, expires_at, payload, position
+    ) VALUES ($1,$2,1,now(),now() + interval '1 day','{}'::jsonb,NULL)
+  `, [staleTokenHash, staleUserId]);
+  const staleSnapshot = await runtime.auth.row.findCredentialByUserId(staleUserId);
+  assert.equal(await runtime.auth.row.changePasswordAndRevokeSessions({
+    tokenHash: staleTokenHash,
+    snapshot: staleSnapshot,
+    passwordHash,
+    updatedAt: "2026-10-18T06:01:00.000Z",
+    nowMs: Date.parse("2026-10-18T06:01:00.000Z")
+  }), null);
+  assert.equal((await database.query(
+    "SELECT session_version AS version FROM for_now_auth.users WHERE id = $1",
+    [staleUserId]
+  )).rows[0].version, 2);
+  await database.query("DELETE FROM for_now_auth.sessions WHERE user_id = $1", [staleUserId]);
+  await database.query("DELETE FROM for_now_auth.users WHERE id = $1", [staleUserId]);
+  return {
+    scale,
+    tracedStatements: trace.length,
+    pageRows: 200,
+    passwordRaceCommitted: raced.filter(Boolean).length
+  };
+}
+
+function notificationRecordFixtures() {
+  const visibleTask = {
+    id: "notification-task", kind: "thoughtAnswer", resourceType: "thought",
+    targetId: "notification-target", status: "succeeded",
+    createdAt: "2026-10-18T01:00:00.000Z", updatedAt: "2026-10-18T01:00:00.000Z"
+  };
+  const internalTask = {
+    id: "notification-internal-task", kind: "recordCompression",
+    resourceType: "recordCompression", targetId: "internal-target",
+    status: "failed", internal: true, payload: { operation: "daily" },
+    createdAt: "2026-10-18T01:00:00.000Z", updatedAt: "2026-10-18T01:00:00.000Z"
+  };
+  const cancellableTask = {
+    id: "notification-cancellable-task", kind: "thoughtDraft",
+    resourceType: "thought", targetId: "draft-target",
+    status: "queued", payload: {}, attempt: 0,
+    createdAt: "2026-10-18T01:00:00.000Z", updatedAt: "2026-10-18T01:00:00.000Z"
+  };
+  const notices = Array.from({ length: 105 }, (_, index) => ({
+    id: `notice-${String(index).padStart(3, "0")}`,
+    taskId: visibleTask.id,
+    kind: "aiTask",
+    targetId: visibleTask.targetId,
+    status: "succeeded",
+    title: "思绪回答",
+    message: `通知 ${index}`,
+    createdAt: `2026-10-18T01:${String(index % 60).padStart(2, "0")}:00.000Z`,
+    updatedAt: "2026-10-18T01:00:00.000Z",
+    readAt: ""
+  }));
+  const cancellableNotice = {
+    ...notices[0],
+    id: "notice-cancellable",
+    taskId: cancellableTask.id,
+    targetId: cancellableTask.targetId,
+    status: "queued",
+    readAt: "2026-10-18T01:30:00.000Z"
+  };
+  return { visibleTask, internalTask, cancellableTask, cancellableNotice, notices };
+}
+
+async function runNotificationRecordCommandChecks({ database, repo, account }) {
+  const {
+    visibleTask, internalTask, cancellableTask, cancellableNotice, notices
+  } = notificationRecordFixtures();
+  await account("repo-test", () => repo.update(store => {
+    store.aiTasks = [visibleTask, internalTask, cancellableTask];
+    store.notifications = [...notices, {
+      ...notices[0],
+      id: "notice-internal",
+      taskId: internalTask.id,
+      targetId: internalTask.targetId
+    }, cancellableNotice];
+  }));
+  const beforeCursor = Number((await database.query(`
+    SELECT current_cursor FROM for_now.account_sync_heads WHERE account_id = 'repo-test'
+  `)).rows[0].current_cursor);
+  const notificationService = createNotificationService({
+    createId: () => "unused",
+    now: () => "2026-10-18T02:00:00.000Z"
+  });
+  const notificationCommands = createNotificationRecordCommands({
+    unitOfWork: repo.accountUnitOfWork,
+    notifications: notificationService
+  });
+  const taskCommands = createTaskRecordCommands({
+    unitOfWork: repo.accountUnitOfWork,
+    tasks: createTaskLifecycle({
+      createId: () => "unused",
+      now: () => "2026-10-18T02:00:00.000Z",
+      hash: value => crypto.createHash("sha256").update(value).digest("hex")
+    }),
+    notifications: notificationService
+  });
+  const background = createBackgroundAi({
+    repository: repo,
+    tasks: {},
+    notifications: notificationService,
+    targets: {},
+    generate: async () => null,
+    dispatch: () => {},
+    contextKey: () => "repo-test",
+    onError: () => {},
+    recordCommands: {
+      enabled: name => ["notification.read", "notification.readAll", "task.status"].includes(name),
+      notifications: notificationCommands,
+      tasks: taskCommands
+    }
+  });
+  const originalQuery = pg.Client.prototype.query;
+  const trace = [];
+  let phase = "";
+  pg.Client.prototype.query = function (...args) {
+    const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+    if (String(sql || "").includes("for_now.")) {
+      trace.push({ phase, sql: String(sql) });
+    }
+    return originalQuery.apply(this, args);
+  };
+  let first, internal, cancelled, updated;
+  try {
+    await account("repo-test", async () => {
+      phase = "read";
+      first = await background.readNotification("notice-000");
+      internal = await background.readNotification("notice-internal");
+      phase = "cancel";
+      cancelled = await background.cancelPersisted(cancellableTask.id);
+      phase = "readAll";
+      updated = await background.readAllNotifications();
+    });
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  assert.equal(first.readAt, "2026-10-18T02:00:00.000Z");
+  assert.equal(first.version, 2);
+  assert.equal(internal, null);
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.error, "用户取消了本次生成");
+  assert.equal(updated, 105);
+  assert.ok(trace.some(row => /object_key = \$2/.test(row.sql)));
+  assert.ok(trace.some(row => /collection = \$2 AND parent_key IS NULL/.test(row.sql)));
+  const cancelTrace = trace.filter(row => row.phase === "cancel").map(row => row.sql);
+  assert.ok(cancelTrace.some(sql => /target_key = ANY/.test(sql)));
+  assert.ok(cancelTrace.every(sql => !/collection = \$2 AND parent_key IS NULL/.test(sql)));
+  assert.ok(trace.every(row => (
+    !/FROM for_now\.store_fields|DELETE FROM for_now\.store_objects/.test(row.sql)
+  )));
+  const stored = await account("repo-test", () => repo.read());
+  assert.equal(stored.notifications.filter(item => item.taskId === visibleTask.id && item.readAt).length, 105);
+  assert.equal(stored.notifications.find(item => item.id === "notice-internal").readAt, "");
+  assert.equal(stored.notifications.find(item => item.id === "notice-cancellable").status, "cancelled");
+  assert.equal(stored.aiTasks.find(item => item.id === cancellableTask.id).status, "cancelled");
+  const changes = (await database.query(`
+    SELECT cursor::int, count(*)::int AS count
+    FROM for_now.record_changes
+    WHERE account_id = 'repo-test' AND entity_type = 'notification'
+    GROUP BY cursor ORDER BY cursor
+  `)).rows;
+  assert.deepEqual(changes, [
+    { cursor: beforeCursor + 1, count: 1 },
+    { cursor: beforeCursor + 2, count: 1 },
+    { cursor: beforeCursor + 3, count: 105 }
+  ]);
+  assert.deepEqual((await database.query(`
+    SELECT cursor::int, count(*)::int AS count
+    FROM for_now.record_changes
+    WHERE account_id = 'repo-test' AND entity_type = 'aiTask'
+    GROUP BY cursor ORDER BY cursor
+  `)).rows, [{ cursor: beforeCursor + 2, count: 1 }]);
+  const isolated = await account("repo-other", () => repo.accountUnitOfWork.run({
+    commandId: "notification.cross-account"
+  }, ({ objects }) => objects.find(JSON.stringify(["notifications", "notice-000"]))));
+  assert.equal(isolated.value, null);
+}
+
+function thoughtRecordFixtures() {
+  return [{
+    id: "thought-root",
+    type: "question",
+    content: "前文关键后文",
+    occurredAt: "2026-10-18T03:00:00.000Z",
+    occurredOn: "2026-10-18",
+    createdAt: "2026-10-18T03:00:00.000Z",
+    tags: ["原标签"],
+    relatedTo: null,
+    disposition: "kept",
+    remarks: [],
+    followUps: [],
+    annotations: [{
+      id: "annotation-1",
+      kind: "comment",
+      targetKey: "question:thought-root",
+      quote: "关键",
+      start: 2,
+      end: 4,
+      text: "保留批注",
+      createdAt: "2026-10-18T03:01:00.000Z",
+      version: 1,
+      replies: [],
+      shenji: []
+    }],
+    annotationDrift: [],
+    origin: "manual",
+    authorType: "user",
+    version: 1
+  }, {
+    id: "thought-idea",
+    type: "idea",
+    content: "旧想法",
+    occurredAt: "2026-10-18T03:00:00.000Z",
+    occurredOn: "2026-10-18",
+    createdAt: "2026-10-18T03:02:00.000Z",
+    tags: ["原标签"],
+    relatedTo: "thought-root",
+    disposition: "kept",
+    remarks: [],
+    origin: "manual",
+    authorType: "user",
+    version: 1
+  }, {
+    id: "thought-sibling",
+    type: "question",
+    content: "另一条思绪链保留同名批注",
+    occurredAt: "2026-10-18T03:03:00.000Z",
+    occurredOn: "2026-10-18",
+    createdAt: "2026-10-18T03:03:00.000Z",
+    tags: [],
+    relatedTo: null,
+    disposition: "kept",
+    remarks: [],
+    followUps: [],
+    annotations: [{
+      id: "annotation-1",
+      kind: "comment",
+      targetKey: "question:thought-sibling",
+      quote: "同名批注",
+      start: 8,
+      end: 12,
+      text: "不能被另一条链误删",
+      createdAt: "2026-10-18T03:04:00.000Z",
+      version: 1,
+      replies: [],
+      shenji: []
+    }],
+    annotationDrift: [],
+    origin: "manual",
+    authorType: "user",
+    version: 1
+  }];
+}
+
+function createThoughtRecordHarness(repo) {
+  let sequence = 0;
+  const now = () => "2026-10-18T04:00:00.000Z";
+  const annotations = createAnnotationService({
+    createId: () => `annotation-generated-${++sequence}`,
+    now
+  });
+  const thoughts = createThoughtService({
+    repository: repo,
+    createId: () => `thought-generated-${++sequence}`,
+    now,
+    recordVersion,
+    eventTimeFields,
+    reanchorAnnotations: annotations.reanchorAnnotations
+  });
+  let trashSequence = 0;
+  const trash = createTrashService({
+    createId: () => `thought-trash-${++trashSequence}`,
+    now,
+    hash: value => crypto.createHash("sha256").update(value).digest("hex"),
+    retentionDays: 30
+  });
+  const cancelledTasks = [];
+  const mutations = createTrashMutations({
+    trash,
+    annotations,
+    now,
+    getAccountId: () => "repo-test",
+    cancelTask: id => cancelledTasks.push(id)
+  });
+  const tasks = createTaskLifecycle({
+    createId: () => `task-generated-${++sequence}`,
+    now,
+    hash: value => crypto.createHash("sha256").update(value).digest("hex")
+  });
+  const notifications = createNotificationService({
+    createId: () => `notification-generated-${++sequence}`,
+    now
+  });
+  const thoughtTarget = createThoughtTaskTarget({
+    createId: () => `thought-generated-${++sequence}`,
+    now,
+    stripThoughtAnswerLead
+  });
+  const taskCommands = createTaskRecordCommands({
+    unitOfWork: repo.accountUnitOfWork,
+    tasks,
+    notifications
+  });
+  const commands = createThoughtRecordCommands({
+    unitOfWork: repo.accountUnitOfWork,
+    thoughts,
+    removeChain: (store, id) => mutations.moveThoughtChainToTrash(store, id),
+    removeBlock: (store, id) => mutations.moveThoughtBlockToTrash(store, id),
+    createTaskInStore: (store, input, options) => {
+      const created = tasks.create(
+        store.aiTasks,
+        input,
+        () => null,
+        options
+      );
+      if (created.task && !created.duplicate) {
+        notifications.upsertTask(
+          store.notifications,
+          created.task,
+          "queued",
+          "已进入后台队列"
+        );
+      }
+      return created;
+    },
+    tasks,
+    notifications,
+    thoughtTarget,
+    now
+  });
+  return { commands, taskCommands, cancelledTasks, trash, mutations };
+}
+
+const thoughtUpdateInput = Object.freeze({
+  id: "thought-root",
+  questionText: "完全不同的问题",
+  tags: ["新标签"],
+  changesEventTime: false,
+  eventTimeInput: {},
+  idea: "新想法",
+  answer: "新结论",
+  hasIdea: true,
+  hasAnswer: true,
+  expectedVersion: 1,
+  attachmentPaths: [],
+  hasAttachmentPaths: true
+});
+
+const thoughtCreateInput = Object.freeze({
+  questionText: "记录级新问题",
+  eventTime: {
+    occurredAt: "2026-10-18T05:00:00.000Z",
+    occurredOn: "2026-10-18"
+  },
+  tags: ["创建"],
+  clientRequestId: "thought-create-record-command",
+  requestHash: "thought-create-record-command-v1",
+  generateAnswer: true,
+  attachmentPaths: [],
+  idea: "记录级新想法",
+  answer: "",
+  modelDraft: "",
+  modelReasoning: "",
+  sourceRef: {
+    type: "capture",
+    id: "thought-record-source",
+    version: 1
+  }
+});
+
+async function executeThoughtRecordCommands({ account, commands }) {
+  const updated = await account("repo-test", () => commands.update(thoughtUpdateInput));
+  const pruned = await account("repo-test", () => commands.update({
+    ...thoughtUpdateInput,
+    questionText: updated.value.content,
+    idea: "",
+    expectedVersion: 2
+  }));
+  const removed = await account("repo-test", () => commands.remove("thought-root", 3));
+  const created = await account("repo-test", () => commands.create(thoughtCreateInput));
+  const replayed = await account("repo-test", () => commands.create(thoughtCreateInput));
+  return { updated, pruned, removed, created, replayed };
+}
+
+async function prepareThoughtWriteback({ account, repo, created }) {
+  const root = created.items.find(item => item.type === "question");
+  const task = {
+    id: "thought-writeback-task",
+    kind: "thoughtAnswer",
+    resourceType: "thought",
+    targetId: root.id,
+    subtargetId: "",
+    inputVersion: root.version,
+    subtargetVersion: 0,
+    inputHash: "",
+    payload: {},
+    clientRequestId: "thought-writeback-request",
+    requestHash: "thought-writeback-request-v1",
+    status: "running",
+    createdAt: "2026-10-18T05:10:00.000Z",
+    startedAt: "2026-10-18T05:11:00.000Z",
+    updatedAt: "2026-10-18T05:11:00.000Z",
+    attempt: 1
+  };
+  await account("repo-test", () => repo.update(store => {
+    store.aiTasks.unshift(task);
+    store.notifications.unshift({
+      id: "thought-writeback-notification",
+      taskId: task.id,
+      kind: "aiTask",
+      resourceType: "thought",
+      targetId: root.id,
+      subtargetId: "",
+      status: "running",
+      title: "思绪回答",
+      message: "正在生成",
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      readAt: ""
+    });
+  }));
+  const revision = await account(
+    "repo-test",
+    () => repo.accountUnitOfWork.readRevision()
+  );
+  return {
+    taskId: task.id,
+    expectedRevision: revision,
+    result: {
+      content: "记录级 AI 回答",
+      reasoningContent: "记录级推理",
+      contextReceipt: { version: 1 }
+    }
+  };
+}
+
+async function prepareDeferredTaskBinding({ account, repo, created }) {
+  await account("repo-test", () => repo.update(store => {
+    const task = store.aiTasks.find(item => item.id === created.task.id);
+    task.status = "running";
+    task.startedAt = "2026-10-18T05:06:00.000Z";
+    task.updatedAt = task.startedAt;
+    task.attempt = 1;
+  }));
+  return {
+    inputVersion: created.items.find(item => item.type === "question").version,
+    subtargetVersion: 0,
+    inputHash: "bound-auto-answer-input"
+  };
+}
+
+async function assertThoughtRecordDatabase(database, beforeCursor, result) {
+  const { removed, created, writeback } = result;
+  const createdRoot = created.items.find(item => item.type === "question");
+  const createdIdea = created.items.find(item => item.type === "idea");
+  const answerId = writeback.task.resultId;
+  const createdNotificationId = (await database.query(`
+    SELECT id FROM for_now.store_objects
+    WHERE account_id = 'repo-test' AND collection = 'notifications'
+      AND payload->>'taskId' = $1
+  `, [created.task.id])).rows[0].id;
+  const changes = (await database.query(`
+    SELECT cursor::int, command_id, entity_id, entity_version, operation
+    FROM for_now.record_changes
+    WHERE account_id = 'repo-test' AND cursor > $1
+    ORDER BY cursor, ordinal
+  `, [beforeCursor])).rows.map(row => [
+    row.cursor, row.command_id, row.entity_id, row.entity_version, row.operation
+  ]);
+  const expectedChanges = [
+    [beforeCursor + 1, "thought.update", "thought-root", 2, "update"],
+    [beforeCursor + 1, "thought.update", "thought-idea", 2, "update"],
+    [beforeCursor + 1, "thought.update", "thought-generated-1", 1, "create"],
+    [beforeCursor + 1, "thought.update", "annotation-1", 2, "update"],
+    [beforeCursor + 2, "thought.update", "thought-root", 3, "update"],
+    [beforeCursor + 2, "thought.update", "thought-generated-1", 2, "update"],
+    [beforeCursor + 2, "thought.update", "thought-trash-1", 1, "create"],
+    [beforeCursor + 2, "thought.update", "thought-idea", 3, "delete"],
+    [beforeCursor + 3, "thought.delete", "thought-root", 4, "delete"],
+    [beforeCursor + 3, "thought.delete", "thought-delete-task", 2, "update"],
+    [beforeCursor + 3, "thought.delete", "thought-delete-notification", 2, "update"],
+    [beforeCursor + 3, "thought.delete", "thought-trash-2", 1, "create"],
+    [beforeCursor + 3, "thought.delete", "thought-generated-1", 3, "delete"],
+    [beforeCursor + 3, "thought.delete", "annotation-1", 3, "delete"],
+    [beforeCursor + 4, "thought.create", createdRoot.id, 1, "create"],
+    [beforeCursor + 4, "thought.create", createdIdea.id, 1, "create"],
+    [beforeCursor + 4, "thought.create", created.task.id, 1, "create"],
+    [beforeCursor + 4, "thought.create", createdNotificationId, 1, "create"],
+    [beforeCursor + 5, "task.bindInput", created.task.id, 2, "update"],
+    [beforeCursor + 6, "thought.aiWriteback", answerId, 1, "create"],
+    [beforeCursor + 6, "thought.aiWriteback", "thought-writeback-task", 2, "update"],
+    [beforeCursor + 6, "thought.aiWriteback", "thought-writeback-notification", 2, "update"]
+  ];
+  const sortChanges = rows => [...rows].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  assert.deepEqual(sortChanges(changes), sortChanges(expectedChanges));
+  const movedAnnotation = (await database.query(`SELECT operation, entity_version, changed_fields
+    FROM for_now.record_changes WHERE account_id='repo-test' AND cursor=$1
+      AND entity_type='annotation' AND entity_id='annotation-1'`, [beforeCursor + 1])).rows;
+  assert.equal(movedAnnotation.length, 1);
+  assert.equal(movedAnnotation[0].operation, "update");
+  assert.equal(movedAnnotation[0].entity_version, 2);
+  assert.deepEqual([...movedAnnotation[0].changed_fields].sort(),
+    ["originalContext", "driftedAt", "driftReason", "originalTargetKey", "version", "location"].sort());
+  assert.equal((await database.query(`
+    SELECT current_cursor::int AS cursor FROM for_now.account_sync_heads
+    WHERE account_id = 'repo-test'
+  `)).rows[0].cursor, beforeCursor + 6);
+  assert.equal((await database.query(`
+    SELECT count(*)::int AS count FROM for_now.store_objects
+    WHERE account_id = 'repo-test' AND object_key = ANY($1::text[])
+  `, [[
+    JSON.stringify(["thoughts", "thought-root", "annotations", "annotation-1"]),
+    JSON.stringify(["thoughts", "thought-root", "annotationDrift", "annotation-1"])
+  ]])).rows[0].count, 0);
+  assert.equal((await database.query(`
+    SELECT count(*)::int AS count FROM for_now.resource_lifecycle
+    WHERE account_id = 'repo-test' AND resource_id = ANY($1::text[])
+      AND state = 'deleted' AND tombstone = true AND trash_id = $2
+  `, [["thought-root", "thought-generated-1", "annotation-1"], removed.id]))
+    .rows[0].count, 3);
+  assert.deepEqual((await database.query(`
+    SELECT state, tombstone, trash_id AS "trashId"
+    FROM for_now.resource_lifecycle
+    WHERE account_id = 'repo-test'
+      AND resource_key = 'thoughtChain:thought-sibling/annotation:annotation-1'
+  `)).rows, [{
+    state: "active",
+    tombstone: false,
+    trashId: ""
+  }]);
+  assert.deepEqual((await database.query(`
+    SELECT state, tombstone, trash_id AS "trashId"
+    FROM for_now.resource_lifecycle
+    WHERE account_id = 'repo-test' AND resource_id = 'thought-idea'
+  `)).rows, [{
+    state: "deleted",
+    tombstone: true,
+    trashId: "thought-trash-1"
+  }]);
+  assert.equal((await database.query(`
+    SELECT count(*)::int AS count FROM for_now.resource_lifecycle
+    WHERE account_id = 'repo-test' AND resource_id = ANY($1::text[])
+      AND state = 'active' AND tombstone = false
+  `, [[...created.items.map(item => item.id), answerId]])).rows[0].count,
+  created.items.length + 1);
+  assert.deepEqual((await database.query(`
+    SELECT relation, target_key AS "targetKey", resolution
+    FROM for_now.store_relations
+    WHERE account_id = 'repo-test'
+      AND object_key = $1 AND relation = 'result'
+  `, [JSON.stringify(["aiTasks", "thought-writeback-task"])])).rows, [{
+    relation: "result",
+    targetKey: JSON.stringify(["thoughts", answerId]),
+    resolution: "live"
+  }]);
+  assert.deepEqual((await database.query(`
+    SELECT relation, target_key AS "targetKey", resolution
+    FROM for_now.store_relations
+    WHERE account_id = 'repo-test'
+      AND object_key = $1 AND relation = 'source'
+  `, [JSON.stringify(["thoughts", createdRoot.id])])).rows, [{
+    relation: "source",
+    targetKey: JSON.stringify(["captures", "thought-record-source"]),
+    resolution: "live"
+  }]);
+}
+
+async function runThoughtRecordCommandChecks({ database, repo, account }) {
+  await account("repo-test", () => repo.update(store => {
+    store.thoughts = thoughtRecordFixtures();
+    store.trash ||= [];
+    store.aiTasks.push({
+      id: "thought-delete-task",
+      kind: "thoughtAnswer",
+      resourceType: "thought",
+      targetId: "thought-root",
+      subtargetId: "",
+      status: "queued",
+      payload: {},
+      attempt: 0,
+      createdAt: "2026-10-18T03:05:00.000Z",
+      updatedAt: "2026-10-18T03:05:00.000Z"
+    });
+    store.notifications.push({
+      id: "thought-delete-notification",
+      taskId: "thought-delete-task",
+      kind: "aiTask",
+      resourceType: "thought",
+      targetId: "thought-root",
+      subtargetId: "",
+      status: "queued",
+      title: "思绪回答",
+      message: "已进入后台队列",
+      createdAt: "2026-10-18T03:05:00.000Z",
+      updatedAt: "2026-10-18T03:05:00.000Z",
+      readAt: ""
+    });
+    store.captures.push({
+      id: "thought-record-source",
+      content: "来源念起",
+      occurredAt: "2026-10-18T02:30:00.000Z",
+      occurredOn: "2026-10-18",
+      createdAt: "2026-10-18T02:30:00.000Z",
+      version: 1
+    });
+  }));
+  const beforeCursor = Number((await database.query(`
+    SELECT current_cursor FROM for_now.account_sync_heads WHERE account_id = 'repo-test'
+  `)).rows[0].current_cursor);
+  const harness = createThoughtRecordHarness(repo);
+  const originalQuery = pg.Client.prototype.query;
+  const trace = [];
+  pg.Client.prototype.query = function (...args) {
+    const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+    if (String(sql || "").includes("for_now.")) trace.push(String(sql));
+    return originalQuery.apply(this, args);
+  };
+  let result;
+  try {
+    result = await executeThoughtRecordCommands({
+      account,
+      commands: harness.commands
+    });
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  const deferredWork = await prepareDeferredTaskBinding({
+    account,
+    repo,
+    created: result.created
+  });
+  try {
+    pg.Client.prototype.query = function (...args) {
+      const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+      if (String(sql || "").includes("for_now.")) trace.push(String(sql));
+      return originalQuery.apply(this, args);
+    };
+    result.boundTask = await account(
+      "repo-test",
+      () => harness.taskCommands.bindInput(result.created.task.id, deferredWork)
+    );
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  const writebackInput = await prepareThoughtWriteback({
+    account,
+    repo,
+    created: result.created
+  });
+  const writebackTrace = [];
+  try {
+    pg.Client.prototype.query = function (...args) {
+      const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+      if (String(sql || "").includes("for_now.")) {
+        trace.push(String(sql));
+        writebackTrace.push(String(sql));
+      }
+      return originalQuery.apply(this, args);
+    };
+    result.writeback = await account(
+      "repo-test",
+      () => harness.commands.writeback(writebackInput)
+    );
+  } finally {
+    pg.Client.prototype.query = originalQuery;
+  }
+  const { updated, pruned, removed, created, replayed } = result;
+  assert.equal(updated.value.version, 2);
+  assert.equal(updated.value.content, "完全不同的问题");
+  assert.equal(updated.value.annotations.length, 0);
+  assert.equal(updated.value.annotationDrift[0].id, "annotation-1");
+  assert.equal(pruned.value.version, 3);
+  assert.equal(pruned.trashId, undefined);
+  assert.equal(removed.id, "thought-trash-2");
+  assert.deepEqual(harness.cancelledTasks, []);
+  assert.equal(created.duplicate, false);
+  assert.equal(created.task.status, "queued");
+  assert.equal(created.task.deferredInputBinding, true);
+  assert.equal(replayed.duplicate, true);
+  assert.equal(replayed.task.id, created.task.id);
+  assert.equal(result.boundTask.inputHash, deferredWork.inputHash);
+  assert.equal(Object.hasOwn(result.boundTask, "deferredInputBinding"), false);
+  assert.deepEqual(replayed.items.map(item => item.id), created.items.map(item => item.id));
+  assert.equal(result.writeback.status, "succeeded");
+  assert.ok(trace.some(sql => /target_key = ANY/.test(sql)));
+  assert.ok(writebackTrace.some(sql => /target_key = ANY/.test(sql)));
+  assert.ok(writebackTrace.every(sql => (
+    !/collection = \$2 AND parent_key IS NULL/.test(sql)
+  )));
+  assert.ok(trace.every(sql => !/FROM for_now\.store_fields|DELETE FROM for_now\.store_objects WHERE account_id = \$1\\s*$/.test(sql)));
+  const stored = await account("repo-test", () => repo.read());
+  assert.equal(stored.thoughts.some(item => (
+    item.id === "thought-root" || item.relatedTo === "thought-root"
+  )), false);
+  const createdRoot = created.items.find(item => item.type === "question");
+  assert.equal(stored.thoughts.find(item => item.id === createdRoot.id).content, "记录级新问题");
+  assert.equal(stored.trash.find(item => item.id === "thought-trash-1").payload.id, "thought-idea");
+  assert.equal(stored.trash.find(item => item.id === removed.id).payload.items.length, 2);
+  assert.equal(stored.aiTasks.find(item => item.id === "thought-delete-task").status, "cancelled");
+  assert.equal(
+    stored.notifications.find(item => item.id === "thought-delete-notification").status,
+    "cancelled"
+  );
+  await assertThoughtRecordDatabase(database, beforeCursor, result);
+}
 
 export async function runRuntimeChecks({ admin, connect, temporary, password, port, freePort }) {
   await admin.query("CREATE DATABASE runtime_test");
@@ -115,7 +1012,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
               span: [0, 4]
             }]
           }
-        : serializedMessages.includes(extractionText)
+        : serializedMessages.includes("<permitted_sources>")
           ? {
               claims: [{
                 domain: "context",
@@ -130,19 +1027,50 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
           : { answer: "数据库中的模型回答", citations: [] })
       : "数据库中的模型回答";
     providerCalls += 1;
+    if (payload.stream === true) {
+      res.setHeader("content-type", "text/event-stream");
+      const event = value => `data: ${JSON.stringify(value)}\n\n`;
+      res.end(event({ choices: [{ delta: { reasoning_content: "隔离模型思考" } }] })
+        + event({ choices: [{ delta: { content } }] })
+        + event({ choices: [{ delta: {}, finish_reason: "stop" }],
+          usage: { prompt_tokens: 2, completion_tokens: 2 } })
+        + "data: [DONE]\n\n");
+      return;
+    }
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify({ choices: [{ message: { content, reasoning_content: "隔离模型思考" }, finish_reason: "stop" }], usage: { prompt_tokens: 2, completion_tokens: 2 } }));
   });
   await new Promise(resolve => provider.listen(0, "127.0.0.1", resolve));
-  const startApp = async (db = "runtime_test", directory = dataDir, backend = "postgres") => {
+  const startApp = async (
+    db = "runtime_test",
+    directory = dataDir,
+    backend = "postgres",
+    {
+      accountRecoveryEnabled = false,
+      thoughtPagingEnabled = false,
+      syncV2Enabled = false,
+      recordCommandAllowlist = thoughtPagingEnabled
+        ? "thought.create,thought.update,thought.delete,thought.aiWriteback,task.status"
+        : ""
+    } = {}
+  ) => {
     const appPort = await freePort();
     const child = spawn(process.execPath, ["server.mjs"], {
       cwd: path.resolve(import.meta.dirname, ".."),
       env: {
         ...process.env, NODE_ENV: "test", PERSISTENCE_BACKEND: backend, DATA_DIR: directory,
+        PG_SYNC_READ_MODE: "metadata", PG_SYNC_ACCOUNT_ALLOWLIST: "*",
+        ACCOUNT_RECOVERY_ENABLED: accountRecoveryEnabled ? "1" : "0",
+        RECORD_COMMAND_ALLOWLIST: recordCommandAllowlist,
+        THOUGHT_PAGING_ENABLED: thoughtPagingEnabled ? "1" : "0",
+        SYNC_V2_ENABLED: syncV2Enabled ? "1" : "0",
+        SYNC_V2_ACCOUNT_ALLOWLIST: syncV2Enabled ? "*" : "",
+        SYNC_ACCOUNT_WAKE_ENABLED: "1",
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
         AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
-        AUTH_REQUIRED: "1", INVITE_CODE_HASH: crypto.createHash("sha256").update("runtime-invite").digest("hex"),
+        AI_AUDIT_DB_ENABLED: backend === "postgres" ? "1" : "0",
+        AUTH_REQUIRED: "1", AUTH_QUERY_MODE: backend === "postgres" ? "row" : "document",
+        INVITE_CODE_HASH: crypto.createHash("sha256").update("runtime-invite").digest("hex"),
         APP_BASE_PATH: "/now", PORT: String(appPort), LOCAL_TEST_MODE: "", UPSTREAM_ORIGIN: "",
         ATTACHMENT_STORAGE: "local", DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}`,
         PLATFORM_SERVICE_TOKEN_HASH: crypto.createHash("sha256").update(platformToken).digest("hex")
@@ -215,19 +1143,324 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     `);
     await assert.rejects(runtime.auth.update(auth => {
       auth.users.push({ id: "atomic-user", username: "atomic", passwordHash: "synthetic-hash" });
-      runtime.auth.provision("atomic-user", empty(), {});
+      const initialStore = empty(), originalStore = structuredClone(initialStore);
+      runtime.auth.provision("atomic-user", initialStore, {});
+      assert.deepEqual(initialStore, originalStore, "provision must not mutate the caller store, including legacy stores without trash");
     }), /injected provisioning failure/);
     assert.equal((await runtime.auth.read()).users.length, 0);
     assert.equal((await database.query("SELECT count(*)::int AS n FROM for_now.accounts")).rows[0].n, 0);
+    assert.equal((await database.query("SELECT count(*)::int AS n FROM for_now.store_fields WHERE account_id = 'atomic-user'")).rows[0].n, 0);
     await database.query("DROP TRIGGER reject_provision ON for_now.store_fields");
+    await runThoughtClosurePostgresChecks(database);
+    await runThoughtSourceRelationPostgresChecks(database);
+    await runThoughtRecoveryCostPostgresChecks(database);
+    await runThoughtMaterialsPostgresChecks(database, { canonicalJson, mapStoreObjects, rebuildStoreObjects });
 
     await account("repo-test", () => repo.initialize({ allowCreate: true }));
     await account("repo-other", () => repo.initialize({ allowCreate: true }));
+    const recordKey = JSON.stringify(["captures", "row-command"]);
+    const idempotency = {
+      scope: "record-command.fixture",
+      key: "create",
+      requestHash: "fixture-create-v1",
+      expiresAt: "2027-10-18T00:00:00.000Z"
+    };
     await account("repo-test", async () => {
+      const created = await repo.accountUnitOfWork.run({
+        commandId: "fixture.create",
+        idempotency
+      }, async ({ objects, addChange }) => {
+        await objects.insert({
+          objectKey: recordKey,
+          collection: "captures",
+          kind: "capture",
+          id: "row-command",
+          parentKey: null,
+          field: "captures",
+          position: null,
+          childFields: [],
+          content: "记录级创建",
+          status: "",
+          authorType: "user",
+          version: 1,
+          payload: {
+            id: "row-command",
+            content: "记录级创建",
+            createdAt: "2026-10-18T00:00:00.000Z",
+            version: 1
+          }
+        });
+        addChange({
+          entityType: "capture",
+          entityId: "row-command",
+          version: 1,
+          operation: "create",
+          changedFields: ["content", "createdAt", "version"],
+          scopeKeys: ["capture:list"]
+        });
+        return { id: "row-command", version: 1 };
+      });
+      assert.equal(created.cursor, "1");
+      assert.equal(created.writes, 1);
+      assert.equal(created.replayed, false);
+      const replay = await repo.accountUnitOfWork.run({
+        commandId: "fixture.create",
+        idempotency
+      }, async () => {
+        throw new Error("idempotency replay must not execute the operation");
+      });
+      assert.equal(replay.replayed, true);
+      assert.deepEqual(replay.value, created.value);
+      await assert.rejects(repo.accountUnitOfWork.run({
+        commandId: "fixture.create",
+        idempotency: { ...idempotency, requestHash: "different" }
+      }, async () => null), { code: "IDEMPOTENCY_KEY_REUSED" });
+      const unchanged = await repo.accountUnitOfWork.run({
+        commandId: "fixture.no-change"
+      }, async () => ({ unchanged: true }));
+      assert.equal(unchanged.cursor, null);
+      assert.equal(unchanged.writes, 0);
+      await assert.rejects(repo.accountUnitOfWork.run({
+        commandId: "fixture.missing-change"
+      }, async ({ objects }) => {
+        const row = await objects.find(recordKey, { lock: true });
+        row.version = 2;
+        row.payload.version = 2;
+        await objects.update(row, 1);
+      }), /writes and ChangeSet/);
+      assert.equal((await repo.accountUnitOfWork.run({
+        commandId: "fixture.read-after-rollback"
+      }, async ({ objects }) => objects.find(recordKey))).value.version, 1);
+      const updated = await repo.accountUnitOfWork.run({
+        commandId: "fixture.update"
+      }, async ({ objects, addChange }) => {
+        const row = await objects.find(recordKey, { lock: true });
+        row.version = 2;
+        row.content = "记录级更新";
+        row.payload = { ...row.payload, content: row.content, version: 2 };
+        assert.equal(await objects.update(row, 1), true);
+        addChange({
+          entityType: "capture",
+          entityId: "row-command",
+          version: 2,
+          operation: "update",
+          changedFields: ["content", "version"],
+          scopeKeys: ["capture:list", "capture:row-command"]
+        });
+        return row.payload;
+      });
+      assert.equal(updated.cursor, "2");
+      assert.equal((await repo.read()).captures.find(item => item.id === "row-command").content, "记录级更新");
+    });
+    await account("repo-other", async () => {
+      const isolated = await repo.accountUnitOfWork.run({
+        commandId: "fixture.cross-account-read"
+      }, async ({ objects }) => objects.find(recordKey));
+      assert.equal(isolated.value, null);
+    });
+    assert.deepEqual((await database.query(`
+      SELECT current_cursor::text AS cursor
+      FROM for_now.account_sync_heads
+      WHERE account_id = 'repo-test'
+    `)).rows, [{ cursor: "2" }]);
+    assert.deepEqual((await database.query(`
+      SELECT cursor::text, ordinal, command_id AS "commandId",
+        entity_type AS "entityType", entity_id AS "entityId",
+        entity_version AS version, operation
+      FROM for_now.record_changes
+      WHERE account_id = 'repo-test'
+      ORDER BY cursor, ordinal
+    `)).rows, [
+      { cursor: "1", ordinal: 0, commandId: "fixture.create", entityType: "capture", entityId: "row-command", version: 1, operation: "create" },
+      { cursor: "2", ordinal: 0, commandId: "fixture.update", entityType: "capture", entityId: "row-command", version: 2, operation: "update" }
+    ]);
+    assert.equal((await database.query(`
+      SELECT position FROM for_now.store_objects
+      WHERE account_id = 'repo-test' AND object_key = $1
+    `, [recordKey])).rows[0].position, null);
+    await account("repo-test", async () => {
+      const removed = await repo.accountUnitOfWork.run({
+        commandId: "fixture.delete"
+      }, async ({ objects, addChange }) => {
+        assert.equal(await objects.remove(recordKey, 2), true);
+        addChange({
+          entityType: "capture",
+          entityId: "row-command",
+          version: 3,
+          operation: "delete",
+          changedFields: [],
+          scopeKeys: ["capture:list", "capture:row-command"]
+        });
+        return { id: "row-command", version: 3 };
+      });
+      assert.equal(removed.cursor, "3");
+      assert.equal((await repo.read()).captures.some(item => item.id === "row-command"), false);
+    });
+    assert.equal((await database.query(`
+      SELECT current_cursor::text AS cursor
+      FROM for_now.account_sync_heads
+      WHERE account_id = 'repo-test'
+    `)).rows[0].cursor, "3");
+    assert.deepEqual((await database.query(`
+      SELECT cursor::text, entity_version AS version, operation
+      FROM for_now.record_changes
+      WHERE account_id = 'repo-test' AND cursor = 3
+    `)).rows, [{ cursor: "3", version: 3, operation: "delete" }]);
+    await runThoughtSearchCorpusChecks(database);
+    await runThoughtPagingBuildChecks();
+    await runThoughtProducerGateChecks(options => {
+      let runtime;
+      createThoughtRuntimeFixture(input => {
+        runtime = createContentRuntime(input);
+        return runtime;
+      }, options.repository, "thought-gate-test", {
+        repository: {
+          read: async () => { throw new Error("Gate must not read"); },
+          update: async () => { throw new Error("Gate must not update"); },
+          executeIdempotent: async () => { throw new Error("Gate must not write"); },
+          ...options.repository
+        },
+        thoughtPagingConfig: options.thoughtPagingConfig,
+        recordCommandConfig: options.recordCommandConfig
+      });
+      return runtime;
+    }, repository => createThoughtQueries({ repository, enabled: true }));
+    const pagingRepo = runtime.createStoreRepository({ normalize: value => value, emptyDocument: empty() });
+    const pagingOnlineRepo = runtime.createStoreRepository({ normalize: value => value, emptyDocument: empty() });
+    const pagingQueries = await runThoughtDbPagingChecks({ database, repo: pagingRepo, account,
+      createQueries: options => createThoughtRuntimeFixture(createContentRuntime,
+        { ...pagingOnlineRepo, queryRecords: options.repository.queryRecords }, "thought-paging-db").queries,
+      registerSpeechFixture: async () => {
+        await runtime.attachments.record({ path: "/attachments/paging.mp3", storage: "local",
+          objectKey: "paging.mp3", bytes: 0, sha256: crypto.createHash("sha256").update("").digest("hex") });
+        await runtime.attachments.confirm({ path: "/attachments/paging.mp3", storage: "local",
+          objectKey: "paging.mp3", bytes: 0, sha256: crypto.createHash("sha256").update("").digest("hex") });
+      },
+      speechAssets: sources => readThoughtSpeechAssets(pagingRepo, sources, {
+        hash: value => crypto.createHash("sha256").update(value).digest("hex"),
+        ownerHash: "paging-owner", currentTime: "2026-10-19T00:00:00.000Z"
+      }),
+      discovery: queries => createThoughtDiscoveryService({ repository: pagingRepo, thoughtQueries: () => queries,
+        now: () => "2026-10-19T00:00:00.000Z" }),
+      legacyPage: thoughtChainListPage,
+      removeRoot: (store, id) => createThoughtRecordHarness(pagingRepo).mutations.moveThoughtChainToTrash(store, id) });
+    await account("repo-test", async () => {
+      const before = await pagingRepo.read();
+      await assert.rejects(pagingOnlineRepo.update(store => {
+        store.thoughts = [{
+          id: "forbidden-legacy-root", type: "question", content: "兼容旁路必须拒绝"
+        }];
+      }), { code: "THOUGHT_LEGACY_MUTATION_FORBIDDEN" });
+      assert.deepEqual(await pagingRepo.read(), before);
+      await pagingOnlineRepo.update(store => { store.guardProbe = "non-thought"; });
+      assert.equal((await pagingRepo.read()).guardProbe, "non-thought");
+    });
+    const producerFixtures = new WeakMap();
+    const producerOnlineRepo = peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() });
+    await runThoughtProducerPostgresChecks({
+      database,
+      repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
+      account,
+      attachmentFixtures: attachmentProducerFixtures,
+      attachmentChecks: runAttachmentProducerPostgresChecks,
+      aiChecks: runThoughtAiPostgresChecks,
+      discoveryChecks: runThoughtDiscoveryPostgresChecks,
+      createQueries: repository => {
+        const fixture = createThoughtRuntimeFixture(createContentRuntime, {
+          ...producerOnlineRepo,
+          read: repository.read,
+          update: repository.update,
+          accountUnitOfWork: repository.accountUnitOfWork
+        }, "thought-producer-test");
+        producerFixtures.set(repository, fixture);
+        return fixture.queries;
+      },
+      createService: (repository, queryRuntime) => {
+        return {
+          ...producerFixtures.get(repository),
+          discovery: createThoughtDiscoveryService({
+            repository,
+            thoughtQueries: () => queryRuntime,
+            now: () => "2026-10-19T00:00:00.000Z"
+          })
+        };
+      }
+    });
+    await account("thought-producer-test", () => runThoughtTaskTransitionPostgresChecks({
+      database,
+      repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
+      mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+      tasks: createTaskLifecycle({ createId: () => crypto.randomUUID(), now: () => new Date().toISOString(),
+        hash: value => crypto.createHash("sha256").update(value).digest("hex") }),
+      notify: createNotificationService({ createId: () => crypto.randomUUID(), now: () => new Date().toISOString() }).upsertTask
+    }));
+    await account("thought-producer-test", async () => {
+      const attachment = { path: "/attachments/creation.png", storage: "local",
+        objectKey: "creation.png", bytes: 0, sha256: crypto.createHash("sha256").update("").digest("hex") };
+      await runtime.attachments.record(attachment);
+      await runtime.attachments.confirm(attachment);
+      await runThoughtTaskCreationPostgresChecks({
+        database,
+        repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
+        createBackground: (repository, dispatch) => createThoughtRuntimeFixture(createContentRuntime, {
+          ...repository, installRecordProjection: undefined
+        }, "thought-producer-test", {
+          // 该运行时已安装唯一投影；此夹具只验正式后台装配，不重复安装查询。
+          thoughtPagingConfig: { enabled: false },
+          dispatchBackground: dispatch
+        }).backgroundAi
+      });
+      await runThoughtTaskLifecyclePostgresChecks({
+        database,
+        repo: peer.createStoreRepository({ normalize: value => value, emptyDocument: empty() }),
+        mapping: { canonicalJson, mapStoreObjects, rebuildStoreObjects },
+        tasks: createTaskLifecycle({
+          createId: () => crypto.randomUUID(), now: () => "2026-10-19T00:00:00.000Z",
+          hash: value => crypto.createHash("sha256").update(value).digest("hex")
+        }),
+        notifications: createNotificationService({
+          createId: () => crypto.randomUUID(), now: () => "2026-10-19T00:00:00.000Z"
+        }),
+        normalizeOnboarding: normalizeOnboardingV2,
+        prepareModel: prepareUserModelExtraction,
+        createBackground: createBackgroundAi,
+        createRuntime: overrides => {
+          const fixture = createThoughtRuntimeFixture(createContentRuntime, {
+            ...overrides.repository, installRecordProjection: undefined
+          }, "thought-producer-test", {
+            ...overrides,
+            repository: { ...overrides.repository, installRecordProjection: undefined },
+            thoughtPagingConfig: { enabled: false }
+          });
+          return Object.assign(fixture.backgroundAi, {
+            createRoot: input => fixture.rootCommands.create(input)
+          });
+        }
+      });
+    });
+    await account("repo-test", () => pagingQueries.rebuild());
+    const assertProjectionParity = async accountId => account(accountId, async () => {
+      const store = await repo.read();
+      const expected = thoughtChainListPage(store.thoughts, { limit: 20 });
+      const actual = await pagingQueries.list({});
+      assert.deepEqual(actual.items.map(({ annotationCount, followUpCount, ...item }) => item), expected.items);
+      for (const item of actual.items) assert.equal(item.annotationCount,
+        (store.thoughts.find(root => root.id === item.id).annotations || []).length
+          + (store.thoughts.find(root => root.id === item.id).annotationDrift || []).length);
+    });
+    await runNotificationRecordCommandChecks({ database, repo, account });
+    await runThoughtRecordCommandChecks({ database, repo, account });
+    await assertProjectionParity("repo-test");
+    await runBlockDeletionRemediationChecks({ database, repo, account });
+    await assertProjectionParity("block-remediation-queued");
+    await assertProjectionParity("block-remediation-running");
+
+    await account("repo-test", async () => {
+      const captureBaseline = (await repo.read()).captures.length;
       await Promise.all(Array.from({ length: 12 }, (_, index) => (index % 2 ? repo : peerRepo).update(value => {
         value.captures.push({ id: `parallel-${index}`, content: `并发 ${index}` });
       })));
-      assert.equal((await repo.read()).captures.length, 12);
+      assert.equal((await repo.read()).captures.length, captureBaseline + 12);
       const before = await repo.read();
       await assert.rejects(repo.update(value => {
         value.captures.push({ id: "rolled-back", content: "不保存" });
@@ -276,6 +1509,268 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       assert.equal((await runtime.documents.read("usage")).entries.length, 8);
     });
     assert.equal((await account("repo-other", () => repo.read())).captures.length, 0);
+
+    // F3-A：同一隔离数据集对照旧全读/新元数据读，检查真实SQL而非返回数组大小。
+    const syncNow = () => "2026-10-16T08:00:00.000Z";
+    const normalizeSync = createStoreNormalizer({ now: syncNow, today: () => "2026-10-16", currentTime: () => Date.parse(syncNow()) });
+    const syncOptions = { normalize: normalizeSync, emptyDocument: createEmptyStore(), now: syncNow };
+    const syncLegacy = runtime.createStoreRepository(syncOptions);
+    const syncNarrow = runtime.createStoreRepository({ ...syncOptions, pgIo: { syncReadMode: "metadata", accountAllowlist: ["*"] } });
+    const syncPeer = peer.createStoreRepository(syncOptions);
+    const syncUnlisted = runtime.createStoreRepository({ ...syncOptions, pgIo: { syncReadMode: "metadata", accountAllowlist: [] } });
+    const project = createPublicStateProjection({ getUser: () => ({ id: "sync-a", role: "owner" }), isOwner: user => user.role === "owner",
+      speechProvider: {}, visionProvider: {}, hash: value => crypto.createHash("sha256").update(String(value)).digest("hex"), now: syncNow, today: () => "2026-10-16" });
+    for (const id of ["sync-a", "sync-b"]) await account(id, () => syncLegacy.initialize({ allowCreate: true }));
+    await account("sync-a", () => syncLegacy.update(store => {
+      const event = { createdAt: syncNow(), occurredAt: syncNow(), occurredOn: "2026-10-16", version: 1 };
+      store.captures.push(...Array.from({ length: 120 }, (_, index) => ({ ...event, id: `sync-capture-${index}`, content: "足量原文".repeat(250) })));
+      store.customMetrics.push(...Array.from({ length: 400 }, (_, index) => ({ id: `sync-metric-${index}`, label: `指标${index}` })));
+      store.thoughts.push({ ...event, id: "sync-question", type: "question", content: "工作项目", tags: [] }, { ...event, id: "sync-answer", type: "answer", relatedTo: "sync-question", content: "回答" });
+      store.journals.push({ ...event, id: "sync-journal", content: "日记" });
+      store.journalDraft = { journalId: "sync-journal", title: "草稿", content: "内容", updatedAt: syncNow() };
+      store.books.push({ ...event, id: "sync-book", title: "书", notes: [{ ...event, id: "sync-note", content: "笔记" }] });
+      store.checkins.push({ ...event, id: "sync-checkin", mood: 4, energy: 3, stress: 2, factors: [] });
+      store.analyses.push({ ...event, id: "sync-analysis", reason: "manual", content: "复盘" });
+      store.aiTasks.push({ ...event, id: "sync-task", kind: "thoughtAnswer", targetId: "sync-question", inputVersion: 1, status: "queued" });
+      store.notifications.push({ ...event, id: "sync-notice", taskId: "sync-task", status: "succeeded", readAt: "" });
+    }));
+    const syncAudio = Buffer.from("ID3-sync-local-asset");
+    const syncInventory = { path: "/attachments/sync-real.tts.mp3", storage: "local", objectKey: "sync-real.tts.mp3", bytes: syncAudio.length, sha256: crypto.createHash("sha256").update(syncAudio).digest("hex") };
+    await account("sync-a", async () => { await runtime.attachments.record(syncInventory); await runtime.attachments.confirm(syncInventory); });
+    const originalQuery = pg.Client.prototype.query;
+    let queryTrace = null, afterMetadata = null;
+    pg.Client.prototype.query = function (...args) {
+      const sql = typeof args[0] === "string" ? args[0] : args[0]?.text;
+      const result = originalQuery.apply(this, args);
+      if (!result?.then || !queryTrace || !/^SELECT/i.test(sql?.trim() || "")) return result;
+      const capture = queryTrace;
+      return result.then(async value => {
+        capture.push({ sql, rows: value.rows.length, bytes: Buffer.byteLength(JSON.stringify(value.rows)) });
+        if (afterMetadata && sql.includes("field = '_persistence'")) { const callback = afterMetadata; afterMetadata = null; await callback(); }
+        return value;
+      });
+    };
+    const measure = async action => { queryTrace = []; try { const result = await action(); return { result, trace: queryTrace }; } finally { queryTrace = null; } };
+    const executeSync = async (repository, cursor) => {
+      const http = createSyncHttp({ repository, publicState: project }); let output;
+      const v1 = { success: (_res, status, data) => { output = { status, data }; return true; }, error: (_res, status, message, code, details) => { output = { status, code, details }; return true; } };
+      await http.handleV1({ method: "GET" }, {}, new URL(`http://local/api/v1/sync?cursor=${cursor}`), v1);
+      return output;
+    };
+    const metrics = {};
+    try {
+      await account("sync-a", async () => {
+        const initial = await syncLegacy.readSyncSnapshot(), cursor = initial.metadata.sync.cursor;
+        for (const [name, after] of [["unchanged", cursor], ["ahead", cursor + 1], ["tooMany", 0]]) {
+          const legacy = await measure(() => executeSync(syncLegacy, after));
+          const narrow = await measure(() => executeSync(syncNarrow, after));
+          assert.deepEqual(narrow.result, legacy.result);
+          assert.ok(narrow.trace.every(row => !/for_now\.(?:store_objects|store_relations|store_attachment_refs|resource_lifecycle|idempotency_ledger)\b/.test(row.sql)), name);
+          metrics[name] = { legacy: legacy.trace, metadata: narrow.trace };
+        }
+        assert.equal(metrics.tooMany.metadata.some(row => row.sql.includes("store_objects")), false);
+        const receiptLegacy = await measure(() => syncLegacy.readOperationReceipt("unknown-operation"));
+        const receiptNarrow = await measure(() => syncNarrow.readOperationReceipt("unknown-operation"));
+        assert.deepEqual(receiptNarrow.result, receiptLegacy.result);
+        assert.equal(receiptNarrow.trace.length, 2); // RLS binding + _persistence only.
+        assert.ok(receiptNarrow.trace.every(row => !row.sql.includes("store_objects")));
+        metrics.receipt = { legacy: receiptLegacy.trace, metadata: receiptNarrow.trace };
+        const unlisted = await measure(() => executeSync(syncUnlisted, cursor));
+        assert.ok(unlisted.trace.some(row => row.sql.includes("store_objects")), "empty allowlist retains legacy path");
+        // 每次只改一个域，再比较真实按域投影与旧全读输出（含依赖派生字段）。
+        for (const domain of ["notifications", "aiTasks", "journalDraft", "captures", "keepsakes", "trash", "speechCache", "onboardingV2"]) {
+          const before = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+          await syncLegacy.update(store => {
+            if (domain === "notifications") store.notifications[0].readAt = syncNow();
+            else if (domain === "aiTasks") store.aiTasks[0].status = "succeeded";
+            else if (domain === "journalDraft") store.journalDraft.content += "补充";
+            else if (domain === "captures") store.captures[0].content += "修改";
+            else if (domain === "keepsakes") store.keepsakes.push({ id: "sync-keepsake", title: "留念", createdAt: syncNow() });
+            else if (domain === "trash") store.trash.push({ id: "sync-trash", type: "capture", payload: { id: "deleted-capture", content: "回收" }, location: { collection: "captures", index: 0 }, deletedAt: syncNow() });
+            else if (domain === "speechCache") store.speechCache.push({ id: "sync-audio", sourceType: "capture", sourceId: "sync-capture-0", sourceVersion: store.captures[0].version,
+              ownerHash: crypto.createHash("sha256").update("sync-a").digest("hex"), textHash: crypto.createHash("sha256").update(store.captures[0].content).digest("hex"),
+              attachmentPath: syncInventory.path, bytes: syncAudio.length, voice: "sync-voice", createdAt: syncNow(), expiresAt: "2026-10-17T08:00:00.000Z" });
+            else store.onboardingV2.session.revision += 1;
+          });
+          const legacy = await measure(() => executeSync(syncLegacy, before));
+          const narrow = await measure(() => executeSync(syncNarrow, before));
+          assert.deepEqual(narrow.result, legacy.result, domain);
+          if (domain === "speechCache") assert.equal(narrow.result.data.snapshot.speech.assets.length, 1, "real current source must produce a nonempty asset");
+          metrics[domain] = { legacy: legacy.trace, metadata: narrow.trace };
+        }
+        // 真实业务生产链会同时新增捕念、权限和感知事件；这不是未知扩展，不能退回六表全读。
+        const perception = createPerceptionRuntime({ getAccountId: () => "sync-a", now: syncNow });
+        const noPerceptionTask = () => { throw new Error("Default learning-disabled source must not dispatch an AI task"); };
+        const awareRepository = createPerceptionAwareRepository({
+          repository: syncLegacy, perception, createTask: noPerceptionTask, scheduleTask: noPerceptionTask
+        });
+        const captures = createCaptureRecords({
+          repository: {
+            read: async () => (await awareRepository.read()).captures,
+            update: mutate => awareRepository.update(store => mutate(store.captures, store.trash, store))
+          },
+          reanchorAnnotations: () => {}, now: syncNow, createId: () => "sync-perception-capture"
+        });
+        const perceptionCursor = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+        const created = await captures.create({ content: "仅当前账户保存的感知来源正文", occurredAt: syncNow() });
+        assert.equal(created.value.id, "sync-perception-capture");
+        const perceptionLegacy = await measure(() => executeSync(syncLegacy, perceptionCursor));
+        const perceptionNarrow = await measure(() => executeSync(syncNarrow, perceptionCursor));
+        assert.deepEqual(perceptionNarrow.result, perceptionLegacy.result);
+        assert.deepEqual(new Set(perceptionNarrow.result.data.changes.map(change => change.domain)), new Set(["captures", "evidencePermissions", "perceptionEvents"]));
+        assert.ok(perceptionNarrow.result.data.snapshot.captures.some(item => item.id === created.value.id));
+        const internalProjection = await syncNarrow.readSyncChanges({ cursor: perceptionCursor, fieldsForDomains: project.syncProjectionFields });
+        const actualStore = await syncLegacy.read();
+        assert.deepEqual(internalProjection.document.evidencePermissions, actualStore.evidencePermissions);
+        assert.deepEqual(internalProjection.document.perceptionEvents, actualStore.perceptionEvents);
+        for (const field of ["evidencePermissions", "perceptionEvents"]) {
+          assert.ok(internalProjection.document[field].length > 0);
+          assert.equal(Object.hasOwn(perceptionNarrow.result.data.snapshot, field), false, "内部集合不得泄露进公共同步snapshot");
+        }
+        assert.ok(perceptionNarrow.trace.some(row => /store_objects.*ANY\(\$2::text\[\]\)/s.test(row.sql)));
+        assert.ok(perceptionNarrow.trace.every(row => !/for_now\.(?:store_relations|store_attachment_refs|resource_lifecycle|idempotency_ledger)\b/.test(row.sql)), "真实感知生产域只按闭包读，不能六表回退");
+        metrics.perceptionCapture = { legacy: perceptionLegacy.trace, metadata: perceptionNarrow.trace };
+
+        // 只改真实权限也保留事件与游标；原公共输出仍为空，不能把内部正文直接发送给客户端。
+        const privateCursor = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+        const sourceRef = actualStore.perceptionEvents.find(item => item.sourceRef.resourceId === created.value.id).sourceRef;
+        await syncLegacy.update(store => perception.observeInStore(store, {
+          sourceRef, contextAllowed: false, learningAllowed: false, eventKind: "permission_changed"
+        }, noPerceptionTask));
+        const privateLegacy = await measure(() => executeSync(syncLegacy, privateCursor));
+        const privateNarrow = await measure(() => executeSync(syncNarrow, privateCursor));
+        assert.deepEqual(privateNarrow.result, privateLegacy.result);
+        assert.ok(privateNarrow.result.data.changes.length > 0);
+        assert.ok(privateNarrow.result.data.changes.every(change => ["evidencePermissions", "perceptionEvents"].includes(change.domain)));
+        assert.deepEqual(privateNarrow.result.data.snapshot, {});
+        assert.ok(privateNarrow.trace.every(row => !/for_now\.(?:store_relations|store_attachment_refs|resource_lifecycle|idempotency_ledger)\b/.test(row.sql)));
+        metrics.perceptionPermissionOnly = { legacy: privateLegacy.trace, metadata: privateNarrow.trace };
+
+        // metadata之后发生另一个连接的提交，仍只能读到原repeatable-read快照。
+        const before = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+        await syncLegacy.update(store => { store.notifications[0].status = "failed"; });
+        const expected = await executeSync(syncLegacy, before);
+        afterMetadata = () => syncPeer.update(store => { store.notifications[0].status = "succeeded"; });
+        const consistent = await measure(() => executeSync(syncNarrow, before));
+        assert.deepEqual(consistent.result, expected, "metadata/domain must share one snapshot across concurrent commit");
+        assert.notDeepEqual(await executeSync(syncLegacy, before), expected);
+        // 未知域明确同事务全读回退，保留扩展数据；不把所有变化路径宣称窄读。
+        const old = (await syncLegacy.readSyncSnapshot()).metadata.sync.cursor;
+        await syncLegacy.update(store => { store.futureSyncDomain = { value: "extension" }; });
+        const unknown = await measure(() => executeSync(syncNarrow, old));
+        assert.deepEqual(unknown.result, await executeSync(syncLegacy, old));
+        assert.ok(unknown.trace.some(row => row.sql.includes("store_relations")));
+        metrics.unknownFallback = unknown.trace;
+      });
+      await account("sync-b", async () => {
+        assert.equal((await syncNarrow.readSyncChanges({ cursor: 0, fieldsForDomains: project.syncProjectionFields })).metadata.sync.cursor, 0);
+        assert.equal(await syncNarrow.readOperationReceipt("unknown-operation"), undefined);
+        const otherAccountStore = await syncLegacy.read();
+        assert.deepEqual(otherAccountStore.evidencePermissions, [], "sync-a权限不能通过另一账户RLS读取");
+        assert.deepEqual(otherAccountStore.perceptionEvents, [], "sync-a感知事件不能通过另一账户RLS读取");
+      });
+      // 显式破坏/丢失同步metadata必须报告账户故障，不能变空元数据。
+      const originalMetadata = (await database.query("SELECT payload FROM for_now.store_fields WHERE account_id='sync-a' AND field='_persistence'")).rows[0].payload;
+      const missingSync = structuredClone(originalMetadata); delete missingSync.sync;
+      const missingOperations = structuredClone(originalMetadata); delete missingOperations.sync.operations;
+      const missingChanges = structuredClone(originalMetadata); delete missingChanges.sync.changes;
+      const missingCursor = structuredClone(originalMetadata); delete missingCursor.sync.cursor;
+      for (const payload of [missingSync, missingOperations, missingChanges, missingCursor, { ...originalMetadata, version: 999 }, { ...originalMetadata, sync: { cursor: "invalid", changes: [], operations: [] } }]) {
+        await database.query("UPDATE for_now.store_fields SET payload=$1 WHERE account_id='sync-a' AND field='_persistence'", [payload]);
+        await assert.rejects(account("sync-a", () => syncNarrow.readSyncChanges({ cursor: 0 })), error => error.code === "ACCOUNT_DATA_INVALID" && error.recoveryScope === "account");
+        await assert.rejects(account("sync-a", () => syncNarrow.readOperationReceipt("unknown-operation")), error => error.code === "ACCOUNT_DATA_INVALID");
+      }
+      // 明确旧schema缺operations沿原完整迁移消费者兼容；不能记作窄读。
+      await database.query("UPDATE for_now.store_fields SET payload='17'::jsonb WHERE account_id='sync-a' AND field='version'");
+      for (const sync of [null, "broken", [], { cursor: "broken", changes: [] }]) {
+        await database.query("UPDATE for_now.store_fields SET payload=$1 WHERE account_id='sync-a' AND field='_persistence'", [{ ...originalMetadata, sync }]);
+        await assert.rejects(account("sync-a", () => syncNarrow.readSyncChanges({ cursor: 0 })), error => error.code === "ACCOUNT_DATA_INVALID" && error.recoveryScope === "account");
+      }
+      await database.query("UPDATE for_now.store_fields SET payload=$1 WHERE account_id='sync-a' AND field='_persistence'", [missingOperations]);
+      await account("sync-a", async () => {
+        const cursor = originalMetadata.sync.cursor;
+        const oldFormat = await measure(() => executeSync(syncNarrow, cursor));
+        assert.deepEqual(oldFormat.result, await executeSync(syncLegacy, cursor));
+        assert.ok(oldFormat.trace.some(row => row.sql.includes("store_objects")));
+        metrics.legacyFormatFallback = oldFormat.trace;
+      });
+      await database.query("UPDATE for_now.store_fields SET payload='18'::jsonb WHERE account_id='sync-a' AND field='version'");
+      const expired = { ...originalMetadata, sync: { ...originalMetadata.sync, changes: originalMetadata.sync.changes.slice(-1) } };
+      await database.query("UPDATE for_now.store_fields SET payload=$1 WHERE account_id='sync-a' AND field='_persistence'", [expired]);
+      await account("sync-a", async () => {
+        const oldCursor = await measure(() => executeSync(syncNarrow, 0));
+        assert.equal(oldCursor.result.status, 410);
+        assert.deepEqual(oldCursor.result, await executeSync(syncLegacy, 0));
+        assert.ok(oldCursor.trace.every(row => !row.sql.includes("store_objects")));
+        metrics.expired = oldCursor.trace;
+      });
+      await database.query("DELETE FROM for_now.store_fields WHERE account_id='sync-a' AND field='_persistence'");
+      await assert.rejects(account("sync-a", () => syncNarrow.readSyncChanges({ cursor: 0 })), error => error.code === "ACCOUNT_DATA_INVALID");
+      await database.query("INSERT INTO for_now.store_fields(account_id,field,shape,payload) VALUES('sync-a','_persistence','value',$1)", [originalMetadata]);
+      console.log("F3A_QUERY_METRICS " + JSON.stringify(metrics));
+    } finally { pg.Client.prototype.query = originalQuery; }
+
+    // F9服务端：PG真实COMMIT后发送提示，等待期间无事务、回滚无提示，提示失败不改变提交。
+    const wakeNotifier = createAccountCommitNotifier();
+    let wakeHintFailure = false;
+    const wakeCommitted = ({ accountId, storageScope }) => {
+      if (wakeHintFailure) throw new Error("F9 hint failure");
+      wakeNotifier.notifyAccountCommitted({ accountId, storageScope });
+    };
+    const wakeOptions = { ...syncOptions, pgIo: { syncReadMode: "metadata", accountAllowlist: ["*"] }, onCommitted: wakeCommitted };
+    const wakeRepo = runtime.createStoreRepository(wakeOptions);
+    const wakeHttp = createSyncHttp({ repository: wakeRepo, publicState: project, notifier: wakeNotifier, getAccountId: () => context.getStore() });
+    const wakeRequest = async (after, waitMs = 1500, http = wakeHttp) => {
+      let output;
+      await http.handleV1({ method: "GET" }, {}, new URL(`http://local/api/v1/sync?cursor=${after}&waitMs=${waitMs}`), {
+        success: (_res, status, data) => { output = { status, data }; return true; },
+        error: (_res, status, message, code) => { output = { status, code }; return true; }
+      });
+      return output;
+    };
+    try {
+      await account("sync-a", async () => {
+        const samples = [];
+        for (let n = 0; n < 8; n++) {
+          const before = (await wakeRepo.readSyncSnapshot()).metadata.sync.cursor;
+          const pending = wakeRequest(before);
+          await pause(50);
+          if (n === 0) assert.equal((await database.query("SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database() AND application_name='for-now-data-runtime' AND state='idle in transaction'")).rows[0].n, 0);
+          const committed = performance.now();
+          await wakeRepo.update(store => { store.notifications[0].readAt = new Date(Date.parse(syncNow()) + n + 1000).toISOString(); });
+          assert.ok((await pending).data.cursor > before); samples.push(performance.now() - committed);
+          assert.equal(wakeNotifier.activeSubscriptions(), 0);
+        }
+        const subscription = wakeNotifier.subscribeAccountCommits({ accountId: "sync-a", storageScope: "postgres" });
+        const generation = subscription.generation();
+        await assert.rejects(wakeRepo.update(() => { throw new Error("F9 rollback"); }), /F9 rollback/);
+        assert.equal(subscription.generation(), generation, "rollback must not hint"); subscription.close();
+        // PG读取已完成但handler尚未收到时提交，通知不能被初始旧快照覆盖。
+        let readEntered, releaseRead, firstRead = true;
+        const enteredRead = new Promise(resolve => { readEntered = resolve; });
+        const heldRead = new Promise(resolve => { releaseRead = resolve; });
+        const racingRepo = { ...wakeRepo, async readSyncChanges(options) { const snapshot = await wakeRepo.readSyncChanges(options); if (firstRead) { firstRead = false; readEntered(); await heldRead; } return snapshot; } };
+        const raceAfter = (await wakeRepo.readSyncSnapshot()).metadata.sync.cursor;
+        const race = wakeRequest(raceAfter, 1500, createSyncHttp({ repository: racingRepo, publicState: project, notifier: wakeNotifier, getAccountId: () => context.getStore() }));
+        await enteredRead; await wakeRepo.update(store => { store.notifications[0].readAt = "racing-commit"; }); releaseRead();
+        assert.ok((await race).data.cursor > raceAfter);
+        const lostAfter = (await wakeRepo.readSyncSnapshot()).metadata.sync.cursor;
+        const lostStarted = performance.now(), lostHint = wakeRequest(lostAfter, 600);
+        await pause(20); wakeHintFailure = true;
+        await wakeRepo.update(store => { store.notifications[0].readAt = "hint-failed-committed"; });
+        assert.ok((await lostHint).data.cursor > lostAfter);
+        assert.ok(performance.now() - lostStarted >= 500, "lost PG hint must recover through deadline read");
+        assert.equal((await wakeRepo.read()).notifications[0].readAt, "hint-failed-committed");
+        wakeHintFailure = false;
+        const auditFailure = runtime.createStoreRepository({ ...wakeOptions, onCommit: async () => { throw new Error("F9 audit failure"); } });
+        const before = (await wakeRepo.readSyncSnapshot()).metadata.sync.cursor, pending = wakeRequest(before);
+        await pause(20); const committed = performance.now();
+        await assert.rejects(auditFailure.update(store => { store.notifications[0].readAt = "audit-failed-committed"; }), /F9 audit failure/);
+        assert.ok((await pending).data.cursor > before); assert.ok(performance.now() - committed < 500);
+        assert.ok([...samples].sort((a, b) => a - b)[5] < 500);
+        console.log("F9_PG_WAKE_METRICS " + JSON.stringify({ samples, p75CommitToResponseMs: [...samples].sort((a, b) => a - b)[5] }));
+      });
+    } finally { wakeNotifier.stop(); }
 
     const sweepPath = "/attachments/postgres-sweep.tts.mp3";
     const sweepAudio = Buffer.from("ID3-postgres-sweep");
@@ -354,7 +1849,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       accountId: "repo-test", store: empty()
     })), /entered runtime/);
 
-    let app = await startApp();
+    let app = await startApp("runtime_test", dataDir, "postgres", {
+      thoughtPagingEnabled: true,
+      syncV2Enabled: true
+    });
     await assert.rejects(startApp(), /Only one application instance/);
     assert.equal((await request(app.base, "/api/state")).status, 401);
     const register = username => request(app.base, "/api/auth/register", {
@@ -367,6 +1865,75 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.ok(registration && second, JSON.stringify(registrations));
     assert.equal((await register("runtime-owner")).status, 409);
     const cookie = registration.cookie, otherCookie = second.cookie, id = registration.body.user.id;
+    // 首次读取必须依赖注册事务本身，不能由恢复扫描或首次业务写入补齐元数据。
+    const initialSync = async () => {
+      const results = [];
+      for (const result of [registration, second]) {
+        const initial = await request(app.base, "/api/v1/sync?cursor=0&waitMs=0", { cookie: result.cookie });
+        assert.equal(initial.status, 200, JSON.stringify(initial.body));
+        assert.equal(initial.body.data.cursor, 0);
+        assert.deepEqual(initial.body.data.changes, []);
+        assert.deepEqual(initial.body.data.snapshot, {});
+        const metadata = (await database.query(
+          "SELECT payload FROM for_now.store_fields WHERE account_id=$1 AND field='_persistence'",
+          [result.body.user.id]
+        )).rows[0]?.payload;
+        assert.deepEqual(metadata.sync, { cursor: 0, changes: [], operations: [] });
+        const rebuilt = await account(result.body.user.id, () => repo.readSyncSnapshot());
+        assert.equal(rebuilt.metadata.sync.cursor, 0);
+        assert.deepEqual(rebuilt.metadata.lifecycles, []);
+        assert.deepEqual(rebuilt.metadata.idempotency, []);
+        results.push({ role: result.body.user.role, status: initial.status, cursor: initial.body.data.cursor });
+      }
+      return results;
+    };
+    for (const route of ["/api/v1/thought-chains", "/api/v1/route-state?view=thoughts"]) {
+      const result = await request(app.base, route, { cookie });
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+    }
+    assert.equal((await request(app.base, "/api/v1/route-state?view=thoughts&page=2", { cookie })).status, 400);
+    const beforeRestart = await initialSync();
+    await stop(app.child);
+    app = await startApp("runtime_test", dataDir, "postgres", {
+      accountRecoveryEnabled: true,
+      thoughtPagingEnabled: true,
+      syncV2Enabled: true
+    });
+    const recoveryReady = await request(app.base, "/readyz");
+    assert.equal(recoveryReady.status, 200, JSON.stringify(recoveryReady.body));
+    assert.deepEqual(recoveryReady.body.counts, {
+      total: 2,
+      ready: 2,
+      quarantined: 0,
+      recovering: 0
+    });
+    assert.equal(recoveryReady.body.dependenciesHealthy, true);
+    const afterRestart = await initialSync();
+    console.log("F2_AUTH_ROW_RECOVERY " + JSON.stringify({
+      recoveryEnabled: true,
+      counts: recoveryReady.body.counts
+    }));
+    console.log("F3A_PROVISION_INITIAL_SYNC " + JSON.stringify({
+      recoveryEnabled: true,
+      beforeRestart,
+      afterRestart
+    }));
+    const authRowMetrics = await runAuthRowChecks({
+      database,
+      runtime,
+      peer,
+      app,
+      request,
+      ownerCookie: cookie
+    });
+    console.log("F1_AUTH_ROW_METRICS " + JSON.stringify(authRowMetrics));
+    // 真实网络+认证PG长轮询断连，不应占着读事务或阻碍后续同步。
+    const disconnectCursor = (await request(app.base, "/api/v1/sync", { cookie })).body.data.cursor;
+    const disconnect = new AbortController();
+    const disconnected = fetch(app.base + `/api/v1/sync?cursor=${disconnectCursor}&waitMs=1500`, { headers: { cookie }, signal: disconnect.signal });
+    await pause(30); disconnect.abort(); await assert.rejects(disconnected, error => error.name === "AbortError");
+    assert.equal((await request(app.base, "/api/v1/sync?waitMs=0", { cookie })).status, 200);
+
     const unknownCoreAnswers = Object.fromEntries(onboardingV2Schema.questions
       .filter(question => question.questionId !== "collaboration")
       .map(question => [question.questionId, {
@@ -453,6 +2020,22 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(receiptState.body.data.status, "committed");
     assert.equal(receiptState.body.data.responseAvailable, false);
     assert.equal((await request(app.base, "/api/settings", { cookie })).body.automaticAnswers.thoughtAnswer, false);
+    const initialRecordRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: "thoughtPage:postgres",
+        scopes: [{
+          scopeKey: "thoughtPage:postgres",
+          kind: "thoughtPage",
+          query: "数据库问题",
+          direction: "next"
+        }]
+      }
+    });
+    assert.equal(initialRecordRebase.status, 200, JSON.stringify(initialRecordRebase.body));
+    const recordCursor = initialRecordRebase.body.data.highWaterCursor;
+    assert.equal(Number.isSafeInteger(recordCursor), true);
     const disabledChain = await request(app.base, "/api/thought-chains", {
       method: "POST", cookie,
       body: { question: "默认关闭自动回答", occurredAt: "2026-09-29T01:00:00.000Z", generateAnswer: true, clientRequestId: "postgres-disabled-chain" }
@@ -502,6 +2085,59 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         .map(({ id, type, version, content, relatedTo }) => ({ id, type, version, content, relatedTo }))
     }));
     assert.equal(providerCalls, 1);
+    const firstAuditRows = (await database.query(`
+      SELECT status, trigger_type, result_audience, reasoning_visibility,
+        persistence_mode, request_payload, response_payload
+      FROM for_now.ai_request_audit
+      WHERE account_id=$1
+    `, [id])).rows;
+    assert.equal(firstAuditRows.length, 1);
+    assert.equal(firstAuditRows[0].status, "success");
+    assert.equal(firstAuditRows[0].trigger_type, "user_action_auto");
+    assert.equal(firstAuditRows[0].result_audience, "user");
+    assert.equal(firstAuditRows[0].reasoning_visibility, "user_viewable");
+    assert.equal(firstAuditRows[0].persistence_mode, "business_result");
+    assert.match(firstAuditRows[0].request_payload.userPrompt, /数据库问题/);
+    assert.equal(firstAuditRows[0].response_payload.reasoningContent, "隔离模型思考");
+    assert.equal((await database.query(
+      "SELECT count(*)::int AS count FROM for_now.ai_usage_attempts WHERE account_id=$1",
+      [id]
+    )).rows[0].count, 1);
+    await account(id, () => runtime.aiUsage.recordAttempt({
+      id: "timezone-midnight",
+      callId: "timezone-midnight",
+      createdAt: "2026-01-01T18:00:00.000Z",
+      provider: "deepseek",
+      service: "chat-completions",
+      scene: "thoughtAnswer",
+      model: "deepseek-flash",
+      status: "success",
+      usageKnown: true,
+      costKnown: true,
+      costCny: 0.01
+    }));
+    const [utcUsage, shanghaiUsage] = await account(id, () => Promise.all([
+      runtime.aiUsage.read({
+        from: "2026-01-02",
+        to: "2026-01-02",
+        timezone: "UTC"
+      }),
+      runtime.aiUsage.read({
+        from: "2026-01-02",
+        to: "2026-01-02",
+        timezone: "Asia/Shanghai"
+      })
+    ]));
+    assert.equal(utcUsage.entries.length, 0);
+    assert.equal(shanghaiUsage.entries.length, 1);
+    const timezoneStatistics = await request(
+      app.base,
+      "/api/statistics?from=2026-01-02&to=2026-01-02",
+      { cookie }
+    );
+    assert.equal(timezoneStatistics.status, 200, JSON.stringify(timezoneStatistics.body));
+    assert.equal(timezoneStatistics.body.ai.summary.calls, 1);
+    assert.equal(timezoneStatistics.body.ai.daily[0].calls, 1);
     assert.equal((await request(app.base, `/api/ai-tasks/${backgroundTask.id}`, { cookie: otherCookie })).status, 404);
     const resultState = await account(id, () => repo.read());
     const generatedAnswer = resultState.thoughts.find(item => item.sourceTaskId === backgroundTask.id);
@@ -524,6 +2160,170 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const perceptionSource = (await account(id, () => repo.read())).captures.find(
       item => item.id === receiptCapture.id
     );
+    const thoughtList = await request(app.base, "/api/v1/thought-chains?q=" + encodeURIComponent("数据库问题"), { cookie });
+    assert.equal(thoughtList.status, 200, JSON.stringify(thoughtList.body));
+    assert.ok(thoughtList.body.data.some(item => item.id === backgroundTask.targetId && item.annotationCount === 1));
+    assert.ok(thoughtList.body.data.every(item => !Object.hasOwn(item, "blocks") && !Object.hasOwn(item, "reasoningContent")));
+    const thoughtRoute = await request(app.base, "/api/v1/route-state?view=thoughts&q=" + encodeURIComponent("数据库问题"), { cookie });
+    assert.equal(thoughtRoute.status, 200, JSON.stringify(thoughtRoute.body));
+    assert.equal(Object.hasOwn(thoughtRoute.body.data, "thoughts"), false);
+    assert.equal(Object.hasOwn(thoughtRoute.body.data, "thoughtPage"), false);
+    const thoughtRouteRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: "thoughtPage:route",
+        scopes: [{
+          scopeKey: "thoughtPage:route",
+          kind: "thoughtPage",
+          query: "数据库问题",
+          direction: "next"
+        }]
+      }
+    });
+    assert.equal(thoughtRouteRebase.status, 200, JSON.stringify(thoughtRouteRebase.body));
+    assert.deepEqual(
+      thoughtRouteRebase.body.data.scopes[0].entities.map(entity => entity.key.entityId),
+      thoughtList.body.data.map(item => item.id)
+    );
+    assert.ok(thoughtRouteRebase.body.data.speech);
+    const detailRoute = await request(app.base, "/api/v1/route-state?view=thoughts&resourceId=" + backgroundTask.targetId, { cookie });
+    assert.equal(detailRoute.status, 200, JSON.stringify(detailRoute.body));
+    assert.equal(Object.hasOwn(detailRoute.body.data, "thoughts"), false);
+    const detailRouteRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+        scopes: [{
+          scopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+          kind: "thoughtDetail",
+          id: backgroundTask.targetId
+        }]
+      }
+    });
+    assert.equal(detailRouteRebase.status, 200, JSON.stringify(detailRouteRebase.body));
+    assert.ok(detailRouteRebase.body.data.scopes[0].entities.some(
+      entity => entity.key.entityId === generatedAnswer.id
+    ));
+    const recordProducerTypes = (await database.query(`
+      SELECT DISTINCT entity_type FROM for_now.record_changes
+      WHERE account_id=$1 AND cursor>$2
+      ORDER BY entity_type
+    `, [id, recordCursor])).rows.map(row => row.entity_type);
+    console.log("F9_RECORD_PRODUCER_TYPES " + JSON.stringify(recordProducerTypes));
+    const recordBatch = await request(
+      app.base,
+      `/api/v2/sync?cursor=${recordCursor}&waitMs=0`,
+      { cookie }
+    );
+    assert.equal(recordBatch.status, 200, JSON.stringify(recordBatch.body));
+    assert.ok(recordBatch.body.data.nextCursor > recordCursor);
+    assert.ok(recordBatch.body.data.changes.some(change => (
+      change.key.entityType === "thoughtChain"
+      && change.key.entityId === backgroundTask.targetId
+    )));
+    assert.equal(Object.hasOwn(recordBatch.body.data, "snapshot"), false);
+    assert.equal(JSON.stringify(recordBatch.body.data).includes("requestHash"), false);
+    const recordDetailRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+        scopes: [{
+          scopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+          kind: "thoughtDetail",
+          id: backgroundTask.targetId
+        }]
+      }
+    });
+    assert.equal(recordDetailRebase.status, 200, JSON.stringify(recordDetailRebase.body));
+    assert.equal(recordDetailRebase.body.data.highWaterCursor >= recordBatch.body.data.nextCursor, true);
+    assert.ok(recordDetailRebase.body.data.scopes[0].entities.some(entity => (
+      entity.key.entityType === "thoughtBlock"
+      && entity.key.entityId === generatedAnswer.id
+    )));
+    const otherRecordRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie: otherCookie,
+      body: {
+        activeScopeKey: "thoughtPage:other",
+        scopes: [{ scopeKey: "thoughtPage:other", kind: "thoughtPage" }]
+      }
+    });
+    assert.equal(otherRecordRebase.status, 200, JSON.stringify(otherRecordRebase.body));
+    assert.deepEqual(otherRecordRebase.body.data.scopes[0].entities, []);
+    const changeGroupsBeforePrune = (await database.query(`
+      SELECT cursor::text AS cursor,count(*)::int AS count
+      FROM for_now.record_changes WHERE account_id=$1
+      GROUP BY cursor ORDER BY cursor
+    `, [id])).rows;
+    const businessRowsBeforePrune = Number((await database.query(`
+      SELECT count(*)::int AS count FROM for_now.store_objects WHERE account_id=$1
+    `, [id])).rows[0].count);
+    const prunedChanges = await account(id, () => repo.pruneRecordChanges({
+      before: "1970-01-01T00:00:00.000Z",
+      retainRows: 1
+    }));
+    assert.ok(prunedChanges > 0);
+    const changeGroupsAfterPrune = (await database.query(`
+      SELECT cursor::text AS cursor,count(*)::int AS count
+      FROM for_now.record_changes WHERE account_id=$1
+      GROUP BY cursor ORDER BY cursor
+    `, [id])).rows;
+    for (const retained of changeGroupsAfterPrune) {
+      assert.equal(
+        retained.count,
+        changeGroupsBeforePrune.find(item => item.cursor === retained.cursor).count,
+        "retention must not split one committed cursor"
+      );
+    }
+    assert.equal(Number((await database.query(`
+      SELECT count(*)::int AS count FROM for_now.store_objects WHERE account_id=$1
+    `, [id])).rows[0].count), businessRowsBeforePrune);
+    const expiredRecordCursor = await request(
+      app.base,
+      `/api/v2/sync?cursor=${recordCursor}&waitMs=0`,
+      { cookie }
+    );
+    assert.equal(expiredRecordCursor.status, 410, JSON.stringify(expiredRecordCursor.body));
+    assert.equal(expiredRecordCursor.body.error.details.rebaseRequired, true);
+    const postTrimRebase = await request(app.base, "/api/v2/sync/rebase", {
+      method: "POST",
+      cookie,
+      body: {
+        activeScopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+        scopes: [{
+          scopeKey: `thoughtDetail:${backgroundTask.targetId}`,
+          kind: "thoughtDetail",
+          id: backgroundTask.targetId
+        }]
+      }
+    });
+    assert.equal(postTrimRebase.status, 200, JSON.stringify(postTrimRebase.body));
+    assert.ok(postTrimRebase.body.data.scopes[0].entities.some(entity => (
+      entity.key.entityId === generatedAnswer.id
+    )));
+    await holdThoughtBrowserProbe({
+      base: app.base,
+      username: registration.body.user.username,
+      seed: async thoughts => {
+        const fixtureIds = new Set(thoughts.map(item => item.id));
+        await account(id, () => repo.update(store => { store.thoughts.push(...thoughts); }));
+        return async () => {
+          const current = await account(id, () => repo.read());
+          const deleted = current.trash.filter(item => (
+            fixtureIds.has(item.resourceId) || fixtureIds.has(item.location?.parentId)
+          ));
+          for (const item of deleted) {
+            const restored = await request(app.base, `/api/trash/${item.id}/restore`, {
+              method: "POST", cookie, body: {}
+            });
+            assert.equal(restored.status, 200, "Browser fixture recovery must preserve lifecycle");
+          }
+        };
+      }
+    });
     const perceptionSourceRef = {
       resourceType: "capture",
       resourceId: perceptionSource.id,
@@ -654,6 +2454,16 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(trash.body.items.length, 1);
     assert.equal((await request(app.base, `/api/trash/${trash.body.items[0].id}/restore`, { method: "POST", cookie, body: {} })).status, 200);
     assert.equal((await request(app.base, "/api/state", { cookie })).body.captures.find(item => item.id === captureId).version, state.body.captures[0].version + 1);
+    await runThoughtTrashHttpChecks({ base: app.base, request, cookie, otherCookie });
+    const attachmentUpload = await request(app.base, "/api/images/upload", {
+      method: "POST", cookie: otherCookie,
+      body: { image: `data:image/png;base64,${png.toString("base64")}` }
+    });
+    assert.equal(attachmentUpload.status, 201);
+    await runAttachmentProducerHttpChecks({
+      base: app.base, request, cookie: otherCookie, otherCookie: cookie,
+      attachmentPath: attachmentUpload.body.attachmentPath
+    });
     const alphaMaskUpload = await request(app.base, "/api/images/upload", {
       method: "POST", cookie, body: { image: `data:image/png;base64,${png.toString("base64")}` }
     });
@@ -697,6 +2507,21 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     } });
     assert.equal(purge.status, 200, JSON.stringify(purge.body));
     assert.equal(purge.body.attachmentCleanupPending, 0);
+    assert.equal((await request(app.base, "/api/trash", { cookie })).body.items.length, 0);
+    assert.equal((await request(app.base, "/api/state", { cookie })).body.trashCount, 0);
+    const purgedTrashId = plan.body.items.find(item => item.resourceId === media.body.id).id;
+    const deniedRestore = await request(app.base, `/api/trash/${purgedTrashId}/restore`, { method: "POST", cookie, body: {} });
+    assert.equal(deniedRestore.status, 409);
+    assert.equal(deniedRestore.body.code, "RESOURCE_PERMANENTLY_PURGED");
+    const deniedDelete = await request(app.base, `/api/keepsakes/${media.body.id}`, { method: "DELETE", cookie });
+    assert.equal(deniedDelete.status, 409);
+    assert.equal(deniedDelete.body.code, "RESOURCE_PERMANENTLY_PURGED");
+    const retainedPurgeRow = (await database.query(`
+      SELECT payload FROM for_now.store_objects
+      WHERE account_id=$1 AND collection='trash' AND id=$2
+    `, [id, purgedTrashId])).rows[0];
+    assert.equal(retainedPurgeRow.payload.permanentlyPurged, true);
+    assert.equal(retainedPurgeRow.payload.payload.id, media.body.id);
     assert.equal((await database.query("SELECT count(*)::int AS n FROM for_now.attachment_inventory WHERE account_id = $1", [id])).rows[0].n, 0);
     assert.equal((await fetch(`${app.base}${attachmentPath}`, { headers: { cookie } })).status, 404);
 
@@ -726,6 +2551,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await account(second.body.user.id, () => repo.read())).attachmentCleanup.length, 0);
 
     // Check runtime state across process death, including the original session.
+    const beforeRestartSyncCursor = (await request(app.base, "/api/v1/sync", { cookie })).body.data.cursor;
     await stop(app.child);
     await fs.rmdir(retryFile);
     await fs.writeFile(retryFile, png, { mode: 0o600 });
@@ -757,6 +2583,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(interruptedTask.status, "failed");
     assert.match(interruptedTask.error, /避免重复计费/);
     assert.equal(providerCalls, 5, "Restart must only replay queued tasks");
+    const restartSyncStarted = performance.now();
+    const restartSync = await request(app.base, `/api/v1/sync?cursor=${beforeRestartSyncCursor}&waitMs=1500`, { cookie });
+    assert.ok(restartSync.body.data.cursor > beforeRestartSyncCursor);
+    assert.ok(performance.now() - restartSyncStarted < 500, "restart recovers from persistent cursor without old in-memory hints");
     const inventory = (await database.query("SELECT path,state FROM for_now.attachment_inventory WHERE account_id = $1", [id])).rows;
     assert.deepEqual(inventory, [{ path: "/attachments/interrupted-present.png", state: "verified" }]);
     assert.deepEqual((await account(id, () => repo.read())).attachmentCleanup, []);
@@ -774,20 +2604,20 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(restartedSettings.responseStyles.thoughtAnswer, "deep");
     assert.equal((await request(app.base, "/api/ai-cost-plan", { cookie })).body.monthlyBudgetCny, 81);
     const monitorCreatedAt = new Date().toISOString();
-    await account(id, () => runtime.documents.update("usage", { version: 3, entries: [] }, usage => {
-      usage.entries.push(
-        {
-          id: "monitor-known", callId: "monitor-known", createdAt: monitorCreatedAt,
-          provider: "volcengine", service: "speech", scene: "speechSynthesis",
-          model: "volcengine-speech", status: "success", costKnown: true, costCny: 2.5
-        },
-        {
-          id: "monitor-unknown", callId: "monitor-unknown", createdAt: monitorCreatedAt,
-          provider: "volcengine", service: "vision", scene: "visionOcr",
-          model: "volcengine-vision", status: "success", costKnown: false, costCny: 0
-        }
-      );
-    }));
+    await account(id, async () => {
+      await runtime.aiUsage.recordAttempt({
+        id: "monitor-known", callId: "monitor-known", createdAt: monitorCreatedAt,
+        provider: "volcengine", service: "speech", scene: "speechSynthesis",
+        model: "volcengine-speech", status: "success", usageKnown: true,
+        costKnown: true, costCny: 2.5
+      });
+      await runtime.aiUsage.recordAttempt({
+        id: "monitor-unknown", callId: "monitor-unknown", createdAt: monitorCreatedAt,
+        provider: "volcengine", service: "vision", scene: "visionOcr",
+        model: "volcengine-vision", status: "success", usageKnown: true,
+        costKnown: false, costCny: 0
+      });
+    });
     const adminSnapshot = await request(app.base, "/api/admin/v1/snapshot", {
       headers: { authorization: `Bearer ${platformToken}` }
     });
@@ -802,7 +2632,8 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.doesNotMatch(JSON.stringify(adminSnapshot.body), /数据库中的模型回答|runtime-password-1|synthetic-test-key/);
     const monitorUsage = await dailyAiUsage(dataDir, Date.parse(monitorCreatedAt), {
       persistenceBackend: "postgres",
-      backupDatabaseUrl: url("runtime_backup")
+      backupDatabaseUrl: url("runtime_backup"),
+      auditDatabaseEnabled: true
     });
     assert.ok(monitorUsage.calls >= 2);
     assert.ok(monitorUsage.costCny >= 2.5);
@@ -810,6 +2641,10 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const files = await fs.readdir(dataDir, { recursive: true });
     assert.equal(files.filter(name => /(?:store|auth|llm-settings|ai-usage|ai-cost-plan)\.json$/.test(name)).length, 0);
     await assert.rejects(startApp("runtime_test", dataDir, "json"), /switched persistence backend/);
+    await holdRecordSyncBrowserProbe({
+      base: app.base,
+      username: registration.body.user.username
+    });
 
     // Export runtime mutations using a consistent relational snapshot; boot it
     // in an independently created database using the same session and contents.
@@ -870,7 +2705,19 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     } finally {
       await restoredMigration.query("ROLLBACK");
     }
-    const restoredApp = await startApp("runtime_restored", restoredDir);
+    const restoredApp = await startApp("runtime_restored", restoredDir, "postgres", {
+      thoughtPagingEnabled: true,
+      recordCommandAllowlist: [
+        "notification.read",
+        "notification.readAll",
+        "task.status",
+        "thought.update",
+        "thought.delete",
+        "thought.create",
+        "thought.aiWriteback"
+      ].join(",")
+    });
+    assert.equal((await request(restoredApp.base, "/readyz")).status, 200);
     assert.equal((await request(restoredApp.base, "/api/state", { cookie })).body.captures.length, 6);
     assert.equal((await request(restoredApp.base, "/api/auth/me", { cookie })).body.user.id, id);
     assert.equal((await request(restoredApp.base, "/api/ai-cost-plan", { cookie })).body.monthlyBudgetCny, 81);
@@ -884,6 +2731,18 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await request(restoredApp.base, "/api/ai-tasks/restart-queued", { cookie })).body.status, "succeeded");
     assert.equal((await request(restoredApp.base, "/api/ai-tasks/restart-running", { cookie })).body.status, "failed");
     assert.equal(providerCalls, 5);
+    await request(restoredApp.base, "/api/settings", {
+      cookie, method: "POST", body: { automaticAnswers: { thoughtAnswer: false } }
+    });
+    await runThoughtAiHttpChecks({
+      base: restoredApp.base, request, cookie, otherCookie, waitTask,
+      attachmentPath: "/attachments/interrupted-present.png"
+    });
+    await request(restoredApp.base, "/api/settings", {
+      cookie, method: "POST", body: { automaticAnswers: { thoughtAnswer: false } }
+    });
+    await runThoughtDiscoveryHttpChecks({ base: restoredApp.base, request, cookie, otherCookie });
+    assert.equal(providerCalls, 10, "Foreground replay and forbidden requests must not call the provider");
     await assert.rejects(applyPostgresBundle(restoredMigration, bundle), /entered runtime/);
     return ["runtime role validation", ...budgetChecks,
       "atomic registration rollback", "cross-connection serialized writes",
@@ -896,5 +2755,132 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     await Promise.all([...children].map(stop));
     await new Promise(resolve => provider.close(resolve));
     await Promise.all([runtime.close(), peer.close()]);
+  }
+}
+
+
+async function runBlockDeletionRemediationChecks({ database, repo, account }) {
+  for (const initialStatus of ["queued", "running"]) {
+    const accountId = `block-remediation-${initialStatus}`;
+    await account(accountId, () => repo.initialize({ allowCreate: true }));
+    const harness = createThoughtRecordHarness(repo);
+    await account(accountId, () => repo.update(store => {
+      store.thoughts = thoughtRecordFixtures();
+      store.trash = [];
+      store.attachmentCleanup = [];
+      store.aiTasks = [];
+      store.notifications = [];
+      const root = store.thoughts[0];
+      root.annotations[0].targetKey = "idea:thought-idea";
+      root.annotations[0].quote = "旧想法";
+      root.annotations[0].start = 0;
+      root.annotations[0].end = 3;
+      root.annotations.push({
+        ...structuredClone(root.annotations[0]), id: "previously-deleted"
+      }, {
+        ...structuredClone(root.annotations[0]), id: "question-annotation",
+        targetKey: "question:thought-root", quote: "关键", start: 2, end: 4
+      });
+      store.aiTasks.push({
+        id: "block-task", kind: "annotationShenji", resourceType: "thought",
+        targetId: "thought-root", subtargetId: "annotation-1", status: initialStatus,
+        payload: {}, attempt: 0, createdAt: "2026-10-18T03:05:00.000Z",
+        updatedAt: "2026-10-18T03:05:00.000Z"
+      });
+      store.notifications.push({
+        id: "block-notice", taskId: "block-task", kind: "aiTask",
+        resourceType: "thought", targetId: "thought-root", subtargetId: "annotation-1",
+        status: initialStatus, title: "批注回答", message: "生成中", readAt: "",
+        createdAt: "2026-10-18T03:05:00.000Z", updatedAt: "2026-10-18T03:05:00.000Z"
+      });
+      harness.mutations.moveNestedItemToTrash(store, {
+        parentCollection: "thoughts", parentId: root.id, field: "annotations",
+        type: "annotation", id: "previously-deleted"
+      });
+    }));
+    const expectedVersion = await account(accountId, async () => (
+      (await repo.read()).thoughts.find(item => item.id === "thought-root").version
+    ));
+    const cursor = (await database.query(
+      "SELECT current_cursor FROM for_now.account_sync_heads WHERE account_id=$1", [accountId]
+    )).rows[0].current_cursor;
+    await account(accountId, () => harness.commands.update({
+      ...thoughtUpdateInput, questionText: "前文关键后文", idea: "", expectedVersion
+    }));
+    const stored = await account(accountId, () => repo.read());
+    const entry = stored.trash.find(item => item.type === "thoughtBlock");
+    assert.deepEqual(entry.dependents.annotations.map(item => item.id), ["annotation-1"]);
+    assert.deepEqual(entry.dependents.resourceKeys, ["thoughtChain:thought-root/annotation:annotation-1"]);
+    assert.deepEqual(stored.thoughts.find(item => item.id === "thought-root").annotations.map(item => item.id), ["question-annotation"]);
+    const lifecycle = await database.query(`
+      SELECT resource_key, state, tombstone, trash_id FROM for_now.resource_lifecycle
+      WHERE account_id=$1 AND resource_id='annotation-1' ORDER BY resource_key
+    `, [accountId]);
+    assert.deepEqual(lifecycle.rows, [
+      { resource_key: "thoughtChain:thought-root/annotation:annotation-1", state: "deleted", tombstone: true, trash_id: entry.id },
+      { resource_key: "thoughtChain:thought-sibling/annotation:annotation-1", state: "active", tombstone: false, trash_id: "" }
+    ]);
+    const expected = initialStatus === "queued" ? "cancelled" : "cancelling";
+    assert.equal(stored.aiTasks[0].status, expected);
+    assert.equal(stored.notifications[0].status, expected);
+    const changes = (await database.query(`
+      SELECT entity_type, entity_id, operation, cursor FROM for_now.record_changes
+      WHERE account_id=$1 AND cursor > $2 ORDER BY cursor, ordinal
+    `, [accountId, cursor])).rows;
+    assert.deepEqual(new Set(changes.map(row => row.entity_type)),
+      new Set(["thoughtChain", "thoughtBlock", "annotation", "aiTask", "notification", "trash"]));
+    const removedIdentities = changes.filter(row => row.operation === "delete"
+      && ["thoughtBlock", "annotation"].includes(row.entity_type));
+    assert.deepEqual(removedIdentities.map(row => row.entity_id).sort(),
+      ["thought-idea", "annotation-1"].sort());
+    assert.equal(changes.some(row => row.entity_id === "previously-deleted"), false);
+    assert.equal(new Set(changes.map(row => row.cursor)).size, 1);
+    if (initialStatus === "running") {
+      await account(accountId, () => harness.commands.failWriteback("block-task", { code: "AI_TASK_CANCELLED" }));
+      const settled = await account(accountId, () => repo.read());
+      assert.equal(settled.aiTasks[0].status, "cancelled");
+      assert.equal(settled.notifications[0].status, "cancelled");
+      const terminalChanges = (await database.query(`
+        SELECT entity_type FROM for_now.record_changes
+        WHERE account_id=$1 AND command_id='thought.aiWriteback.failure'
+      `, [accountId])).rows;
+      assert.deepEqual(new Set(terminalChanges.map(row => row.entity_type)), new Set(["aiTask", "notification"]));
+    }
+    await account(accountId, () => repo.update(store => harness.mutations.restoreTrashEntry(store, entry.id)));
+    const restored = await account(accountId, () => repo.read());
+    assert.deepEqual(restored.thoughts.find(item => item.id === "thought-root").annotations.map(item => item.id).sort(), ["annotation-1", "question-annotation"]);
+    assert.equal((await account(accountId, () => repo.update(store => harness.mutations.restoreTrashEntry(store, entry.id)))).missing, true);
+    assert.equal((await database.query(`
+      SELECT state FROM for_now.resource_lifecycle
+      WHERE account_id=$1 AND resource_key='thoughtChain:thought-root/annotation:annotation-1'
+    `, [accountId])).rows[0].state, "active");
+    assert.equal((await database.query(`
+      SELECT state FROM for_now.resource_lifecycle
+      WHERE account_id=$1 AND resource_key='thoughtChain:thought-root/annotation:previously-deleted'
+    `, [accountId])).rows[0].state, "deleted");
+    // Permanent purge keeps the DB row and payload but closes every business entry point.
+    const deleted = await account(accountId, () => repo.update(store => harness.mutations.moveThoughtBlockToTrash(store, "thought-idea")));
+    const trashCommands = createTrashCommands({
+      repository: repo, trash: harness.trash, mutations: harness.mutations,
+      cleanup: { enqueue() {}, drain: async () => ({ attempted: 0, removed: [], pending: 0 }) }
+    });
+    await account(accountId, async () => {
+      const plan = await trashCommands.preview([deleted.id]);
+      await trashCommands.purge([deleted.id], plan.planHash);
+      assert.equal((await trashCommands.list()).items.some(item => item.id === deleted.id), false);
+      await assert.rejects(trashCommands.restore(deleted.id), { code: "RESOURCE_PERMANENTLY_PURGED" });
+      await assert.rejects(repo.update(store => harness.mutations.moveThoughtBlockToTrash(store, "thought-idea")), { code: "RESOURCE_PERMANENTLY_PURGED" });
+      await assert.rejects(trashCommands.purge([deleted.id], plan.planHash), { code: "RESOURCE_PERMANENTLY_PURGED" });
+    });
+    const tomb = (await database.query(`
+      SELECT payload FROM for_now.store_objects WHERE account_id=$1 AND collection='trash' AND id=$2
+    `, [accountId, deleted.id])).rows[0].payload;
+    assert.equal(tomb.permanentlyPurged, true);
+    assert.equal(tomb.lifecycleState, "purged");
+    assert.equal(tomb.payload.id, "thought-idea");
+    assert.equal((await database.query(`
+      SELECT state FROM for_now.resource_lifecycle
+      WHERE account_id=$1 AND resource_key='thoughtChain:thought-root/annotation:annotation-1'
+    `, [accountId])).rows[0].state, "purged");
   }
 }

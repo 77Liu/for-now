@@ -1,16 +1,22 @@
+import { THOUGHT_PAGING } from "../../../.build/typescript/backend/shared/thought-pagination/index.mjs";
 import crypto from "node:crypto";
+import { businessReasoning, projectProductReasoning } from "../ai/index.mjs";
 import { cleanAttachmentPaths } from "../../shared/attachments/index.mjs";
 import {
   recordVersion as normalizedVersion,
   safeText
 } from "../../shared/validation/index.mjs";
 import { stripThoughtAnswerLead } from "./prompts.mjs";
+import { createLocalThoughtMutations } from "../../../.build/typescript/backend/modules/thoughts/local-mutations.mjs";
+import { createThoughtLocalCommands } from "../../../.build/typescript/backend/modules/thoughts/local-commands.mjs";
+import { createThoughtRecordRepository } from "../../../.build/typescript/backend/shared/persistence/thought-record-repository.mjs";
+import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "../../shared/persistence/index.mjs";
 export { thoughtTask, thoughtPromptSystem, stripThoughtAnswerLead, thoughtPersonalContext, thoughtChainContext, thoughtDraftInput, thoughtStarterPrompt } from "./prompts.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
-const CHAIN_LIST_LIMIT = 20;
-const QUESTION_PREVIEW_LIMIT = 600;
-const USER_PREVIEW_LIMIT = 400;
+const CHAIN_LIST_LIMIT = THOUGHT_PAGING.pageSize;
+const QUESTION_PREVIEW_LIMIT = THOUGHT_PAGING.questionPreviewLimit;
+const USER_PREVIEW_LIMIT = THOUGHT_PAGING.userPreviewLimit;
 const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const isAiAnswer = item => (
   item?.authorType === "ai"
@@ -87,7 +93,7 @@ const parseChainCursor = (value, filters) => {
     return false;
   }
 };
-const chainSearchText = (root, blocks) => normalizedSearchText([
+export const thoughtChainSearchText = (root, blocks) => normalizedSearchText([
   root.content,
   ...(Array.isArray(root.tags) ? root.tags : []),
   ...(Array.isArray(root.remarks) ? root.remarks.map(item => item?.text) : []),
@@ -101,7 +107,7 @@ const chainSearchText = (root, blocks) => normalizedSearchText([
 ].filter(Boolean).join(" "));
 const chainMatchesQuery = (root, blocks, query) => {
   if (!query) return true;
-  const content = chainSearchText(root, blocks);
+  const content = thoughtChainSearchText(root, blocks);
   return query.split(" ").every(term => content.includes(term));
 };
 const userChainPreview = blocks => {
@@ -167,9 +173,9 @@ export const thoughtChainSummary = (root, blocks) => {
 function publicThoughtValue(value) {
   if (Array.isArray(value)) return value.map(publicThoughtValue);
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !["modelDraft", "modelReasoning", "reasoningContent", "requestHash"].includes(key))
-    .map(([key, item]) => [key, publicThoughtValue(item)]));
+  return projectProductReasoning(Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !["modelDraft", "modelReasoning", "requestHash"].includes(key))
+    .map(([key, item]) => [key, publicThoughtValue(item)])));
 }
 
 export function thoughtChainDetail(thoughts, id) {
@@ -183,10 +189,15 @@ export function thoughtChainDetail(thoughts, id) {
   } : null;
 }
 
+/**
+ * 在同一账户与筛选scope下按稳定tuple双向读取摘要；prev保持既有展示排序。
+ * 空页以原游标保留反向恢复边界；每次读取是实时列表，不构成跨请求冻结快照。
+ */
 export function thoughtChainListPage(thoughts, {
   limit = CHAIN_LIST_LIMIT,
   maxLimit = CHAIN_LIST_LIMIT,
   afterId = "",
+  direction = "next",
   query = "",
   tag = "",
   sort = "occurred",
@@ -225,21 +236,23 @@ export function thoughtChainListPage(thoughts, {
       chainSortTuple(right, normalizedSort)
     ));
   const cursor = parseChainCursor(afterId, filters);
-  if (cursor === false || (afterId && !matches.length)) return { invalidCursor: true };
-  const nextIndex = cursor
-    ? matches.findIndex(root => (
-      compareChainTuples(chainSortTuple(root, normalizedSort), cursor) > 0
-    ))
-    : 0;
-  const start = cursor && nextIndex < 0 ? matches.length : nextIndex;
+  if (cursor === false) return { invalidCursor: true };
+  if (!["next", "prev"].includes(direction) || (direction === "prev" && !cursor)) return { invalidQuery: true };
   const pageLimit = Number.isSafeInteger(limit)
     ? Math.min(Math.max(CHAIN_LIST_LIMIT, Number(maxLimit) || 0), Math.max(1, limit))
     : CHAIN_LIST_LIMIT;
-  const selected = matches.slice(start, start + pageLimit);
-  const hasMore = start + selected.length < matches.length;
+  const candidates = cursor ? matches.filter(root => {
+    const comparison = compareChainTuples(chainSortTuple(root, normalizedSort), cursor);
+    return direction === "prev" ? comparison < 0 : comparison > 0;
+  }) : matches;
+  const selected = direction === "prev" ? candidates.slice(-pageLimit) : candidates.slice(0, pageLimit);
+  const first = selected[0], last = selected.at(-1);
+  const newer = first ? matches.some(root => compareChainTuples(chainSortTuple(root, normalizedSort), chainSortTuple(first, normalizedSort)) < 0) : direction === "next" && matches.length > 0;
+  const older = last ? matches.some(root => compareChainTuples(chainSortTuple(root, normalizedSort), chainSortTuple(last, normalizedSort)) > 0) : direction === "prev" && matches.length > 0;
   return {
     items: selected.map(root => thoughtChainSummary(root, blocksByRoot.get(root.id) || [])),
-    nextId: hasMore ? chainCursor(selected.at(-1), filters) : "",
+    nextId: older ? (last ? chainCursor(last, filters) : afterId) : "",
+    prevId: newer ? (first ? chainCursor(first, filters) : afterId) : "",
     tags: availableTags
   };
 }
@@ -328,7 +341,7 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
           sourceVersion: task.inputVersion,
           generation,
           sourceTaskId: task.id,
-          ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
+          ...businessReasoning("thoughtAnswer", result.reasoningContent, 12000),
           ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}),
           ...(Array.isArray(result.citations) ? { citations: structuredClone(result.citations) } : {}),
           ...(Array.isArray(result.providedReferences) ? { providedReferences: structuredClone(result.providedReferences) } : {}),
@@ -351,7 +364,9 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
       current.version = normalizedVersion(current.version) + 1;
       current.clientRequestId = task.clientRequestId;
       current.sourceTaskId = task.id;
-      if (result.reasoningContent) current.reasoningContent = result.reasoningContent;
+      delete current.reasoningContent;
+      delete current.reasoningVisibility;
+      Object.assign(current, businessReasoning("followUpAnswer", result.reasoningContent, 12000));
       if (result.contextReceipt) current.contextReceipt = structuredClone(result.contextReceipt);
       if (Array.isArray(result.citations)) current.citations = structuredClone(result.citations);
       if (result.citationStatus) current.citationStatus = result.citationStatus;
@@ -371,14 +386,37 @@ export function createThoughtService({
   eventTimeFields,
   reanchorAnnotations,
   reconcileOriginalImages = null,
-  getCursorScope = () => ""
+  getCursorScope = () => "",
+  queryRuntime = null
 }) {
-  const touchRoot = root => {
-    root.version = recordVersion(root.version) + 1;
-    root.updatedAt = now();
-  };
+  const localMutations = createLocalThoughtMutations({
+    createId,
+    now,
+    recordVersion,
+    cleanAttachmentPaths,
+    eventTimeFields,
+    reanchorAnnotations,
+    reconcileOriginalImages
+  });
+  const localCommands = queryRuntime?.enabled && repository.accountUnitOfWork?.run
+    ? createThoughtLocalCommands({
+        unitOfWork: repository.accountUnitOfWork,
+        repository: createThoughtRecordRepository({
+          canonicalJson,
+          mapStoreObjects,
+          rebuildStoreObjects
+        }),
+        mutations: localMutations,
+        effects: repository.sourceMutationEffects,
+        now
+      })
+    : null;
+  const mutateLocal = (operation, input) => localCommands
+    ? localCommands[operation](input)
+    : repository.update(store => localMutations[operation](store, input));
 
   return {
+    recordProducerCommands: localCommands,
     createChainInStore(store, {
       questionText, eventTime, tags, clientRequestId, requestHash,
       idea, answer, modelDraft, modelReasoning, attachmentPaths = [], sourceRef = null
@@ -450,7 +488,7 @@ export function createThoughtService({
           clientRequestId,
           requestHash,
           ...(draft ? { modelDraft: draft, editedFromModel: draft !== content } : {}),
-          ...(reasoningContent ? { reasoningContent } : {})
+          ...businessReasoning("thoughtAnswer", reasoningContent, 12000)
         };
         store.thoughts.unshift(item);
         items.push(item);
@@ -529,6 +567,10 @@ export function createThoughtService({
           });
         } else if (first) removeBlock(store, first.id);
       }
+      // A chain update advances the aggregate once; standalone block deletion
+      // may touch the same root through its reusable trash mutation.
+      question.updatedAt = updatedAt;
+      question.version = currentVersion + 1;
       const result = { value: question, ...(reconciled?.trashId ? { trashId: reconciled.trashId } : {}) };
       if (reconciled?.[AFTER_COMMIT]) Object.defineProperty(result, AFTER_COMMIT, { value: reconciled[AFTER_COMMIT] });
       return result;
@@ -561,7 +603,7 @@ export function createThoughtService({
         generation: store.thoughts.filter(item => item.relatedTo === id && item.type === "answer").length + 1,
         clientRequestId,
         ...(sourceTaskId ? { sourceTaskId } : {}),
-        ...(reasoningContent ? { reasoningContent } : {}),
+        ...businessReasoning("thoughtAnswer", reasoningContent, 12000),
         ...(contextReceipt ? { contextReceipt: structuredClone(contextReceipt) } : {})
       };
       store.thoughts.unshift(answer);
@@ -569,6 +611,7 @@ export function createThoughtService({
     },
 
     async getChain(id) {
+      if (queryRuntime?.enabled) return queryRuntime.detail(id);
       const store = await repository.read();
       return thoughtChainDetail(store.thoughts, id);
     },
@@ -577,11 +620,13 @@ export function createThoughtService({
       return thoughtTaskResult((await repository.read()).thoughts, task);
     },
 
-    async listChains({ limit = CHAIN_LIST_LIMIT, afterId = "", query = "", tag = "", sort = "occurred" } = {}) {
+    async listChains({ limit = CHAIN_LIST_LIMIT, afterId = "", direction = "next", query = "", tag = "", sort = "occurred" } = {}) {
+      if (queryRuntime?.enabled) return queryRuntime.list({ limit, afterId, direction, query, tag, sort });
       const store = await repository.read();
       return thoughtChainListPage(store.thoughts, {
         limit,
         afterId,
+        direction,
         query,
         tag,
         sort,
@@ -593,29 +638,12 @@ export function createThoughtService({
       const originalImages = cleanAttachmentPaths(attachmentPaths);
       if (!content && !originalImages.length) return Promise.resolve({ invalid: true, error: "请填写文字或插入图片" });
       const requestHash = clientRequestId ? requestDigest({ content, eventTime, type, relatedTo, tags, attachmentPaths: originalImages }) : "";
-      const createInStore = store => {
-        const root = relatedTo ? store.thoughts.find(item => item.id === relatedTo && item.type === "question") : null;
-        if (relatedTo && !root) return { missing: true };
-        const entry = {
-          id: createId(),
-          createdAt: now(),
-          ...eventTime,
-          type,
-          content,
-          attachmentPaths: originalImages,
-          tags,
-          relatedTo,
-          disposition: "kept",
-          remarks: [],
-          origin: "manual",
-          authorType: "user",
-          version: 1,
-          ...(clientRequestId ? { clientRequestId, requestHash } : {})
-        };
-        store.thoughts.unshift(entry);
-        if (root) touchRoot(root);
-        return { value: entry };
+      const input = {
+        content, eventTime, type, relatedTo, tags,
+        attachmentPaths: originalImages, clientRequestId, requestHash
       };
+      if (localCommands) return localCommands.createBlock(input);
+      const createInStore = store => localMutations.createBlock(store, input);
       if (!clientRequestId || typeof repository.executeIdempotent !== "function") {
         return repository.update(createInStore);
       }
@@ -627,142 +655,62 @@ export function createThoughtService({
     },
 
     updateBlock({ id, content, eventTimeInput, expectedVersion, attachmentPaths }) {
-      return repository.update(store => {
-        const item = store.thoughts.find(value => value.id === id);
-        if (!item || item.type === "question") return { missing: true };
-        if (expectedVersion != null && Number(expectedVersion) !== recordVersion(item.version)) {
-          return { conflict: true, currentVersion: recordVersion(item.version) };
-        }
-        const originalImages = attachmentPaths !== undefined
-          ? cleanAttachmentPaths(attachmentPaths)
-          : cleanAttachmentPaths(item.attachmentPaths);
-        if (!content && !originalImages.length) return { invalid: true, error: "请保留文字或至少一张图片" };
-        const eventTime = eventTimeFields(eventTimeInput, item);
-        if (!eventTime) return { invalidTime: true };
-        const root = store.thoughts.find(value => value.id === item.relatedTo && value.type === "question");
-        const updatedAt = now();
-        let reconciled = null;
-        if (attachmentPaths !== undefined && typeof reconcileOriginalImages === "function") {
-          reconciled = reconcileOriginalImages(store, "thoughtBlock", id, originalImages, {
-            changedAt: updatedAt,
-            touchResource: false,
-            allowEmptyImages: true
-          });
-          if (!reconciled.value) return reconciled;
-        }
-        if (root) reanchorAnnotations(root, `${item.type}:${item.id}`, item.content, content);
-        item.content = content;
-        item.attachmentPaths = originalImages;
-        Object.assign(item, eventTime);
-        item.updatedAt = updatedAt;
-        item.version = recordVersion(item.version) + 1;
-        if (item.type === "answer" && item.modelDraft) item.editedFromModel = item.modelDraft !== content;
-        if (root) touchRoot(root);
-        const result = { value: item, ...(reconciled?.trashId ? { trashId: reconciled.trashId } : {}) };
-        if (reconciled?.[AFTER_COMMIT]) Object.defineProperty(result, AFTER_COMMIT, { value: reconciled[AFTER_COMMIT] });
-        return result;
+      return mutateLocal("updateBlock", {
+        id, content, eventTimeInput, expectedVersion, attachmentPaths
       });
     },
 
     async getBlock(id) {
+      if (queryRuntime?.enabled) return queryRuntime.blockInput(id);
       const store = await repository.read();
       return store.thoughts.find(item => item.id === id && item.type !== "question") || null;
     },
 
     setDisposition({ id, disposition }) {
-      return repository.update(store => {
-        const found = store.thoughts.find(value => value.id === id);
-        if (!found) return { missing: true };
-        const updatedAt = now();
-        for (const item of store.thoughts.filter(value => value.id === id || value.relatedTo === id)) {
-          item.disposition = disposition;
-          item.dispositionAt = updatedAt;
-          item.updatedAt = updatedAt;
-          item.version = recordVersion(item.version) + 1;
-        }
-        return { value: found };
-      });
+      return mutateLocal("setDisposition", { id, disposition });
     },
 
     addRemark({ id, text }) {
-      return repository.update(store => {
-        const item = store.thoughts.find(value => value.id === id);
-        if (!item) return { missing: true };
-        const occurredAt = now();
-        const remark = { id: createId(), text, createdAt: occurredAt, occurredAt, version: 1 };
-        item.remarks.push(remark);
-        touchRoot(item);
-        return { value: remark };
-      });
+      return mutateLocal("addRemark", { id, text });
     },
 
     updateRemark({ id, remarkId, text }) {
-      return repository.update(store => {
-        const item = store.thoughts.find(value => value.id === id);
-        const remark = item?.remarks.find(value => value.id === remarkId);
-        if (!remark) return { missing: true };
-        remark.text = text;
-        remark.updatedAt = now();
-        remark.version = recordVersion(remark.version) + 1;
-        touchRoot(item);
-        return { value: remark };
-      });
+      return mutateLocal("updateRemark", { id, remarkId, text });
     },
 
     addFollowUp({ id, question, answer, clientRequestId = "" }) {
-      return repository.update(store => {
-        const root = store.thoughts.find(item => item.id === id && item.type === "question");
-        if (!root) return { missing: true };
-        root.followUps ||= [];
-        if (clientRequestId) {
-          const existing = root.followUps.find(item => item.clientRequestId === clientRequestId);
-          if (existing) {
-            return existing.question === question && (existing.answer || "") === answer
-              ? { value: existing, duplicate: true }
-              : { conflict: true };
-          }
-        }
-        const followUp = {
-          id: createId(),
-          createdAt: now(),
-          questionOccurredAt: now(),
-          question,
-          answer,
-          ...(answer ? { answeredAt: now(), answerOccurredAt: now() } : {}),
-          ...(clientRequestId ? { clientRequestId } : {}),
-          origin: "manual",
-          version: 1
-        };
-        root.followUps.push(followUp);
-        touchRoot(root);
-        return { value: followUp };
-      });
+      return mutateLocal("addFollowUp", { id, question, answer, clientRequestId });
     },
 
     updateFollowUp({ id, followUpId, hasQuestion, question, hasAnswer, answer, expectedVersion }) {
-      return repository.update(store => {
-        const root = store.thoughts.find(item => item.id === id && item.type === "question");
-        const followUp = root?.followUps?.find(item => item.id === followUpId);
-        if (!followUp) return { missing: true };
-        if (expectedVersion != null && Number(expectedVersion) !== recordVersion(followUp.version)) return { conflict: true };
-        if (hasQuestion) {
-          reanchorAnnotations(root, `followup-question:${followUpId}`, followUp.question, question);
-          followUp.question = question;
-        }
-        if (hasAnswer) {
-          const originalAnswerAt = followUp.answerOccurredAt || followUp.answeredAt;
-          reanchorAnnotations(root, `followup-answer:${followUpId}`, followUp.answer || "", answer);
-          followUp.answer = answer;
-          followUp.answeredAt = answer ? now() : null;
-          if (answer) followUp.answerOccurredAt ||= originalAnswerAt || followUp.answeredAt;
-          if (followUp.modelDraft) followUp.editedFromModel = followUp.modelDraft !== answer;
-          followUp.origin = "manual";
-        }
-        followUp.updatedAt = now();
-        followUp.version = recordVersion(followUp.version) + 1;
-        touchRoot(root);
-        return { value: followUp };
+      return mutateLocal("updateFollowUp", {
+        id, followUpId, hasQuestion, question, hasAnswer, answer, expectedVersion
       });
     }
   };
 }
+
+export { createThoughtRecordCommands } from "../../../.build/typescript/backend/modules/thoughts/record-commands.mjs";
+export { assertThoughtProducerFlags } from "../../../.build/typescript/backend/modules/thoughts/producer-coverage.mjs";
+
+import { createThoughtQueryRuntime as createQueryRuntime } from "../../../.build/typescript/backend/modules/thoughts/query-runtime.mjs";
+/** 装配公开思绪数据库查询与投影维护；业务事实仍是正式思绪对象。 @since unreleased
+ * @partial 本地开发候选；尚未执行生产放量。
+ * @partialScope 移动真机与生产查询/延迟观察未验；本地生产者及有界查询证据见阶段 6 正式回执。
+ * @partialVersion v0.5.16 阶段 6 未发布候选。
+ * @partialReason 隔离 PostgreSQL 与桌面浏览器不能替代生产放量和移动设备证据。
+ * @partialAuthorization Owner 2026-10-19「继续持续推进开发」。
+ * @partialUsage 默认关闭 THOUGHT_PAGING_ENABLED；仅供隔离验收，不开启生产查询。
+ */
+export const createThoughtQueries = ({ repository, enabled = false, discoveryProjection = null, speechProjection = null }) => createQueryRuntime({
+  repository,
+  enabled,
+  dependencies: {
+    canonicalJson, mapStoreObjects, rebuildStoreObjects,
+    summary: thoughtChainSummary,
+    searchText: thoughtChainSearchText,
+    detail: thoughtChainDetail,
+    ...(discoveryProjection ? { discoveryProjection } : {}),
+    ...(speechProjection ? { speechProjection } : {})
+  }
+});

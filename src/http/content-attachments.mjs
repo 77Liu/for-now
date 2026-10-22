@@ -10,6 +10,19 @@ function decoded(value) {
   }
 }
 
+function attachmentOwner(url, input = {}) {
+  const collection = input.owner?.collection ?? url.searchParams.get("ownerCollection");
+  const id = input.owner?.id ?? url.searchParams.get("ownerId");
+  if (!collection && !id) return null;
+  if (!["thoughts", "captures", "journals", "chats", "analyses", "books", "quotes"].includes(collection)
+    || typeof id !== "string" || !id.trim() || id.length > 100) {
+    throw Object.assign(new Error("图片批注所属信息无效"), {
+      statusCode: 400, code: "INVALID_CONTENT_ATTACHMENT_OWNER"
+    });
+  }
+  return { collection, id };
+}
+
 function sendResult(res, v1, result, { status = 200, includeEtag = true } = {}) {
   if (result.missing) return v1.error(res, 404, "图片原文目标不存在", "CONTENT_ATTACHMENT_TARGET_NOT_FOUND");
   if (result.attachmentMissing) return v1.error(res, 404, "原始图片引用不存在", "CONTENT_ATTACHMENT_NOT_FOUND");
@@ -53,6 +66,7 @@ export function createContentAttachmentsHttp({ contentAttachments, bodyJson }) {
       return sendResult(res, v1, await contentAttachments.requestUnderstanding({
         targetType: input.targetType,
         targetId: input.targetId,
+        owner: attachmentOwner(url, input),
         attachmentPaths: input.attachmentPaths,
         inputVersion: input.inputVersion
       }, {
@@ -73,12 +87,14 @@ export function createContentAttachmentsHttp({ contentAttachments, bodyJson }) {
         decoded(match[1]),
         decoded(match[2]),
         name ? `/attachments/${name}` : "",
-        { expectedVersion: v1.expectedVersion(req) }
+        { expectedVersion: v1.expectedVersion(req), owner: attachmentOwner(url) }
       ));
     }
     match = url.pathname.match(TARGET_ROUTE);
     if (req.method === "GET" && match) {
-      return sendResult(res, v1, await contentAttachments.get(decoded(match[1]), decoded(match[2])));
+      return sendResult(res, v1, await contentAttachments.get(decoded(match[1]), decoded(match[2]), {
+        owner: attachmentOwner(url)
+      }));
     }
     if (req.method === "PUT" && match) {
       const input = await bodyJson(req);
@@ -86,7 +102,7 @@ export function createContentAttachmentsHttp({ contentAttachments, bodyJson }) {
         decoded(match[1]),
         decoded(match[2]),
         input.attachmentPaths,
-        { expectedVersion: v1.expectedVersion(req) }
+        { expectedVersion: v1.expectedVersion(req), owner: attachmentOwner(url, input) }
       ));
     }
     return false;

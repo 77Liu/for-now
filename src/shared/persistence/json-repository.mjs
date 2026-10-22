@@ -11,6 +11,10 @@ import { bindBusinessIdResponse, withBusinessIdTransaction } from "../../../.bui
 
 const queues = new Map();
 
+/**
+ * 维护同一真实文件的串行账户仓储。
+ * 新增onCommitted（unreleased）只在落盘成功后、审计前提供best-effort提示，失败不改提交结果。
+ */
 export function createJsonStoreRepository({
   getFile,
   readDocument,
@@ -19,31 +23,42 @@ export function createJsonStoreRepository({
   emptyDocument,
   clone = structuredClone,
   onCommit = async () => {},
+  onCommitted = () => {},
   now = () => new Date().toISOString(),
-  getContext = () => ({})
+  getContext = () => ({}),
+  authorize = () => {},
+  assertCommit = () => {}
 }) {
   const afterCommit = Symbol.for("for-now.after-commit");
+  const hintCommitted = (file, document) => {
+    try { void Promise.resolve(onCommitted({ storageScope: file, cursor: document._persistence?.sync?.cursor })).catch(() => {}); } catch {}
+  };
 
   const runExclusive = operation => {
     const file = getFile();
     const previous = queues.get(file) || Promise.resolve();
-    const current = previous.then(() => operation(file));
+    authorize();
+    const current = previous.then(() => { authorize(); return operation(file); });
     queues.set(file, current.catch(() => {}));
     return current;
   };
 
-  const readInternal = async file => preparePersistenceDocument(
-    normalize(await readDocument(file, emptyDocument)),
-    now
-  );
+  const readInternal = async file => {
+    authorize();
+    const value = await readDocument(file, emptyDocument);
+    authorize();
+    return preparePersistenceDocument(normalize(value), now);
+  };
   const read = async () => publicPersistenceDocument(await readInternal(getFile()));
 
   const transact = operation => runExclusive(async file => {
     const document = await readInternal(file);
     let before = clone(document);
     const commit = async () => {
+      assertCommit(before, document);
       synchronizePersistenceMetadata(before, document, now, { context: getContext() || {} });
       await writeDocument(file, document);
+      hintCommitted(file, document);
       const context = getContext();
       if (context?.clientOperationId) context.operationCommitted = true;
       await onCommit(publicPersistenceDocument(before), publicPersistenceDocument(document));
@@ -62,7 +77,9 @@ export function createJsonStoreRepository({
     const before = await readInternal(file);
     await beforeWrite(publicPersistenceDocument(before), file);
     const document = preparePersistenceDocument(normalize(clone(value)), now, { force: true });
+    assertCommit(before, document);
     await writeDocument(file, document);
+    hintCommitted(file, document);
     await onCommit(publicPersistenceDocument(before), publicPersistenceDocument(document));
     return publicPersistenceDocument(document);
   });
@@ -82,6 +99,8 @@ export function createJsonStoreRepository({
   });
 
   return {
+    /** 当前受信数据文件作用域，包含local-test独立工作目录。 @since unreleased */
+    syncScope: () => getFile(),
     read,
     update,
     replace,
@@ -98,6 +117,16 @@ export function createJsonStoreRepository({
       return replay === undefined ? undefined : clone(replay);
     }),
     readPersistenceMetadata: () => runExclusive(async file => persistenceMetadata(await readInternal(file))),
+    /** JSON兼容同步端口，仍读取完整文件，不模拟SQL局部读取。 @since unreleased */
+    readSyncChanges: () => runExclusive(async file => {
+      const document = await readInternal(file);
+      return { document: publicPersistenceDocument(document), metadata: persistenceMetadata(document) };
+    }),
+    /** 从真实同步元数据查询操作回执；与幂等ledger分离。 @since unreleased */
+    readOperationReceipt: operationId => runExclusive(async file => {
+      const metadata = persistenceMetadata(await readInternal(file));
+      return clone(metadata.sync.operations.find(item => item.operationId === operationId));
+    }),
     readSyncSnapshot: () => runExclusive(async file => {
       const document = await readInternal(file);
       return {

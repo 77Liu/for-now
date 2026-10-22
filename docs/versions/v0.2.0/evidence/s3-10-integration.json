@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "stage": "S3-10",
+  "status": "passed",
+  "date": "2026-09-29",
+  "sourceBranch": "explore/nightly-p3-20260928",
+  "sourceHead": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+  "workingTreeCommitted": false,
+  "integrationOrder": ["B1", "B2", "B3"],
+  "tracks": [
+    {
+      "track": "B1",
+      "branch": "refactor/v020-b1-backend",
+      "worktree": "/private/tmp/for-now-v020-b1",
+      "port": 4181,
+      "dataDir": "data/worktrees/b1",
+      "database": "for_now_v020_b1",
+      "deliverable": "check-in and health record domains, HTTP adapters and regression tests",
+      "status": "integrated"
+    },
+    {
+      "track": "B2",
+      "branch": "refactor/v020-b2-frontend-shared",
+      "worktree": "/private/tmp/for-now-v020-b2",
+      "port": 4182,
+      "dataDir": "data/worktrees/b2",
+      "database": null,
+      "deliverable": "frontend content, local-time and image-input shared modules with regression tests",
+      "status": "integrated"
+    },
+    {
+      "track": "B3",
+      "branch": "refactor/v020-b3-contract-tests",
+      "worktree": "/private/tmp/for-now-v020-b3",
+      "port": 4183,
+      "dataDir": "data/worktrees/b3",
+      "database": "for_now_v020_b3",
+      "deliverable": "thought OpenAPI fragment and closed-reference/runtime coverage tests",
+      "status": "integrated"
+    }
+  ],
+  "artifacts": {
+    "server.mjs": "cb8bc3f3ad64efb56d10f501c194f976b1f158263f64b840ca4dc105bb906108",
+    "public/app.js": "35b3682b7a279687dcb2a6067e10f8fc4ef916a49c9a5fa7d9fc2b660a2bf99a",
+    "src/modules/checkins/index.mjs": "9b881717fcc1adb46dd4fac0aca31a1d6d451f81a85479ca305489ff5bb061b5",
+    "src/modules/checkins/records.mjs": "8068f2e4da6909dd4dd14260e91858cfd2a9c1e65d06728ea9db53c5f3f2e345",
+    "src/modules/health/index.mjs": "d56de65fe2967044f735c6fc01b9834fb726e7279ade1751fe6fe61cda37a0dd",
+    "src/modules/health/profile.mjs": "b18c1af69ef37b04686e6d459399359b84551f10c3fb9d655b07dc85e9bbe811",
+    "src/modules/health/records.mjs": "7470fc971a5dca19fa24e44f1c723c6aa386f1b777cb6c913774660200d962cb",
+    "src/http/checkins.mjs": "edb8039b99b5631ca02bef79cf0bc7ff80d6d6704d3c77e4209e47668bf32d69",
+    "src/http/health-records.mjs": "a03264381bfeb65f2786d19e87f3e62a9d8f9bc1e95900f95bbf4e1bf73bb7dd",
+    "public/frontend/content/index.mjs": "9ad4434801d0b632a80bfa9ee8fa375757f5abf090707f809373d997983f255b",
+    "public/frontend/time/index.mjs": "22278b66b03527b78a6796e3e53cd872a59971b5e299459ef7d979e6161568d7",
+    "public/frontend/media/index.mjs": "53bd9fbbe5210285b79d30ec040718cb817c91e7cb9bf76051cd1442c9b9ed78",
+    "src/http/openapi-v1.mjs": "b17db13b8861c8036ee499aab8d434ce70610f5dd19aa93cbfa3e785e659e92f",
+    "src/http/openapi/thoughts.mjs": "cd30080ca932217a252852e0bdd48d2ff079575127991314fbc85efcd2e06bb5",
+    "scripts/checkin-health-regression.mjs": "0fb14f648ef3166aebea6ec16320ea00b8076ce11a17298277d114fa2a3684fb",
+    "scripts/frontend-shared-regression.mjs": "e24668a1a3e706db2554d9ff6bc237d7e5672d6619c4f86fca9345a4e00e5767",
+    "scripts/api-v1-openapi-fragment-regression.mjs": "f53c05e70987c90f4400b09875c11795e2df91cb4540d434ce8f55e31f472137",
+    "knowledge/module-boundaries.json": "afc356140c859a406e9e065b7b4fae930b4d0fdc8da4265177bd705b57634cc1",
+    "scripts/system-test.mjs": "4117dc127983e6c049d3a4402ba3c114377c657dce1ae9cb77a28d71fed59c3a",
+    "package.json": "655ca0e04885ba7d66fb834f3716b1edfda6ec047ae782ef25e64683cd4b1315"
+  },
+  "verification": {
+    "npmRunCheck": {
+      "status": "passed",
+      "modules": 31,
+      "ownedRoutes": 72,
+      "cycles": 0
+    },
+    "npmRunTestRecords": "passed",
+    "npmRunTestFrontendShared": "passed",
+    "npmRunTestOpenApi": {
+      "status": "passed",
+      "paths": 3,
+      "operations": 6,
+      "closedReferences": 62
+    },
+    "npmRunTestApiV1": "passed",
+    "npmTest": "passed",
+    "npmRunTestSystem": {
+      "status": "passed",
+      "stages": 36,
+      "durationMs": 137115
+    },
+    "postgresBaseline": {
+      "status": "passed",
+      "checks": 40,
+      "evidence": "docs/versions/v0.2.0/evidence/postgres-validation.json"
+    },
+    "postgresCurrentEnvironmentRerun": {
+      "status": "environment_failed_before_assertions",
+      "attemptsThisStage": 1,
+      "error": "postmaster became multithreaded during startup",
+      "persistenceOrSchemaChangedThisStage": false
+    },
+    "gitDiffCheck": "passed",
+    "artifactHashesVerified": "passed",
+    "realExternalProvidersCalled": false,
+    "committed": false,
+    "pushed": false,
+    "deployed": false
+  },
+  "nextStage": "S3-11"
+}

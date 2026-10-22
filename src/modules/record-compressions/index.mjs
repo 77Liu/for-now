@@ -16,7 +16,10 @@ export {
   RECORD_COMPRESSION_WINDOW_DAYS,
   isRecordCompressionRecordEnvelope
 } from "./contract.mjs";
-export { buildRecordCompressionInput } from "./input.mjs";
+export {
+  buildRecordCompressionInput, createRecordCompressionInputBuilder,
+  createRecordCompressionInputProjection
+} from "./input.mjs";
 export {
   RECORD_SLOT_SCHEMA_VERSION, RECORD_SLOT_INPUT_SCHEMA_VERSION, RECORD_SLOT_OUTPUT_SCHEMA_VERSION,
   RECORD_SLOT_START_DATE,

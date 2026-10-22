@@ -73,16 +73,19 @@ export function createNotificationRuntime({
     }, 1800);
   }
 
-  async function readNotificationSnapshot(syncResultsAfterRead: boolean): Promise<boolean> {
+  /** 可选isCurrent自unreleased起保护本次恢复读取；不保存guard或改变原轮询入口。 */
+  async function readNotificationSnapshot(syncResultsAfterRead: boolean, { isCurrent = () => true }: { isCurrent?: () => boolean } = {}): Promise<boolean> {
     const owner = runtime.currentUser?.id;
     const session = getSessionSerial();
+    const current = () => isCurrent() && owner === runtime.currentUser?.id && session === getSessionSerial();
+    if (!current()) return false;
     runtime.notificationsLoadState = "loading";
     publishNotificationState();
     try {
       const [notifications, tasks] = await Promise.all([
         request("/api/notifications"), request("/api/ai-tasks")
       ]);
-      if (owner !== runtime.currentUser?.id || session !== getSessionSerial()) return false;
+      if (!current()) return false;
       const snapshot = getSnapshot();
       snapshot.notifications = notifications.items || [];
       snapshot.aiTasks = tasks.items || [];
@@ -90,10 +93,10 @@ export function createNotificationRuntime({
       snapshot.notificationUnread = runtime.notificationUnreadCount;
       runtime.notificationsLoadState = "ready";
       publishNotificationState();
-      if (syncResultsAfterRead) await syncResults(snapshot.aiTasks, owner, session);
-      return owner === runtime.currentUser?.id && session === getSessionSerial();
+      if (syncResultsAfterRead && current()) await syncResults(snapshot.aiTasks, owner, session);
+      return current();
     } catch {
-      if (owner === runtime.currentUser?.id && session === getSessionSerial()) {
+      if (current()) {
         runtime.notificationsLoadState = "failure";
         publishNotificationState();
       }

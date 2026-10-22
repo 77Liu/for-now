@@ -14,6 +14,6 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateNetwork=true
 RestrictAddressFamilies=AF_UNIX
-InaccessiblePaths=/etc/for-now.env /etc/for-now-platform.env /etc/ssh /etc/letsencrypt /root /srv/for-now /srv/for-now-platform /opt/for-now /opt/for-now-platform /var/lib/for-now /var/lib/for-now-monitor
+InaccessiblePaths=/etc/for-now.env /etc/for-now-platform.env /etc/ssh /etc/letsencrypt /root /srv/for-now /srv/for-now-platform /opt/for-now /opt/for-now-platform -/var/lib/for-now /var/lib/for-now-monitor
 ReadWritePaths=/var/lib/for-now-monitor-journal
 UMask=0007

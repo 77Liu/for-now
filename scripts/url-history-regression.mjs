@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
+import { installAuthenticatedJsonRuntime } from "../.build/typescript/backend/shared/testing/authenticated-runtime.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const CHROME = resolveHeadlessBrowser();
@@ -60,7 +61,7 @@ class Cdp {
   }
 }
 
-function isolatedEnvironment(dataDir, port) {
+function isolatedEnvironment(dataDir, port, authEnv) {
   const blocked = /^(?:DATABASE_URL|AUTH_DATABASE_URL|PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL|APP_URL|UPSTREAM_ORIGIN)$/;
   const provider = /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/;
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !blocked.test(key) && !provider.test(key)));
@@ -70,8 +71,7 @@ function isolatedEnvironment(dataDir, port) {
     DATA_DIR: dataDir,
     PORT: String(port),
     APP_BASE_PATH: "/now",
-    AUTH_REQUIRED: "0",
-    INVITE_CODE_HASH: "",
+    ...authEnv,
     PERSISTENCE_BACKEND: "json",
     ATTACHMENT_STORAGE: "local",
     PERIODIC_ANALYSIS_ENABLED: "0",
@@ -114,10 +114,19 @@ const appPort = await freePort();
 const debugPort = await freePort();
 const origin = `http://127.0.0.1:${appPort}`;
 const base = `${origin}/now`;
+const authFixture = await installAuthenticatedJsonRuntime(dataDir);
+const systemFetch = globalThis.fetch;
+globalThis.fetch = (input, init = {}) => {
+  const target = String(input instanceof Request ? input.url : input);
+  if (!target.startsWith(base)) return systemFetch(input, init);
+  const headers = new Headers(init.headers);
+  if (!headers.has("cookie")) headers.set("cookie", authFixture.cookie);
+  return systemFetch(input, { ...init, headers });
+};
 let stderr = "";
 const server = spawn(process.execPath, ["server.mjs"], {
   cwd: ROOT,
-  env: isolatedEnvironment(dataDir, appPort),
+  env: isolatedEnvironment(dataDir, appPort, authFixture.env),
   stdio: ["ignore", "ignore", "pipe"]
 });
 server.stderr.on("data", chunk => { stderr += chunk; });
@@ -132,7 +141,7 @@ try {
   }
   const primary = thoughts[0];
 
-  const directResponse = await fetch(`${base}/thoughts/${encodeURIComponent(primary.id)}?tag=focus&sort=created&page=2`);
+  const directResponse = await fetch(`${base}/thoughts/${encodeURIComponent(primary.id)}?tag=focus&sort=created&page=1`);
   assert.equal(directResponse.status, 200);
   assert.match(directResponse.headers.get("content-type") || "", /^text\/html/);
   const outsideBaseResponse = await fetch(`${origin}/today`);
@@ -168,6 +177,12 @@ try {
   ], { stdio: "ignore" });
   cdp = new Cdp(await debuggerUrl(debugPort));
   await cdp.send("Page.enable");
+  await cdp.send("Network.enable");
+  await cdp.send("Network.setCookie", {
+    name: "for_now_session",
+    value: authFixture.token,
+    url: `${base}/`
+  });
   await cdp.send("Runtime.enable");
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
 
@@ -188,7 +203,7 @@ try {
     assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent&&document.querySelector("#auth-gate")?.hidden&&!document.body.classList.contains("auth-locked")`), true);
   };
 
-  await navigate(`${base}/thoughts/${encodeURIComponent(primary.id)}?tag=focus&sort=created&page=2`);
+  await navigate(`${base}/thoughts/${encodeURIComponent(primary.id)}?tag=focus&sort=created&page=1`);
   assert.deepEqual(await evaluate(`({
     path:location.pathname,
     search:location.search,
@@ -199,7 +214,7 @@ try {
     styles:getComputedStyle(document.body).fontFamily.length>0
   })`), {
     path:`/now/thoughts/${primary.id}`,
-    search:"?tag=focus&sort=created&page=2",
+    search:"?tag=focus&sort=created",
     active:true,
     cards:1,
     id:primary.id,
@@ -210,8 +225,8 @@ try {
     .map(entry=>new URL(entry.name).pathname)
     .filter(path=>/^\\/now\\/thoughts\\/(?:frontend\\/|app\\.js$|drift\\.css$)/.test(path))`), []);
 
-  await navigate(`${base}/view/thoughts?tag=focus&sort=created&page=2`);
-  const firstThoughtPageReady=await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===23&&document.querySelector("#thought-pagination").hidden`);
+  await navigate(`${base}/view/thoughts?tag=focus&sort=created&page=1`);
+  const firstThoughtPageReady=await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===20&&!document.querySelector("#thought-pagination").hidden`);
   assert.equal(firstThoughtPageReady,true,JSON.stringify(await evaluate(`({path:location.pathname,search:location.search,cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,paginationHidden:document.querySelector("#thought-pagination").hidden,paginationText:document.querySelector("#thought-pagination-status").textContent,busy:document.querySelector("#view-thoughts").getAttribute("aria-busy"),body:document.querySelector("#all-thoughts").textContent.slice(0,160)})`)));
   await evaluate(`(()=>{const input=document.querySelector("#thought-search");input.value="thought 22";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   assert.equal(
@@ -238,25 +253,26 @@ try {
   });
   await evaluate(`document.querySelector('[data-tag-filter="focus"]').click();true`);
   assert.equal(await waitUntil(`document.querySelectorAll("#all-thoughts [data-chain-id]").length===20&&!document.querySelector("#thought-pagination").hidden`), true);
-  await evaluate(`document.querySelector("#thought-load-more").click();true`);
-  assert.equal(await waitUntil(`document.querySelectorAll("#all-thoughts [data-chain-id]").length===23`),true);
+  // JSON compatibility keeps one page; DB adjacency is verified by the real PG browser probe.
 
   await evaluate("scrollTo(0, 700); true");
   await delay(100);
   const savedScroll = await evaluate("scrollY");
   assert.ok(savedScroll > 200);
-  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${primary.id}"] .chain-summary').click();true`);
-  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${primary.id}"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===1`), true);
+  const returnRoot = await evaluate(`Array.from(document.querySelectorAll('#all-thoughts [data-chain-id]')).find(card=>{const rect=card.getBoundingClientRect();return rect.bottom>80&&rect.top<innerHeight})?.dataset.chainId`);
+  assert.ok(returnRoot);
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${returnRoot}"] .chain-summary').click();true`);
+  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${returnRoot}"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===1`), true);
   const detailHistoryLength = await evaluate("history.length");
   await evaluate("history.back(); true");
-  const browserBackRestored=await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===23&&Math.abs(scrollY-${savedScroll})<120`);
+  const browserBackRestored=await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===20&&Math.abs(scrollY-${savedScroll})<120`);
   assert.equal(browserBackRestored,true,JSON.stringify(await evaluate(`({path:location.pathname,search:location.search,cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,scrollY,paginationHidden:document.querySelector("#thought-pagination").hidden,busy:document.querySelector("#view-thoughts").getAttribute("aria-busy")})`)));
   assert.ok(Math.abs((await evaluate("scrollY")) - savedScroll) < 120);
   await evaluate("history.forward(); true");
-  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${primary.id}"&&document.querySelector("#all-thoughts [data-chain-id]")?.open`), true);
+  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${returnRoot}"&&document.querySelector("#all-thoughts [data-chain-id]")?.open`), true);
   assert.equal(await evaluate("history.length"), detailHistoryLength);
   await evaluate(`document.querySelector("[data-thought-list]").click();true`);
-  const detailBackRestored=await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===23&&Math.abs(scrollY-${savedScroll})<120`);
+  const detailBackRestored=await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===20&&Math.abs(scrollY-${savedScroll})<120`);
   assert.equal(detailBackRestored,true,JSON.stringify(await evaluate(`({path:location.pathname,search:location.search,cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,scrollY,paginationHidden:document.querySelector("#thought-pagination").hidden,busy:document.querySelector("#view-thoughts").getAttribute("aria-busy")})`)));
   await delay(300);
   assert.deepEqual(await evaluate(`({
@@ -265,27 +281,32 @@ try {
     length:history.length
   })`), { deepScroll:true, expanded:0, length:detailHistoryLength });
 
-  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${primary.id}"] .chain-summary').click();true`);
-  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${primary.id}"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===1`), true);
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${returnRoot}"] .chain-summary').click();true`);
+  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${returnRoot}"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===1`), true);
   await evaluate(`document.querySelector("[data-thought-list]").click();true`);
-  assert.equal(await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===23&&scrollY>200`), true);
+  assert.equal(await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===20&&scrollY>200`), true);
   assert.equal(await evaluate(`document.querySelectorAll("#all-thoughts [data-chain-id][open]").length`), 0);
-  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${primary.id}"] .chain-summary').click();true`);
-  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${primary.id}"`), true);
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${returnRoot}"] .chain-summary').click();true`);
+  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${returnRoot}"`), true);
 
+  const removedContent = thoughts.find(item => item.id === returnRoot).content;
   await evaluate(`window.confirm=()=>true;document.querySelector("#all-thoughts [data-delete-chain]").click();true`);
   assert.equal(
     await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelector('[data-route-result="unavailable"]')?.dataset.routeErrorCode==="RESOURCE_UNAVAILABLE"`),
     true,
     JSON.stringify(await evaluate(`({path:location.pathname,search:location.search,active:document.querySelector(".view.active")?.id,result:document.querySelector('[data-route-result]')?.outerHTML||"",cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,toast:document.querySelector("#toast")?.textContent})`))
   );
+  // The unavailable notice is synchronous; its replacement list loads separately.
+  // Keep immediate removal safety separate from eventual first-page readiness.
+  assert.equal(await evaluate(`document.querySelector("#view-thoughts").textContent.includes(${JSON.stringify(removedContent)})`), false);
+  assert.equal(await waitUntil(`document.querySelector("#view-thoughts").getAttribute("aria-busy")!=="true"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===20`), true, "Deleted-object fallback must finish loading the bounded first page");
   assert.deepEqual(await evaluate(`({
     resourceType:document.querySelector('[data-route-result="unavailable"]').dataset.routeResourceType,
-    oldContent:document.querySelector("#view-thoughts").textContent.includes("URL history thought 00"),
+    oldContent:document.querySelector("#view-thoughts").textContent.includes(${JSON.stringify(removedContent)}),
     listCount:document.querySelectorAll("#all-thoughts [data-chain-id]").length
-  })`), { resourceType:"thought-chain", oldContent:false, listCount:22 });
+  })`), { resourceType:"thought-chain", oldContent:false, listCount:20 });
 
-  await navigate(`${base}/thoughts/${encodeURIComponent(primary.id)}?tag=focus`);
+  await navigate(`${base}/thoughts/${encodeURIComponent(returnRoot)}?tag=focus`);
   assert.equal(await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelector('[data-route-result="unavailable"]')`), true);
   await navigate(`${base}/`);
   assert.deepEqual(await evaluate(`({path:location.pathname,today:document.querySelector("#view-today").classList.contains("active")})`), {
@@ -315,6 +336,7 @@ try {
 
   console.log("URL/history regression passed: direct and legacy routes, query replacement, detail history, source-aware return, scroll restoration, and deleted-object fallback.");
 } finally {
+  globalThis.fetch = systemFetch;
   cdp?.socket.close();
   chrome?.kill("SIGKILL");
   server.kill("SIGTERM");

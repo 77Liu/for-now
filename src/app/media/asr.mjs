@@ -182,20 +182,24 @@ export function createAsrWorkflows({
         release();
       }
       let polishedText = "";
+      let polishReasoningContent = "";
       let polishErrorCode = "";
       try {
-        polishedText = await runDeepSeek(
+        const polished = await runDeepSeek(
           renderPrompt("capture.transcription.polish", {
             rawText: transcription.rawText
           }),
           {
             scene: "capturePolish",
+            captureReasoning: true,
             maxTokens: 4000,
             signal,
             budgetExecution,
             budgetStageIds: [polishStageId]
           }
         );
+        polishedText = typeof polished === "string" ? polished : polished.content;
+        polishReasoningContent = typeof polished === "object" ? polished.reasoningContent || "" : "";
       } catch (error) {
         polishErrorCode = safeText(error.code, 120) || "POLISH_FAILED";
         await logEvent("system", "capture.transcription_polish_failed", {
@@ -205,21 +209,25 @@ export function createAsrWorkflows({
         });
       }
       let condensedText = "";
+      let condenseReasoningContent = "";
       let condenseErrorCode = "";
       try {
-        condensedText = await runDeepSeek(
+        const condensed = await runDeepSeek(
           renderPrompt("capture.transcription.condense", {
             rawText: transcription.rawText,
             polishedText
           }),
           {
             scene: "capturePolish",
+            captureReasoning: true,
             maxTokens: 4000,
             signal,
             budgetExecution,
             budgetStageIds: [condenseStageId]
           }
         );
+        condensedText = typeof condensed === "string" ? condensed : condensed.content;
+        condenseReasoningContent = typeof condensed === "object" ? condensed.reasoningContent || "" : "";
       } catch (error) {
         condenseErrorCode = safeText(error.code, 120) || "CONDENSE_FAILED";
         await logEvent("system", "capture.transcription_condense_failed", {
@@ -232,7 +240,9 @@ export function createAsrWorkflows({
         ...transcription,
         polishedText,
         polishErrorCode,
+        polishReasoningContent,
         condensedText,
+        condenseReasoningContent,
         condenseErrorCode,
         updatedAt: now()
       };

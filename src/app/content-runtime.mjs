@@ -1,8 +1,12 @@
+import { thoughtSpeechProjection } from "./speech-cache.mjs";
+import { thoughtDiscoveryProjection } from "../modules/discovery/index.mjs";
+import { createThoughtQueries, assertThoughtProducerFlags } from "../modules/thoughts/index.mjs";
 import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
 import { createImportanceService } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import { legalImportanceMaterial, legalImportanceSources } from "./task-context.mjs";
 import crypto from "node:crypto";
 import { createContentAttachmentService } from "../modules/content-attachments/index.mjs";
+import { createContentAttachmentRecordCommands } from "./record-commands/content-attachments.mjs";
 import { keepsakePayload } from "../modules/keepsakes/index.mjs";
 import { createContentBackground, enqueueContentImageUnderstanding } from "./content/background.mjs";
 import { createContentFoundation, createContentRecords } from "./content/resources.mjs";
@@ -32,15 +36,20 @@ export function createContentRuntime({
   getCursorScope = getAccountId,
   backgroundContextKey,
   workflowContextKey,
+  accountRuntime = null,
   dispatchBackground,
   runDeepSeek,
   readAiUsage = async () => ({ entries: [] }),
   getImportanceModelChoice = async () => null,
   getImportanceModelSnapshot = () => null,
+  periodicAnalysisEnabled = false,
+  readPeriodicPreferences = async () => ({}),
   recordCompressionDailyBudgetCny = 0,
   recordCompressionPerCallBudgetCny = 0,
   recordCompressionMaxBackfillDatesPerScan = 1,
   recordCompressionStartDate = "",
+  recordCommandConfig = null,
+  thoughtPagingConfig = null,
   now = () => new Date().toISOString(),
   today,
   currentTime = () => Date.now(),
@@ -75,6 +84,7 @@ export function createContentRuntime({
   if (effectObserver !== null && typeof effectObserver !== "function") {
     throw new TypeError("Content runtime effectObserver must be a function");
   }
+  if (thoughtPagingConfig?.enabled === true) assertThoughtProducerFlags(recordCommandConfig);
 
   const observedRunDeepSeek = effectObserver
     ? (...args) => {
@@ -110,9 +120,15 @@ export function createContentRuntime({
     maxBackfillDatesPerScan: recordCompressionMaxBackfillDatesPerScan,
     startDate: recordCompressionStartDate
   });
-  const getRecentTrend = (store, asOf) => (
-    recordCompressionService.getCurrentTrend(store, asOf)
+  const getRecentTrend = (store, asOf, inputProjection = null) => (
+    recordCompressionService.getCurrentTrend(store, asOf, inputProjection)
   );
+  const thoughtQueries = createThoughtQueries({
+    repository,
+    enabled: thoughtPagingConfig?.enabled === true,
+    speechProjection: thoughts => thoughtSpeechProjection(thoughts, hash),
+    discoveryProjection: thoughtDiscoveryProjection
+  });
   const contentRepository = createPerceptionAwareRepository({
     repository,
     perception: perceptionRuntime,
@@ -122,6 +138,11 @@ export function createContentRuntime({
     onStoreMutation: (store, beforeStore) => {
       const staleRunningTaskIds = recordCompressionService.invalidateChangedSources(store, beforeStore);
       for (const taskId of staleRunningTaskIds) backgroundAi?.cancel(taskId);
+    },
+    recordEffects: {
+      sourceDates: store => recordCompressionService.sourceMutationDates(store),
+      invalidate: (store, beforeStore) => recordCompressionService.invalidateSourceClosure(store, beforeStore),
+      cancel: taskId => backgroundAi?.cancel(taskId)
     }
   });
   const foundation = createContentFoundation({
@@ -135,10 +156,14 @@ export function createContentRuntime({
   });
   const contentAttachmentService = createContentAttachmentService({
     repository: contentRepository,
+    recordCommands: repository.accountUnitOfWork?.run
+      ? createContentAttachmentRecordCommands(contentRepository) : null,
     trash: foundation.trashService,
     attachmentInventory: (...args) => {
       if (!mediaRuntime) throw new Error("Content media runtime is not initialized");
-      return mediaRuntime.listAttachmentInventory(...args);
+      return mediaOptions.attachmentInventory?.list
+        ? mediaOptions.attachmentInventory.list(...args)
+        : mediaRuntime.listAttachmentInventory(...args);
     },
     getAccountId,
     cancelTask: taskId => backgroundAi?.cancel(taskId) || false,
@@ -151,6 +176,7 @@ export function createContentRuntime({
   const records = createContentRecords({
     repository,
     sourceRepository: contentRepository,
+    thoughtQueries,
     foundation,
     contentAttachments: contentAttachmentService,
     getCursorScope,
@@ -201,6 +227,19 @@ export function createContentRuntime({
     modelChoice: getImportanceModelChoice, currentChoice: getImportanceModelSnapshot, hash, now, promptText, renderPrompt });
   const background = createContentBackground({
     createBusinessId,
+    cleanupExistingTask: accountRuntime?.enabled ? async task => {
+      try {
+        accountRuntime.authorize();
+        return false;
+      } catch (error) {
+        if (!String(error.code || "").startsWith("ACCOUNT_")) throw error;
+      }
+      await accountRuntime.cleanupTask(task, () => backgroundAi.cleanupForAccountRecovery(
+        task,
+        (before, after) => accountRuntime.assertCommit(before, after)
+      ));
+      return true;
+    } : null,
     repository: contentRepository,
     annotationService: foundation.annotationService,
     contentAttachments: contentAttachmentService,
@@ -210,6 +249,9 @@ export function createContentRuntime({
     getImportanceModelSnapshot,
     prepareImportanceContext,
     getRecentTrend,
+    createTrendInputProjection: recordCompressionService.createTrendInputProjection,
+    trendTimezones: recordCompressionService.trendTimezones,
+    trendReadRequirements: recordCompressionService.trendReadRequirements,
     mediaRuntime,
     getAccountId,
     backgroundContextKey,
@@ -217,6 +259,7 @@ export function createContentRuntime({
     runDeepSeek: observedRunDeepSeek,
     now,
     createId,
+    recordCommandConfig,
     hash,
     logEvent,
     debugServerUrl,
@@ -248,10 +291,14 @@ export function createContentRuntime({
     workflowContextKey,
     getRecentTrend,
     getImportanceModelSnapshot,
+    periodicAnalysisEnabled,
+    readPeriodicPreferences,
+    recordCommandConfig,
     now,
     today,
     currentTime,
     createId,
+    createBusinessId,
     hash,
     logEvent
   });
@@ -259,11 +306,25 @@ export function createContentRuntime({
     repository: contentRepository,
     trash: foundation.trashService,
     mutations: foundation.trashMutations,
-    cleanup: mediaRuntime.attachmentCleanup
+    cleanup: mediaRuntime.attachmentCleanup,
+    now
   });
+  if (thoughtPagingConfig?.enabled === true) {
+    thoughtQueries.assertProducersReady({
+      roots: workflows.thoughtRecordCommands,
+      local: records.thoughtService.recordProducerCommands,
+      annotations: foundation.annotationCommands.recordProducerCommands,
+      trash: trashCommands.recordProducerCommands,
+      attachments: contentAttachmentService.recordProducerCommands,
+      contentAi: backgroundAi.recordProducerCommand("content.aiWriteback"),
+      taskCreation: backgroundAi.recordProducerCommand("task.creation"),
+      taskTransitions: backgroundAi.recordProducerCommand("task.transitions")
+    });
+  }
 
   return {
     ...foundation,
+    thoughtQueries,
     ...records,
     ...mediaRuntime,
     ...background,

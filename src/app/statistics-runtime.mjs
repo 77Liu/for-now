@@ -33,7 +33,8 @@ export function createStatisticsRuntime({
   readAiUsage,
   logsDirectory,
   aiDashboard,
-  today
+  today,
+  getTimezone
 }) {
   if (typeof logsDirectory !== "function") {
     throw new TypeError("Statistics runtime requires logsDirectory()");
@@ -45,7 +46,8 @@ export function createStatisticsRuntime({
       readAiUsage,
       readOperationEntries: (from, to) => readOperationEntries(logsDirectory(), from, to),
       aiDashboard,
-      today
+      today,
+      getTimezone
     })
   };
 }

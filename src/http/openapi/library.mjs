@@ -404,6 +404,8 @@ export const libraryComponents = Object.freeze({
         isbn: { type: "string" },
         description: { type: "string" },
         verification: { type: "string" },
+        reasoningContent: { type: "string" },
+        reasoningVisibility: { const: "user_viewable" },
         attachmentPaths: { type: "array", maxItems: 1, items: { type: "string" } }
       },
       additionalProperties: false
