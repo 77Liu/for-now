@@ -205,6 +205,8 @@ let recovered = 0;
 let samplerStarted = 0;
 let samplerStopped = 0;
 let recordSyncMaintenanceRuns = 0;
+let recordSyncMaintenanceStarted;
+const recordSyncMaintenanceReady = new Promise(resolve => { recordSyncMaintenanceStarted = resolve; });
 const lifecycle = createServerLifecycle({
   appConfig: {
     port: 0,
@@ -227,7 +229,7 @@ const lifecycle = createServerLifecycle({
   localTestRuntime: {},
   readAuth: async () => ({ users: [] }),
   runPeriodicAnalyses: async () => {},
-  runRecordSyncMaintenance: async () => { recordSyncMaintenanceRuns += 1; },
+  runRecordSyncMaintenance: async () => { recordSyncMaintenanceRuns += 1; recordSyncMaintenanceStarted(); },
   recordSyncMaintenanceStartupDelayMs: 0,
   runSpeechCacheSweep: async () => {},
   observability: {
@@ -249,7 +251,15 @@ assert.equal(started.version, "lifecycle-version");
 assert.ok(started.port > 0);
 assert.equal(await (await fetch(`http://127.0.0.1:${started.port}`)).text(), "running");
 await lifecycle.ready();
-await new Promise(resolve => setImmediate(resolve));
+// setImmediate does not establish that a setTimeout(0) scheduler has fired.
+// Wait for the observable task entry before testing shutdown cancellation.
+let maintenanceDeadline;
+try {
+  await Promise.race([
+    recordSyncMaintenanceReady,
+    new Promise((_, reject) => { maintenanceDeadline = setTimeout(() => reject(new Error("record sync maintenance did not start")), 2000); })
+  ]);
+} finally { clearTimeout(maintenanceDeadline); }
 await lifecycle.stop({ signal: "test" });
 assert.deepEqual(
   { recovered, samplerStarted, samplerStopped },
