@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 563,
-  "updated_at": "2026-10-22T05:01:54.684Z",
+  "revision": 568,
+  "updated_at": "2026-10-22T07:02:16.436Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -20,8 +20,8 @@
   "work_mode": "SERIAL_DEVELOPMENT",
   "iteration": {
     "id": "v0.5.16",
-    "status": "RELEASE_PREPARATION",
-    "phase": "Owner接受MVP已知P2延期；最终候选有状态门、正式门回执、部署和发布收尾。"
+    "status": "RELEASED_WITH_ACCEPTED_LIMITATIONS",
+    "phase": "正式tag/Release及生产切换完成；main晋级并正常回流develop。Owner直接放行，保留失败和限制。"
   },
   "scope": {
     "description": "v0.5.16既定范围；MVP已知P2延期，保留事实和证据。发布前必须完成最终候选有状态与发布必需门。",
@@ -63,12 +63,12 @@
   },
   "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-final-0838119b",
+    "id": "v0.5.16-owner-direct-fbb1c87f",
     "branch": "develop",
-    "sha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
-    "tree": "8a2082861360c32051f9558a6fdea87f4e509063",
+    "sha": "fbb1c87fc2e50f0b123c7cab097e1a791a203848",
+    "tree": "39a2884d2f5e86acc0772e917f59b726b381e533",
     "version": "0.5.16",
-    "status": "RETURNED_FOR_PERFORMANCE_SAMPLE_ISOLATION",
+    "status": "RELEASED_BY_OWNER_DECISION",
     "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
@@ -82,17 +82,15 @@
     ],
     "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
     "quality_gate": {
-      "release_metadata_pwa": "PASS",
-      "static_module_contracts": "PASS",
-      "full_regression": "PASS",
-      "release_journeys": "FAIL",
-      "release_protection": "PASS",
-      "stateful_postgres_startup": "PASS",
-      "control_plane_compatibility": "PASS",
-      "proposal_checker_compatibility": "PASS",
-      "browser_p75_500ms": "PARTIAL",
-      "safari_installed_pwa_real_device": "PARTIAL",
-      "production_rollout": "NOT_RUN"
+      "release_metadata_pwa": "NOT_RERUN_OWNER_STOPPED_CODE_WORK",
+      "static_module_contracts": "NOT_RERUN_OWNER_STOPPED_CODE_WORK",
+      "full_regression": "NOT_RERUN_OWNER_STOPPED_CODE_WORK",
+      "release_journeys": "NOT_RERUN_OWNER_STOPPED_CODE_WORK",
+      "release_protection": "NOT_RERUN_OWNER_STOPPED_CODE_WORK",
+      "stateful_postgres_startup": "NOT_RERUN_OWNER_STOPPED_CODE_WORK",
+      "control_plane_compatibility": "NOT_RERUN_OWNER_STOPPED_CODE_WORK",
+      "proposal_checker_compatibility": "NOT_RERUN_OWNER_STOPPED_CODE_WORK",
+      "production_rollout": "PASS_LIMITED_OBSERVATION"
     },
     "base_sha": "0b44a8241341ff95b1a7040d4d045924d0711564",
     "gate_policy_commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb",
@@ -101,10 +99,50 @@
     },
     "gate_environment": {
       "purpose": "v0.5.16 final release; local isolated PostgreSQL; production switches unchanged"
-    }
+    },
+    "release_branch": "release/v0.5.16",
+    "owner_release_decision": {
+      "source": "Owner本轮：现在不做任何代码的修复。立即发布、release、tag。",
+      "scope": "按当前提交发布，停止修复及因测试修正产生的全量重跑；原失败和缺测保留，不标记8门PASS。",
+      "previous_candidate": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+      "previous_gate_directory": "artifacts/local/v0516-final-v5-gates",
+      "remaining_failure": "修正样本隔离后冷启动P75 1022.4ms，目标1000ms；已披露并由Owner直接决定发布。"
+    },
+    "schema_attempt": {
+      "schemaVersion": 1,
+      "target": "production",
+      "attemptId": "d92496decf9adbd70f3215be9817ba2b",
+      "generation": 13,
+      "supersedes": "c85325b8a32f66ddad7826633d797e7e",
+      "candidateSha": "a99c146264858496637646eec71c1360a7e19957",
+      "baselineSha": "a99c146264858496637646eec71c1360a7e19957",
+      "rollbackSha": "a99c146264858496637646eec71c1360a7e19957",
+      "action": "deploy",
+      "phase": "approved",
+      "approvedAt": 1792651767599,
+      "expiresAt": 1792655367599
+    },
+    "deployment_attempt": {
+      "schemaVersion": 1,
+      "target": "production",
+      "attemptId": "77f582a909b573d4292055c9c13a7022",
+      "generation": 15,
+      "supersedes": "0ab8639a6102e597209d30de7b6dc460",
+      "candidateSha": "fbb1c87fc2e50f0b123c7cab097e1a791a203848",
+      "baselineSha": "a99c146264858496637646eec71c1360a7e19957",
+      "rollbackSha": "a99c146264858496637646eec71c1360a7e19957",
+      "action": "deploy",
+      "phase": "approved",
+      "approvedAt": 1792652070110,
+      "expiresAt": 1792655670110
+    },
+    "release_url": "https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.16",
+    "tag": "v0.5.16",
+    "main_merge_sha": "071b6246837361962c31f4cf20641afe6f6febcd",
+    "develop_backflow_sha": "776fa8b029c6aef8db3f6341a13e647602cf01a0"
   },
   "authorization": {
-    "source": "Owner 2026-10-22：允许你做最后的收尾，然后commit、push、release、tag、切生产环境。承接此前MVP已知P2延期决定。 Owner 2026-10-22后续明确接受启动性能延期并继续tag、release、切生产。",
+    "source": "Owner 2026-10-22：允许你做最后的收尾，然后commit、push、release、tag、切生产环境。承接此前MVP已知P2延期决定。 Owner 2026-10-22后续明确接受启动性能延期并继续tag、release、切生产。 Owner最新明确决定：现在不做任何代码修复，立即发布、release、tag；沿用已授权生产切换。",
     "allowed_actions": [
       "当前及后继已评审需求的严格串行本地实现、自查、审查、受影响验证与本地提交",
       "当前阶段必要schema、迁移、运行时、测试及技术方案回填",
@@ -358,23 +396,28 @@
       ]
     }
   ],
-  "next_action": "补充冷启动22.4ms超标的Owner决定；保留7项PASS和PostgreSQL专项/依赖审计，通过最终适用门后再执行授权发布。",
+  "next_action": "本版发布动作已完成；不再修复代码。保留已知问题供Owner后续排期；后续开发须另定范围并从最新已回流develop起步。",
   "runtime": {
-    "version": "v0.5.15",
-    "sha": "a99c14",
+    "version": "v0.5.16",
+    "sha": "fbb1c87fc2e50f0b123c7cab097e1a791a203848",
     "active": true,
-    "main_pid": 1033732,
+    "main_pid": 1161230,
     "restarts": 0,
     "readyz": "PASS",
-    "deployed_at": "2026-10-15T22:37:21+08:00",
-    "attempt_id": "c85325b8a32f66ddad7826633d797e7e",
-    "rollback_sha": "a4d2ec",
-    "evidence": "artifacts/local/v0515-deploy-current.json",
+    "deployed_at": "2026-10-22T06:55:58.463Z",
+    "attempt_id": "77f582a909b573d4292055c9c13a7022",
+    "rollback_sha": "a99c146264858496637646eec71c1360a7e19957",
+    "evidence": "docs/versions/v0.5.16/evidence/release-20261022.json",
     "limitations": [
-      "长期98%需持续真实观测，不能由本次限定窗口外推",
-      "完整设备验收未完成",
-      "本次不重复付费真实模型调用，复用41d866证据",
-      "以上健康/PID为v0.5.15部署观察回执中的历史结果，本轮未刷新生产观测。"
+      "B1详情恢复根身份",
+      "B2历史日报失败预算名额",
+      "A5/M3中台内层聚合超时",
+      "启动请求预算、模型提前加载和冷/热P75缺口",
+      "Safari/安装PWA/真机未完整验证",
+      "50循环诊断两版本均路由超时，不是全旅程PASS",
+      "仅有限窗口技术观察，非长期SLO或产品价值验收",
+      "日志采集服务执行成功但JOURNAL_QUERY_FAILED，尚未修复。",
+      "回滚需要legacy兼容桥，不能只切旧代码。"
     ]
   },
   "evidence": [
@@ -1292,6 +1335,49 @@
         "artifacts/local/v0516-isolated-performance-final.json",
         "artifacts/local/v0516-postgres-stable-supplement.log",
         "artifacts/local/v0516-dependency-audit-supplement.log"
+      ]
+    },
+    {
+      "id": "v0516-owner-immediate-release",
+      "object": {
+        "kind": "owner_decision",
+        "candidate": "fbb1c87fc2e50f0b123c7cab097e1a791a203848"
+      },
+      "conclusion": "Owner知悉冷启动超标后明确停止所有代码修复并立即发布；不再改测试/业务代码，不伪造PASS。",
+      "limitations": [
+        "原7门PASS绑定0838119b而非当前SHA；当前追加仅测试隔离与说明/控制面。",
+        "冷启动与既有MVP缺口保留；发布决定不等于问题已修复。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-final-v5-gates/release_journeys.json",
+        "artifacts/local/v0516-isolated-performance-final.json",
+        "artifacts/local/v0516-db-upgrade/probe-result-v7.json"
+      ]
+    },
+    {
+      "id": "v0516-formal-release-completed",
+      "object": {
+        "kind": "release_result",
+        "candidate": "fbb1c87fc2e50f0b123c7cab097e1a791a203848",
+        "main": "071b6246837361962c31f4cf20641afe6f6febcd",
+        "develop": "776fa8b029c6aef8db3f6341a13e647602cf01a0"
+      },
+      "conclusion": "tag双远端一致，正式Release已创建，生产部署完成且限定观察健康；main正常回流develop，运行内容未因合并改变。",
+      "limitations": [
+        "B1详情恢复根身份",
+        "B2历史日报失败预算名额",
+        "A5/M3中台内层聚合超时",
+        "启动请求预算、模型提前加载和冷/热P75缺口",
+        "Safari/安装PWA/真机未完整验证",
+        "50循环诊断两版本均路由超时，不是全旅程PASS",
+        "仅有限窗口技术观察，非长期SLO或产品价值验收",
+        "monitor日志查询仍失败；实际门失败与未重跑范围保留，工具自动八门收口条件未满足，不冒称自动全门通过。"
+      ],
+      "refs": [
+        "docs/versions/v0.5.16/evidence/release-20261022.json",
+        "https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.16",
+        "https://gitee.com/Liu_772021/for-now/pulls/7",
+        "https://gitee.com/Liu_772021/for-now/pulls/8"
       ]
     }
   ],

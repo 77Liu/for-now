@@ -1,0 +1,201 @@
+{
+  "version": "0.5.16",
+  "releaseUrl": "https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.16",
+  "candidateSha": "fbb1c87fc2e50f0b123c7cab097e1a791a203848",
+  "candidateTree": "39a2884d2f5e86acc0772e917f59b726b381e533",
+  "tagObjectSha": "ba48c6b9ba123043fef8be49e8630e53f76610e3",
+  "tagPeeledSha": "fbb1c87fc2e50f0b123c7cab097e1a791a203848",
+  "remoteTagsVerified": [
+    "origin",
+    "github"
+  ],
+  "mainMergeSha": "071b6246837361962c31f4cf20641afe6f6febcd",
+  "developBackflowSha": "776fa8b029c6aef8db3f6341a13e647602cf01a0",
+  "ownerDecision": "知悉冷启动P75 1022.4ms后明确：现在不做任何代码的修复。立即发布、release、tag。承接生产切换授权。",
+  "testDisposition": "Owner直接发布；原失败保留，未宣称最终SHA全部8门PASS。",
+  "previousCandidateGates": [
+    {
+      "gate": "control_plane_compatibility",
+      "candidateSha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+      "status": "PASS",
+      "receiptSha256": "7245848308fb06825961c75f4e1257d69dfcb476cf90d3b114dfe3a57e8c6674",
+      "logSha256": "1ab4b76130587e4041dab58d78a9ac8b5e0d7748f89199f22ee62d3517e7eb03",
+      "source": "artifacts/local/v0516-final-v5-gates/control_plane_compatibility.json"
+    },
+    {
+      "gate": "full_regression",
+      "candidateSha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+      "status": "PASS",
+      "receiptSha256": "a6f7600cfc0204b4caed93e0b72dc15a336015842d4bf8d728588f6bab58028d",
+      "logSha256": "78721a48d6463eb601bee85df803834312f0f795f4c3ad5b022971d33c18cb0b",
+      "source": "artifacts/local/v0516-final-v5-gates/full_regression.json"
+    },
+    {
+      "gate": "proposal_checker_compatibility",
+      "candidateSha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+      "status": "PASS",
+      "receiptSha256": "a0dfe84493fe42da348f5a86b32fc374d8844154f4f58b7b70002d653ccfbece",
+      "logSha256": "6191cf6100eecffb25be91c12e7b3dda852cb9945ef3e2284b88e7e0c396e8ce",
+      "source": "artifacts/local/v0516-final-v5-gates/proposal_checker_compatibility.json"
+    },
+    {
+      "gate": "release_journeys",
+      "candidateSha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+      "status": "FAIL",
+      "receiptSha256": "17655c975a3ed6cb67b2daf3ee140e6b57154b98ddd7bbf6d76a22ce3ab1b934",
+      "logSha256": "42b0199c8cd095a98fc00b2ac248f15a2c50a05c39e115fc56cbced52ecf3d7e",
+      "source": "artifacts/local/v0516-final-v5-gates/release_journeys.json"
+    },
+    {
+      "gate": "release_metadata_pwa",
+      "candidateSha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+      "status": "PASS",
+      "receiptSha256": "10771344cea87707d00f28832f7fc6ce62adced706fd6df7ad5bf3210733c2ab",
+      "logSha256": "2236f90cd86dbb786d0276a01c3d6656ee8b4c069a588d99c99f9406e3d18f7e",
+      "source": "artifacts/local/v0516-final-v5-gates/release_metadata_pwa.json"
+    },
+    {
+      "gate": "release_protection",
+      "candidateSha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+      "status": "PASS",
+      "receiptSha256": "76153b8081a84088fb423a35a070f6a95a153ebaaec6bbb6a244febc7dc42ea3",
+      "logSha256": "16316628cb9ef85e5aa5b25f9f70895510dc8a2ec5c037489756fa5594b1d0bc",
+      "source": "artifacts/local/v0516-final-v5-gates/release_protection.json"
+    },
+    {
+      "gate": "stateful_postgres_startup",
+      "candidateSha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+      "status": "PASS",
+      "receiptSha256": "37fc286b8f11c515fae5c3266481d92340b94ae1326af3d38f7c31d32fad8337",
+      "logSha256": "917ec80d452f22b09b2069ee61d94fa00e99980e2755405771ad3308b7375557",
+      "source": "artifacts/local/v0516-final-v5-gates/stateful_postgres_startup.json"
+    },
+    {
+      "gate": "static_module_contracts",
+      "candidateSha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+      "status": "PASS",
+      "receiptSha256": "0ace464b07a072d89d9eeb7843859be9a808086d797539e9699c8794a1e5e5a3",
+      "logSha256": "0c7b8a2b0d1277fd8a1184ee680254dfe81fc49d91ca1c4159dbd13ec2f45dd2",
+      "source": "artifacts/local/v0516-final-v5-gates/static_module_contracts.json"
+    }
+  ],
+  "deployment": {
+    "attempt": "77f582a909b573d4292055c9c13a7022",
+    "completedAt": "2026-10-22T06:55:58.463Z",
+    "backup": "/var/backups/for-now/for-now-20261022T022648Z.tar.gz",
+    "schemaStatus": "PASS",
+    "originalTablesVerified": 20,
+    "schemaSqlSha256": "024440f49c80eeb56fdf99c2c074fa20e2e5068c3ea7424b62a92cafee00d315",
+    "rollbackSha": "a99c146264858496637646eec71c1360a7e19957",
+    "rollbackRequirement": "先停写并执行已演练legacy兼容桥，再恢复旧代码；不能仅回退代码，也不覆盖恢复旧备份丢弃新数据。",
+    "recoveryMaterial": "/var/tmp/for-now-v0516-db.Gw2xaG",
+    "connectionInterruption": "初次SSH断连后确认远端仍在npm ci且未切换；新fence取代旧进程并使用后台持久日志完成部署，迁移未重跑。"
+  },
+  "observation": {
+    "at": "2026-10-22T06:58:29.471Z",
+    "active": "/opt/for-now/releases/fbb1c87fc2e50f0b123c7cab097e1a791a203848",
+    "process": "MainPID=1161230\nResult=success\nNRestarts=0",
+    "configuration": {
+      "keys": 62,
+      "nonVersionSha256": "f7b199c55435d328e22bb191d269a4e3c51849d0c47e0f00c037e78d8a52ec6c"
+    },
+    "/readyz": {
+      "http": 200,
+      "body": {
+        "ok": true,
+        "version": "fbb1c87fc2e5"
+      }
+    },
+    "/api/state": {
+      "http": 401
+    },
+    "/api/admin/v1/snapshot": {
+      "http": 200,
+      "services": [
+        {
+          "id": "svc-api",
+          "status": "healthy"
+        },
+        {
+          "id": "svc-worker",
+          "status": "healthy"
+        },
+        {
+          "id": "svc-storage",
+          "status": "healthy"
+        },
+        {
+          "id": "svc-backup",
+          "status": "healthy"
+        }
+      ],
+      "diagnostics": {
+        "queuedTasks": 0,
+        "aiCalls": 2,
+        "aiCost": 0.0106158,
+        "unknownCost": 0
+      },
+      "summary": [
+        {
+          "key": "users",
+          "value": 4
+        },
+        {
+          "key": "active",
+          "value": 3
+        },
+        {
+          "key": "services",
+          "value": 4
+        },
+        {
+          "key": "aiCost",
+          "value": 0.0106158
+        },
+        {
+          "key": "storage",
+          "value": 0.21324574016034603
+        },
+        {
+          "key": "incidents",
+          "value": 1
+        }
+      ],
+      "topKeys": [
+        "meta",
+        "overview",
+        "users",
+        "services",
+        "storage",
+        "ai",
+        "commercial",
+        "logs",
+        "policies",
+        "privacy",
+        "totals"
+      ]
+    },
+    "durationMs": 2019
+  },
+  "publicReadyz": {
+    "url": "https://77liu.top/now/readyz",
+    "http": 200,
+    "version": "fbb1c87fc2e5"
+  },
+  "monitor": {
+    "serviceResult": "success",
+    "exitCode": 0,
+    "snapshotAvailable": false,
+    "errorCode": "JOURNAL_QUERY_FAILED",
+    "disposition": "已发现但尚未修复；依Owner要求不再修复"
+  },
+  "limitations": [
+    "B1详情恢复根身份",
+    "B2历史日报失败预算名额",
+    "A5/M3中台内层聚合超时",
+    "启动请求预算、模型提前加载和冷/热P75缺口",
+    "Safari/安装PWA/真机未完整验证",
+    "50循环诊断两版本均路由超时，不是全旅程PASS",
+    "仅有限窗口技术观察，非长期SLO或产品价值验收"
+  ]
+}
