@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 561,
-  "updated_at": "2026-10-22T04:27:54.505Z",
+  "revision": 563,
+  "updated_at": "2026-10-22T05:01:54.684Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -63,12 +63,12 @@
   },
   "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-final-b2dadd83",
+    "id": "v0.5.16-final-0838119b",
     "branch": "develop",
-    "sha": "b2dadd83192d5881f4b123fc5a3e483ee74a1520",
-    "tree": "ac06fae92ebe1be77b8863c5a5ab1d41a3c00d41",
+    "sha": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f",
+    "tree": "8a2082861360c32051f9558a6fdea87f4e509063",
     "version": "0.5.16",
-    "status": "RETURNED_FOR_TEST_READINESS_FIX",
+    "status": "RETURNED_FOR_PERFORMANCE_SAMPLE_ISOLATION",
     "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
@@ -97,7 +97,7 @@
     "base_sha": "0b44a8241341ff95b1a7040d4d045924d0711564",
     "gate_policy_commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb",
     "gate_inputs": {
-      "snapshot": "artifacts/local/v0516-final-production-snapshot-v4.json"
+      "snapshot": "artifacts/local/v0516-final-production-snapshot-v5.json"
     },
     "gate_environment": {
       "purpose": "v0.5.16 final release; local isolated PostgreSQL; production switches unchanged"
@@ -358,7 +358,7 @@
       ]
     }
   ],
-  "next_action": "提交异步列表就绪测试修正，固定新候选并完成发布门；原7项门及失败证据保留。",
+  "next_action": "补充冷启动22.4ms超标的Owner决定；保留7项PASS和PostgreSQL专项/依赖审计，通过最终适用门后再执行授权发布。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -1272,6 +1272,26 @@
         "artifacts/local/v0516-url-history-diagnostic.log",
         "artifacts/local/v0516-url-history-readiness-fix.log",
         "scripts/url-history-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-performance-sample-isolation",
+      "object": {
+        "kind": "measurement_correction",
+        "candidate": "0838119b090271d2f8fd027eb9eafcfa32b6fb8f"
+      },
+      "conclusion": "原测试先换请求标识再卸载旧页，迟到批注模块串入下一样本。原100启动样本4次106，先卸载再标识后100启动样本均99。保持浏览器/HTTP缓存/网络条件，预算92和接受上界105不变；修正后10冷/10热专项仅冷P75 1022.4ms仍阻断，已请求Owner明确是否延期。",
+      "limitations": [
+        "原106失败与全部原始证据保留。",
+        "扩大50循环的诊断在两种实现均于第50次路由切换超时，只用于启动计数对照，不是全旅程通过，也未认定产品根因。",
+        "源码修正尚未提交为新候选；未执行生产迁移、tag或正式Release。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-final-v5-gates/release_journeys.json",
+        "artifacts/local/v0516-sample-isolation-comparison.json",
+        "artifacts/local/v0516-isolated-performance-final.json",
+        "artifacts/local/v0516-postgres-stable-supplement.log",
+        "artifacts/local/v0516-dependency-audit-supplement.log"
       ]
     }
   ],

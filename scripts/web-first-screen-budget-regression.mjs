@@ -893,6 +893,10 @@ function sampleEvidence(server, sample) {
 }
 
 async function startupSample(browser, server, sample, { cacheDisabled, clearCache = false } = {}) {
+  // Unload the previous page before changing the request label. Its late lazy
+  // imports otherwise inherit the next sample's header and inflate that sample.
+  // The browser/profile and HTTP cache remain shared for warm-cache measurement.
+  await browser.navigate("about:blank");
   await browser.setSample(sample);
   await browser.cdp.send("Network.setCacheDisabled", { cacheDisabled });
   if (clearCache) await browser.cdp.send("Network.clearBrowserCache");
@@ -1693,7 +1697,7 @@ try {
   const acceptanceRequested = process.env.FOR_NOW_STARTUP_PERFORMANCE_ACCEPTANCE === "v0.5.16-owner-20261022";
   const releaseVersion = JSON.parse(await fs.readFile(path.join(ROOT, "package.json"), "utf8")).version;
   const acceptedStartupFailure = failure => acceptanceRequested && releaseVersion === "0.5.16" && (
-    /^startup-(?:cold|warm)-\d+: first-readable requests 10[345] > 92$/.test(failure)
+    /^startup-(?:cold|warm)-\d+: first-readable requests (?:9[3-9]|10[0-5]) > 92$/.test(failure)
     || /^startup-(?:cold|warm)-\d+: startup requested hidden feature module \/frontend\/features\/thoughts\/model\.mjs$/.test(failure)
     || (/^web\.startup\.warmCache\.firstReadable_ms P75 [\d.]+ms > 1000ms$/.test(failure)
       && metrics["web.startup.warmCache.firstReadable_ms"].p75 <= 1053.7)
