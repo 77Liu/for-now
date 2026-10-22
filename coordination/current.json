@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 559,
-  "updated_at": "2026-10-22T02:25:44.592Z",
+  "revision": 561,
+  "updated_at": "2026-10-22T04:27:54.505Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -63,12 +63,12 @@
   },
   "active_tasks": [],
   "candidate": {
-    "id": "v0.5.16-final-7265cd15",
+    "id": "v0.5.16-final-b2dadd83",
     "branch": "develop",
-    "sha": "7265cd155b9925923c87081ada70ed9705a9a861",
-    "tree": "e14231b5ae0c0ec8676cebf93675aab998e281de",
+    "sha": "b2dadd83192d5881f4b123fc5a3e483ee74a1520",
+    "tree": "ac06fae92ebe1be77b8863c5a5ab1d41a3c00d41",
     "version": "0.5.16",
-    "status": "RETEST_AFTER_TEST_ORDER_FIX",
+    "status": "RETURNED_FOR_TEST_READINESS_FIX",
     "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
@@ -82,14 +82,14 @@
     ],
     "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
     "quality_gate": {
-      "release_metadata_pwa": "NOT_RUN_FOR_NEW_CANDIDATE",
-      "static_module_contracts": "NOT_RUN_FOR_NEW_CANDIDATE",
-      "full_regression": "NOT_RUN_FOR_NEW_CANDIDATE",
-      "release_journeys": "NOT_RUN_FOR_NEW_CANDIDATE",
-      "release_protection": "NOT_RUN_FOR_NEW_CANDIDATE",
-      "stateful_postgres_startup": "NOT_RUN_FOR_NEW_CANDIDATE",
-      "control_plane_compatibility": "NOT_RUN_FOR_NEW_CANDIDATE",
-      "proposal_checker_compatibility": "NOT_RUN_FOR_NEW_CANDIDATE",
+      "release_metadata_pwa": "PASS",
+      "static_module_contracts": "PASS",
+      "full_regression": "PASS",
+      "release_journeys": "FAIL",
+      "release_protection": "PASS",
+      "stateful_postgres_startup": "PASS",
+      "control_plane_compatibility": "PASS",
+      "proposal_checker_compatibility": "PASS",
       "browser_p75_500ms": "PARTIAL",
       "safari_installed_pwa_real_device": "PARTIAL",
       "production_rollout": "NOT_RUN"
@@ -97,7 +97,7 @@
     "base_sha": "0b44a8241341ff95b1a7040d4d045924d0711564",
     "gate_policy_commit": "58e4b8e90c13732355fc02480fba1cd38724bfcb",
     "gate_inputs": {
-      "snapshot": "artifacts/local/v0516-final-production-snapshot-v3.json"
+      "snapshot": "artifacts/local/v0516-final-production-snapshot-v4.json"
     },
     "gate_environment": {
       "purpose": "v0.5.16 final release; local isolated PostgreSQL; production switches unchanged"
@@ -358,7 +358,7 @@
       ]
     }
   ],
-  "next_action": "生命周期测试改为等待实际维护任务启动，消除setImmediate与setTimeout的顺序假设；固定新候选并重建发布门。",
+  "next_action": "提交异步列表就绪测试修正，固定新候选并完成发布门；原7项门及失败证据保留。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -1255,6 +1255,23 @@
         "artifacts/local/v0516-owner-final-gates/release_journeys.json",
         "artifacts/local/v0516-maintenance-test-order-fix.log",
         "scripts/server-runtime-regression.mjs"
+      ]
+    },
+    {
+      "id": "v0516-url-history-readiness",
+      "object": {
+        "kind": "test_correction",
+        "candidate": "b2dadd83192d5881f4b123fc5a3e483ee74a1520"
+      },
+      "conclusion": "浏览器删除回退提示先于异步列表完成；原断言即时读取22条，最终分页20条。补充有界等待路由非busy且20条；即时旧正文移除断言及最终原断言保留。专项通过，业务代码未改。",
+      "limitations": [
+        "原发布旅程失败保留；新候选须取得门回执。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-final-v4-gates/release_journeys.json",
+        "artifacts/local/v0516-url-history-diagnostic.log",
+        "artifacts/local/v0516-url-history-readiness-fix.log",
+        "scripts/url-history-regression.mjs"
       ]
     }
   ],

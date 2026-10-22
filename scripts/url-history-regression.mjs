@@ -296,6 +296,10 @@ try {
     true,
     JSON.stringify(await evaluate(`({path:location.pathname,search:location.search,active:document.querySelector(".view.active")?.id,result:document.querySelector('[data-route-result]')?.outerHTML||"",cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,toast:document.querySelector("#toast")?.textContent})`))
   );
+  // The unavailable notice is synchronous; its replacement list loads separately.
+  // Keep immediate removal safety separate from eventual first-page readiness.
+  assert.equal(await evaluate(`document.querySelector("#view-thoughts").textContent.includes(${JSON.stringify(removedContent)})`), false);
+  assert.equal(await waitUntil(`document.querySelector("#view-thoughts").getAttribute("aria-busy")!=="true"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===20`), true, "Deleted-object fallback must finish loading the bounded first page");
   assert.deepEqual(await evaluate(`({
     resourceType:document.querySelector('[data-route-result="unavailable"]').dataset.routeResourceType,
     oldContent:document.querySelector("#view-thoughts").textContent.includes(${JSON.stringify(removedContent)}),
