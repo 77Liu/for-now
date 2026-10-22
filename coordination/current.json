@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 556,
-  "updated_at": "2026-10-21T18:27:16.899Z",
+  "revision": 557,
+  "updated_at": "2026-10-22T02:18:17.989Z",
   "canonical_path": "coordination/current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -68,7 +68,7 @@
     "sha": "a23a46e65efe0f1300021c879bc810c5801f4e8a",
     "tree": "fe98f78711bd22107db4b132f4864a2722ff8b99",
     "version": "0.5.16",
-    "status": "RELEASE_PERFORMANCE_DECISION_PENDING",
+    "status": "FINAL_CANDIDATE_PREPARATION",
     "release_frozen": false,
     "required_gates": [
       "release_metadata_pwa",
@@ -104,7 +104,7 @@
     }
   },
   "authorization": {
-    "source": "Owner 2026-10-22：允许你做最后的收尾，然后commit、push、release、tag、切生产环境。承接此前MVP已知P2延期决定。",
+    "source": "Owner 2026-10-22：允许你做最后的收尾，然后commit、push、release、tag、切生产环境。承接此前MVP已知P2延期决定。 Owner 2026-10-22后续明确接受启动性能延期并继续tag、release、切生产。",
     "allowed_actions": [
       "当前及后继已评审需求的严格串行本地实现、自查、审查、受影响验证与本地提交",
       "当前阶段必要schema、迁移、运行时、测试及技术方案回填",
@@ -356,19 +356,9 @@
         "artifacts/local/queue-race-old-code-probe.log",
         "artifacts/local/v0516-queue-race-fix-test-v3.log"
       ]
-    },
-    {
-      "id": "v0516-release-startup-performance",
-      "priority": "P2",
-      "status": "OWNER_DECISION_PENDING",
-      "reason": "收窄健康/思绪依赖后本机10冷+10热样本：首屏104–105请求>92；首页加载thoughts/model；热启动P75 1033.9ms>1000ms。切页/详情/同步时间通过；性能专项FAIL，不写PASS。等待Owner决定是否纳入本版MVP延期。",
-      "refs": [
-        "artifacts/local/v0516-performance-final-report.json",
-        "artifacts/local/v0516-performance-final.log"
-      ]
     }
   ],
-  "next_action": "完成已授权最小依赖清理和兼容性验证；等待新增启动性能边界决定后固定新候选，重新执行适用发布门；生产保持0.5.15。",
+  "next_action": "按Owner新增性能延期决定固定最终候选，执行实际发布门，随后tag、Release、生产切换和观察。",
   "runtime": {
     "version": "v0.5.15",
     "sha": "a99c14",
@@ -1231,6 +1221,24 @@
         "artifacts/local/v0516-release-fixed-gates/stateful_postgres_startup.json",
         "artifacts/local/v0516-release-fixed-gates/control_plane_compatibility.json",
         "artifacts/local/v0516-release-fixed-gates/proposal_checker_compatibility.json"
+      ]
+    },
+    {
+      "id": "v0516-owner-startup-performance-deferral",
+      "object": {
+        "kind": "owner_decision",
+        "version": "0.5.16",
+        "source": "Owner 2026-10-22回复：接受tag、release、切生产。承接上条明确启动性能延期问题。"
+      },
+      "conclusion": "已发现但尚未修复，Owner接受作为0.5.16 MVP限制；只在本版release旅程接受已记录启动请求数、思绪模型提前加载、热启动P75偏差，原performance报告保留failed。",
+      "limitations": [
+        "不扩大其他失败豁免；不继承到下一版本；普通performance专项保持严格。"
+      ],
+      "refs": [
+        "artifacts/local/v0516-performance-final-report.json",
+        "docs/versions/v0.5.16/README.md",
+        "scripts/web-first-screen-budget-regression.mjs",
+        "scripts/user-journey-regression.mjs"
       ]
     }
   ],

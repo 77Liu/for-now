@@ -1690,8 +1690,21 @@ try {
     violations.push(`web.media.beforeClick.transfer_body_bytes ${mediaBeforeClickTransferBytes} B, expected 0 B`);
   }
 
+  const acceptanceRequested = process.env.FOR_NOW_STARTUP_PERFORMANCE_ACCEPTANCE === "v0.5.16-owner-20261022";
+  const releaseVersion = JSON.parse(await fs.readFile(path.join(ROOT, "package.json"), "utf8")).version;
+  const acceptedStartupFailure = failure => acceptanceRequested && releaseVersion === "0.5.16" && (
+    /^startup-(?:cold|warm)-\d+: first-readable requests 10[345] > 92$/.test(failure)
+    || /^startup-(?:cold|warm)-\d+: startup requested hidden feature module \/frontend\/features\/thoughts\/model\.mjs$/.test(failure)
+    || (/^web\.startup\.warmCache\.firstReadable_ms P75 [\d.]+ms > 1000ms$/.test(failure)
+      && metrics["web.startup.warmCache.firstReadable_ms"].p75 <= 1053.7)
+  );
+  const acceptedViolations = violations.filter(acceptedStartupFailure);
+  const blockingViolations = violations.filter(failure => !acceptedStartupFailure(failure));
   const report = {
     schemaVersion: 1,
+    acceptedViolations,
+    acceptance: acceptedViolations.length ? "v0.5.16-owner-20261022: deferred, not fixed" : null,
+    blockingViolations,
     status: violations.length ? "failed" : "passed",
     durationMs: Math.round(performance.now() - gateStartedAt),
     conditions: {
@@ -1773,7 +1786,7 @@ try {
     await fs.writeFile(output, `${JSON.stringify(report, null, 2)}\n`);
   }
   console.log(`Web performance gate report: ${JSON.stringify(report)}`);
-  assert.deepEqual(violations, [], `Web performance gate failed:\n- ${violations.join("\n- ")}`);
+  assert.deepEqual(blockingViolations, [], `Web performance gate failed:\n- ${blockingViolations.join("\n- ")}`);
 } catch (error) {
   throw browser ? await browserDiagnostics(browser, testServer, error) : error;
 } finally {

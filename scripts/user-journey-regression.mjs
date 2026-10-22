@@ -9,6 +9,11 @@ const MATRIX_PATH = path.join(ROOT, "knowledge/user-journey-matrix.json");
 const tiers = ["smoke", "daily", "release"];
 const requestedTier = process.argv[2] || "smoke";
 const validateOnly = requestedTier === "validate";
+// Owner accepted only the reported v0.5.16 startup performance findings on
+// 2026-10-22. Other tiers/versions keep strict performance assertions.
+const releaseVersion = JSON.parse(await fs.readFile(path.join(ROOT, "package.json"), "utf8")).version;
+const startupPerformanceAcceptance = requestedTier === "release" && releaseVersion === "0.5.16"
+  ? "v0.5.16-owner-20261022" : "";
 
 if (!validateOnly && !tiers.includes(requestedTier)) {
   throw new Error(`未知用户旅程测试层级：${requestedTier}。可选值：validate、${tiers.join("、")}`);
@@ -88,7 +93,8 @@ function isolatedEnvironment() {
     NODE_ENV: "test",
     PERSISTENCE_BACKEND: "json",
     ATTACHMENT_STORAGE: "local",
-    UPSTREAM_ORIGIN: ""
+    UPSTREAM_ORIGIN: "",
+    FOR_NOW_STARTUP_PERFORMANCE_ACCEPTANCE: startupPerformanceAcceptance
   };
 }
 
@@ -126,6 +132,8 @@ try {
     tier: validateOnly ? "validate" : requestedTier,
     status: "passed",
     durationMs: Date.now() - startedAt,
+    startupPerformanceAcceptance: startupPerformanceAcceptance || null,
+    acceptedLimitationRef: startupPerformanceAcceptance ? "docs/versions/v0.5.16/README.md#2026-10-22-mvp-发布决定" : null,
     journeyCount: selectedJourneys.length,
     automatedCount: selectedJourneys.filter(item => item.status === "automated").length,
     partial: selectedJourneys.filter(item => item.status !== "automated").map(item => item.id),
